@@ -229,6 +229,7 @@ enum Commands : uint8_t {
 	CMD_CONVERT_ROAD,                 ///< convert a road type
 
 	CMD_BUILD_AIRPORT,                ///< build an airport
+	CMD_BUILD_MODULAR_AIRPORT_TILE,   ///< build a modular airport tile
 
 	CMD_BUILD_DOCK,                   ///< build a dock
 

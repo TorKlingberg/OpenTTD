@@ -2747,6 +2747,82 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
 }
 
 /**
+ * Place a modular airport tile (prototype).
+ * @param flags operation to perform
+ * @param tile tile where airport tile will be built
+ * @param gfx airport station gfx id
+ * @param station_to_join station ID to join (NEW_STATION if build new one)
+ * @param allow_adjacent allow airports directly adjacent to other airports.
+ * @return the cost of this operation or an error
+ */
+CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent)
+{
+	bool reuse = (station_to_join != NEW_STATION);
+	if (!reuse) station_to_join = StationID::Invalid();
+	bool distant_join = (station_to_join != StationID::Invalid());
+
+	if (distant_join && (!_settings_game.station.distant_join_stations || !Station::IsValidID(station_to_join))) return CMD_ERROR;
+
+	if (gfx >= NUM_AIRPORTTILES) return CMD_ERROR;
+
+	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
+	if (ret.Failed()) return ret;
+
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+	int allowed_z = -1;
+	ret = CheckBuildableTile(tile, {}, allowed_z, true);
+	if (ret.Failed()) return ret;
+	cost.AddCost(ret.GetCost());
+
+	ret = Command<CMD_LANDSCAPE_CLEAR>::Do(flags, tile);
+	if (ret.Failed()) return ret;
+	cost.AddCost(ret.GetCost());
+
+	TileArea airport_area(tile, 1, 1);
+
+	Station *st = nullptr;
+	ret = FindJoiningStation(StationID::Invalid(), station_to_join, allow_adjacent, airport_area, &st);
+	if (ret.Failed()) return ret;
+
+	/* Distant join */
+	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
+
+	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
+	if (ret.Failed()) return ret;
+
+	cost.AddCost(_price[Price::BuildStationAirport]);
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		bool new_facility = !st->facilities.Test(StationFacility::Airport);
+
+		st->AddFacility(StationFacility::Airport, tile);
+		if (new_facility) {
+			st->airport.type = AT_SMALL;
+			st->airport.layout = 0;
+			st->airport.blocks = {};
+			st->airport.blocks.Set(AirportBlock::AirportClosed);
+			st->airport.rotation = DIR_N;
+			Company::Get(st->owner)->infrastructure.airport++;
+		}
+
+		st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
+
+		Tile t(tile);
+		MakeAirport(t, st->owner, st->index, static_cast<uint8_t>(gfx), WaterClass::Invalid);
+		SetStationTileRandomBits(t, GB(Random(), 0, 4));
+		st->airport.Add(tile);
+
+		if (AirportTileSpec::Get(GetTranslatedAirportTileID(static_cast<uint8_t>(gfx)))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+		TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
+
+		st->AfterStationTileSetChange(true, StationType::Airport);
+		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+	}
+
+	return cost;
+}
+
+/**
  * Remove an airport
  * @param tile TileIndex been queried
  * @param flags operation to perform

@@ -32,6 +32,7 @@
 #include "command_func.h"
 #include "airport_cmd.h"
 #include "station_cmd.h"
+#include "landscape_cmd.h"
 #include "zoom_func.h"
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
@@ -39,6 +40,7 @@
 
 #include "widgets/airport_widget.h"
 
+#include "table/airporttile_ids.h"
 #include "table/strings.h"
 
 #include "safeguards.h"
@@ -76,6 +78,21 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 
 static constexpr uint8_t MODULAR_AIRPORT_PIECE_EMPTY = 0xFF;
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
+
+static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t rotation)
+{
+	switch (piece) {
+		case 0: return APT_RUNWAY_1;
+		case 1: return APT_APRON_HOR;
+		case 2: return APT_BUILDING_1;
+		case 3: return APT_DEPOT_SE;
+		case 4: return APT_HELIPAD_1;
+		case 5: return APT_STAND;
+		case 6: return APT_APRON;
+		case 7: return APT_APRON_FENCE_NE;
+		default: return APT_APRON;
+	}
+}
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
 {
@@ -651,10 +668,12 @@ public:
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_W, true);
 		this->DisableWidget(WID_MA_BUILD);
 		this->preview_grid.fill(MODULAR_AIRPORT_PIECE_EMPTY);
+		this->UpdatePlacementCursor();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		ResetObjectToPlace();
 		this->PickerWindowBase::Close();
 	}
 
@@ -758,6 +777,7 @@ public:
 				int row = (pt.y - list.top) / this->piece_line_height;
 				if (row >= 0 && row < PIECE_COUNT) {
 					this->selected_piece = static_cast<uint8_t>(row);
+					this->UpdatePlacementCursor();
 					this->SetDirty();
 				}
 				break;
@@ -809,12 +829,50 @@ public:
 		}
 	}
 
+	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
+	{
+		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
+			Command<CMD_LANDSCAPE_CLEAR>::Post(STR_ERROR_CAN_T_CLEAR_THIS_AREA, CcBuildAirport, tile);
+			return;
+		}
+
+		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
+		bool adjacent = _ctrl_pressed;
+
+		auto proc = [=](bool test, StationID to_join) -> bool {
+			if (test) {
+				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_TILE>()),
+						tile, gfx, StationID::Invalid(), adjacent).Succeeded();
+			} else {
+				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
+						tile, gfx, to_join, adjacent);
+			}
+		};
+
+		ShowSelectStationIfNeeded(TileArea(tile, 1, 1), proc);
+	}
+
+	void OnPlaceObjectAbort() override
+	{
+		ResetObjectToPlace();
+	}
+
 private:
 	void ToggleTaxiDir(uint8_t dir_bit, WidgetID widget)
 	{
 		this->taxi_dir_mask ^= dir_bit;
 		this->SetWidgetLoweredState(widget, (this->taxi_dir_mask & dir_bit) != 0);
 		this->SetDirty();
+	}
+
+	void UpdatePlacementCursor()
+	{
+		SetTileSelectSize(1, 1);
+		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
+			SetObjectToPlace(ANIMCURSOR_DEMOLISH, PAL_NONE, HT_RECT | HT_DIAGONAL, this->window_class, this->window_number);
+		} else {
+			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
+		}
 	}
 
 	void HandleCanvasClick(Point pt)
