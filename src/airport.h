@@ -126,6 +126,7 @@ enum class AirportBlock : uint8_t {
 	/* end of new blocks */
 
 	Nothing          = 30, ///< Nothing is blocked, for example being in the hanger.
+	Modular          = 61, ///< Marker for modular airport tiles (prototype).
 	Zeppeliner       = 62, ///< Block for the zeppeliner disaster vehicle.
 	AirportClosed    = 63, ///< Dummy block for indicating a closed airport.
 };

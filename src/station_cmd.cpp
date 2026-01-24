@@ -2606,7 +2606,7 @@ void UpdateAirportsNoise()
 	for (Town *t : Town::Iterate()) t->noise_reached = 0;
 
 	for (const Station *st : Station::Iterate()) {
-		if (st->airport.tile != INVALID_TILE && st->airport.type != AT_OILRIG) {
+		if (st->airport.tile != INVALID_TILE && st->airport.type != AT_OILRIG && !st->airport.blocks.Test(AirportBlock::Modular)) {
 			uint dist;
 			Town *nearest = AirportGetNearestTown(st, dist);
 			nearest->noise_reached += GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
@@ -2787,6 +2787,10 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	/* Distant join */
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
+	if (st != nullptr && st->facilities.Test(StationFacility::Airport) && !st->airport.blocks.Test(AirportBlock::Modular)) {
+		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
+	}
+
 	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
 	if (ret.Failed()) return ret;
 
@@ -2801,9 +2805,11 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 			st->airport.layout = 0;
 			st->airport.blocks = {};
 			st->airport.blocks.Set(AirportBlock::AirportClosed);
+			st->airport.blocks.Set(AirportBlock::Modular);
 			st->airport.rotation = DIR_N;
 			Company::Get(st->owner)->infrastructure.airport++;
 		}
+		st->airport.blocks.Set(AirportBlock::Modular);
 
 		st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
 
@@ -2816,6 +2822,56 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
+		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+	}
+
+	return cost;
+}
+
+static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
+{
+	Station *st = Station::GetByTile(tile);
+
+	if (_current_company != OWNER_WATER) {
+		CommandCost ret = CheckOwnership(st->owner);
+		if (ret.Failed()) return ret;
+	}
+
+	CommandCost ret = EnsureNoVehicleOnGround(tile);
+	if (ret.Failed()) return ret;
+
+	CommandCost cost(EXPENSES_CONSTRUCTION, _price[Price::ClearStationAirport]);
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		DoClearSquare(tile);
+		DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, tile.base());
+
+		st->rect.AfterRemoveTile(st, tile);
+
+		bool any_tiles = false;
+		OrthogonalTileArea new_area;
+		new_area.Clear();
+		for (TileIndex cur_tile : st->airport) {
+			if (!st->TileBelongsToAirport(cur_tile)) continue;
+			any_tiles = true;
+			new_area.Add(cur_tile);
+		}
+
+		if (any_tiles) {
+			st->airport.tile = new_area.tile;
+			st->airport.w = new_area.w;
+			st->airport.h = new_area.h;
+			st->AfterStationTileSetChange(false, StationType::Airport);
+		} else {
+			delete st->airport.psa;
+			st->airport.Clear();
+			st->facilities.Reset(StationFacility::Airport);
+			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
+			Company::Get(st->owner)->infrastructure.airport--;
+			st->AfterStationTileSetChange(false, StationType::Airport);
+			DeleteNewGRFInspectWindow(GSF_AIRPORTS, st->index);
+		}
+
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
 	}
 
@@ -4998,7 +5054,11 @@ CommandCost ClearTile_Station(TileIndex tile, DoCommandFlags flags)
 	switch (GetStationType(tile)) {
 		case StationType::Rail:     return RemoveRailStation(tile, flags);
 		case StationType::RailWaypoint: return RemoveRailWaypoint(tile, flags);
-		case StationType::Airport:  return RemoveAirport(tile, flags);
+		case StationType::Airport: {
+			Station *st = Station::GetByTile(tile);
+			if (st->airport.blocks.Test(AirportBlock::Modular)) return RemoveModularAirportTile(tile, flags);
+			return RemoveAirport(tile, flags);
+		}
 		case StationType::Truck:    [[fallthrough]];
 		case StationType::Bus:
 			if (IsDriveThroughStopTile(tile)) {
