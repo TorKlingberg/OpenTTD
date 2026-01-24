@@ -35,6 +35,7 @@
 #include "zoom_func.h"
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
+#include "palette_func.h"
 
 #include "widgets/airport_widget.h"
 
@@ -48,8 +49,33 @@ static int _selected_airport_index;            ///< the index of the selected ai
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 
 static void ShowBuildAirportPicker(Window *parent);
+static void ShowBuildModularAirportWindow(Window *parent);
 
 SpriteID GetCustomAirportSprite(const AirportSpec *as, uint8_t layout);
+
+static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
+static constexpr int MODULAR_AIRPORT_GRID_W = 10;
+static constexpr int MODULAR_AIRPORT_GRID_H = 10;
+
+struct ModularAirportPiece {
+	StringID name;
+	PixelColour colour;
+};
+
+static constexpr ModularAirportPiece _modular_airport_pieces[] = {
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,  PC_DARK_GREY},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TAXIWAY, PC_LIGHT_BLUE},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL, PC_ORANGE},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,  PC_DARK_RED},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD, PC_LIGHT_YELLOW},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,   PC_YELLOW},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,   PC_GREY},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FENCE,   PC_VERY_DARK_BROWN},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,   PC_WHITE},
+};
+
+static constexpr uint8_t MODULAR_AIRPORT_PIECE_EMPTY = 0xFF;
+static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
 {
@@ -111,13 +137,17 @@ struct BuildAirToolbarWindow : Window {
 
 		bool can_build = CanBuildVehicleInfrastructure(VEH_AIRCRAFT);
 		this->SetWidgetDisabledState(WID_AT_AIRPORT, !can_build);
+		this->SetWidgetDisabledState(WID_AT_MODULAR, !can_build);
 		if (!can_build) {
 			CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
+			CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
 
 			/* Show in the tooltip why this button is disabled. */
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
+			this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
 		} else {
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP);
+			this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP);
 		}
 	}
 
@@ -129,6 +159,11 @@ struct BuildAirToolbarWindow : Window {
 					ShowBuildAirportPicker(this);
 					this->last_user_action = widget;
 				}
+				break;
+
+			case WID_AT_MODULAR:
+				ShowBuildModularAirportWindow(this);
+				this->last_user_action = INVALID_WIDGET;
 				break;
 
 			case WID_AT_DEMOLISH:
@@ -210,6 +245,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_air_toolbar_widgets 
 	EndContainer(),
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_AIRPORT), SetFill(0, 1), SetToolbarMinimalSize(2), SetSpriteTip(SPR_IMG_AIRPORT, STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_MODULAR), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_AIRPORT, STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP),
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), SetFill(1, 1), EndContainer(),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_DEMOLISH), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_DYNAMITE, STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 	EndContainer(),
@@ -585,6 +621,267 @@ public:
 	}};
 };
 
+class BuildModularAirportWindow : public PickerWindowBase {
+	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
+	static constexpr int TAXI_DIR_N = 1 << 0;
+	static constexpr int TAXI_DIR_E = 1 << 1;
+	static constexpr int TAXI_DIR_S = 1 << 2;
+	static constexpr int TAXI_DIR_W = 1 << 3;
+
+	int piece_line_height = 0;
+	uint8_t selected_piece = 0;
+	uint8_t rotation = 0;
+	uint8_t taxi_dir_mask = TAXI_DIR_N | TAXI_DIR_E | TAXI_DIR_S | TAXI_DIR_W;
+	bool one_way_taxi = false;
+	bool show_taxi_arrows = true;
+	bool snap_to_grid = true;
+	StringID status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE;
+	std::array<uint8_t, MODULAR_AIRPORT_GRID_W * MODULAR_AIRPORT_GRID_H> preview_grid{};
+
+public:
+	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
+	{
+		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
+		this->SetWidgetLoweredState(WID_MA_TOGGLE_ONEWAY, this->one_way_taxi);
+		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
+		this->SetWidgetLoweredState(WID_MA_TOGGLE_SNAP, this->snap_to_grid);
+		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_N, true);
+		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_E, true);
+		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_S, true);
+		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_W, true);
+		this->DisableWidget(WID_MA_BUILD);
+		this->preview_grid.fill(MODULAR_AIRPORT_PIECE_EMPTY);
+	}
+
+	void Close([[maybe_unused]] int data = 0) override
+	{
+		this->PickerWindowBase::Close();
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
+	{
+		switch (widget) {
+			case WID_MA_PIECES: {
+				Dimension d = {0, 0};
+				for (const auto &piece : _modular_airport_pieces) {
+					d = maxdim(d, GetStringBoundingBox(piece.name));
+				}
+				this->piece_line_height = GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal;
+				d.width += padding.width + WidgetDimensions::scaled.matrix.Horizontal();
+				d.height = PIECE_COUNT * this->piece_line_height + WidgetDimensions::scaled.matrix.Vertical();
+				size = maxdim(size, d);
+				break;
+			}
+
+			case WID_MA_CANVAS:
+				size = maxdim(size, {220, 220});
+				break;
+
+			case WID_MA_STATUS:
+				size.height = std::max<size_t>(size.height, GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal);
+				break;
+
+			default: break;
+		}
+	}
+
+	void DrawWidget(const Rect &r, WidgetID widget) const override
+	{
+		switch (widget) {
+			case WID_MA_PIECES: {
+				Rect row = r.WithHeight(this->piece_line_height).Shrink(WidgetDimensions::scaled.bevel);
+				Rect text = r.WithHeight(this->piece_line_height).Shrink(WidgetDimensions::scaled.matrix);
+				for (int i = 0; i < PIECE_COUNT; i++) {
+					if (i == this->selected_piece) {
+						GfxFillRect(row, PC_DARK_BLUE);
+					}
+					DrawString(text, _modular_airport_pieces[i].name, i == this->selected_piece ? TC_WHITE : TC_BLACK);
+					row = row.Translate(0, this->piece_line_height);
+					text = text.Translate(0, this->piece_line_height);
+				}
+				break;
+			}
+
+			case WID_MA_CANVAS: {
+				Rect inner = r.Shrink(WidgetDimensions::scaled.bevel);
+				GfxFillRect(inner, PC_WHITE);
+
+				int cell_w = std::max(1, inner.Width() / MODULAR_AIRPORT_GRID_W);
+				int cell_h = std::max(1, inner.Height() / MODULAR_AIRPORT_GRID_H);
+
+				bool has_any = false;
+				for (int y = 0; y < MODULAR_AIRPORT_GRID_H; y++) {
+					for (int x = 0; x < MODULAR_AIRPORT_GRID_W; x++) {
+						uint8_t piece = this->preview_grid[y * MODULAR_AIRPORT_GRID_W + x];
+						if (piece == MODULAR_AIRPORT_PIECE_EMPTY || piece >= PIECE_COUNT) continue;
+						has_any = true;
+						Rect cell(
+							inner.left + x * cell_w,
+							inner.top + y * cell_h,
+							inner.left + (x + 1) * cell_w - 1,
+							inner.top + (y + 1) * cell_h - 1
+						);
+						GfxFillRect(cell, _modular_airport_pieces[piece].colour);
+					}
+				}
+
+				for (int x = 0; x <= MODULAR_AIRPORT_GRID_W; x++) {
+					int x_pos = inner.left + x * cell_w;
+					if (x_pos > inner.right) break;
+					GfxDrawLine(x_pos, inner.top, x_pos, inner.bottom, PC_DARK_GREY);
+				}
+				for (int y = 0; y <= MODULAR_AIRPORT_GRID_H; y++) {
+					int y_pos = inner.top + y * cell_h;
+					if (y_pos > inner.bottom) break;
+					GfxDrawLine(inner.left, y_pos, inner.right, y_pos, PC_DARK_GREY);
+				}
+
+				if (!has_any) {
+					DrawString(inner, STR_STATION_BUILD_MODULAR_AIRPORT_CANVAS_HINT, TC_BLACK, SA_HOR_CENTER);
+				}
+				break;
+			}
+
+			case WID_MA_STATUS:
+				DrawString(r, this->status, TC_BLACK);
+				break;
+
+			default: break;
+		}
+	}
+
+	void OnClick(Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
+	{
+		switch (widget) {
+			case WID_MA_PIECES: {
+				Rect list = this->GetWidget<NWidgetBase>(widget)->GetCurrentRect().Shrink(WidgetDimensions::scaled.bevel);
+				int row = (pt.y - list.top) / this->piece_line_height;
+				if (row >= 0 && row < PIECE_COUNT) {
+					this->selected_piece = static_cast<uint8_t>(row);
+					this->SetDirty();
+				}
+				break;
+			}
+
+			case WID_MA_CANVAS:
+				this->HandleCanvasClick(pt);
+				break;
+
+			case WID_MA_ROTATE_DECREASE:
+				this->rotation = (this->rotation + 3) % 4;
+				this->SetDirty();
+				break;
+
+			case WID_MA_ROTATE_INCREASE:
+				this->rotation = (this->rotation + 1) % 4;
+				this->SetDirty();
+				break;
+
+			case WID_MA_TAXI_DIR_N: this->ToggleTaxiDir(TAXI_DIR_N, WID_MA_TAXI_DIR_N); break;
+			case WID_MA_TAXI_DIR_E: this->ToggleTaxiDir(TAXI_DIR_E, WID_MA_TAXI_DIR_E); break;
+			case WID_MA_TAXI_DIR_S: this->ToggleTaxiDir(TAXI_DIR_S, WID_MA_TAXI_DIR_S); break;
+			case WID_MA_TAXI_DIR_W: this->ToggleTaxiDir(TAXI_DIR_W, WID_MA_TAXI_DIR_W); break;
+
+			case WID_MA_TOGGLE_ONEWAY:
+				this->one_way_taxi = !this->one_way_taxi;
+				this->SetWidgetLoweredState(WID_MA_TOGGLE_ONEWAY, this->one_way_taxi);
+				this->SetDirty();
+				break;
+
+			case WID_MA_TOGGLE_SHOW_ARROWS:
+				this->show_taxi_arrows = !this->show_taxi_arrows;
+				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
+				this->SetDirty();
+				break;
+
+			case WID_MA_TOGGLE_SNAP:
+				this->snap_to_grid = !this->snap_to_grid;
+				this->SetWidgetLoweredState(WID_MA_TOGGLE_SNAP, this->snap_to_grid);
+				this->SetDirty();
+				break;
+
+			case WID_MA_VALIDATE:
+				this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NOT_IMPLEMENTED;
+				this->SetDirty();
+				break;
+
+			default: break;
+		}
+	}
+
+private:
+	void ToggleTaxiDir(uint8_t dir_bit, WidgetID widget)
+	{
+		this->taxi_dir_mask ^= dir_bit;
+		this->SetWidgetLoweredState(widget, (this->taxi_dir_mask & dir_bit) != 0);
+		this->SetDirty();
+	}
+
+	void HandleCanvasClick(Point pt)
+	{
+		Rect inner = this->GetWidget<NWidgetBase>(WID_MA_CANVAS)->GetCurrentRect().Shrink(WidgetDimensions::scaled.bevel);
+		int cell_w = std::max(1, inner.Width() / MODULAR_AIRPORT_GRID_W);
+		int cell_h = std::max(1, inner.Height() / MODULAR_AIRPORT_GRID_H);
+
+		int col = (pt.x - inner.left) / cell_w;
+		int row = (pt.y - inner.top) / cell_h;
+		if (col < 0 || row < 0 || col >= MODULAR_AIRPORT_GRID_W || row >= MODULAR_AIRPORT_GRID_H) return;
+
+		uint8_t piece = (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? MODULAR_AIRPORT_PIECE_EMPTY : this->selected_piece;
+		this->preview_grid[row * MODULAR_AIRPORT_GRID_W + col] = piece;
+		this->SetDirty();
+	}
+};
+
+static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airport_widgets = {
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
+		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+		NWidget(WWT_STICKYBOX, COLOUR_DARK_GREEN),
+	EndContainer(),
+	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
+		NWidget(NWID_HORIZONTAL), SetPadding(WidgetDimensions::unscaled.picker), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
+			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_PIECES_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL), SetFill(1, 0),
+				NWidget(WWT_MATRIX, COLOUR_GREY, WID_MA_PIECES), SetMatrixDataTip(1, lengthof(_modular_airport_pieces), STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP),
+			EndContainer(),
+			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_PREVIEW_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PREVIEW_LABEL), SetFill(1, 0),
+				NWidget(WWT_EMPTY, INVALID_COLOUR, WID_MA_CANVAS), SetFill(1, 0),
+				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_ROTATE_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_ROTATION_LABEL), SetFill(1, 0),
+				NWidget(NWID_HORIZONTAL),
+					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_DECREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_DECREASE),
+					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_INCREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_INCREASE),
+				EndContainer(),
+				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_TAXI_DIR_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TAXI_DIR_LABEL), SetFill(1, 0),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_N), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_N),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_E), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_E),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_S), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_S),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_W), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_W),
+				EndContainer(),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_ONEWAY), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SHOW_ARROWS), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SNAP), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP),
+				EndContainer(),
+				NWidget(WWT_EMPTY, INVALID_COLOUR, WID_MA_STATUS), SetFill(1, 0), SetMinimalTextLines(1, WidgetDimensions::unscaled.vsep_normal),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_MA_VALIDATE), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE),
+					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_MA_BUILD), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED),
+				EndContainer(),
+			EndContainer(),
+		EndContainer(),
+	EndContainer(),
+};
+
+static WindowDesc _build_modular_airport_desc(
+	WDP_AUTO, {}, 0, 0,
+	WC_BUILD_STATION, WC_BUILD_TOOLBAR,
+	WindowDefaultFlag::Construction,
+	_nested_build_modular_airport_widgets
+);
+
 static constexpr std::initializer_list<NWidgetPart> _nested_build_airport_widgets = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
@@ -632,6 +929,12 @@ static WindowDesc _build_airport_desc(
 static void ShowBuildAirportPicker(Window *parent)
 {
 	new BuildAirportWindow(_build_airport_desc, parent);
+}
+
+static void ShowBuildModularAirportWindow(Window *parent)
+{
+	CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
+	new BuildModularAirportWindow(_build_modular_airport_desc, parent);
 }
 
 void InitializeAirportGui()

@@ -14,6 +14,7 @@
 enum AirportToolbarWidgets : WidgetID {
 	WID_AT_AIRPORT,  ///< Build airport button.
 	WID_AT_DEMOLISH, ///< Demolish button.
+	WID_AT_MODULAR,  ///< Modular airport builder button (prototype).
 };
 
 /** Widgets of the #BuildAirportWindow class. */
@@ -30,6 +31,28 @@ enum AirportPickerWidgets : WidgetID {
 	WID_AP_BTN_DONTHILIGHT, ///< Don't show the coverage button.
 	WID_AP_BTN_DOHILIGHT,   ///< Show the coverage button.
 	WID_AP_ACCEPTANCE,      ///< Acceptance info.
+};
+
+/** Widgets of the #BuildModularAirportWindow class (prototype). */
+enum ModularAirportBuilderWidgets : WidgetID {
+	WID_MA_PIECES_LABEL,        ///< Label for pieces list.
+	WID_MA_PIECES,              ///< List of modular pieces.
+	WID_MA_PREVIEW_LABEL,       ///< Label for preview.
+	WID_MA_CANVAS,              ///< Preview canvas.
+	WID_MA_ROTATE_LABEL,        ///< Label for rotation.
+	WID_MA_ROTATE_DECREASE,     ///< Rotate left.
+	WID_MA_ROTATE_INCREASE,     ///< Rotate right.
+	WID_MA_TAXI_DIR_LABEL,      ///< Label for taxi direction.
+	WID_MA_TAXI_DIR_N,          ///< Taxi direction north.
+	WID_MA_TAXI_DIR_E,          ///< Taxi direction east.
+	WID_MA_TAXI_DIR_S,          ///< Taxi direction south.
+	WID_MA_TAXI_DIR_W,          ///< Taxi direction west.
+	WID_MA_TOGGLE_ONEWAY,       ///< One-way taxi toggle.
+	WID_MA_TOGGLE_SHOW_ARROWS,  ///< Show taxi arrows toggle.
+	WID_MA_TOGGLE_SNAP,         ///< Snap to grid toggle.
+	WID_MA_STATUS,              ///< Status text.
+	WID_MA_VALIDATE,            ///< Validate button.
+	WID_MA_BUILD,               ///< Build button (disabled).
 };
 
 #endif /* WIDGETS_AIRPORT_WIDGET_H */

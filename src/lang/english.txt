@@ -3009,6 +3009,34 @@ STR_STATION_BUILD_AIRPORT_CAPTION                               :{WHITE}Airport 
 STR_STATION_BUILD_AIRPORT_TOOLTIP                               :{BLACK}Select size/type of airport
 STR_STATION_BUILD_AIRPORT_CLASS_LABEL                           :{BLACK}Airport class
 STR_STATION_BUILD_AIRPORT_LAYOUT_NAME                           :{BLACK}Layout {NUM}
+STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION                       :{WHITE}Modular Airport Builder (Prototype)
+STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP                       :{BLACK}Open modular airport builder (prototype)
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL                  :{BLACK}Pieces
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP                :{BLACK}Select a modular airport piece
+STR_STATION_BUILD_MODULAR_AIRPORT_PREVIEW_LABEL                 :{BLACK}Preview
+STR_STATION_BUILD_MODULAR_AIRPORT_ROTATION_LABEL                :{BLACK}Rotation
+STR_STATION_BUILD_MODULAR_AIRPORT_TAXI_DIR_LABEL                :{BLACK}Taxi directions
+STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY                 :{BLACK}One-way taxi
+STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS            :{BLACK}Show taxi arrows
+STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP                   :{BLACK}Snap to grid
+STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE                      :{BLACK}Validate
+STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED                :{BLACK}Build (disabled)
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE                   :{BLACK}Prototype UI only. No validation yet.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NOT_IMPLEMENTED        :{BLACK}Validation not implemented yet.
+STR_STATION_BUILD_MODULAR_AIRPORT_CANVAS_HINT                   :{BLACK}Click to paint a preview layout
+STR_STATION_BUILD_MODULAR_AIRPORT_DIR_N                         :{BLACK}N
+STR_STATION_BUILD_MODULAR_AIRPORT_DIR_E                         :{BLACK}E
+STR_STATION_BUILD_MODULAR_AIRPORT_DIR_S                         :{BLACK}S
+STR_STATION_BUILD_MODULAR_AIRPORT_DIR_W                         :{BLACK}W
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY                  :{BLACK}Runway
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TAXIWAY                 :{BLACK}Taxiway
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL                :{BLACK}Terminal
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR                  :{BLACK}Hangar
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD                 :{BLACK}Helipad
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND                   :{BLACK}Stand
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON                   :{BLACK}Apron
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FENCE                   :{BLACK}Fence
+STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE                   :{BLACK}Erase
 
 STR_AIRPORT_SMALL                                               :Small
 STR_AIRPORT_CITY                                                :City
