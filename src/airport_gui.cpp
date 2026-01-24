@@ -879,13 +879,18 @@ public:
 		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
 		bool adjacent = _ctrl_pressed;
 
+		/* Capture taxi direction data to pass to command */
+		uint8_t rotation = this->rotation;
+		uint8_t taxi_dir_mask = this->taxi_dir_mask;
+		bool one_way_taxi = this->one_way_taxi;
+
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_TILE>()),
-						tile, gfx, StationID::Invalid(), adjacent).Succeeded();
+						tile, gfx, StationID::Invalid(), adjacent, rotation, taxi_dir_mask, one_way_taxi).Succeeded();
 			} else {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-						tile, gfx, to_join, adjacent);
+						tile, gfx, to_join, adjacent, rotation, taxi_dir_mask, one_way_taxi);
 			}
 		};
 

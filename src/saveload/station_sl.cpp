@@ -544,6 +544,51 @@ public:
 	std::vector<RoadStopTileData> &GetVector(BaseStation *bst) const override { return bst->custom_roadstop_tile_data; }
 };
 
+class SlModularAirportTileData : public DefaultSaveLoadHandler<SlModularAirportTileData, BaseStation> {
+public:
+	static inline const SaveLoad description[] = {
+	    SLE_VAR(ModularAirportTileData, tile,                SLE_UINT32),
+	    SLE_VAR(ModularAirportTileData, piece_type,          SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, rotation,            SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, one_way_taxi,        SLE_BOOL),
+	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  SLE_UINT8),
+	};
+	static inline const SaveLoadCompatTable compat_description = {};
+
+	void Save(BaseStation *bst) const override
+	{
+		if (bst->facilities.Test(StationFacility::Waypoint)) return;
+		Station *st = Station::From(bst);
+		if (st->airport.modular_tile_data == nullptr) {
+			SlSetStructListLength(0);
+			return;
+		}
+		SlSetStructListLength(st->airport.modular_tile_data->size());
+		for (ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			SlObject(&data, this->GetDescription());
+		}
+	}
+
+	void Load(BaseStation *bst) const override
+	{
+		if (bst->facilities.Test(StationFacility::Waypoint)) return;
+		Station *st = Station::From(bst);
+		size_t count = SlGetStructListLength(UINT32_MAX);
+		if (count == 0) return;
+
+		st->airport.EnsureModularDataExists();
+		st->airport.modular_tile_data->clear();
+		st->airport.modular_tile_data->reserve(count);
+
+		for (size_t i = 0; i < count; i++) {
+			ModularAirportTileData data;
+			SlObject(&data, this->GetLoadDescription());
+			st->airport.modular_tile_data->push_back(data);
+		}
+	}
+};
+
 /**
  * SaveLoad handler for the BaseStation, which all other stations / waypoints
  * make use of.
@@ -687,6 +732,7 @@ static const SaveLoad _station_desc[] = {
 	SLEG_CONDSTRUCTLIST("speclist", SlStationSpecList<StationSpec>, SLV_27, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstopspeclist", SlStationSpecList<RoadStopSpec>, SLV_NEWGRF_ROAD_STOPS, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstoptiledata", SlRoadStopTileData, SLV_ROAD_STOP_TILE_DATA, SL_MAX_VERSION),
+	SLEG_CONDSTRUCT("modularairporttiledata", SlModularAirportTileData, SLV_MODULAR_AIRPORT_PATHFINDING, SL_MAX_VERSION),
 };
 
 struct STNNChunkHandler : ChunkHandler {

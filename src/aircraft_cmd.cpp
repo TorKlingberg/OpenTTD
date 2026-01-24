@@ -37,6 +37,7 @@
 #include "framerate_type.h"
 #include "aircraft_cmd.h"
 #include "vehicle_cmd.h"
+#include "airport_ground_pathfinder.h"
 
 #include "table/strings.h"
 
@@ -82,6 +83,7 @@ static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const Ai
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc);
 static bool AirportFindFreeHelipad(Aircraft *v, const AirportFTAClass *apc);
 static void CrashAirplane(Aircraft *v);
+static TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v);
 
 static const SpriteID _aircraft_sprite[] = {
 	0x0EB5, 0x0EBD, 0x0EC5, 0x0ECD,
@@ -1335,6 +1337,10 @@ uint Aircraft::Crash(bool flooded)
 	uint victims = Vehicle::Crash(flooded) + 2; // pilots
 	this->crashed_counter = flooded ? 9000 : 0; // max 10000, disappear pretty fast when flooded
 
+	/* Clean up modular airport ground path */
+	delete this->ground_path;
+	this->ground_path = nullptr;
+
 	return victims;
 }
 
@@ -1727,6 +1733,23 @@ static void AircraftEventHandler_HeliLanding(Aircraft *v, const AirportFTAClass 
 
 static void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc)
 {
+	const Station *st = Station::Get(v->targetairport);
+
+	/* Check if this is a modular airport */
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		/* Find a free terminal for modular airport */
+		TileIndex terminal = FindFreeModularTerminal(st, v);
+		if (terminal != INVALID_TILE) {
+			v->ground_path_goal = terminal;
+			v->state = TERM1; /* Use TERM1 state for modular terminals */
+			return;
+		}
+		/* No terminal found - for now, just stay in place */
+		/* TODO: Better handling - maybe queue or go to hangar */
+		return;
+	}
+
+	/* Traditional FTA logic for preset airports */
 	/* next block busy, don't do a thing, just wait */
 	if (AirportHasBlock(v, &apc->layout[v->pos], apc)) return;
 
@@ -1806,13 +1829,104 @@ static void AirportClearBlock(const Aircraft *v, const AirportFTAClass *apc)
 	}
 }
 
+/**
+ * Find a free modular terminal for an aircraft.
+ * @param st The station.
+ * @param v The aircraft.
+ * @return Terminal tile or INVALID_TILE if none found.
+ */
+static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
+{
+	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+
+	/* Terminal piece types: 7=TERMINAL, 8=TERMINAL_ROUND */
+	/* TODO: Also support hangars (9,10) and helipads (11) */
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (data.piece_type == 7 || data.piece_type == 8) {
+			/* Check if tile is free (no other aircraft on it) */
+			/* For now, just return the first terminal found */
+			/* TODO: Add proper occupancy checking */
+			return data.tile;
+		}
+	}
+
+	return INVALID_TILE;
+}
+
+/**
+ * Move aircraft on modular airport ground path.
+ * @param v The aircraft.
+ * @param st The station.
+ * @return True if reached destination.
+ */
+static bool AirportMoveModular(Aircraft *v, const Station *st)
+{
+	/* If no goal set, we're done */
+	if (v->ground_path_goal == INVALID_TILE) return true;
+
+	/* If we don't have a path yet, calculate one */
+	if (v->ground_path == nullptr) {
+		AirportGroundPath path = FindAirportGroundPath(st, v->tile, v->ground_path_goal, v);
+		if (!path.found) {
+			/* No path found - stay where we are for now */
+			/* TODO: Handle this better - maybe try alternate terminals */
+			return false;
+		}
+
+		v->ground_path = new std::vector<TileIndex>(path.tiles);
+		v->ground_path_index = 0;
+	}
+
+	/* Follow the path */
+	if (v->ground_path_index >= v->ground_path->size()) {
+		/* Reached end of path */
+		delete v->ground_path;
+		v->ground_path = nullptr;
+		v->ground_path_index = 0;
+		v->ground_path_goal = INVALID_TILE;
+		return true;
+	}
+
+	/* Move to next tile in path */
+	TileIndex next_tile = (*v->ground_path)[v->ground_path_index];
+	v->tile = next_tile;
+	v->ground_path_index++;
+
+	/* Update position */
+	v->x_pos = TileX(next_tile) * TILE_SIZE + TILE_SIZE / 2;
+	v->y_pos = TileY(next_tile) * TILE_SIZE + TILE_SIZE / 2;
+
+	/* If we've reached the goal, signal completion */
+	if (next_tile == v->ground_path_goal) {
+		delete v->ground_path;
+		v->ground_path = nullptr;
+		v->ground_path_index = 0;
+		v->ground_path_goal = INVALID_TILE;
+		return true;
+	}
+
+	return false;
+}
+
 static void AirportGoToNextPosition(Aircraft *v)
 {
 	/* if aircraft is not in position, wait until it is */
 	if (!AircraftController(v)) return;
 
-	const AirportFTAClass *apc = Station::Get(v->targetairport)->airport.GetFTA();
+	const Station *st = Station::Get(v->targetairport);
 
+	/* Check if this is a modular airport */
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		/* Use modular airport pathfinding */
+		if (AirportMoveModular(v, st)) {
+			/* Reached destination */
+			/* TODO: Handle state transitions properly */
+		}
+		return;
+	}
+
+	/* Use traditional FTA for preset airports */
+	const AirportFTAClass *apc = st->airport.GetFTA();
 	AirportClearBlock(v, apc);
 	AirportMove(v, apc); // move aircraft to next position
 }

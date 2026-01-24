@@ -59,6 +59,10 @@ add_files(
     airport.h
     airport_cmd.h
     airport_gui.cpp
+    airport_pathfinder.cpp
+    airport_pathfinder.h
+    airport_ground_pathfinder.cpp
+    airport_ground_pathfinder.h
     animated_tile.cpp
     animated_tile_func.h
     animated_tile_map.h

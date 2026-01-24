@@ -8,8 +8,10 @@
 /** @file station_cmd.cpp Handling of station tiles. */
 
 #include "stdafx.h"
+#include <algorithm>
 #include "core/flatset_type.hpp"
 #include "aircraft.h"
+#include "airport_pathfinder.h"
 #include "bridge_map.h"
 #include "vehiclelist_func.h"
 #include "viewport_func.h"
@@ -2753,9 +2755,12 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
  * @param gfx airport station gfx id
  * @param station_to_join station ID to join (NEW_STATION if build new one)
  * @param allow_adjacent allow airports directly adjacent to other airports.
+ * @param rotation rotation of the piece (0-3)
+ * @param taxi_dir_mask user-specified taxi direction mask
+ * @param one_way_taxi whether taxi is one-way only
  * @return the cost of this operation or an error
  */
-CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent)
+CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
 	if (!reuse) station_to_join = StationID::Invalid();
@@ -2821,6 +2826,28 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		if (AirportTileSpec::Get(GetTranslatedAirportTileID(static_cast<uint8_t>(gfx)))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
 		TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
 
+		/* Store modular airport tile data */
+		st->airport.EnsureModularDataExists();
+
+		/* Remove any existing data for this tile (in case of replacement) */
+		auto &tile_data_vec = *st->airport.modular_tile_data;
+		tile_data_vec.erase(
+			std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
+				[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
+			tile_data_vec.end()
+		);
+
+		/* Create and store new tile data */
+		ModularAirportTileData tile_data;
+		tile_data.tile = tile;
+		tile_data.piece_type = static_cast<uint8_t>(gfx); // For now, use gfx as piece_type
+		tile_data.rotation = rotation;
+		tile_data.user_taxi_dir_mask = taxi_dir_mask;
+		tile_data.one_way_taxi = one_way_taxi;
+		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirections(tile_data.piece_type, rotation);
+
+		tile_data_vec.push_back(tile_data);
+
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
 	}
@@ -2846,6 +2873,16 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 		DoClearSquare(tile);
 		DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, tile.base());
 
+		/* Remove tile data from modular airport */
+		if (st->airport.modular_tile_data != nullptr) {
+			auto &tile_data_vec = *st->airport.modular_tile_data;
+			tile_data_vec.erase(
+				std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
+					[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
+				tile_data_vec.end()
+			);
+		}
+
 		st->rect.AfterRemoveTile(st, tile);
 
 		bool any_tiles = false;
@@ -2864,6 +2901,7 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			st->AfterStationTileSetChange(false, StationType::Airport);
 		} else {
 			delete st->airport.psa;
+			delete st->airport.modular_tile_data;
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
 			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
@@ -2940,6 +2978,7 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 	if (flags.Test(DoCommandFlag::Execute)) {
 		/* Clear the persistent storage. */
 		delete st->airport.psa;
+		delete st->airport.modular_tile_data;
 
 		st->rect.AfterRemoveRect(st, st->airport);
 

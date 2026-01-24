@@ -377,6 +377,7 @@ struct Airport : public TileArea {
 	Direction rotation = INVALID_DIR; ///< How this airport is rotated.
 
 	PersistentStorage *psa = nullptr; ///< Persistent storage for NewGRF airports.
+	std::vector<ModularAirportTileData> *modular_tile_data = nullptr; ///< Tile data for modular airports
 
 	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there
@@ -483,6 +484,28 @@ struct Airport : public TileArea {
 			}
 		}
 		return num;
+	}
+
+	/**
+	 * Get modular tile data for a specific tile.
+	 * @param tile The tile to query.
+	 * @return Pointer to tile data or nullptr if not found.
+	 */
+	const ModularAirportTileData* GetModularTileData(TileIndex tile) const
+	{
+		if (this->modular_tile_data == nullptr) return nullptr;
+		for (const ModularAirportTileData &data : *this->modular_tile_data) {
+			if (data.tile == tile) return &data;
+		}
+		return nullptr;
+	}
+
+	/** Ensure modular data vector exists. */
+	void EnsureModularDataExists()
+	{
+		if (this->modular_tile_data == nullptr) {
+			this->modular_tile_data = new std::vector<ModularAirportTileData>();
+		}
 	}
 
 private:

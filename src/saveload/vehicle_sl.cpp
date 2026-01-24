@@ -967,6 +967,10 @@ public:
 
 		 SLE_CONDVAR(Aircraft, turn_counter,          SLE_UINT8,                  SLV_136, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, flags,                 SLE_UINT8,                  SLV_167, SL_MAX_VERSION),
+
+		 /* Modular airport ground pathfinding - Note: ground_path is not saved, will be recalculated */
+		 SLE_CONDVAR(Aircraft, ground_path_index,     SLE_UINT16,                 SLV_MODULAR_AIRPORT_PATHFINDING, SL_MAX_VERSION),
+		 SLE_CONDVAR(Aircraft, ground_path_goal,      SLE_UINT32,                 SLV_MODULAR_AIRPORT_PATHFINDING, SL_MAX_VERSION),
 	};
 	static inline const SaveLoadCompatTable compat_description = _vehicle_aircraft_sl_compat;
 
