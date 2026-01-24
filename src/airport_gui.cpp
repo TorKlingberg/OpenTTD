@@ -83,7 +83,7 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t
 {
 	switch (piece) {
 		case 0: return APT_RUNWAY_1;
-		case 1: return APT_APRON_HOR;
+		case 1: return (rotation % 2 == 0) ? APT_APRON_HOR : APT_APRON_VER_CROSSING_N;
 		case 2: return APT_BUILDING_1;
 		case 3: return APT_DEPOT_SE;
 		case 4: return APT_HELIPAD_1;
