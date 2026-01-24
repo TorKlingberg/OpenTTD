@@ -49,7 +49,7 @@ endfunction(check_working_cxx_atomics64)
 
 
 # Check for (non-64-bit) atomic operations.
-if(MSVC)
+if(MSVC OR APPLE)
   set(HAVE_CXX_ATOMICS_WITHOUT_LIB True)
 else()
   # First check if atomics work without the library.
@@ -72,7 +72,7 @@ else()
 endif()
 
 # Check for 64 bit atomic operations.
-if(MSVC)
+if(MSVC OR APPLE)
   set(HAVE_CXX_ATOMICS64_WITHOUT_LIB True)
 else()
   # First check if atomics work without the library.
