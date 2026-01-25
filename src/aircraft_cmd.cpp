@@ -1996,14 +1996,24 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 
 	TileIndex best_tile = INVALID_TILE;
 	int best_distance = INT_MAX;
+	bool found_end = false;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
 
+		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+
+		if (found_end && !is_end) continue;
+
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int dist = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-		if (dist < best_distance) {
+
+		if (is_end && !found_end) {
+			found_end = true;
+			best_distance = dist;
+			best_tile = data.tile;
+		} else if (dist < best_distance) {
 			best_distance = dist;
 			best_tile = data.tile;
 		}
@@ -2135,10 +2145,10 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
-	/* Terminal piece types: 7=TERMINAL, 8=TERMINAL_ROUND */
+	/* Terminal piece types: APT_STAND, APT_STAND_1 */
 	/* TODO: Also support hangars (9,10) and helipads (11) */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (data.piece_type == APT_BUILDING_1 || data.piece_type == APT_ROUND_TERMINAL) {
+		if (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1) {
 			/* Check if tile is free (no other aircraft on it) */
 			/* For now, just return the first terminal found */
 			/* TODO: Add proper occupancy checking */
@@ -2306,34 +2316,51 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		return false;
 	}
 
-	v->tile = next_tile;
-	v->ground_path_index++;
-	v->ground_path_last_tile = v->tile;
-	v->ground_path_stall_counter = 0;
+	const int target_x = TileX(next_tile) * TILE_SIZE + TILE_SIZE / 2;
+	const int target_y = TileY(next_tile) * TILE_SIZE + TILE_SIZE / 2;
+	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
-	/* Update position */
-	v->x_pos = TileX(next_tile) * TILE_SIZE + TILE_SIZE / 2;
-	v->y_pos = TileY(next_tile) * TILE_SIZE + TILE_SIZE / 2;
+	if (dist > 0) {
+		v->direction = GetDirectionTowards(v, target_x, target_y);
+		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_TAXI);
+		if (count > 0) {
+			do {
+				GetNewVehiclePosResult gp = GetNewVehiclePos(v);
+				v->x_pos = gp.x;
+				v->y_pos = gp.y;
+				SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 
-	if (v->ground_path_index > 1) {
-		TileIndex prev_tile = (*v->ground_path)[v->ground_path_index - 2];
-		Tile prev(prev_tile);
-		if (HasAirportTileReservation(prev) && GetAirportTileReserver(prev) == v->index) {
-			SetAirportTileReservation(prev, false);
+				int new_dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
+				if (new_dist == 0) break;
+			} while (--count > 0);
 		}
 	}
 
-	/* If we've reached the goal, signal completion */
-	if (next_tile == v->ground_path_goal) {
-		ClearGroundPathReservation(v->ground_path, v->index);
-		delete v->ground_path;
-		v->ground_path = nullptr;
-		v->ground_path_index = 0;
-		v->ground_path_goal = INVALID_TILE;
-		v->ground_path_last_tile = INVALID_TILE;
+	if (v->x_pos == target_x && v->y_pos == target_y) {
+		v->tile = next_tile;
+		v->ground_path_index++;
+		v->ground_path_last_tile = v->tile;
 		v->ground_path_stall_counter = 0;
-		HandleModularGroundArrival(v);
-		return true;
+
+		if (v->ground_path_index > 1) {
+			TileIndex prev_tile = (*v->ground_path)[v->ground_path_index - 2];
+			Tile prev(prev_tile);
+			if (HasAirportTileReservation(prev) && GetAirportTileReserver(prev) == v->index) {
+				SetAirportTileReservation(prev, false);
+			}
+		}
+
+		if (next_tile == v->ground_path_goal) {
+			ClearGroundPathReservation(v->ground_path, v->index);
+			delete v->ground_path;
+			v->ground_path = nullptr;
+			v->ground_path_index = 0;
+			v->ground_path_goal = INVALID_TILE;
+			v->ground_path_last_tile = INVALID_TILE;
+			v->ground_path_stall_counter = 0;
+			HandleModularGroundArrival(v);
+			return true;
+		}
 	}
 
 	return false;
