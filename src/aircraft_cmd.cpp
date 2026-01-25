@@ -2254,47 +2254,25 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 	const ModularAirportTileData *data = st->airport.GetModularTileData(v->modular_takeoff_tile);
 	if (data == nullptr) return false;
 
-	/* Determine takeoff direction - should head towards NW (top-right visually) */
-	/* Find all runway tiles to determine NW end */
-	std::vector<TileIndex> runway_tiles;
-	for (const ModularAirportTileData &rdata : *st->airport.modular_tile_data) {
-		if (IsModularRunwayPiece(rdata.piece_type)) {
-			runway_tiles.push_back(rdata.tile);
-		}
-	}
-
-	/* Find the NW end (min X+Y) - this is the target direction */
-	TileIndex nw_end = v->modular_takeoff_tile;
-	int min_sum = TileX(nw_end) + TileY(nw_end);
-	for (TileIndex tile : runway_tiles) {
-		int sum = TileX(tile) + TileY(tile);
-		if (sum < min_sum) {
-			min_sum = sum;
-			nw_end = tile;
-		}
-	}
-
-	/* Calculate direction from current position towards NW end */
-	int nw_x = TileX(nw_end) * TILE_SIZE + TILE_SIZE / 2;
-	int nw_y = TileY(nw_end) * TILE_SIZE + TILE_SIZE / 2;
-	int curr_x = TileX(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
-	int curr_y = TileY(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
-
-	/* Use GetDirectionTowards to get proper diagonal direction */
-	Direction dir = GetDirectionTowards(v, nw_x, nw_y);
+	const bool horizontal = (data->rotation % 2) == 0;
 
 	if (v->modular_takeoff_progress == 0) {
+		/* Determine takeoff direction by finding the other end of the runway */
+		TileIndex end_tile = GetRunwayOtherEnd(st, v->modular_takeoff_tile);
+		int end_x = TileX(end_tile) * TILE_SIZE + TILE_SIZE / 2;
+		int end_y = TileY(end_tile) * TILE_SIZE + TILE_SIZE / 2;
+		
+		/* If single tile runway, end_tile == start_tile. 
+		   Fallback to rotation-based direction if we can't determine direction from length. */
+		if (end_tile == v->modular_takeoff_tile) {
+			Direction dir = horizontal ? DIR_SE : DIR_SW;
+			v->direction = dir;
+		} else {
+			v->direction = GetDirectionTowards(v, end_x, end_y);
+		}
+		
 		PlayAircraftSound(v);
-		Debug(misc, 3, "[ModAp] Vehicle {} starting takeoff from tile {} ({}x{}), dir={}, nw_end={} ({}x{}), curr=({},{}), nw=({},{})",
-			v->index, v->modular_takeoff_tile.base(),
-			TileX(v->modular_takeoff_tile), TileY(v->modular_takeoff_tile),
-			dir, nw_end.base(),
-			TileX(nw_end), TileY(nw_end),
-			curr_x, curr_y, nw_x, nw_y);
 	}
-
-	/* Update direction */
-	v->direction = dir;
 
 	/* Accelerate and move */
 	int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
@@ -2761,7 +2739,7 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 
 			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 
-			if (abs(v->x_pos - target_x) + abs(v->y_pos - target_y) < TILE_SIZE) break;
+			if ((uint)(abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) < TILE_SIZE) break;
 		}
 	}
 }
