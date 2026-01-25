@@ -142,6 +142,13 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 		TileIndex neighbor = tile + TileDiffXY(dx[i], dy[i]);
 		if (!IsValidTile(neighbor)) continue;
 		if (!st->TileBelongsToAirport(neighbor)) continue;
+
+		/* Must be an actual airport station tile, not just grass within airport bounds */
+		Tile t(neighbor);
+		if (!IsAirport(t)) {
+			continue;
+		}
+
 		if (CanTilesConnect(st, tile, neighbor, v)) {
 			neighbors.push_back(neighbor);
 		}

@@ -2296,49 +2296,53 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 	/* Update direction */
 	v->direction = dir;
 
-	/* Move forward along runway */
-	GetNewVehiclePosResult gp = GetNewVehiclePos(v);
+	/* Accelerate and move */
+	int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
+	for (int i = 0; i < count; i++) {
+		/* Move forward along runway */
+		GetNewVehiclePosResult gp = GetNewVehiclePos(v);
 
-	/* Calculate altitude - gradual climb starting after initial acceleration */
-	int z = v->z_pos;
-	int target_z = GetAircraftFlightLevel(v, true);
+		/* Calculate altitude - gradual climb starting after initial acceleration */
+		int z = v->z_pos;
+		int target_z = GetAircraftFlightLevel(v, true);
 
-	/* Start climbing after 1 tile of acceleration, climb at ~1.5 pixels per tile traveled */
-	if (v->modular_takeoff_progress > TILE_SIZE) {
-		int climb_progress = v->modular_takeoff_progress - TILE_SIZE;
-		int desired_altitude = GetTileMaxPixelZ(v->modular_takeoff_tile) + 1 + (climb_progress * 3 / 2);
+		/* Start climbing after 1 tile of acceleration, climb at ~1.5 pixels per tile traveled */
+		if (v->modular_takeoff_progress > TILE_SIZE) {
+			int climb_progress = v->modular_takeoff_progress - TILE_SIZE;
+			int desired_altitude = GetTileMaxPixelZ(v->modular_takeoff_tile) + 1 + (climb_progress * 3 / 2);
 
-		if (z < std::min(desired_altitude, target_z)) {
-			z = std::min(desired_altitude, target_z);
+			if (z < std::min(desired_altitude, target_z)) {
+				z = std::min(desired_altitude, target_z);
+			}
 		}
-	}
 
-	/* Use SetAircraftPosition for proper viewport and shadow updates */
-	SetAircraftPosition(v, gp.x, gp.y, z);
+		/* Use SetAircraftPosition for proper viewport and shadow updates */
+		SetAircraftPosition(v, gp.x, gp.y, z);
 
-	/* Update tile reference */
-	TileIndex current_tile = TileVirtXY(v->x_pos, v->y_pos);
-	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(current_tile);
-	bool on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
+		/* Update tile reference */
+		TileIndex current_tile = TileVirtXY(v->x_pos, v->y_pos);
+		const ModularAirportTileData *tile_data = st->airport.GetModularTileData(current_tile);
+		bool on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
 
-	if (on_runway) {
-		v->tile = current_tile;
-	} else {
-		v->tile = TileIndex{};  /* In air */
-	}
+		if (on_runway) {
+			v->tile = current_tile;
+		} else {
+			v->tile = TileIndex{};  /* In air */
+		}
 
-	v->modular_takeoff_progress++;
+		v->modular_takeoff_progress++;
 
-	/* Continue takeoff for at least 12 tiles to match stock airport behavior */
-	/* Stock airports have planes continue in takeoff direction for some distance */
-	if (v->modular_takeoff_progress > TILE_SIZE * 12 && v->z_pos >= target_z) {
-		Debug(misc, 3, "[ModAp] Vehicle {} takeoff complete, transitioning to FLYING", v->index);
-		v->state = FLYING;
-		v->modular_takeoff_tile = INVALID_TILE;
-		v->modular_takeoff_progress = 0;
-		v->tile = TileIndex{};
-		AircraftNextAirportPos_and_Order(v);
-		return true;
+		/* Continue takeoff for at least 12 tiles to match stock airport behavior */
+		/* Stock airports have planes continue in takeoff direction for some distance */
+		if (v->modular_takeoff_progress > TILE_SIZE * 12 && v->z_pos >= target_z) {
+			Debug(misc, 3, "[ModAp] Vehicle {} takeoff complete, transitioning to FLYING", v->index);
+			v->state = FLYING;
+			v->modular_takeoff_tile = INVALID_TILE;
+			v->modular_takeoff_progress = 0;
+			v->tile = TileIndex{};
+			AircraftNextAirportPos_and_Order(v);
+			return true;
+		}
 	}
 
 	return false;
@@ -2571,6 +2575,7 @@ static void HandleModularGroundArrival(Aircraft *v)
 			break;
 
 		case MGT_HANGAR:
+			Debug(misc, 3, "[ModAp] Vehicle {} entering hangar at tile {}", v->index, v->tile.base());
 			VehicleEnterDepot(v);
 			v->state = HANGAR;
 			v->modular_ground_target = MGT_NONE;
@@ -2617,6 +2622,16 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 			Debug(misc, 3, "[ModAp] Vehicle {} pathfinding failed from {} to {}", v->index, v->tile.base(), v->ground_path_goal.base());
 			/* TODO: Handle this better - maybe try alternate terminals */
 			return false;
+		}
+
+		/* Debug: Log the computed path */
+		if (path.tiles.size() > 0) {
+			Debug(misc, 3, "[ModAp] Vehicle {} computed path with {} tiles", v->index, path.tiles.size());
+			for (size_t i = 0; i < path.tiles.size() && i < 10; i++) {
+				TileIndex t = path.tiles[i];
+				Tile tile(t);
+				Debug(misc, 4, "[ModAp] Path[{}]: tile {} is_airport={}", i, t.base(), IsAirport(tile));
+			}
 		}
 
 		if (!TryReserveGroundPath(path.tiles, v->index)) {
