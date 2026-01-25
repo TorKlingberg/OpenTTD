@@ -14,6 +14,7 @@
 #include "aircraft.h"
 #include "station_map.h"
 #include "tile_map.h"
+#include "table/airporttile_ids.h"
 #include <queue>
 #include <unordered_map>
 #include <algorithm>
@@ -50,6 +51,24 @@ static int CalculateHeuristic(TileIndex from, TileIndex to)
 }
 
 /**
+ * Check if a piece type is a non-taxiable building (aircraft cannot taxi through it).
+ * @param piece_type The airport piece type.
+ * @return True if it's a building that blocks taxiing.
+ */
+static bool IsNonTaxiableBuilding(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
  * Check if two tiles can be connected based on taxi directions.
  * @param st The station.
  * @param from Source tile.
@@ -82,6 +101,9 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Get tile data for 'to' */
 	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
 	if (to_data == nullptr) return false;
+
+	/* Don't allow taxiing through buildings */
+	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
 
 	/* Determine reverse direction (from 'to' back to 'from') */
 	uint8_t reverse_dir_bit = 0;

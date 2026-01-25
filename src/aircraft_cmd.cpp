@@ -2352,7 +2352,7 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
  */
 static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile)
 {
-	/* Find the opposite end of the runway from the landing tile for rollout */
+	/* Find a rollout point along the runway towards the NW end */
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
 	/* Get all runway tiles */
@@ -2365,23 +2365,46 @@ static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex land
 
 	if (runway_tiles.empty()) return INVALID_TILE;
 
-	/* Find the end furthest from landing tile (opposite end) */
-	TileIndex best_tile = runway_tiles[0];
-	int best_dist = 0;
-
-	int land_x = TileX(landing_tile);
-	int land_y = TileY(landing_tile);
+	/* Find the NW end (min X+Y) */
+	TileIndex nw_end = runway_tiles[0];
+	int min_sum = TileX(nw_end) + TileY(nw_end);
 
 	for (TileIndex tile : runway_tiles) {
-		int dist = abs(TileX(tile) - land_x) + abs(TileY(tile) - land_y);
-		if (dist > best_dist) {
-			best_dist = dist;
-			best_tile = tile;
+		int sum = TileX(tile) + TileY(tile);
+		if (sum < min_sum) {
+			min_sum = sum;
+			nw_end = tile;
 		}
 	}
 
-	/* Only use rollout if the opposite end is at least 2 tiles away */
-	return (best_dist >= 2) ? best_tile : INVALID_TILE;
+	/* If we landed at the NW end, no rollout needed */
+	if (nw_end == landing_tile) return INVALID_TILE;
+
+	/* Find a runway tile about 60-70% of the way towards NW end */
+	int land_sum = TileX(landing_tile) + TileY(landing_tile);
+	int target_sum = land_sum - (land_sum - min_sum) * 2 / 3;
+
+	TileIndex best_tile = nw_end;
+	int best_diff = INT_MAX;
+
+	for (TileIndex tile : runway_tiles) {
+		int sum = TileX(tile) + TileY(tile);
+		/* Only consider tiles between landing and NW end */
+		if (sum >= min_sum && sum <= land_sum) {
+			int diff = abs(sum - target_sum);
+			if (diff < best_diff) {
+				best_diff = diff;
+				best_tile = tile;
+			}
+		}
+	}
+
+	Debug(misc, 3, "[ModAp] Rollout point: landing={} ({},{}), nw_end={} ({},{}), rollout={} ({},{})",
+		landing_tile.base(), TileX(landing_tile), TileY(landing_tile),
+		nw_end.base(), TileX(nw_end), TileY(nw_end),
+		best_tile.base(), TileX(best_tile), TileY(best_tile));
+
+	return (best_tile != landing_tile) ? best_tile : INVALID_TILE;
 }
 
 static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
