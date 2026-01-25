@@ -104,6 +104,12 @@ bool IsHangar(Tile t)
 	if (!IsAirport(t)) return false;
 
 	const Station *st = Station::GetByTile(t);
+
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		const ModularAirportTileData *data = st->airport.GetModularTileData(t);
+		return data != nullptr && (data->piece_type == APT_DEPOT_SE || data->piece_type == APT_SMALL_DEPOT_SE);
+	}
+
 	const AirportSpec *as = st->airport.GetSpec();
 
 	for (const auto &depot : as->depots) {
@@ -4008,7 +4014,11 @@ static bool ClickTile_Station(TileIndex tile)
 		ShowWaypointWindow(Waypoint::From(bst));
 	} else if (IsHangar(tile)) {
 		const Station *st = Station::From(bst);
-		ShowDepotWindow(st->airport.GetHangarTile(st->airport.GetHangarNum(tile)), VEH_AIRCRAFT);
+		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			ShowDepotWindow(tile, VEH_AIRCRAFT);
+		} else {
+			ShowDepotWindow(st->airport.GetHangarTile(st->airport.GetHangarNum(tile)), VEH_AIRCRAFT);
+		}
 	} else {
 		ShowStationViewWindow(bst->index);
 	}
