@@ -292,7 +292,9 @@ CommandCost CmdBuildAircraft(DoCommandFlags flags, TileIndex tile, const Engine 
 	if (!CanVehicleUseStation(e->index, st)) return CMD_ERROR;
 
 	/* Make sure all aircraft end up in the first tile of the hangar. */
-	tile = st->airport.GetHangarTile(st->airport.GetHangarNum(tile));
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) {
+		tile = st->airport.GetHangarTile(st->airport.GetHangarNum(tile));
+	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		Aircraft *v = Aircraft::Create(); // aircraft
@@ -350,7 +352,11 @@ CommandCost CmdBuildAircraft(DoCommandFlags flags, TileIndex tile, const Engine 
 		v->reliability_spd_dec = e->reliability_spd_dec;
 		v->max_age = e->GetLifeLengthInDays();
 
-		v->pos = GetVehiclePosOnBuild(tile);
+		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			v->pos = 0;
+		} else {
+			v->pos = GetVehiclePosOnBuild(tile);
+		}
 
 		v->state = HANGAR;
 		v->previous_pos = v->pos;
