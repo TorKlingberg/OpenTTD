@@ -1990,31 +1990,74 @@ static bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(start_tile);
+	if (data == nullptr) return start_tile;
+
+	bool horizontal = (data->rotation % 2) == 0;
+	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+	
+	/* Determine direction by checking which neighbor is also runway */
+	TileIndex check = start_tile + diff;
+	const ModularAirportTileData *check_data = st->airport.GetModularTileData(check);
+	if (check_data == nullptr || !IsModularRunwayPiece(check_data->piece_type)) {
+		diff = -diff; /* Go the other way */
+	}
+
+	TileIndex current = start_tile;
+	TileIndex next = current + diff;
+	
+	/* Walk until we find the end */
+	while (true) {
+		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
+		if (next_data == nullptr || !IsModularRunwayPiece(next_data->piece_type)) {
+			return current;
+		}
+		current = next;
+		next = current + diff;
+	}
+}
+
 static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
 	TileIndex best_tile = INVALID_TILE;
-	int best_distance = INT_MAX;
-	bool found_end = false;
+	int best_score = INT_MAX;
+	
+	TileIndex term_tile = FindFreeModularTerminal(st, v);
+	bool has_term = (term_tile != INVALID_TILE);
+	int term_x = has_term ? TileX(term_tile) * TILE_SIZE : 0;
+	int term_y = has_term ? TileY(term_tile) * TILE_SIZE : 0;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
 
+		/* Only consider runway ends as valid landing targets */
 		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-
-		if (found_end && !is_end) continue;
+		if (!is_end) continue;
 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-		int dist = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+		int dist_flight = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+		
+		int score = dist_flight;
 
-		if (is_end && !found_end) {
-			found_end = true;
-			best_distance = dist;
-			best_tile = data.tile;
-		} else if (dist < best_distance) {
-			best_distance = dist;
+		if (has_term) {
+			/* Calculate distance from the *other* end of the runway to the terminal.
+			   This favors landings that roll out towards the terminal. */
+			TileIndex other_end = GetRunwayOtherEnd(st, data.tile);
+			int end_x = TileX(other_end) * TILE_SIZE;
+			int end_y = TileY(other_end) * TILE_SIZE;
+			int dist_taxi = abs(end_x - term_x) + abs(end_y - term_y);
+			
+			/* Penalize taxi distance more because taxiing is slower than flying. */
+			score = dist_flight + dist_taxi * 4;
+		}
+
+		if (score < best_score) {
+			best_score = score;
 			best_tile = data.tile;
 		}
 	}
