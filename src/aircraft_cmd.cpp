@@ -1917,12 +1917,14 @@ static void AirportGoToNextPosition(Aircraft *v)
 
 	/* Check if this is a modular airport */
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
-		/* Use modular airport pathfinding */
-		if (AirportMoveModular(v, st)) {
-			/* Reached destination */
-			/* TODO: Handle state transitions properly */
+		/* Use modular airport pathfinding only when a ground path is active. */
+		if (v->ground_path != nullptr || v->ground_path_goal != INVALID_TILE) {
+			if (AirportMoveModular(v, st)) {
+				/* Reached destination */
+				/* TODO: Handle state transitions properly */
+			}
+			return;
 		}
-		return;
 	}
 
 	/* Use traditional FTA for preset airports */

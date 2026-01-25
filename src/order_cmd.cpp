@@ -1711,6 +1711,7 @@ void CheckOrders(const Vehicle *v)
 					message = STR_NEWS_VEHICLE_HAS_INVALID_ENTRY;
 				} else if (v->type == VEH_AIRCRAFT &&
 							(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
+							!st->airport.blocks.Test(AirportBlock::Modular) &&
 							st->airport.GetFTA()->flags.Test(AirportFTAClass::Flag::ShortStrip) &&
 							!_cheats.no_jetcrash.value &&
 							message == INVALID_STRING_ID) {
