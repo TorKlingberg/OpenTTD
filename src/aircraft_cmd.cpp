@@ -2029,6 +2029,59 @@ static bool IsModularRunwayHorizontal(const Station *st, TileIndex tile)
 	return (data->rotation % 2) == 0;
 }
 
+static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, int *target_x, int *target_y)
+{
+	/* Default to runway tile center */
+	*target_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+	*target_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+
+	const ModularAirportTileData *data = st->airport.GetModularTileData(runway_tile);
+	if (data == nullptr) return;
+
+	bool horizontal = (data->rotation % 2) == 0; // 0=X-axis (NW-SE), 1=Y-axis (NE-SW)
+	int approach_dist = 15 * TILE_SIZE; // 15 tiles out
+
+	/* Determine which way is "out" by checking neighbors or rotation */
+	/* If horizontal (X-axis), check X+1 and X-1 */
+	/* If vertical (Y-axis), check Y+1 and Y-1 */
+
+	bool runway_extends_positive = false;
+	bool runway_extends_negative = false;
+
+	if (horizontal) {
+		/* Check X axis neighbors */
+		TileIndex next = runway_tile + TileDiffXY(1, 0);
+		TileIndex prev = runway_tile - TileDiffXY(1, 0);
+		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
+		const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+
+		if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) runway_extends_positive = true;
+		if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) runway_extends_negative = true;
+	} else {
+		/* Check Y axis neighbors */
+		TileIndex next = runway_tile + TileDiffXY(0, 1);
+		TileIndex prev = runway_tile - TileDiffXY(0, 1);
+		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
+		const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+
+		if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) runway_extends_positive = true;
+		if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) runway_extends_negative = true;
+	}
+
+	/* If we are at the negative end (runway extends positive), approach from negative */
+	if (runway_extends_positive && !runway_extends_negative) {
+		if (horizontal) *target_x -= approach_dist; else *target_y -= approach_dist;
+	}
+	/* If we are at the positive end (runway extends negative), approach from positive */
+	else if (!runway_extends_positive && runway_extends_negative) {
+		if (horizontal) *target_x += approach_dist; else *target_y += approach_dist;
+	}
+	/* Single tile or middle piece? Use rotation to guess typical approach (from "left/top") */
+	else {
+		if (horizontal) *target_x -= approach_dist; else *target_y -= approach_dist;
+	}
+}
+
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
 	if (v->modular_landing_tile == INVALID_TILE) {
@@ -2041,53 +2094,73 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to runway tile {}, pos=({},{},{})", v->index, v->modular_landing_tile.base(), v->x_pos, v->y_pos, v->z_pos);
 	}
 
-	const int center_x = TileX(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
-	const int center_y = TileY(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
-	const int airport_z = GetTileMaxPixelZ(v->modular_landing_tile) + 1;
+	int target_x, target_y;
+	int airport_z = GetTileMaxPixelZ(v->modular_landing_tile) + 1;
+	int target_z = airport_z;
 
-	/* Calculate distance to landing point */
-	int dist = abs(v->x_pos - center_x) + abs(v->y_pos - center_y);
+	if (v->modular_landing_stage == 0) {
+		/* Approach phase: fly to FAF */
+		GetModularLandingApproachPoint(st, v->modular_landing_tile, &target_x, &target_y);
+		target_z = airport_z + 20 * 5; // Stay high
+	} else {
+		/* Final phase: fly to threshold */
+		target_x = TileX(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
+		target_y = TileY(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
+	}
 
-	/* Move one pixel towards target (same as stock airport LAND flag behavior) */
-	int new_x = (v->x_pos != center_x) ? v->x_pos + ((center_x > v->x_pos) ? 1 : -1) : v->x_pos;
-	int new_y = (v->y_pos != center_y) ? v->y_pos + ((center_y > v->y_pos) ? 1 : -1) : v->y_pos;
+	/* Calculate distance to target */
+	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
-	/* Update direction to face target */
+	/* Move one pixel towards target */
+	int new_x = (v->x_pos != target_x) ? v->x_pos + ((target_x > v->x_pos) ? 1 : -1) : v->x_pos;
+	int new_y = (v->y_pos != target_y) ? v->y_pos + ((target_y > v->y_pos) ? 1 : -1) : v->y_pos;
+
+	/* Update direction */
 	if (new_x != v->x_pos || new_y != v->y_pos) {
-		v->direction = GetDirectionTowards(v, center_x, center_y);
+		v->direction = GetDirectionTowards(v, target_x, target_y);
 	}
 
 	/* Aircraft in air has no tile */
 	v->tile = TileIndex{};
 
-	/* Calculate descent using same formula as stock airports (1:1 glide slope) */
+	/* Altitude logic */
 	int z = v->z_pos;
-	if (z > airport_z) {
-		int t = std::max(1, dist - 4);
-		int delta = z - airport_z;
-
-		/* Only start lowering when we're sufficiently close for a 1:1 glide */
-		if (delta >= t) {
-			z -= CeilDiv(z - airport_z, t);
+	if (v->modular_landing_stage == 0) {
+		/* Maintain approach altitude */
+		/* Simple seek towards target_z */
+		if (z < target_z) z++; else if (z > target_z) z--;
+	} else {
+		/* Glide slope for final */
+		if (z > airport_z) {
+			int t = std::max(1, dist - 4);
+			int delta = z - airport_z;
+			if (delta >= t) {
+				z -= CeilDiv(z - airport_z, t);
+			}
 		}
 	}
 
-	/* Use SetAircraftPosition to properly update viewport and shadow */
 	SetAircraftPosition(v, new_x, new_y, z);
 
-	Debug(misc, 5, "[ModAp] Vehicle {} landing: pos=({},{},{}), target=({},{},{}), dist={}",
-		v->index, v->x_pos, v->y_pos, v->z_pos, center_x, center_y, airport_z, dist);
+	Debug(misc, 5, "[ModAp] Vehicle {} landing stage {}: pos=({},{},{}), target=({},{},{}), dist={}",
+		v->index, v->modular_landing_stage, v->x_pos, v->y_pos, v->z_pos, target_x, target_y, target_z, dist);
 
-	/* Check if we've reached the runway center */
-	if (v->x_pos == center_x && v->y_pos == center_y && v->z_pos <= airport_z) {
-		Debug(misc, 3, "[ModAp] Vehicle {} landing complete at ({},{},{})", v->index, center_x, center_y, airport_z);
-		v->tile = v->modular_landing_tile;
-		v->modular_landing_tile = INVALID_TILE;
-		v->modular_landing_stage = 0;
+	/* Check if reached target */
+	if (v->x_pos == target_x && v->y_pos == target_y) {
+		if (v->modular_landing_stage == 0) {
+			/* Reached FAF, switch to final */
+			v->modular_landing_stage = 1;
+		} else {
+			/* Reached threshold, land */
+			Debug(misc, 3, "[ModAp] Vehicle {} landing complete at ({},{},{})", v->index, target_x, target_y, airport_z);
+			v->tile = v->modular_landing_tile;
+			v->modular_landing_tile = INVALID_TILE;
+			v->modular_landing_stage = 0;
 
-		AircraftEventHandler_Landing(v, st->airport.GetFTA());
-		AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
-		return true;
+			AircraftEventHandler_Landing(v, st->airport.GetFTA());
+			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
+			return true;
+		}
 	}
 
 	return false;
