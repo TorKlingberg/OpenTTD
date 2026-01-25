@@ -1560,8 +1560,12 @@ static void AircraftEventHandler_EnterHangar(Aircraft *v, const AirportFTAClass 
 
 static Direction GetModularHangarExitDirection(const Station *st, TileIndex tile)
 {
-	/* Hangar sprite is fixed to face SE. Force exit direction to match. */
-	return DIR_SE;
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return DIR_SE; // Fallback
+
+	/* Base direction for APT_DEPOT_SE is South-East (3).
+	   Rotation adds 90 degrees (2 units) per step. */
+	return (Direction)((DIR_SE + data->rotation * 2) % 8);
 }
 
 /**

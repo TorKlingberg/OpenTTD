@@ -134,19 +134,17 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_VER_CROSSING_S:
 			return 0x0F;
-		case APT_BUILDING_1:
-		case APT_ROUND_TERMINAL:
-		case APT_STAND:
-		case APT_STAND_1:
-		case APT_STAND_PIER_NE:
-			return 0x0F;
-		case APT_DEPOT_SE:
-		case APT_SMALL_DEPOT_SE:
-			/* Hangars: South direction only (0x04 = increasing Y) */
-			/* Door faces south at rotation 0 */
-			return 0x04;
-		case APT_HELIPAD_1:
-		case APT_HELIPAD_2:
+		        case APT_BUILDING_1:
+		        case APT_ROUND_TERMINAL:
+		        case APT_STAND:
+		        case APT_STAND_1:
+		        case APT_STAND_PIER_NE:
+		            return 0x0F;
+		        case APT_DEPOT_SE:
+		        case APT_SMALL_DEPOT_SE:
+		            /* Rot 0 (SE visual) -> South (0x04). Rot 1 -> West. Rot 2 -> North. Rot 3 -> East. */
+		            return (1 << ((2 + rotation) % 4));
+		        case APT_HELIPAD_1:		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:
 		case APT_HELIPAD_2_FENCE_NE_SE:
 		case APT_HELIPAD_3_FENCE_SE_SW:
