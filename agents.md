@@ -168,21 +168,33 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 ## OpenTTD Coordinate System
 
-OpenTTD uses an isometric coordinate system where tiles are arranged in a diamond grid.
+OpenTTD uses an isometric coordinate system where tiles are arranged in a diamond grid. **See `coords.md` for detailed explanation.**
 
-### Origin and Axes
--   **(0, 0) Origin**: The top corner of the map (North corner).
--   **X-Axis**: Increases from North towards the **South-East** (moving down and to the right on the screen).
--   **Y-Axis**: Increases from North towards the **South-West** (moving down and to the left on the screen).
--   **Z-Axis**: Represents height/altitude (increasing upwards).
+### Map Coordinates
+-   **(X, Y)**: Integer tile coordinates, both starting at 0
+-   **Isometric projection**: The rectangular grid appears rotated 45° as a diamond on screen
+-   **Orthogonal movement**: Changes only one coordinate at a time
 
-### Cardinal Directions (Visual)
--   **North**: Top corner of the diamond (Min X, Min Y).
--   **South**: Bottom corner of the diamond (Max X, Max Y).
--   **West**: Left corner of the diamond (Min X, Max Y).
--   **East**: Right corner of the diamond (Max X, Min Y).
+### Map Corners (for 100×100 map)
+-   **(0, 0)**: Top corner of diamond
+-   **(99, 0)**: Right corner of diamond (max X)
+-   **(0, 99)**: Left corner of diamond (max Y)
+-   **(99, 99)**: Bottom corner of diamond
 
-Each tile is 16x16 units in game coordinates (`TILE_SIZE`).
+### How Coordinates Map to Screen Directions
+
+Based on empirical testing (see `coords.md`):
+
+| Coordinate Change | Viewport Appearance |
+|-------------------|---------------------|
+| X increases (+1, 0) | Right-ish diagonal |
+| Y increases (0, +1) | Down-right diagonal |
+| X decreases (-1, 0) | Left-ish diagonal |
+| Y decreases (0, -1) | Up-left diagonal |
+
+**Important:** Don't use compass directions (N/S/E/W) for viewport appearance - use screen-relative terms (up/down/left/right) to avoid confusion. The isometric view makes all coordinate-aligned movements appear as diagonals on screen.
+
+Each tile is 16×16 units in game coordinates (`TILE_SIZE`).
 
 ## Additional Resources
 
