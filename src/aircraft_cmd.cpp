@@ -87,6 +87,7 @@ static void ClearGroundPathReservation(const std::vector<TileIndex> *path, Vehic
 static TileIndex FindFreeModularHelipad(const Station *st);
 static TileIndex FindFreeModularHangar(const Station *st);
 static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
+static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
 static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass *apc);
 
 static constexpr uint8_t MGT_NONE = 0;
@@ -94,6 +95,7 @@ static constexpr uint8_t MGT_TERMINAL = 1;
 static constexpr uint8_t MGT_HELIPAD = 2;
 static constexpr uint8_t MGT_HANGAR = 3;
 static constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
+static constexpr uint8_t MGT_ROLLOUT = 5;
 static bool AirportSetBlocks(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc);
@@ -2054,7 +2056,7 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 
 	TileIndex best_tile = INVALID_TILE;
 	int best_score = INT_MAX;
-	
+
 	TileIndex term_tile = FindFreeModularTerminal(st, v);
 	bool has_term = (term_tile != INVALID_TILE);
 	int term_x = has_term ? TileX(term_tile) * TILE_SIZE : 0;
@@ -2070,7 +2072,7 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int dist_flight = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-		
+
 		int score = dist_flight;
 
 		if (has_term) {
@@ -2080,7 +2082,7 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 			int end_x = TileX(other_end) * TILE_SIZE;
 			int end_y = TileY(other_end) * TILE_SIZE;
 			int dist_taxi = abs(end_x - term_x) + abs(end_y - term_y);
-			
+
 			/* Penalize taxi distance more because taxiing is slower than flying. */
 			score = dist_flight + dist_taxi * 4;
 		}
@@ -2216,14 +2218,28 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			/* Reached FAF, switch to final */
 			v->modular_landing_stage = 1;
 		} else {
-			/* Reached threshold, land */
-			Debug(misc, 3, "[ModAp] Vehicle {} landing complete at ({},{},{})", v->index, target_x, target_y, airport_z);
+			/* Reached threshold, land and start rollout */
+			Debug(misc, 3, "[ModAp] Vehicle {} touchdown at ({},{},{})", v->index, target_x, target_y, airport_z);
 			v->tile = v->modular_landing_tile;
+
+			/* Set up rollout phase - taxi along runway to opposite end */
+			TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
+
 			v->modular_landing_tile = INVALID_TILE;
 			v->modular_landing_stage = 0;
 
 			AircraftEventHandler_Landing(v, st->airport.GetFTA());
-			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
+
+			/* If we have a rollout point, go there first, otherwise go directly to terminal */
+			if (rollout_point != INVALID_TILE) {
+				Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
+				v->ground_path_goal = rollout_point;
+				v->modular_ground_target = MGT_ROLLOUT;
+				v->state = TERM1;
+			} else {
+				/* No rollout, go directly to terminal */
+				AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
+			}
 			return true;
 		}
 	}
@@ -2238,61 +2254,85 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 	const ModularAirportTileData *data = st->airport.GetModularTileData(v->modular_takeoff_tile);
 	if (data == nullptr) return false;
 
-	const bool horizontal = (data->rotation % 2) == 0;
-	Direction dir = horizontal ? DIR_E : DIR_S; // Default to positive direction
-
-	/* Determine runway direction by checking neighbors */
-	bool extends_positive = false;
-	bool extends_negative = false;
-
-	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-	TileIndex next = v->modular_takeoff_tile + diff;
-	TileIndex prev = v->modular_takeoff_tile - diff;
-
-	const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
-	const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
-
-	if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) extends_positive = true;
-	if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) extends_negative = true;
-
-	if (extends_positive && !extends_negative) {
-		dir = horizontal ? DIR_E : DIR_S;
-	} else if (!extends_positive && extends_negative) {
-		dir = horizontal ? DIR_W : DIR_N;
-	} else {
-		/* Ambiguous (middle piece?) or single tile. Fallback to sub-tile position or default. */
-		const int center_x = TileX(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
-		const int center_y = TileY(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
-		if (horizontal) {
-			dir = (v->x_pos <= center_x) ? DIR_E : DIR_W;
-		} else {
-			dir = (v->y_pos <= center_y) ? DIR_S : DIR_N;
+	/* Determine takeoff direction - should head towards NW (top-right visually) */
+	/* Find all runway tiles to determine NW end */
+	std::vector<TileIndex> runway_tiles;
+	for (const ModularAirportTileData &rdata : *st->airport.modular_tile_data) {
+		if (IsModularRunwayPiece(rdata.piece_type)) {
+			runway_tiles.push_back(rdata.tile);
 		}
 	}
 
-	if (v->modular_takeoff_progress == 0) PlayAircraftSound(v);
+	/* Find the NW end (min X+Y) - this is the target direction */
+	TileIndex nw_end = v->modular_takeoff_tile;
+	int min_sum = TileX(nw_end) + TileY(nw_end);
+	for (TileIndex tile : runway_tiles) {
+		int sum = TileX(tile) + TileY(tile);
+		if (sum < min_sum) {
+			min_sum = sum;
+			nw_end = tile;
+		}
+	}
 
+	/* Calculate direction from current position towards NW end */
+	int nw_x = TileX(nw_end) * TILE_SIZE + TILE_SIZE / 2;
+	int nw_y = TileY(nw_end) * TILE_SIZE + TILE_SIZE / 2;
+	int curr_x = TileX(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
+	int curr_y = TileY(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
+
+	/* Use GetDirectionTowards to get proper diagonal direction */
+	Direction dir = GetDirectionTowards(v, nw_x, nw_y);
+
+	if (v->modular_takeoff_progress == 0) {
+		PlayAircraftSound(v);
+		Debug(misc, 3, "[ModAp] Vehicle {} starting takeoff from tile {} ({}x{}), dir={}, nw_end={} ({}x{}), curr=({},{}), nw=({},{})",
+			v->index, v->modular_takeoff_tile.base(),
+			TileX(v->modular_takeoff_tile), TileY(v->modular_takeoff_tile),
+			dir, nw_end.base(),
+			TileX(nw_end), TileY(nw_end),
+			curr_x, curr_y, nw_x, nw_y);
+	}
+
+	/* Update direction */
 	v->direction = dir;
+
+	/* Move forward along runway */
 	GetNewVehiclePosResult gp = GetNewVehiclePos(v);
-	v->x_pos = gp.x;
-	v->y_pos = gp.y;
-	v->tile = v->modular_takeoff_tile;
+
+	/* Calculate altitude - gradual climb starting after initial acceleration */
+	int z = v->z_pos;
+	int target_z = GetAircraftFlightLevel(v, true);
+
+	/* Start climbing after 1 tile of acceleration, climb at ~1.5 pixels per tile traveled */
+	if (v->modular_takeoff_progress > TILE_SIZE) {
+		int climb_progress = v->modular_takeoff_progress - TILE_SIZE;
+		int desired_altitude = GetTileMaxPixelZ(v->modular_takeoff_tile) + 1 + (climb_progress * 3 / 2);
+
+		if (z < std::min(desired_altitude, target_z)) {
+			z = std::min(desired_altitude, target_z);
+		}
+	}
+
+	/* Use SetAircraftPosition for proper viewport and shadow updates */
+	SetAircraftPosition(v, gp.x, gp.y, z);
+
+	/* Update tile reference */
+	TileIndex current_tile = TileVirtXY(v->x_pos, v->y_pos);
+	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(current_tile);
+	bool on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
+
+	if (on_runway) {
+		v->tile = current_tile;
+	} else {
+		v->tile = TileIndex{};  /* In air */
+	}
 
 	v->modular_takeoff_progress++;
 
-	int target_z = GetAircraftFlightLevel(v, true);
-	if (v->modular_takeoff_progress > TILE_SIZE && v->z_pos < target_z) {
-		v->z_pos++;
-	}
-
-	/* Check if we are still on the runway */
-	TileIndex current_tile = TileVirtXY(v->x_pos, v->y_pos);
-	bool on_runway = false;
-	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(current_tile);
-	if (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type)) on_runway = true;
-
-	/* Lift off if we ran off the runway or have run for a very long time */
-	if ((!on_runway && v->modular_takeoff_progress > TILE_SIZE) || v->modular_takeoff_progress > TILE_SIZE * 50) {
+	/* Continue takeoff for at least 12 tiles to match stock airport behavior */
+	/* Stock airports have planes continue in takeoff direction for some distance */
+	if (v->modular_takeoff_progress > TILE_SIZE * 12 && v->z_pos >= target_z) {
+		Debug(misc, 3, "[ModAp] Vehicle {} takeoff complete, transitioning to FLYING", v->index);
 		v->state = FLYING;
 		v->modular_takeoff_tile = INVALID_TILE;
 		v->modular_takeoff_progress = 0;
@@ -2310,6 +2350,40 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
  * @param v The aircraft.
  * @return Terminal tile or INVALID_TILE if none found.
  */
+static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile)
+{
+	/* Find the opposite end of the runway from the landing tile for rollout */
+	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+
+	/* Get all runway tiles */
+	std::vector<TileIndex> runway_tiles;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (IsModularRunwayPiece(data.piece_type)) {
+			runway_tiles.push_back(data.tile);
+		}
+	}
+
+	if (runway_tiles.empty()) return INVALID_TILE;
+
+	/* Find the end furthest from landing tile (opposite end) */
+	TileIndex best_tile = runway_tiles[0];
+	int best_dist = 0;
+
+	int land_x = TileX(landing_tile);
+	int land_y = TileY(landing_tile);
+
+	for (TileIndex tile : runway_tiles) {
+		int dist = abs(TileX(tile) - land_x) + abs(TileY(tile) - land_y);
+		if (dist > best_dist) {
+			best_dist = dist;
+			best_tile = tile;
+		}
+	}
+
+	/* Only use rollout if the opposite end is at least 2 tiles away */
+	return (best_dist >= 2) ? best_tile : INVALID_TILE;
+}
+
 static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
@@ -2367,47 +2441,35 @@ static TileIndex FindFreeModularHangar(const Station *st)
 	return INVALID_TILE;
 }
 
-static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
+static TileIndex FindModularRunwayTileForTakeoff(const Station *st, [[maybe_unused]] const Aircraft *v)
 {
-	/* For takeoff, we simply want the nearest runway end. 
-	   We don't care about rollout towards terminal. */
+	/* For takeoff, always use the same end as landing (bottom-left = SE end).
+	   This matches stock airport behavior. */
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
-	TileIndex best_tile = INVALID_TILE;
-	int best_dist = INT_MAX;
-	bool found_explicit_end = false;
-
+	/* Find all runway tiles */
+	std::vector<TileIndex> runway_tiles;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (!IsModularRunwayPiece(data.piece_type)) continue;
-
-		/* Prefer explicit runway ends */
-		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-		
-		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-		int dist = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-
-		if (is_end) {
-			if (!found_explicit_end) {
-				/* First end found, discard any non-ends found so far */
-				best_dist = dist;
-				best_tile = data.tile;
-				found_explicit_end = true;
-			} else if (dist < best_dist) {
-				/* Closer end found */
-				best_dist = dist;
-				best_tile = data.tile;
-			}
-		} else if (!found_explicit_end) {
-			/* Non-end piece, only consider if we haven't found an end yet */
-			if (dist < best_dist) {
-				best_dist = dist;
-				best_tile = data.tile;
-			}
+		if (IsModularRunwayPiece(data.piece_type)) {
+			runway_tiles.push_back(data.tile);
 		}
 	}
 
-	return best_tile;
+	if (runway_tiles.empty()) return INVALID_TILE;
+
+	/* Find the SE end (max X+Y) - this is the bottom-left visually, same as landing */
+	TileIndex max_tile = runway_tiles[0];
+	int max_sum = TileX(max_tile) + TileY(max_tile);
+
+	for (TileIndex tile : runway_tiles) {
+		int sum = TileX(tile) + TileY(tile);
+		if (sum > max_sum) {
+			max_sum = sum;
+			max_tile = tile;
+		}
+	}
+
+	return max_tile;
 }
 
 static void ClearGroundPathReservation(const std::vector<TileIndex> *path, VehicleID vid)
@@ -2444,22 +2506,62 @@ static bool TryReserveGroundPath(const std::vector<TileIndex> &path, VehicleID v
 
 static void HandleModularGroundArrival(Aircraft *v)
 {
+	const Station *st = Station::Get(v->targetairport);
+
 	switch (v->modular_ground_target) {
+		case MGT_ROLLOUT:
+			/* Completed rollout along runway, now find a terminal */
+			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
+			{
+				bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT);
+				TileIndex goal = INVALID_TILE;
+				uint8_t target = MGT_NONE;
+
+				if (v->subtype == AIR_HELICOPTER && !wants_depot) {
+					goal = FindFreeModularHelipad(st);
+					target = MGT_HELIPAD;
+				}
+
+				if (goal == INVALID_TILE && wants_depot) {
+					goal = FindFreeModularHangar(st);
+					target = MGT_HANGAR;
+				}
+
+				if (goal == INVALID_TILE) {
+					goal = FindFreeModularTerminal(st, v);
+					target = MGT_TERMINAL;
+				}
+
+				if (goal != INVALID_TILE) {
+					v->ground_path_goal = goal;
+					v->modular_ground_target = target;
+					v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
+				}
+			}
+			break;
+
 		case MGT_TERMINAL:
 		case MGT_HELIPAD:
 			AircraftEntersTerminal(v);
 			v->state = (v->subtype == AIR_HELICOPTER) ? HELIPAD1 : TERM1;
+			v->modular_ground_target = MGT_NONE;
 			break;
+
 		case MGT_HANGAR:
 			VehicleEnterDepot(v);
 			v->state = HANGAR;
+			v->modular_ground_target = MGT_NONE;
 			break;
+
 		case MGT_RUNWAY_TAKEOFF:
 			v->state = TAKEOFF;
 			v->modular_takeoff_tile = v->tile;
 			v->modular_takeoff_progress = 0;
+			v->modular_ground_target = MGT_NONE;
 			break;
+
 		default:
+			v->modular_ground_target = MGT_NONE;
 			break;
 	}
 
@@ -2471,8 +2573,6 @@ static void HandleModularGroundArrival(Aircraft *v)
 			SetAirportTileReserver(t, v->index);
 		}
 	}
-
-	v->modular_ground_target = MGT_NONE;
 }
 
 /**
