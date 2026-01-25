@@ -1552,6 +1552,16 @@ static void AircraftEventHandler_EnterHangar(Aircraft *v, const AirportFTAClass 
 	v->state = apc->layout[v->pos].heading;
 }
 
+static Direction GetModularHangarExitDirection(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return DIR_SE; // Fallback
+
+	/* Base direction for APT_DEPOT_SE is South-East (3).
+	   Rotation adds 90 degrees (2 units) per step. */
+	return (Direction)((DIR_SE + data->rotation * 2) % 8);
+}
+
 /**
  * Handle aircraft movement/decision making in an airport hangar.
  * @param v Aircraft in the hangar.
@@ -1587,6 +1597,8 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 	const Station *st = Station::GetByTile(v->tile);
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
 		bool at_target = v->current_order.GetDestination() == v->targetairport;
+		Direction exit_dir = GetModularHangarExitDirection(st, v->tile);
+
 		if (at_target) {
 			TileIndex goal = INVALID_TILE;
 			uint8_t target = MGT_NONE;
@@ -1602,12 +1614,12 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			if (goal != INVALID_TILE) {
 				v->ground_path_goal = goal;
 				v->modular_ground_target = target;
-				AircraftLeaveHangar(v, st->airport.GetHangarExitDirection(v->tile));
+				AircraftLeaveHangar(v, exit_dir);
 				return;
 			}
 		} else {
 			if (v->subtype == AIR_HELICOPTER) {
-				AircraftLeaveHangar(v, st->airport.GetHangarExitDirection(v->tile));
+				AircraftLeaveHangar(v, exit_dir);
 				AircraftEventHandler_HeliTakeOff(v, apc);
 				return;
 			}
@@ -1617,7 +1629,7 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				v->ground_path_goal = runway;
 				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
 				v->state = TAKEOFF;
-				AircraftLeaveHangar(v, st->airport.GetHangarExitDirection(v->tile));
+				AircraftLeaveHangar(v, exit_dir);
 				return;
 			}
 		}
