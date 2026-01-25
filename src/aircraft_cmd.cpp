@@ -40,6 +40,7 @@
 #include "airport_ground_pathfinder.h"
 
 #include "table/strings.h"
+#include "table/airporttile_ids.h"
 
 #include "safeguards.h"
 
@@ -78,6 +79,7 @@ void Aircraft::UpdateDeltaXY()
 }
 
 static bool AirportMove(Aircraft *v, const AirportFTAClass *apc);
+static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft *v);
 static bool AirportSetBlocks(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc);
@@ -1678,8 +1680,14 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 {
 	Station *st = Station::Get(v->targetairport);
 
+	bool closed = st->airport.blocks.Test(AirportBlock::AirportClosed);
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		if (closed) Debug(misc, 5, "[ModAp] airport {} flagged closed; ignoring for landing", st->index);
+		closed = false;
+	}
+
 	/* Runway busy, not allowed to use this airstation or closed, circle. */
-	if (CanVehicleUseStation(v, st) && (st->owner == OWNER_NONE || st->owner == v->owner) && !st->airport.blocks.Test(AirportBlock::AirportClosed)) {
+	if (CanVehicleUseStation(v, st) && (st->owner == OWNER_NONE || st->owner == v->owner) && !closed) {
 		/* {32,FLYING,AirportBlock::Nothing,37}, {32,LANDING,N,33}, {32,HELILANDING,N,41},
 		 * if it is an airplane, look for LANDING, for helicopter HELILANDING
 		 * it is possible to choose from multiple landing runways, so loop until a free one is found */
@@ -1737,6 +1745,18 @@ static void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *
 
 	/* Check if this is a modular airport */
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		TileIndex runway_tile = FindNearestModularRunwayTile(st, v);
+		if (runway_tile != INVALID_TILE) {
+			v->tile = runway_tile;
+			v->x_pos = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+			v->y_pos = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+			v->z_pos = GetTileMaxPixelZ(runway_tile) + 1;
+			v->cur_speed = 0;
+			v->subspeed = 0;
+		} else {
+			Debug(misc, 3, "[ModAp] no runway tile found to snap landing at station {}", st->index);
+		}
+
 		/* Find a free terminal for modular airport */
 		TileIndex terminal = FindFreeModularTerminal(st, v);
 		if (terminal != INVALID_TILE) {
@@ -1829,6 +1849,46 @@ static void AirportClearBlock(const Aircraft *v, const AirportFTAClass *apc)
 	}
 }
 
+static bool IsModularRunwayPiece(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft *v)
+{
+	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+
+	TileIndex best_tile = INVALID_TILE;
+	int best_distance = INT_MAX;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+
+		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int dist = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+		if (dist < best_distance) {
+			best_distance = dist;
+			best_tile = data.tile;
+		}
+	}
+
+	return best_tile;
+}
+
 /**
  * Find a free modular terminal for an aircraft.
  * @param st The station.
@@ -1842,7 +1902,7 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 	/* Terminal piece types: 7=TERMINAL, 8=TERMINAL_ROUND */
 	/* TODO: Also support hangars (9,10) and helipads (11) */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (data.piece_type == 7 || data.piece_type == 8) {
+		if (data.piece_type == APT_BUILDING_1 || data.piece_type == APT_ROUND_TERMINAL) {
 			/* Check if tile is free (no other aircraft on it) */
 			/* For now, just return the first terminal found */
 			/* TODO: Add proper occupancy checking */

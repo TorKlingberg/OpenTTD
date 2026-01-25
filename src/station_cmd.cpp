@@ -2809,7 +2809,6 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 			st->airport.type = AT_SMALL;
 			st->airport.layout = 0;
 			st->airport.blocks = {};
-			st->airport.blocks.Set(AirportBlock::AirportClosed);
 			st->airport.blocks.Set(AirportBlock::Modular);
 			st->airport.rotation = DIR_N;
 			Company::Get(st->owner)->infrastructure.airport++;
