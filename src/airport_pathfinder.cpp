@@ -117,7 +117,8 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 {
 	if (rotation > 3) rotation = 0;
 
-	/* Note: Runways and Hangars allow all directions (0x0F) to prevent stuck aircraft. */
+	/* Note: Runways allow all directions (0x0F) to prevent stuck aircraft. */
+	/* Hangars only allow SE direction (0x02 = "East" = +X direction = down-right visually) */
 	switch (gfx) {
 		case APT_RUNWAY_1:
 		case APT_RUNWAY_2:
@@ -138,9 +139,12 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_STAND:
 		case APT_STAND_1:
 		case APT_STAND_PIER_NE:
+			return 0x0F;
 		case APT_DEPOT_SE:
 		case APT_SMALL_DEPOT_SE:
-			return 0x0F;
+			/* Hangars: South direction only (0x04 = increasing Y) */
+			/* Door faces south at rotation 0 */
+			return 0x04;
 		case APT_HELIPAD_1:
 		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:

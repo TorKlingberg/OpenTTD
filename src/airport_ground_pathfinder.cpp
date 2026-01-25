@@ -150,23 +150,44 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 {
 	std::vector<TileIndex> neighbors;
 
+	/* Check if this is a hangar for extra logging */
+	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
+	bool is_hangar = (tile_data && (tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_SMALL_DEPOT_SE));
+
 	/* Check all 4 orthogonal directions */
-	static const int dx[] = {0, 1, 0, -1};
+	static const int dx[] = {0, 1, 0, -1};  // N, E, S, W
 	static const int dy[] = {-1, 0, 1, 0};
 
 	for (int i = 0; i < 4; i++) {
 		TileIndex neighbor = tile + TileDiffXY(dx[i], dy[i]);
-		if (!IsValidTile(neighbor)) continue;
-		if (!st->TileBelongsToAirport(neighbor)) continue;
+
+		if (is_hangar) {
+			Debug(misc, 4, "[ModAp] Hangar {} checking neighbor dir={} (dx={},dy={}), tile={}",
+				tile.base(), i, dx[i], dy[i], neighbor.base());
+		}
+
+		if (!IsValidTile(neighbor)) {
+			if (is_hangar) Debug(misc, 4, "[ModAp]   -> invalid tile");
+			continue;
+		}
+
+		if (!st->TileBelongsToAirport(neighbor)) {
+			if (is_hangar) Debug(misc, 4, "[ModAp]   -> not belong to airport");
+			continue;
+		}
 
 		/* Must be an actual airport station tile, not just grass within airport bounds */
 		Tile t(neighbor);
 		if (!IsAirport(t)) {
+			if (is_hangar) Debug(misc, 4, "[ModAp]   -> not airport tile (grass)");
 			continue;
 		}
 
 		if (CanTilesConnect(st, tile, neighbor, v)) {
 			neighbors.push_back(neighbor);
+			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CONNECTED!");
+		} else {
+			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CanTilesConnect failed");
 		}
 	}
 
