@@ -1803,19 +1803,27 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			/* Find runway for modular airport */
 			TileIndex runway_tile = FindNearestModularRunwayTile(st, v);
 			Debug(misc, 3, "[ModAp] Vehicle {} approaching modular airport {}, runway_tile={}", v->index, st->index, runway_tile.base());
+			
 			if (runway_tile != INVALID_TILE) {
-				/* Start landing sequence */
-				uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
-				v->modular_landing_tile = runway_tile;
-				v->modular_landing_stage = 0;
-				v->state = landingtype; // LANDING / HELILANDING
-				if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
-				Debug(misc, 3, "[ModAp] Vehicle {} starting landing, state={}", v->index, v->state);
-				/* Don't set v->pos for modular airports - not used */
-				return;
+				/* Check distance - only land if close enough (e.g. 50 tiles) */
+				/* Always use pixel coordinates as v->tile is 0 when flying */
+				int dist = (abs(v->x_pos - TileX(runway_tile) * TILE_SIZE) + abs(v->y_pos - TileY(runway_tile) * TILE_SIZE)) / TILE_SIZE;
+
+				if (dist < 50) {
+					/* Start landing sequence */
+					uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
+					v->modular_landing_tile = runway_tile;
+					v->modular_landing_stage = 0;
+					v->state = landingtype; // LANDING / HELILANDING
+					if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
+					Debug(misc, 3, "[ModAp] Vehicle {} starting landing, state={}", v->index, v->state);
+					/* Don't set v->pos for modular airports - not used */
+					return;
+				}
 			}
-			/* No runway found, keep circling */
-			Debug(misc, 3, "[ModAp] Vehicle {} no runway found, keeping FLYING state", v->index);
+			
+			/* Too far or no runway found, keep flying */
+			Debug(misc, 3, "[ModAp] Vehicle {} keeping FLYING state (dist or no runway)", v->index);
 			v->state = FLYING;
 			return;
 		}
@@ -2277,7 +2285,14 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		v->z_pos++;
 	}
 
-	if (v->modular_takeoff_progress > TILE_SIZE * 3) {
+	/* Check if we are still on the runway */
+	TileIndex current_tile = TileVirtXY(v->x_pos, v->y_pos);
+	bool on_runway = false;
+	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(current_tile);
+	if (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type)) on_runway = true;
+
+	/* Lift off if we ran off the runway or have run for a very long time */
+	if ((!on_runway && v->modular_takeoff_progress > TILE_SIZE) || v->modular_takeoff_progress > TILE_SIZE * 50) {
 		v->state = FLYING;
 		v->modular_takeoff_tile = INVALID_TILE;
 		v->modular_takeoff_progress = 0;
@@ -2572,6 +2587,47 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	return false;
 }
 
+static void AirportMoveModularFlying(Aircraft *v, const Station *st)
+{
+	/* Target is the station center or runway */
+	TileIndex target = st->airport.tile;
+	if (target == INVALID_TILE) target = st->xy;
+
+	/* Try to target the approach point of the nearest runway */
+	TileIndex runway = FindNearestModularRunwayTile(st, v);
+	int target_x, target_y;
+	if (runway != INVALID_TILE) {
+		GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
+	} else {
+		target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
+		target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+	}
+
+	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
+
+	if (dist > 0) {
+		v->direction = GetDirectionTowards(v, target_x, target_y);
+		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
+
+		/* Move */
+		for (int i = 0; i < count; i++) {
+			GetNewVehiclePosResult gp = GetNewVehiclePos(v);
+			v->x_pos = gp.x;
+			v->y_pos = gp.y;
+			v->tile = TileIndex{}; // In air
+
+			/* Altitude correction */
+			int target_z = GetAircraftFlightLevel(v);
+			if (v->z_pos < target_z) v->z_pos++;
+			else if (v->z_pos > target_z) v->z_pos--;
+
+			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
+
+			if (abs(v->x_pos - target_x) + abs(v->y_pos - target_y) < TILE_SIZE) break;
+		}
+	}
+}
+
 static void AirportGoToNextPosition(Aircraft *v)
 {
 	const Station *st = Station::Get(v->targetairport);
@@ -2589,6 +2645,15 @@ static void AirportGoToNextPosition(Aircraft *v)
 		/* For takeoff, use custom modular takeoff logic */
 		if (v->state == TAKEOFF || v->state == STARTTAKEOFF || v->state == ENDTAKEOFF) {
 			if (AirportMoveModularTakeoff(v, st)) return;
+			return;
+		}
+
+		/* For flying state, use modular movement */
+		if (v->state == FLYING) {
+			AirportMoveModularFlying(v, st);
+			/* Call handler to check for landing conditions */
+			const AirportFTAClass *apc = st->airport.GetFTA();
+			_aircraft_state_handlers[v->state](v, apc);
 			return;
 		}
 
