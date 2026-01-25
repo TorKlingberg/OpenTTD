@@ -19,6 +19,7 @@
 #include "linkgraph/linkgraph_type.h"
 #include "newgrf_storage.h"
 #include "bitmap_type.h"
+#include <unordered_map>
 
 static const uint8_t INITIAL_STATION_RATING = 175;
 static const uint8_t MAX_STATION_RATING = 255;
@@ -378,6 +379,8 @@ struct Airport : public TileArea {
 
 	PersistentStorage *psa = nullptr; ///< Persistent storage for NewGRF airports.
 	std::vector<ModularAirportTileData> *modular_tile_data = nullptr; ///< Tile data for modular airports
+	mutable std::unordered_map<TileIndex, size_t> *modular_tile_index = nullptr; ///< Tile index for modular airport data
+	mutable bool modular_tile_index_dirty = false; ///< Whether modular tile index needs rebuild
 
 	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there
@@ -494,10 +497,13 @@ struct Airport : public TileArea {
 	const ModularAirportTileData* GetModularTileData(TileIndex tile) const
 	{
 		if (this->modular_tile_data == nullptr) return nullptr;
-		for (const ModularAirportTileData &data : *this->modular_tile_data) {
-			if (data.tile == tile) return &data;
+		if (this->modular_tile_index == nullptr || this->modular_tile_index_dirty) {
+			this->RebuildModularTileIndex();
 		}
-		return nullptr;
+		if (this->modular_tile_index == nullptr) return nullptr;
+		auto it = this->modular_tile_index->find(tile);
+		if (it == this->modular_tile_index->end()) return nullptr;
+		return &(*this->modular_tile_data)[it->second];
 	}
 
 	/** Ensure modular data vector exists. */
@@ -505,7 +511,22 @@ struct Airport : public TileArea {
 	{
 		if (this->modular_tile_data == nullptr) {
 			this->modular_tile_data = new std::vector<ModularAirportTileData>();
+			this->modular_tile_index_dirty = true;
 		}
+	}
+
+	void RebuildModularTileIndex() const
+	{
+		if (this->modular_tile_data == nullptr) return;
+		if (this->modular_tile_index == nullptr) {
+			this->modular_tile_index = new std::unordered_map<TileIndex, size_t>();
+		}
+		this->modular_tile_index->clear();
+		this->modular_tile_index->reserve(this->modular_tile_data->size());
+		for (size_t i = 0; i < this->modular_tile_data->size(); ++i) {
+			(*this->modular_tile_index)[(*this->modular_tile_data)[i].tile] = i;
+		}
+		this->modular_tile_index_dirty = false;
 	}
 
 private:

@@ -18,7 +18,8 @@
  * @param rotation The rotation of the piece (0-3).
  * @return Bitmask of allowed taxi directions (bit 0=N, 1=E, 2=S, 3=W).
  */
-uint8_t CalculateAutoTaxiDirections(uint8_t piece_type, uint8_t rotation);
+uint8_t CalculateAutoTaxiDirectionsForPiece(uint8_t piece_type, uint8_t rotation);
+uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation);
 
 /**
  * Get effective taxi directions combining auto-calculated and user overrides.

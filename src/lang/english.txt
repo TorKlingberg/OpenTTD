@@ -3021,8 +3021,12 @@ STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS            :{BLACK}Show tax
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP                   :{BLACK}Snap to grid
 STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE                      :{BLACK}Validate
 STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED                :{BLACK}Build (disabled)
-STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE                   :{BLACK}Prototype UI only. No validation yet.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE                   :{BLACK}Prototype UI. Validation is basic.
 STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NOT_IMPLEMENTED        :{BLACK}Validation not implemented yet.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_AIRPORT             :{BLACK}No modular airport built yet.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_RUNWAY              :{BLACK}Validation failed: no runway tiles.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_UNREACHABLE            :{BLACK}Validation failed: unreachable terminals.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_VALID_OK               :{BLACK}Validation passed: terminals reachable.
 STR_STATION_BUILD_MODULAR_AIRPORT_CANVAS_HINT                   :{BLACK}Click to paint a preview layout
 STR_STATION_BUILD_MODULAR_AIRPORT_DIR_N                         :{BLACK}N
 STR_STATION_BUILD_MODULAR_AIRPORT_DIR_E                         :{BLACK}E

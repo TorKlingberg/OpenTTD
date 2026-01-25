@@ -2835,6 +2835,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 				[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
 			tile_data_vec.end()
 		);
+		st->airport.modular_tile_index_dirty = true;
 
 		/* Create and store new tile data */
 		ModularAirportTileData tile_data;
@@ -2843,9 +2844,10 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		tile_data.rotation = rotation;
 		tile_data.user_taxi_dir_mask = taxi_dir_mask;
 		tile_data.one_way_taxi = one_way_taxi;
-		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirections(tile_data.piece_type, rotation);
+		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
 
 		tile_data_vec.push_back(tile_data);
+		st->airport.modular_tile_index_dirty = true;
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
@@ -2880,6 +2882,7 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 					[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
 				tile_data_vec.end()
 			);
+			st->airport.modular_tile_index_dirty = true;
 		}
 
 		st->rect.AfterRemoveTile(st, tile);
@@ -2901,6 +2904,9 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 		} else {
 			delete st->airport.psa;
 			delete st->airport.modular_tile_data;
+			st->airport.modular_tile_data = nullptr;
+			delete st->airport.modular_tile_index;
+			st->airport.modular_tile_index = nullptr;
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
 			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
@@ -2978,6 +2984,9 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		/* Clear the persistent storage. */
 		delete st->airport.psa;
 		delete st->airport.modular_tile_data;
+		st->airport.modular_tile_data = nullptr;
+		delete st->airport.modular_tile_index;
+		st->airport.modular_tile_index = nullptr;
 
 		st->rect.AfterRemoveRect(st, st->airport);
 

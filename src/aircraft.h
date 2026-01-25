@@ -87,6 +87,13 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	std::vector<TileIndex> *ground_path = nullptr; ///< Ground path for modular airports
 	uint16_t ground_path_index = 0; ///< Current position in ground path
 	TileIndex ground_path_goal = INVALID_TILE; ///< Goal tile for ground movement
+	TileIndex modular_landing_tile = INVALID_TILE; ///< Runway tile targeted for modular landing
+	uint8_t modular_landing_stage = 0; ///< Landing stage for modular approach
+	uint8_t modular_ground_target = 0; ///< Modular ground destination (terminal/hangar/runway)
+	TileIndex modular_takeoff_tile = INVALID_TILE; ///< Runway tile targeted for modular takeoff
+	uint16_t modular_takeoff_progress = 0; ///< Progress along modular takeoff roll
+	TileIndex ground_path_last_tile = INVALID_TILE; ///< Last tile seen while taxiing
+	uint8_t ground_path_stall_counter = 0; ///< Ticks without progress on ground path
 
 	Aircraft(VehicleID index) : SpecializedVehicleBase(index) {}
 	/** We want to 'destruct' the right class. */

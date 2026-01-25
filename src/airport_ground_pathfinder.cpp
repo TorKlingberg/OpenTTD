@@ -56,7 +56,7 @@ static int CalculateHeuristic(TileIndex from, TileIndex to)
  * @param to Destination tile.
  * @return True if connection is allowed.
  */
-static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to)
+static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const Aircraft *v)
 {
 	/* Must be orthogonally adjacent */
 	int dx = TileX(to) - TileX(from);
@@ -75,7 +75,8 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to)
 	if (from_data == nullptr) return false;
 
 	/* Get effective taxi directions */
-	uint8_t from_dirs = GetEffectiveTaxiDirections(from_data->auto_taxi_dir_mask, from_data->user_taxi_dir_mask);
+	uint8_t from_auto = CalculateAutoTaxiDirectionsForGfx(from_data->piece_type, from_data->rotation);
+	uint8_t from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
 	if ((from_dirs & dir_bit) == 0) return false; // Direction not allowed from 'from'
 
 	/* Get tile data for 'to' */
@@ -89,8 +90,14 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to)
 	else if (dir_bit == 0x04) reverse_dir_bit = 0x01; // South -> North
 	else if (dir_bit == 0x08) reverse_dir_bit = 0x02; // West -> East
 
-	uint8_t to_dirs = GetEffectiveTaxiDirections(to_data->auto_taxi_dir_mask, to_data->user_taxi_dir_mask);
+	uint8_t to_auto = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
+	uint8_t to_dirs = GetEffectiveTaxiDirections(to_auto, to_data->user_taxi_dir_mask);
 	if ((to_dirs & reverse_dir_bit) == 0) return false; // Reverse direction not allowed
+
+	if (v != nullptr) {
+		Tile t(to);
+		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) return false;
+	}
 
 	return true;
 }
@@ -101,7 +108,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to)
  * @param tile Current tile.
  * @return Vector of reachable neighbor tiles.
  */
-static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex tile)
+static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v)
 {
 	std::vector<TileIndex> neighbors;
 
@@ -113,7 +120,7 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 		TileIndex neighbor = tile + TileDiffXY(dx[i], dy[i]);
 		if (!IsValidTile(neighbor)) continue;
 		if (!st->TileBelongsToAirport(neighbor)) continue;
-		if (CanTilesConnect(st, tile, neighbor)) {
+		if (CanTilesConnect(st, tile, neighbor, v)) {
 			neighbors.push_back(neighbor);
 		}
 	}
@@ -208,7 +215,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		}
 
 		/* Explore neighbors */
-		std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile);
+		std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v);
 		for (TileIndex neighbor : neighbors) {
 			int tentative_g = current.g_cost + 1; // Cost is 1 per tile
 

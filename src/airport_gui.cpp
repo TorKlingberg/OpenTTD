@@ -20,6 +20,8 @@
 #include "tilehighlight_func.h"
 #include "company_base.h"
 #include "station_type.h"
+#include "station_base.h"
+#include "station_map.h"
 #include "newgrf_airport.h"
 #include "newgrf_badge_gui.h"
 #include "newgrf_callbacks.h"
@@ -32,6 +34,8 @@
 #include "command_func.h"
 #include "airport_cmd.h"
 #include "station_cmd.h"
+#include "airport_pathfinder.h"
+#include "airport_ground_pathfinder.h"
 #include "landscape_cmd.h"
 #include "zoom_func.h"
 #include "timer/timer.h"
@@ -49,6 +53,7 @@
 static AirportClassID _selected_airport_class; ///< the currently visible airport class
 static int _selected_airport_index;            ///< the index of the selected airport in the current class or -1
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
+static StationID _last_modular_airport_station = StationID::Invalid();
 
 static void ShowBuildAirportPicker(Window *parent);
 static void ShowBuildModularAirportWindow(Window *parent);
@@ -134,11 +139,60 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t
 	}
 }
 
+static bool IsModularRunwayGfx(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static bool IsModularTerminalGfx(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_BUILDING_1:
+		case APT_ROUND_TERMINAL:
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+		case APT_DEPOT_SE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return true;
+		default:
+			return false;
+	}
+}
+
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
 {
 	if (result.Failed()) return;
 
 	if (_settings_client.sound.confirm) SndPlayTileFx(SND_1F_CONSTRUCTION_OTHER, tile);
+	Tile t(tile);
+	/* Check if tile is a station before calling IsAirport (which asserts this) */
+	if (IsTileType(t, TileType::Station) && IsAirport(t)) {
+		Station *st = Station::GetByTile(tile);
+		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			_last_modular_airport_station = st->index;
+		}
+	}
 	if (!_settings_client.gui.persistent_buildingtools) ResetObjectToPlace();
 }
 
@@ -781,6 +835,26 @@ public:
 							inner.top + (y + 1) * cell_h - 1
 						);
 						GfxFillRect(cell, _modular_airport_pieces[piece].colour);
+
+						if (this->show_taxi_arrows) {
+							uint8_t auto_dirs = CalculateAutoTaxiDirectionsForPiece(piece, this->rotation);
+							uint8_t effective = GetEffectiveTaxiDirections(auto_dirs, this->taxi_dir_mask);
+							if (effective != 0) {
+								int text_y = CentreBounds(cell.top, cell.bottom, GetCharacterHeight(FS_NORMAL));
+								if (effective & 0x01) {
+									DrawString(cell.left, cell.right, cell.top, "N", TC_BLACK, SA_HOR_CENTER);
+								}
+								if (effective & 0x04) {
+									DrawString(cell.left, cell.right, cell.bottom - GetCharacterHeight(FS_NORMAL) + 1, "S", TC_BLACK, SA_HOR_CENTER);
+								}
+								if (effective & 0x02) {
+									DrawString(cell.left, cell.right, text_y, "E", TC_BLACK, SA_RIGHT);
+								}
+								if (effective & 0x08) {
+									DrawString(cell.left, cell.right, text_y, "W", TC_BLACK, SA_LEFT);
+								}
+							}
+						}
 					}
 				}
 
@@ -861,8 +935,7 @@ public:
 				break;
 
 			case WID_MA_VALIDATE:
-				this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NOT_IMPLEMENTED;
-				this->SetDirty();
+				this->ValidateModularAirport();
 				break;
 
 			default: break;
@@ -903,6 +976,56 @@ public:
 	}
 
 private:
+	void ValidateModularAirport()
+	{
+		const Station *st = Station::GetIfValid(_last_modular_airport_station);
+		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular) || st->airport.modular_tile_data == nullptr) {
+			this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_AIRPORT;
+			this->SetDirty();
+			return;
+		}
+
+		std::vector<TileIndex> runways;
+		std::vector<TileIndex> terminals;
+		runways.reserve(st->airport.modular_tile_data->size());
+		terminals.reserve(st->airport.modular_tile_data->size());
+
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (IsModularRunwayGfx(data.piece_type)) runways.push_back(data.tile);
+			if (IsModularTerminalGfx(data.piece_type)) terminals.push_back(data.tile);
+		}
+
+		if (runways.empty()) {
+			this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_RUNWAY;
+			this->SetDirty();
+			return;
+		}
+
+		bool all_reachable = true;
+		for (TileIndex terminal : terminals) {
+			bool reachable = false;
+			for (TileIndex runway : runways) {
+				if (terminal == runway) {
+					reachable = true;
+					break;
+				}
+				AirportGroundPath path = FindAirportGroundPath(st, terminal, runway, nullptr);
+				if (path.found) {
+					reachable = true;
+					break;
+				}
+			}
+			if (!reachable) {
+				all_reachable = false;
+				break;
+			}
+		}
+
+		this->status = all_reachable ? STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_VALID_OK
+			: STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_UNREACHABLE;
+		this->SetDirty();
+	}
+
 	void ToggleTaxiDir(uint8_t dir_bit, WidgetID widget)
 	{
 		this->taxi_dir_mask ^= dir_bit;

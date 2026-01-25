@@ -16,6 +16,7 @@
 #include "station_func.h"
 #include "rail.h"
 #include "road.h"
+#include "vehicle_type.h"
 
 typedef uint8_t StationGfx; ///< Index of station graphics. @see _station_display_datas
 
@@ -560,6 +561,62 @@ inline bool HasStationReservation(Tile t)
 {
 	assert(HasStationRail(t));
 	return HasBit(t.m6(), 2);
+}
+
+/**
+ * Get the reservation state of an airport tile.
+ * @pre IsAirport(t)
+ * @param t the airport tile
+ * @return reservation state
+ */
+inline bool HasAirportTileReservation(Tile t)
+{
+	assert(IsAirport(t));
+	return HasBit(t.m6(), 2);
+}
+
+/**
+ * Set the reservation state of an airport tile.
+ * @pre IsAirport(t)
+ * @param t the airport tile
+ * @param b the reservation state
+ */
+inline void SetAirportTileReservation(Tile t, bool b)
+{
+	assert(IsAirport(t));
+	AssignBit(t.m6(), 2, b);
+	if (!b) {
+		t.m7() = 0;
+		t.m8() = 0;
+	}
+}
+
+/**
+ * Get the vehicle reserving an airport tile.
+ * @pre IsAirport(t)
+ * @param t the airport tile
+ * @return reserver VehicleID or invalid if unreserved
+ */
+inline VehicleID GetAirportTileReserver(Tile t)
+{
+	assert(IsAirport(t));
+	if (!HasAirportTileReservation(t)) return VehicleID::Invalid();
+	uint32_t id = static_cast<uint32_t>(t.m8()) | (static_cast<uint32_t>(t.m7()) << 16);
+	return VehicleID{id};
+}
+
+/**
+ * Set the vehicle reserving an airport tile.
+ * @pre IsAirport(t)
+ * @param t the airport tile
+ * @param vid the reserving vehicle
+ */
+inline void SetAirportTileReserver(Tile t, VehicleID vid)
+{
+	assert(IsAirport(t));
+	uint32_t id = vid.base();
+	t.m8() = static_cast<uint16_t>(id & 0xFFFF);
+	t.m7() = static_cast<uint8_t>((id >> 16) & 0xFF);
 }
 
 /**

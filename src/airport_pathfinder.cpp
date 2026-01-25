@@ -9,6 +9,7 @@
 
 #include "stdafx.h"
 #include "airport_pathfinder.h"
+#include "table/airporttile_ids.h"
 
 #include "safeguards.h"
 
@@ -105,9 +106,56 @@ static const uint8_t _piece_taxi_directions[26][4] = {
  * @param rotation The rotation of the piece (0-3).
  * @return Bitmask of allowed taxi directions (bit 0=N, 1=E, 2=S, 3=W).
  */
-uint8_t CalculateAutoTaxiDirections(uint8_t piece_type, uint8_t rotation)
+uint8_t CalculateAutoTaxiDirectionsForPiece(uint8_t piece_type, uint8_t rotation)
 {
 	if (piece_type >= 26) return 0;
 	if (rotation > 3) rotation = 0;
 	return _piece_taxi_directions[piece_type][rotation];
+}
+
+uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
+{
+	if (rotation > 3) rotation = 0;
+
+	switch (gfx) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+		case APT_APRON_HOR:
+		case APT_APRON_VER_CROSSING_N:
+			return (rotation % 2 == 0) ? 0x05 : 0x0A;
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_VER_CROSSING_S:
+			return 0x0F;
+		case APT_BUILDING_1:
+		case APT_ROUND_TERMINAL:
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+		case APT_DEPOT_SE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+		case APT_APRON:
+		case APT_APRON_E:
+		case APT_APRON_S:
+		case APT_APRON_W:
+		case APT_ARPON_N:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return 0x0F;
+		default:
+			return 0x00;
+	}
 }
