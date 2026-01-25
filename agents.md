@@ -166,6 +166,24 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_OBJCXX_FLAGS="-I/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1"
 ```
 
+## OpenTTD Coordinate System
+
+OpenTTD uses an isometric coordinate system where tiles are arranged in a diamond grid.
+
+### Origin and Axes
+-   **(0, 0) Origin**: The top corner of the map (North corner).
+-   **X-Axis**: Increases from North towards the **South-East** (moving down and to the right on the screen).
+-   **Y-Axis**: Increases from North towards the **South-West** (moving down and to the left on the screen).
+-   **Z-Axis**: Represents height/altitude (increasing upwards).
+
+### Cardinal Directions (Visual)
+-   **North**: Top corner of the diamond (Min X, Min Y).
+-   **South**: Bottom corner of the diamond (Max X, Max Y).
+-   **West**: Left corner of the diamond (Min X, Max Y).
+-   **East**: Right corner of the diamond (Max X, Min Y).
+
+Each tile is 16x16 units in game coordinates (`TILE_SIZE`).
+
 ## Additional Resources
 
 - Official compilation guide: `COMPILING.md` in the repository

@@ -1664,6 +1664,50 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 
 	if (v->current_order.IsType(OT_NOTHING)) return;
 
+	/* Modular airport logic */
+	if (Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
+		const Station *st = Station::Get(v->targetairport);
+		if (v->modular_ground_target != MGT_NONE) return;
+
+		bool go_to_hangar = false;
+		switch (v->current_order.GetType()) {
+			case OT_GOTO_STATION: // ready to fly to another airport
+				break;
+			case OT_GOTO_DEPOT:   // visit hangar for servicing, sale, etc.
+				go_to_hangar = v->current_order.GetDestination() == v->targetairport;
+				break;
+			case OT_CONDITIONAL:
+				return;
+			default:  // orders have been deleted (no orders), goto depot and don't bother us
+				v->current_order.Free();
+				go_to_hangar = true;
+		}
+
+		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
+			AircraftEventHandler_HeliTakeOff(v, apc);
+			return;
+		}
+
+		TileIndex goal = INVALID_TILE;
+		uint8_t target = MGT_NONE;
+		if (go_to_hangar) {
+			goal = FindFreeModularHangar(st);
+			target = MGT_HANGAR;
+		} else {
+			goal = FindModularRunwayTileForTakeoff(st, v);
+			target = MGT_RUNWAY_TAKEOFF;
+		}
+
+		if (goal != INVALID_TILE) {
+			v->ground_path_goal = goal;
+			v->modular_ground_target = target;
+			Debug(misc, 3, "[ModAp] Vehicle {} found takeoff runway tile {}", v->index, goal.base());
+			return;
+		}
+		Debug(misc, 3, "[ModAp] Vehicle {} failed to find takeoff runway", v->index);
+		return;
+	}
+
 	/* if the block of the next position is busy, stay put */
 	if (AirportHasBlock(v, &apc->layout[v->pos], apc)) return;
 
@@ -1692,29 +1736,6 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 	} else {
 		/* airplane goto state takeoff, helicopter to helitakeoff */
 		v->state = (v->subtype == AIR_HELICOPTER) ? HELITAKEOFF : TAKEOFF;
-	}
-	if (Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		const Station *st = Station::Get(v->targetairport);
-		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
-			AircraftEventHandler_HeliTakeOff(v, apc);
-			return;
-		}
-
-		TileIndex goal = INVALID_TILE;
-		uint8_t target = MGT_NONE;
-		if (go_to_hangar) {
-			goal = FindFreeModularHangar(st);
-			target = MGT_HANGAR;
-		} else {
-			goal = FindModularRunwayTileForTakeoff(st, v);
-			target = MGT_RUNWAY_TAKEOFF;
-		}
-
-		if (goal != INVALID_TILE) {
-			v->ground_path_goal = goal;
-			v->modular_ground_target = target;
-			return;
-		}
 	}
 
 	AirportMove(v, apc);
@@ -2213,15 +2234,39 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 {
 	if (v->modular_takeoff_tile == INVALID_TILE) return false;
 
-	const bool horizontal = IsModularRunwayHorizontal(st, v->modular_takeoff_tile);
-	const int center_x = TileX(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
-	const int center_y = TileY(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
+	const ModularAirportTileData *data = st->airport.GetModularTileData(v->modular_takeoff_tile);
+	if (data == nullptr) return false;
 
-	Direction dir;
-	if (horizontal) {
-		dir = (v->x_pos <= center_x) ? DIR_E : DIR_W;
+	const bool horizontal = (data->rotation % 2) == 0;
+	Direction dir = horizontal ? DIR_E : DIR_S; // Default to positive direction
+
+	/* Determine runway direction by checking neighbors */
+	bool extends_positive = false;
+	bool extends_negative = false;
+
+	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+	TileIndex next = v->modular_takeoff_tile + diff;
+	TileIndex prev = v->modular_takeoff_tile - diff;
+
+	const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
+	const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+
+	if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) extends_positive = true;
+	if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) extends_negative = true;
+
+	if (extends_positive && !extends_negative) {
+		dir = horizontal ? DIR_E : DIR_S;
+	} else if (!extends_positive && extends_negative) {
+		dir = horizontal ? DIR_W : DIR_N;
 	} else {
-		dir = (v->y_pos <= center_y) ? DIR_S : DIR_N;
+		/* Ambiguous (middle piece?) or single tile. Fallback to sub-tile position or default. */
+		const int center_x = TileX(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
+		const int center_y = TileY(v->modular_takeoff_tile) * TILE_SIZE + TILE_SIZE / 2;
+		if (horizontal) {
+			dir = (v->x_pos <= center_x) ? DIR_E : DIR_W;
+		} else {
+			dir = (v->y_pos <= center_y) ? DIR_S : DIR_N;
+		}
 	}
 
 	if (v->modular_takeoff_progress == 0) PlayAircraftSound(v);
@@ -2265,9 +2310,13 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 	/* TODO: Also support hangars (9,10) and helipads (11) */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1) {
-			/* Check if tile is free (no other aircraft on it) */
-			/* For now, just return the first terminal found */
-			/* TODO: Add proper occupancy checking */
+			/* Check if tile is free */
+			Tile t(data.tile);
+			if (HasAirportTileReservation(t)) {
+				/* If reserved by us, it's fine (we might be re-evaluating) */
+				if (v != nullptr && GetAirportTileReserver(t) == v->index) return data.tile;
+				continue;
+			}
 			return data.tile;
 		}
 	}
@@ -2312,7 +2361,45 @@ static TileIndex FindFreeModularHangar(const Station *st)
 
 static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 {
-	return FindNearestModularRunwayTile(st, v);
+	/* For takeoff, we simply want the nearest runway end. 
+	   We don't care about rollout towards terminal. */
+	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+
+	TileIndex best_tile = INVALID_TILE;
+	int best_dist = INT_MAX;
+	bool found_explicit_end = false;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+
+		/* Prefer explicit runway ends */
+		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+		
+		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int dist = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+
+		if (is_end) {
+			if (!found_explicit_end) {
+				/* First end found, discard any non-ends found so far */
+				best_dist = dist;
+				best_tile = data.tile;
+				found_explicit_end = true;
+			} else if (dist < best_dist) {
+				/* Closer end found */
+				best_dist = dist;
+				best_tile = data.tile;
+			}
+		} else if (!found_explicit_end) {
+			/* Non-end piece, only consider if we haven't found an end yet */
+			if (dist < best_dist) {
+				best_dist = dist;
+				best_tile = data.tile;
+			}
+		}
+	}
+
+	return best_tile;
 }
 
 static void ClearGroundPathReservation(const std::vector<TileIndex> *path, VehicleID vid)
@@ -2368,6 +2455,15 @@ static void HandleModularGroundArrival(Aircraft *v)
 			break;
 	}
 
+	/* Keep the arrival tile reserved if it's a parking spot */
+	if (v->modular_ground_target == MGT_TERMINAL || v->modular_ground_target == MGT_HELIPAD || v->modular_ground_target == MGT_HANGAR) {
+		Tile t(v->tile);
+		if (IsAirport(t)) {
+			SetAirportTileReservation(t, true);
+			SetAirportTileReserver(t, v->index);
+		}
+	}
+
 	v->modular_ground_target = MGT_NONE;
 }
 
@@ -2387,6 +2483,7 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		AirportGroundPath path = FindAirportGroundPath(st, v->tile, v->ground_path_goal, v);
 		if (!path.found) {
 			/* No path found - stay where we are for now */
+			Debug(misc, 3, "[ModAp] Vehicle {} pathfinding failed from {} to {}", v->index, v->tile.base(), v->ground_path_goal.base());
 			/* TODO: Handle this better - maybe try alternate terminals */
 			return false;
 		}
@@ -2512,8 +2609,10 @@ static void AirportGoToNextPosition(Aircraft *v)
 		}
 
 		/* For states like TERM1, HANGAR without ground_path_goal set yet,
-		 * just wait (pathfinding will be triggered on next tick) */
+		 * we must call the handler to process loading/orders */
 		if (v->state == TERM1 || v->state == HANGAR || v->state == HELIPAD1) {
+			const AirportFTAClass *apc = st->airport.GetFTA();
+			_aircraft_state_handlers[v->state](v, apc);
 			return;
 		}
 
