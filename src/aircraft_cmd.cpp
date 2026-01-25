@@ -2086,13 +2086,6 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 	return best_tile;
 }
 
-static bool IsModularRunwayHorizontal(const Station *st, TileIndex tile)
-{
-	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data == nullptr) return true;
-	return (data->rotation % 2) == 0;
-}
-
 static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, int *target_x, int *target_y)
 {
 	/* Default to runway tile center */
