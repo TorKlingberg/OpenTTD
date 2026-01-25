@@ -117,6 +117,7 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 {
 	if (rotation > 3) rotation = 0;
 
+	/* Note: Runways and Hangars allow all directions (0x0F) to prevent stuck aircraft. */
 	switch (gfx) {
 		case APT_RUNWAY_1:
 		case APT_RUNWAY_2:
@@ -129,7 +130,6 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_RUNWAY_SMALL_FAR_END:
 		case APT_APRON_HOR:
 		case APT_APRON_VER_CROSSING_N:
-			return (rotation % 2 == 0) ? 0x05 : 0x0A;
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_VER_CROSSING_S:
 			return 0x0F;
@@ -140,6 +140,7 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_STAND_PIER_NE:
 		case APT_DEPOT_SE:
 		case APT_SMALL_DEPOT_SE:
+			return 0x0F;
 		case APT_HELIPAD_1:
 		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:
@@ -155,6 +156,20 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_APRON_HALF_EAST:
 		case APT_APRON_HALF_WEST:
 			return 0x0F;
+		case APT_GRASS_1:
+		case APT_GRASS_2:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_FENCE_NE_FLAG:
+		case APT_GRASS_FENCE_NE_FLAG_2:
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+		case APT_RADAR_GRASS_FENCE_SW:
+		case APT_RADIO_TOWER_FENCE_NE:
+		case APT_TOWER:
+		case APT_TOWER_FENCE_SW:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+			return 0x00;
 		default:
 			return 0x00;
 	}

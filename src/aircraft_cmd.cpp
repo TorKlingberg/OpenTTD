@@ -1560,12 +1560,8 @@ static void AircraftEventHandler_EnterHangar(Aircraft *v, const AirportFTAClass 
 
 static Direction GetModularHangarExitDirection(const Station *st, TileIndex tile)
 {
-	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data == nullptr) return DIR_SE; // Fallback
-
-	/* Base direction for APT_DEPOT_SE is South-East (3).
-	   Rotation adds 90 degrees (2 units) per step. */
-	return (Direction)((DIR_SE + data->rotation * 2) % 8);
+	/* Hangar sprite is fixed to face SE. Force exit direction to match. */
+	return DIR_SE;
 }
 
 /**
@@ -1634,7 +1630,6 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			if (runway != INVALID_TILE) {
 				v->ground_path_goal = runway;
 				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-				v->state = TAKEOFF;
 				AircraftLeaveHangar(v, exit_dir);
 				return;
 			}
@@ -2599,6 +2594,18 @@ static void HandleModularGroundArrival(Aircraft *v)
 	}
 }
 
+static void LogModularAirportLayout(const Station *st)
+{
+	if (st->airport.modular_tile_data == nullptr) return;
+	Debug(misc, 3, "[ModAp] --- Layout for modular airport {} ---", st->index);
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		Debug(misc, 3, "[ModAp] Tile {}: pos=({},{}), gfx={}, rot={}, user_mask={:x}, auto_mask={:x}",
+			data.tile.base(), TileX(data.tile), TileY(data.tile), data.piece_type, data.rotation, 
+			data.user_taxi_dir_mask, data.auto_taxi_dir_mask);
+	}
+	Debug(misc, 3, "[ModAp] --- End Layout ---");
+}
+
 /**
  * Move aircraft on modular airport ground path.
  * @param v The aircraft.
@@ -2616,18 +2623,9 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		if (!path.found) {
 			/* No path found - stay where we are for now */
 			Debug(misc, 3, "[ModAp] Vehicle {} pathfinding failed from {} to {}", v->index, v->tile.base(), v->ground_path_goal.base());
+			LogModularAirportLayout(st);
 			/* TODO: Handle this better - maybe try alternate terminals */
 			return false;
-		}
-
-		/* Debug: Log the computed path */
-		if (path.tiles.size() > 0) {
-			Debug(misc, 3, "[ModAp] Vehicle {} computed path with {} tiles", v->index, path.tiles.size());
-			for (size_t i = 0; i < path.tiles.size() && i < 10; i++) {
-				TileIndex t = path.tiles[i];
-				Tile tile(t);
-				Debug(misc, 4, "[ModAp] Path[{}]: tile {} is_airport={}", i, t.base(), IsAirport(tile));
-			}
 		}
 
 		if (!TryReserveGroundPath(path.tiles, v->index)) {

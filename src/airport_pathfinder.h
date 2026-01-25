@@ -29,8 +29,8 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation);
  */
 inline uint8_t GetEffectiveTaxiDirections(uint8_t auto_mask, uint8_t user_mask)
 {
-	/* If user has specified any directions, use those; otherwise use auto */
-	return user_mask != 0 ? user_mask : auto_mask;
+	/* User mask restricts auto mask (cannot enable invalid directions) */
+	return auto_mask & user_mask;
 }
 
 #endif /* AIRPORT_PATHFINDER_H */

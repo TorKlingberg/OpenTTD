@@ -8,6 +8,7 @@
 /** @file airport_ground_pathfinder.cpp Ground pathfinding for modular airports. */
 
 #include "stdafx.h"
+#include "debug.h"
 #include "airport_ground_pathfinder.h"
 #include "airport_pathfinder.h"
 #include "station_base.h"
@@ -96,7 +97,8 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Get effective taxi directions */
 	uint8_t from_auto = CalculateAutoTaxiDirectionsForGfx(from_data->piece_type, from_data->rotation);
 	uint8_t from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
-	if ((from_dirs & dir_bit) == 0) return false; // Direction not allowed from 'from'
+	
+	bool from_ok = (from_dirs & dir_bit) != 0;
 
 	/* Get tile data for 'to' */
 	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
@@ -114,11 +116,25 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	uint8_t to_auto = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
 	uint8_t to_dirs = GetEffectiveTaxiDirections(to_auto, to_data->user_taxi_dir_mask);
-	if ((to_dirs & reverse_dir_bit) == 0) return false; // Reverse direction not allowed
+	
+	bool to_ok = (to_dirs & reverse_dir_bit) != 0;
+
+	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
+		Debug(misc, 3, "[ModAp] Hangar connect check V2: from={}, to={}, dir={}, from_dirs={:x} (auto={:x}, user={:x}), to_dirs={:x}, from_ok={}, to_ok={}",
+			from.base(), to.base(), dir_bit, from_dirs, from_auto, from_data->user_taxi_dir_mask, to_dirs, from_ok, to_ok);
+	}
+
+	if (!from_ok) return false; // Direction not allowed from 'from'
+	if (!to_ok) return false; // Reverse direction not allowed
 
 	if (v != nullptr) {
 		Tile t(to);
-		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) return false;
+		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) {
+			if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
+				Debug(misc, 3, "[ModAp] Hangar connect blocked by reservation on {}", to.base());
+			}
+			return false;
+		}
 	}
 
 	return true;
@@ -245,6 +261,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 
 		/* Explore neighbors */
 		std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v);
+
 		for (TileIndex neighbor : neighbors) {
 			int tentative_g = current.g_cost + 1; // Cost is 1 per tile
 
