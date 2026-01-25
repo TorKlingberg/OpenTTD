@@ -746,8 +746,6 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	bool one_way_taxi = false;
 	bool show_taxi_arrows = true;
 	bool snap_to_grid = true;
-	StringID status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE;
-	std::array<uint8_t, MODULAR_AIRPORT_GRID_W * MODULAR_AIRPORT_GRID_H> preview_grid{};
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
@@ -760,8 +758,6 @@ public:
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_E, true);
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_S, true);
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_W, true);
-		this->DisableWidget(WID_MA_BUILD);
-		this->preview_grid.fill(MODULAR_AIRPORT_PIECE_EMPTY);
 		this->UpdatePlacementCursor();
 	}
 
@@ -786,14 +782,6 @@ public:
 				break;
 			}
 
-			case WID_MA_CANVAS:
-				size = maxdim(size, {220, 220});
-				break;
-
-			case WID_MA_STATUS:
-				size.height = std::max<size_t>(size.height, GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal);
-				break;
-
 			default: break;
 		}
 	}
@@ -815,70 +803,6 @@ public:
 				break;
 			}
 
-			case WID_MA_CANVAS: {
-				Rect inner = r.Shrink(WidgetDimensions::scaled.bevel);
-				GfxFillRect(inner, PC_WHITE);
-
-				int cell_w = std::max(1, inner.Width() / MODULAR_AIRPORT_GRID_W);
-				int cell_h = std::max(1, inner.Height() / MODULAR_AIRPORT_GRID_H);
-
-				bool has_any = false;
-				for (int y = 0; y < MODULAR_AIRPORT_GRID_H; y++) {
-					for (int x = 0; x < MODULAR_AIRPORT_GRID_W; x++) {
-						uint8_t piece = this->preview_grid[y * MODULAR_AIRPORT_GRID_W + x];
-						if (piece == MODULAR_AIRPORT_PIECE_EMPTY || piece >= PIECE_COUNT) continue;
-						has_any = true;
-						Rect cell(
-							inner.left + x * cell_w,
-							inner.top + y * cell_h,
-							inner.left + (x + 1) * cell_w - 1,
-							inner.top + (y + 1) * cell_h - 1
-						);
-						GfxFillRect(cell, _modular_airport_pieces[piece].colour);
-
-						if (this->show_taxi_arrows) {
-							uint8_t auto_dirs = CalculateAutoTaxiDirectionsForPiece(piece, this->rotation);
-							uint8_t effective = GetEffectiveTaxiDirections(auto_dirs, this->taxi_dir_mask);
-							if (effective != 0) {
-								int text_y = CentreBounds(cell.top, cell.bottom, GetCharacterHeight(FS_NORMAL));
-								if (effective & 0x01) {
-									DrawString(cell.left, cell.right, cell.top, "N", TC_BLACK, SA_HOR_CENTER);
-								}
-								if (effective & 0x04) {
-									DrawString(cell.left, cell.right, cell.bottom - GetCharacterHeight(FS_NORMAL) + 1, "S", TC_BLACK, SA_HOR_CENTER);
-								}
-								if (effective & 0x02) {
-									DrawString(cell.left, cell.right, text_y, "E", TC_BLACK, SA_RIGHT);
-								}
-								if (effective & 0x08) {
-									DrawString(cell.left, cell.right, text_y, "W", TC_BLACK, SA_LEFT);
-								}
-							}
-						}
-					}
-				}
-
-				for (int x = 0; x <= MODULAR_AIRPORT_GRID_W; x++) {
-					int x_pos = inner.left + x * cell_w;
-					if (x_pos > inner.right) break;
-					GfxDrawLine(x_pos, inner.top, x_pos, inner.bottom, PC_DARK_GREY);
-				}
-				for (int y = 0; y <= MODULAR_AIRPORT_GRID_H; y++) {
-					int y_pos = inner.top + y * cell_h;
-					if (y_pos > inner.bottom) break;
-					GfxDrawLine(inner.left, y_pos, inner.right, y_pos, PC_DARK_GREY);
-				}
-
-				if (!has_any) {
-					DrawString(inner, STR_STATION_BUILD_MODULAR_AIRPORT_CANVAS_HINT, TC_BLACK, SA_HOR_CENTER);
-				}
-				break;
-			}
-
-			case WID_MA_STATUS:
-				DrawString(r, this->status, TC_BLACK);
-				break;
-
 			default: break;
 		}
 	}
@@ -896,10 +820,6 @@ public:
 				}
 				break;
 			}
-
-			case WID_MA_CANVAS:
-				this->HandleCanvasClick(pt);
-				break;
 
 			case WID_MA_ROTATE_DECREASE:
 				this->rotation = (this->rotation + 3) % 4;
@@ -932,10 +852,6 @@ public:
 				this->snap_to_grid = !this->snap_to_grid;
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SNAP, this->snap_to_grid);
 				this->SetDirty();
-				break;
-
-			case WID_MA_VALIDATE:
-				this->ValidateModularAirport();
 				break;
 
 			default: break;
@@ -976,56 +892,6 @@ public:
 	}
 
 private:
-	void ValidateModularAirport()
-	{
-		const Station *st = Station::GetIfValid(_last_modular_airport_station);
-		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular) || st->airport.modular_tile_data == nullptr) {
-			this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_AIRPORT;
-			this->SetDirty();
-			return;
-		}
-
-		std::vector<TileIndex> runways;
-		std::vector<TileIndex> terminals;
-		runways.reserve(st->airport.modular_tile_data->size());
-		terminals.reserve(st->airport.modular_tile_data->size());
-
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (IsModularRunwayGfx(data.piece_type)) runways.push_back(data.tile);
-			if (IsModularTerminalGfx(data.piece_type)) terminals.push_back(data.tile);
-		}
-
-		if (runways.empty()) {
-			this->status = STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_RUNWAY;
-			this->SetDirty();
-			return;
-		}
-
-		bool all_reachable = true;
-		for (TileIndex terminal : terminals) {
-			bool reachable = false;
-			for (TileIndex runway : runways) {
-				if (terminal == runway) {
-					reachable = true;
-					break;
-				}
-				AirportGroundPath path = FindAirportGroundPath(st, terminal, runway, nullptr);
-				if (path.found) {
-					reachable = true;
-					break;
-				}
-			}
-			if (!reachable) {
-				all_reachable = false;
-				break;
-			}
-		}
-
-		this->status = all_reachable ? STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_VALID_OK
-			: STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_UNREACHABLE;
-		this->SetDirty();
-	}
-
 	void ToggleTaxiDir(uint8_t dir_bit, WidgetID widget)
 	{
 		this->taxi_dir_mask ^= dir_bit;
@@ -1042,21 +908,6 @@ private:
 			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
 		}
 	}
-
-	void HandleCanvasClick(Point pt)
-	{
-		Rect inner = this->GetWidget<NWidgetBase>(WID_MA_CANVAS)->GetCurrentRect().Shrink(WidgetDimensions::scaled.bevel);
-		int cell_w = std::max(1, inner.Width() / MODULAR_AIRPORT_GRID_W);
-		int cell_h = std::max(1, inner.Height() / MODULAR_AIRPORT_GRID_H);
-
-		int col = (pt.x - inner.left) / cell_w;
-		int row = (pt.y - inner.top) / cell_h;
-		if (col < 0 || row < 0 || col >= MODULAR_AIRPORT_GRID_W || row >= MODULAR_AIRPORT_GRID_H) return;
-
-		uint8_t piece = (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? MODULAR_AIRPORT_PIECE_EMPTY : this->selected_piece;
-		this->preview_grid[row * MODULAR_AIRPORT_GRID_W + col] = piece;
-		this->SetDirty();
-	}
 };
 
 static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airport_widgets = {
@@ -1072,8 +923,6 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 				NWidget(WWT_MATRIX, COLOUR_GREY, WID_MA_PIECES), SetMatrixDataTip(1, lengthof(_modular_airport_pieces), STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP),
 			EndContainer(),
 			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
-				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_PREVIEW_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PREVIEW_LABEL), SetFill(1, 0),
-				NWidget(WWT_EMPTY, INVALID_COLOUR, WID_MA_CANVAS), SetFill(1, 0),
 				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_ROTATE_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_ROTATION_LABEL), SetFill(1, 0),
 				NWidget(NWID_HORIZONTAL),
 					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_DECREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_DECREASE),
@@ -1090,11 +939,6 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_ONEWAY), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY),
 					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SHOW_ARROWS), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
 					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SNAP), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP),
-				EndContainer(),
-				NWidget(WWT_EMPTY, INVALID_COLOUR, WID_MA_STATUS), SetFill(1, 0), SetMinimalTextLines(1, WidgetDimensions::unscaled.vsep_normal),
-				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
-					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_MA_VALIDATE), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE),
-					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_MA_BUILD), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED),
 				EndContainer(),
 			EndContainer(),
 		EndContainer(),

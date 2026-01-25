@@ -80,7 +80,7 @@ void Aircraft::UpdateDeltaXY()
 }
 
 static bool AirportMove(Aircraft *v, const AirportFTAClass *apc);
-static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft *v);
+static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v);
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st);
 static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st);
 static void ClearGroundPathReservation(const std::vector<TileIndex> *path, VehicleID vid);
@@ -1819,14 +1819,16 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 		}
 		/* For modular airports, handle landing differently */
 		if (st->airport.blocks.Test(AirportBlock::Modular)) {
-			/* Find runway for modular airport */
-			TileIndex runway_tile = FindNearestModularRunwayTile(st, v);
-			Debug(misc, 3, "[ModAp] Vehicle {} approaching modular airport {}, runway_tile={}", v->index, st->index, runway_tile.base());
+			/* Find runway/helipad for modular airport */
+			TileIndex runway_tile = FindModularLandingTarget(st, v);
+			Debug(misc, 3, "[ModAp] Vehicle {} approaching modular airport {}, landing_tile={}", v->index, st->index, runway_tile.base());
 			
 			if (runway_tile != INVALID_TILE) {
 				/* Check distance - only land if close enough (e.g. 50 tiles) */
 				/* Always use pixel coordinates as v->tile is 0 when flying */
-				int dist = (abs(v->x_pos - TileX(runway_tile) * TILE_SIZE) + abs(v->y_pos - TileY(runway_tile) * TILE_SIZE)) / TILE_SIZE;
+				int target_x = (int)TileX(runway_tile) * TILE_SIZE;
+				int target_y = (int)TileY(runway_tile) * TILE_SIZE;
+				int dist = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
 
 				if (dist < 50) {
 					/* Start landing sequence */
@@ -1839,6 +1841,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					/* Don't set v->pos for modular airports - not used */
 					return;
 				}
+				Debug(misc, 3, "[ModAp] Vehicle {} dist to landing={}, threshold=50", v->index, dist);
 			}
 			
 			/* Too far or no runway found, keep flying */
@@ -2038,6 +2041,22 @@ static bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+static bool IsModularHelipadPiece(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return true;
+		default:
+			return false;
+	}
+}
+
 static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
 {
 	const ModularAirportTileData *data = st->airport.GetModularTileData(start_tile);
@@ -2067,12 +2086,14 @@ static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
 	}
 }
 
-static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft *v)
+static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
 	TileIndex best_tile = INVALID_TILE;
 	int best_score = INT_MAX;
+
+	bool is_heli = v->subtype == AIR_HELICOPTER;
 
 	TileIndex term_tile = FindFreeModularTerminal(st, v);
 	bool has_term = (term_tile != INVALID_TILE);
@@ -2080,11 +2101,29 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 	int term_y = has_term ? TileY(term_tile) * TILE_SIZE : 0;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (!IsModularRunwayPiece(data.piece_type)) continue;
+		bool is_runway = IsModularRunwayPiece(data.piece_type);
+		bool is_helipad = IsModularHelipadPiece(data.piece_type);
+
+		if (!is_runway && !is_helipad) continue;
+
+		/* Helicopters prefer helipads, but can use runways if no helipad. 
+		   Planes must use runways. */
+		if (is_heli) {
+			/* If we found a helipad, ignore runways (unless we haven't found a helipad yet, but sorting handles that) */
+			/* Actually, let's just score helipads much better */
+			if (is_runway) {
+				// Only use runway if we haven't found a helipad
+				// We handle this by adding a massive penalty to runways for helis
+			}
+		} else {
+			if (is_helipad) continue; // Planes can't land on helipads
+		}
 
 		/* Only consider runway ends as valid landing targets */
-		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-		if (!is_end) continue;
+		if (is_runway) {
+			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+			if (!is_end) continue;
+		}
 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
@@ -2092,16 +2131,22 @@ static TileIndex FindNearestModularRunwayTile(const Station *st, const Aircraft 
 
 		int score = dist_flight;
 
+		if (is_heli && is_runway) score += 1000000; // Prefer helipads significantly
+
 		if (has_term) {
 			/* Calculate distance from the *other* end of the runway to the terminal.
 			   This favors landings that roll out towards the terminal. */
-			TileIndex other_end = GetRunwayOtherEnd(st, data.tile);
-			int end_x = TileX(other_end) * TILE_SIZE;
-			int end_y = TileY(other_end) * TILE_SIZE;
-			int dist_taxi = abs(end_x - term_x) + abs(end_y - term_y);
-
-			/* Penalize taxi distance more because taxiing is slower than flying. */
-			score = dist_flight + dist_taxi * 4;
+			if (is_runway) {
+				TileIndex other_end = GetRunwayOtherEnd(st, data.tile);
+				int end_x = TileX(other_end) * TILE_SIZE;
+				int end_y = TileY(other_end) * TILE_SIZE;
+				int dist_taxi = abs(end_x - term_x) + abs(end_y - term_y);
+				score += dist_taxi * 4;
+			} else {
+				/* For helipad, taxi distance is from helipad to terminal */
+				int dist_taxi = abs(cx - term_x) + abs(cy - term_y);
+				score += dist_taxi * 4;
+			}
 		}
 
 		if (score < best_score) {
@@ -2169,10 +2214,10 @@ static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_t
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
 	if (v->modular_landing_tile == INVALID_TILE) {
-		v->modular_landing_tile = FindNearestModularRunwayTile(st, v);
+		v->modular_landing_tile = FindModularLandingTarget(st, v);
 		v->modular_landing_stage = 0;
 		if (v->modular_landing_tile == INVALID_TILE) {
-			Debug(misc, 3, "[ModAp] no runway tile found for landing at station {}", st->index);
+			Debug(misc, 3, "[ModAp] no runway/helipad tile found for landing at station {}", st->index);
 			return false;
 		}
 		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to runway tile {}, pos=({},{},{})", v->index, v->modular_landing_tile.base(), v->x_pos, v->y_pos, v->z_pos);
@@ -2729,8 +2774,8 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 	TileIndex target = st->airport.tile;
 	if (target == INVALID_TILE) target = st->xy;
 
-	/* Try to target the approach point of the nearest runway */
-	TileIndex runway = FindNearestModularRunwayTile(st, v);
+	/* Try to target the approach point of the nearest runway/helipad */
+	TileIndex runway = FindModularLandingTarget(st, v);
 	int target_x, target_y;
 	if (runway != INVALID_TILE) {
 		GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
@@ -2740,6 +2785,11 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 	}
 
 	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
+
+	if (v->subtype == AIR_HELICOPTER) {
+		Debug(misc, 3, "[ModAp] Fly: v=({},{},{}), target=({},{},?), dist={}, runway={}", 
+			v->x_pos, v->y_pos, v->z_pos, target_x, target_y, dist, runway.base());
+	}
 
 	if (dist > 0) {
 		v->direction = GetDirectionTowards(v, target_x, target_y);
@@ -2771,7 +2821,7 @@ static void AirportGoToNextPosition(Aircraft *v)
 	/* Check if this is a modular airport - handle before AircraftController */
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
 		/* For landing aircraft, use custom modular landing logic */
-		if (v->state == LANDING || v->state == ENDLANDING) {
+		if (v->state == LANDING || v->state == ENDLANDING || v->state == HELILANDING || v->state == HELIENDLANDING) {
 			/* Don't call AircraftController - it uses FTA MovingData which doesn't match modular layout */
 			/* AirportMoveModularLanding handles all movement to the runway */
 			if (AirportMoveModularLanding(v, st)) return;
