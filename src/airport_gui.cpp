@@ -134,7 +134,13 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t
 		case 21: return APT_RADIO_TOWER_FENCE_NE;
 		case 22: return APT_GRASS_1;
 		case 23: return APT_EMPTY;
-		case 24: return APT_APRON_FENCE_NE;
+		case 24:
+			switch (rotation % 4) {
+				case 0: return APT_APRON_FENCE_NE;
+				case 1: return APT_APRON_FENCE_SE;
+				case 2: return APT_APRON_FENCE_SW;
+				default: return APT_APRON_FENCE_NW;
+			}
 		default: return APT_APRON;
 	}
 }
