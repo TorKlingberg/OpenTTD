@@ -2243,9 +2243,20 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	/* Calculate distance to target */
 	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
-	/* Move one pixel towards target */
-	int new_x = (v->x_pos != target_x) ? v->x_pos + ((target_x > v->x_pos) ? 1 : -1) : v->x_pos;
-	int new_y = (v->y_pos != target_y) ? v->y_pos + ((target_y > v->y_pos) ? 1 : -1) : v->y_pos;
+	/* Update speed for approach/landing */
+	uint speed_limit = (v->modular_landing_stage == 0) ? SPEED_LIMIT_HOLD : SPEED_LIMIT_APPROACH;
+	int count = UpdateAircraftSpeed(v, speed_limit, false);
+
+	/* Only move if speed allows it */
+	if (count == 0) return false;
+
+	/* Move 'count' pixels towards target */
+	int new_x = v->x_pos;
+	int new_y = v->y_pos;
+	for (int i = 0; i < count; i++) {
+		if (new_x != target_x) new_x += (target_x > new_x) ? 1 : -1;
+		if (new_y != target_y) new_y += (target_y > new_y) ? 1 : -1;
+	}
 
 	/* Update direction */
 	if (new_x != v->x_pos || new_y != v->y_pos) {
