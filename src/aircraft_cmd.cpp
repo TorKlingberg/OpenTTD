@@ -84,7 +84,7 @@ static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v);
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st);
 static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st);
 static void ClearGroundPathReservation(const std::vector<TileIndex> *path, VehicleID vid);
-static TileIndex FindFreeModularHelipad(const Station *st);
+static TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v);
 static TileIndex FindFreeModularHangar(const Station *st);
 static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
@@ -1609,7 +1609,7 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			TileIndex goal = INVALID_TILE;
 			uint8_t target = MGT_NONE;
 			if (v->subtype == AIR_HELICOPTER) {
-				goal = FindFreeModularHelipad(st);
+				goal = FindFreeModularHelipad(st, v);
 				target = (goal != INVALID_TILE) ? MGT_HELIPAD : MGT_TERMINAL;
 			}
 			if (goal == INVALID_TILE) {
@@ -1918,7 +1918,7 @@ static void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *
 		uint8_t target = MGT_NONE;
 
 		if (v->subtype == AIR_HELICOPTER && !wants_depot) {
-			goal = FindFreeModularHelipad(st);
+			goal = FindFreeModularHelipad(st, v);
 			target = MGT_HELIPAD;
 		}
 
@@ -2168,7 +2168,7 @@ static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_t
 	if (data == nullptr) return;
 
 	bool horizontal = (data->rotation % 2) == 0; // 0=X-axis (NW-SE), 1=Y-axis (NE-SW)
-	int approach_dist = 15 * TILE_SIZE; // 15 tiles out
+	int approach_dist = 12 * TILE_SIZE; // 12 tiles out (matches standard airport scale better)
 
 	/* Determine which way is "out" by checking neighbors or rotation */
 	/* If horizontal (X-axis), check X+1 and X-1 */
@@ -2326,7 +2326,7 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	return false;
 }
 
-static bool AirportMoveModularHeliTakeoff(Aircraft *v, const Station *st)
+static bool AirportMoveModularHeliTakeoff(Aircraft *v, [[maybe_unused]] const Station *st)
 {
 	int target_z = GetAircraftFlightLevel(v, true);
 
@@ -2435,59 +2435,18 @@ static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
  */
 static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile)
 {
-	/* Find a rollout point along the runway towards the NW end */
-	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+	const ModularAirportTileData *data = st->airport.GetModularTileData(landing_tile);
+	if (data == nullptr) return INVALID_TILE;
 
-	/* Get all runway tiles */
-	std::vector<TileIndex> runway_tiles;
-	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (IsModularRunwayPiece(data.piece_type)) {
-			runway_tiles.push_back(data.tile);
-		}
+	bool is_rw = IsModularRunwayPiece(data->piece_type);
+	if (is_rw) {
+		Debug(misc, 3, "[ModAp] Rollout check: tile={}, gfx={}, is_runway=1", landing_tile.base(), data->piece_type);
+	} else {
+		return INVALID_TILE;
 	}
 
-	if (runway_tiles.empty()) return INVALID_TILE;
-
-	/* Find the NW end (min X+Y) */
-	TileIndex nw_end = runway_tiles[0];
-	int min_sum = TileX(nw_end) + TileY(nw_end);
-
-	for (TileIndex tile : runway_tiles) {
-		int sum = TileX(tile) + TileY(tile);
-		if (sum < min_sum) {
-			min_sum = sum;
-			nw_end = tile;
-		}
-	}
-
-	/* If we landed at the NW end, no rollout needed */
-	if (nw_end == landing_tile) return INVALID_TILE;
-
-	/* Find a runway tile about 60-70% of the way towards NW end */
-	int land_sum = TileX(landing_tile) + TileY(landing_tile);
-	int target_sum = land_sum - (land_sum - min_sum) * 2 / 3;
-
-	TileIndex best_tile = nw_end;
-	int best_diff = INT_MAX;
-
-	for (TileIndex tile : runway_tiles) {
-		int sum = TileX(tile) + TileY(tile);
-		/* Only consider tiles between landing and NW end */
-		if (sum >= min_sum && sum <= land_sum) {
-			int diff = abs(sum - target_sum);
-			if (diff < best_diff) {
-				best_diff = diff;
-				best_tile = tile;
-			}
-		}
-	}
-
-	Debug(misc, 3, "[ModAp] Rollout point: landing={} ({},{}), nw_end={} ({},{}), rollout={} ({},{})",
-		landing_tile.base(), TileX(landing_tile), TileY(landing_tile),
-		nw_end.base(), TileX(nw_end), TileY(nw_end),
-		best_tile.base(), TileX(best_tile), TileY(best_tile));
-
-	return (best_tile != landing_tile) ? best_tile : INVALID_TILE;
+	/* Get the other end of the runway */
+	return GetRunwayOtherEnd(st, landing_tile);
 }
 
 static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
@@ -2512,22 +2471,24 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 	return INVALID_TILE;
 }
 
-static TileIndex FindFreeModularHelipad(const Station *st)
+static TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
+	/* If we are already on a helipad, stay there! */
+	if (v != nullptr && IsModularHelipadPiece(st->airport.GetModularTileData(v->tile)->piece_type)) {
+		return v->tile;
+	}
+
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		switch (data.piece_type) {
-			case APT_HELIPAD_1:
-			case APT_HELIPAD_2:
-			case APT_HELIPAD_2_FENCE_NW:
-			case APT_HELIPAD_2_FENCE_NE_SE:
-			case APT_HELIPAD_3_FENCE_SE_SW:
-			case APT_HELIPAD_3_FENCE_NW_SW:
-			case APT_HELIPAD_3_FENCE_NW:
-				return data.tile;
-			default:
-				break;
+		if (IsModularHelipadPiece(data.piece_type)) {
+			Tile t(data.tile);
+			if (HasAirportTileReservation(t)) {
+				/* If reserved by us, it's fine */
+				if (v != nullptr && GetAirportTileReserver(t) == v->index) return data.tile;
+				continue;
+			}
+			return data.tile;
 		}
 	}
 
@@ -2624,7 +2585,7 @@ static void HandleModularGroundArrival(Aircraft *v)
 				uint8_t target = MGT_NONE;
 
 				if (v->subtype == AIR_HELICOPTER && !wants_depot) {
-					goal = FindFreeModularHelipad(st);
+					goal = FindFreeModularHelipad(st, v);
 					target = MGT_HELIPAD;
 				}
 
