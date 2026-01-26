@@ -1626,7 +1626,7 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 		} else {
 			if (v->subtype == AIR_HELICOPTER) {
 				AircraftLeaveHangar(v, exit_dir);
-				AircraftEventHandler_HeliTakeOff(v, apc);
+				v->state = HELITAKEOFF;
 				return;
 			}
 
@@ -1703,7 +1703,7 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 		}
 
 		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
-			AircraftEventHandler_HeliTakeOff(v, apc);
+			v->state = HELITAKEOFF;
 			return;
 		}
 
@@ -2235,6 +2235,9 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		/* Final phase: fly to threshold */
 		target_x = TileX(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
 		target_y = TileY(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
+		
+		/* Helicopters maintain altitude in final phase until over the pad */
+		if (v->subtype == AIR_HELICOPTER) target_z = airport_z + 20 * 5;
 	}
 
 	/* Calculate distance to target */
@@ -2259,12 +2262,24 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		/* Simple seek towards target_z */
 		if (z < target_z) z++; else if (z > target_z) z--;
 	} else {
-		/* Glide slope for final */
-		if (z > airport_z) {
-			int t = std::max(1, dist - 4);
-			int delta = z - airport_z;
-			if (delta >= t) {
-				z -= CeilDiv(z - airport_z, t);
+		/* Final phase */
+		if (v->subtype == AIR_HELICOPTER) {
+			/* Helicopters: Fly to target at altitude, then descend vertically */
+			if (dist > 0) {
+				/* Maintain high altitude while moving horizontally */
+				if (z < target_z) z++; else if (z > target_z) z--;
+			} else {
+				/* Vertically descend to ground */
+				if (z > airport_z) z--;
+			}
+		} else {
+			/* Planes: Glide slope for final */
+			if (z > airport_z) {
+				int t = std::max(1, dist - 4);
+				int delta = z - airport_z;
+				if (delta >= t) {
+					z -= CeilDiv(z - airport_z, t);
+				}
 			}
 		}
 	}
@@ -2280,6 +2295,8 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			/* Reached FAF, switch to final */
 			v->modular_landing_stage = 1;
 		} else {
+			if (v->z_pos > airport_z) return false; // Still descending
+
 			/* Reached threshold, land and start rollout */
 			Debug(misc, 3, "[ModAp] Vehicle {} touchdown at ({},{},{})", v->index, target_x, target_y, airport_z);
 			v->tile = v->modular_landing_tile;
@@ -2309,9 +2326,31 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	return false;
 }
 
+static bool AirportMoveModularHeliTakeoff(Aircraft *v, const Station *st)
+{
+	int target_z = GetAircraftFlightLevel(v, true);
+
+	if (v->z_pos < target_z) {
+		v->z_pos++;
+		SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
+		return true;
+	}
+
+	/* Reached altitude, transition to flying */
+	v->state = FLYING;
+	v->tile = TileIndex{};
+	AircraftNextAirportPos_and_Order(v);
+	return true;
+}
+
 static bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 {
 	if (v->modular_takeoff_tile == INVALID_TILE) return false;
+// ... (rest of function)
+// I need to be careful not to delete the existing function logic.
+// I will insert the new function BEFORE AirportMoveModularTakeoff.
+// And Update AirportGoToNextPosition.
+
 
 	const ModularAirportTileData *data = st->airport.GetModularTileData(v->modular_takeoff_tile);
 	if (data == nullptr) return false;
@@ -2831,6 +2870,11 @@ static void AirportGoToNextPosition(Aircraft *v)
 		/* For takeoff, use custom modular takeoff logic */
 		if (v->state == TAKEOFF || v->state == STARTTAKEOFF || v->state == ENDTAKEOFF) {
 			if (AirportMoveModularTakeoff(v, st)) return;
+			return;
+		}
+
+		if (v->state == HELITAKEOFF) {
+			if (AirportMoveModularHeliTakeoff(v, st)) return;
 			return;
 		}
 
