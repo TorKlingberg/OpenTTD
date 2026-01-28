@@ -922,14 +922,56 @@ public:
 		/* Build modular airport pieces in the selected area */
 		TileArea ta(start_tile, end_tile);
 
-		/* Validate drag build */
-		if (!this->ValidateDragBuild(ta)) {
+		/* Check if this is a single tile or drag operation */
+		bool is_single_tile = (start_tile == end_tile);
+
+		/* Only validate for drag operations, not single tile placement */
+		if (!is_single_tile && !this->ValidateDragBuild(ta)) {
 			return;
 		}
 
-		/* Place tiles in the area */
-		for (TileIndex tile : ta) {
-			this->PlaceSingleTile(tile);
+		/* Smart runway building: auto-add end pieces when dragging main runway piece (piece 0) */
+		bool is_main_runway = (this->selected_piece == 0); // Piece 0 = main runway middle piece
+		bool should_auto_end = is_main_runway && !is_single_tile && (ta.w > 2 || ta.h > 2);
+
+		if (should_auto_end) {
+			/* Build runway with automatic end pieces */
+			TileIndex first_tile = INVALID_TILE;
+			TileIndex last_tile = INVALID_TILE;
+			uint tile_count = 0;
+
+			/* Find first and last tiles in the area */
+			for (TileIndex tile : ta) {
+				if (first_tile == INVALID_TILE) first_tile = tile;
+				last_tile = tile;
+				tile_count++;
+			}
+
+			/* Place end piece at start */
+			this->PlaceSingleTileWithPiece(first_tile, 1); // Piece 1 = runway end
+
+			/* Place middle pieces */
+			if (tile_count > 2) {
+				bool is_first = true;
+				for (TileIndex tile : ta) {
+					if (is_first) {
+						is_first = false;
+						continue; // Skip first (already placed end)
+					}
+					if (tile == last_tile) break; // Skip last (will place end)
+					this->PlaceSingleTile(tile); // Place middle piece
+				}
+			}
+
+			/* Place end piece at end */
+			if (tile_count > 1) {
+				this->PlaceSingleTileWithPiece(last_tile, 1); // Piece 1 = runway end
+			}
+		} else {
+			/* Normal placement: place selected piece on all tiles */
+			for (TileIndex tile : ta) {
+				this->PlaceSingleTile(tile);
+			}
 		}
 	}
 
@@ -940,7 +982,17 @@ private:
 	 */
 	void PlaceSingleTile(TileIndex tile)
 	{
-		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
+		this->PlaceSingleTileWithPiece(tile, this->selected_piece);
+	}
+
+	/**
+	 * Place a single airport piece tile with a specific piece type
+	 * @param tile The tile to place the piece on
+	 * @param piece_index The piece index to place (overrides selected_piece)
+	 */
+	void PlaceSingleTileWithPiece(TileIndex tile, uint8_t piece_index)
+	{
+		uint8_t gfx = GetModularAirportPieceGfx(piece_index, this->rotation);
 		bool adjacent = _ctrl_pressed;
 
 		/* Capture taxi direction data to pass to command */
