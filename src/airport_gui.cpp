@@ -38,6 +38,10 @@
 #include "airport_ground_pathfinder.h"
 #include "landscape_cmd.h"
 #include "zoom_func.h"
+#include "map_func.h"
+#include "direction_func.h"
+#include "tilearea_type.h"
+#include "error.h"
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
 #include "palette_func.h"
@@ -867,10 +871,75 @@ public:
 	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
 	{
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
-			Command<CMD_LANDSCAPE_CLEAR>::Post(STR_ERROR_CAN_T_CLEAR_THIS_AREA, CcBuildAirport, tile);
+			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
 			return;
 		}
 
+		/* Determine if this piece type supports drag-building */
+		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 4);      // Pieces 0-4: Runways
+		bool is_taxiway = (this->selected_piece == 5 || this->selected_piece == 6);     // Pieces 5-6: Taxiways
+		bool is_apron = (this->selected_piece == 15);                                    // Piece 15: Apron
+		bool is_grass = (this->selected_piece == 22);                                    // Piece 22: Grass
+
+		bool supports_drag = is_runway || is_taxiway || is_apron || is_grass;
+
+		if (supports_drag) {
+			/* Enable drag-building */
+			if (is_runway || is_taxiway) {
+				/* Linear pieces: allow drag in X or Y direction only */
+				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
+			} else {
+				/* Rectangular pieces: allow drag in both X and Y */
+				VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUILD_STATION);
+			}
+		} else {
+			/* Single tile placement */
+			this->PlaceSingleTile(tile);
+		}
+	}
+
+	void OnPlaceDrag(ViewportPlaceMethod select_method, [[maybe_unused]] ViewportDragDropSelectionProcess select_proc, [[maybe_unused]] Point pt) override
+	{
+		VpSelectTilesWithMethod(pt.x, pt.y, select_method);
+	}
+
+	void OnPlaceMouseUp([[maybe_unused]] ViewportPlaceMethod select_method, ViewportDragDropSelectionProcess select_proc, [[maybe_unused]] Point pt, TileIndex start_tile, TileIndex end_tile) override
+	{
+		if (select_proc == DDSP_DEMOLISH_AREA) {
+			/* Erase mode */
+			if (start_tile != end_tile) {
+				/* Drag-erase area */
+				GUIPlaceProcDragXY(select_proc, start_tile, end_tile);
+			} else {
+				/* Single tile erase */
+				Command<CMD_LANDSCAPE_CLEAR>::Post(STR_ERROR_CAN_T_CLEAR_THIS_AREA, CcBuildAirport, start_tile);
+			}
+			return;
+		}
+
+		if (select_proc != DDSP_BUILD_STATION) return;
+
+		/* Build modular airport pieces in the selected area */
+		TileArea ta(start_tile, end_tile);
+
+		/* Validate drag build */
+		if (!this->ValidateDragBuild(ta)) {
+			return;
+		}
+
+		/* Place tiles in the area */
+		for (TileIndex tile : ta) {
+			this->PlaceSingleTile(tile);
+		}
+	}
+
+private:
+	/**
+	 * Place a single airport piece tile
+	 * @param tile The tile to place the piece on
+	 */
+	void PlaceSingleTile(TileIndex tile)
+	{
 		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
 		bool adjacent = _ctrl_pressed;
 
@@ -890,6 +959,38 @@ public:
 		};
 
 		ShowSelectStationIfNeeded(TileArea(tile, 1, 1), proc);
+	}
+
+	/**
+	 * Validate drag-build operation
+	 * @param ta The tile area being built
+	 * @return True if valid, false otherwise
+	 */
+	bool ValidateDragBuild(const TileArea &ta)
+	{
+		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 4);
+		bool is_taxiway = (this->selected_piece == 5 || this->selected_piece == 6);
+
+		/* For runways and taxiways, validate linear alignment */
+		if (is_runway || is_taxiway) {
+			DiagDirection dir = DiagdirBetweenTiles(ta.tile, TileAddXY(ta.tile, ta.w - 1, ta.h - 1));
+			if (dir == INVALID_DIAGDIR && (ta.w > 1 || ta.h > 1)) {
+				/* Not a straight line */
+				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_MUST_BE_STRAIGHT_LINE), {}, WL_INFO);
+				return false;
+			}
+		}
+
+		/* Minimum runway length check */
+		if (is_runway) {
+			uint piece_count = std::max(ta.w, ta.h);
+			if (piece_count < 3) {
+				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_RUNWAY_TOO_SHORT), {}, WL_INFO);
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	void OnPlaceObjectAbort() override

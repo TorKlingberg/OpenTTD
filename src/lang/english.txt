@@ -5503,6 +5503,8 @@ STR_ERROR_NO_STOP_COMPATIBLE_TRAM_TYPE                          :{WHITE}There ar
 STR_ERROR_NO_STOP_ARTICULATED_VEHICLE                           :{WHITE}There are no stops which are suitable for articulated road vehicles.{}Articulated road vehicles require a drive-through stop, not a bay stop
 STR_ERROR_AIRPORT_NO_PLANES                                     :{WHITE}This plane cannot land at this heliport
 STR_ERROR_AIRPORT_NO_HELICOPTERS                                :{WHITE}This helicopter cannot land at this airport
+STR_ERROR_AIRPORT_MUST_BE_STRAIGHT_LINE                         :{WHITE}Runways and taxiways must be built in a straight line
+STR_ERROR_AIRPORT_RUNWAY_TOO_SHORT                              :{WHITE}Runway is too short (minimum 3 tiles)
 STR_ERROR_NO_RAIL_WAYPOINT                                      :{WHITE}There is no rail waypoint
 STR_ERROR_NO_ROAD_WAYPOINT                                      :{WHITE}There is no road waypoint
 STR_ERROR_NO_BUOY                                               :{WHITE}There is no buoy
