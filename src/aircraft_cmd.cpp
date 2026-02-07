@@ -2676,7 +2676,6 @@ static void HandleModularGroundArrival(Aircraft *v)
 
 	switch (v->modular_ground_target) {
 		case MGT_ROLLOUT:
-			ClearModularRunwayReservation(v);
 			/* Completed rollout along runway, now find a terminal */
 			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
 			{
@@ -2709,9 +2708,10 @@ static void HandleModularGroundArrival(Aircraft *v)
 
 		case MGT_TERMINAL:
 		case MGT_HELIPAD:
-			if (IsAirport(Tile(v->tile))) {
-				SetAirportTileReservation(Tile(v->tile), true);
-				SetAirportTileReserver(Tile(v->tile), v->index);
+			if (IsAirportTile(v->tile)) {
+				Tile t(v->tile);
+				SetAirportTileReservation(t, true);
+				SetAirportTileReserver(t, v->index);
 			}
 			AircraftEntersTerminal(v);
 			v->state = (v->subtype == AIR_HELICOPTER) ? HELIPAD1 : TERM1;
@@ -2719,9 +2719,10 @@ static void HandleModularGroundArrival(Aircraft *v)
 			break;
 
 		case MGT_HANGAR:
-			if (IsAirport(Tile(v->tile))) {
-				SetAirportTileReservation(Tile(v->tile), true);
-				SetAirportTileReserver(Tile(v->tile), v->index);
+			if (IsAirportTile(v->tile)) {
+				Tile t(v->tile);
+				SetAirportTileReservation(t, true);
+				SetAirportTileReserver(t, v->index);
 			}
 			Debug(misc, 3, "[ModAp] Vehicle {} entering hangar at tile {}", v->index, v->tile.base());
 			VehicleEnterDepot(v);
@@ -2731,9 +2732,10 @@ static void HandleModularGroundArrival(Aircraft *v)
 
 		case MGT_RUNWAY_TAKEOFF:
 			/* Hold the runway entry tile while waiting for takeoff clearance. */
-			if (IsAirport(Tile(v->tile))) {
-				SetAirportTileReservation(Tile(v->tile), true);
-				SetAirportTileReserver(Tile(v->tile), v->index);
+			if (IsAirportTile(v->tile)) {
+				Tile t(v->tile);
+				SetAirportTileReservation(t, true);
+				SetAirportTileReserver(t, v->index);
 			}
 			v->state = TAKEOFF;
 			v->modular_takeoff_tile = v->tile;
@@ -2886,14 +2888,21 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		}
 	}
 
-	if (v->x_pos == target_x && v->y_pos == target_y) {
-		v->tile = next_tile;
-		v->ground_path_index++;
-		v->ground_path_last_tile = v->tile;
-		v->ground_path_stall_counter = 0;
+		if (v->x_pos == target_x && v->y_pos == target_y) {
+			v->tile = next_tile;
+			v->ground_path_index++;
+			v->ground_path_last_tile = v->tile;
+			v->ground_path_stall_counter = 0;
 
-		if (v->ground_path_index > 1) {
-			TileIndex prev_tile = (*v->ground_path)[v->ground_path_index - 2];
+			/* Keep runway reserved until the landing aircraft physically leaves runway tiles. */
+			if (!v->modular_runway_reservation.empty()) {
+				const ModularAirportTileData *tile_data = st->airport.GetModularTileData(v->tile);
+				const bool on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
+				if (!on_runway) ClearModularRunwayReservation(v);
+			}
+
+			if (v->ground_path_index > 1) {
+				TileIndex prev_tile = (*v->ground_path)[v->ground_path_index - 2];
 			Tile prev(prev_tile);
 			if (std::find(v->modular_runway_reservation.begin(), v->modular_runway_reservation.end(), prev_tile) == v->modular_runway_reservation.end() &&
 					HasAirportTileReservation(prev) && GetAirportTileReserver(prev) == v->index) {
