@@ -2923,12 +2923,27 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 
 	/* Try to target the approach point of the nearest runway/helipad */
 	TileIndex runway = FindModularLandingTarget(st, v);
-	int target_x, target_y;
+	int base_target_x, base_target_y;
 	if (runway != INVALID_TILE) {
-		GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
+		GetModularLandingApproachPoint(st, runway, &base_target_x, &base_target_y);
 	} else {
-		target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
-		target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+		base_target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
+		base_target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+	}
+
+	int target_x = base_target_x;
+	int target_y = base_target_y;
+	int dist_base = abs(v->x_pos - base_target_x) + abs(v->y_pos - base_target_y);
+	static constexpr int hold_trigger_dist = 6 * static_cast<int>(TILE_SIZE);
+
+	/* Hold in an orbit around the approach point so waiting aircraft do not stack at one position. */
+	if (dist_base < hold_trigger_dist) {
+		static constexpr int hold_radius = 5 * TILE_SIZE;
+		static const int8_t hold_dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+		static const int8_t hold_dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+		uint8_t phase = ((v->tick_counter / 16) + v->index.base()) & 7;
+		target_x = base_target_x + hold_dx[phase] * hold_radius;
+		target_y = base_target_y + hold_dy[phase] * hold_radius;
 	}
 
 	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
