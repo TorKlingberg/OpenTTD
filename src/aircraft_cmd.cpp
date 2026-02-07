@@ -2258,9 +2258,16 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		if (new_y != target_y) new_y += (target_y > new_y) ? 1 : -1;
 	}
 
-	/* Update direction */
+	/* Update direction with smooth turning */
 	if (new_x != v->x_pos || new_y != v->y_pos) {
-		v->direction = GetDirectionTowards(v, target_x, target_y);
+		Direction desired_dir = GetDirectionTowards(v, target_x, target_y);
+
+		/* For landing, allow smoother turns without strict counter (aircraft is in air) */
+		/* But still limit to 45° per tick */
+		if (desired_dir != v->direction) {
+			v->last_direction = v->direction;
+			v->direction = desired_dir;
+		}
 	}
 
 	/* Aircraft in air has no tile */
@@ -2734,7 +2741,46 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
 	if (dist > 0) {
-		v->direction = GetDirectionTowards(v, target_x, target_y);
+		/* Smooth turning: wait for turn to complete before moving */
+		if (v->turn_counter > 0) {
+			Debug(misc, 3, "[ModAp] Vehicle {} waiting for turn, turn_counter={}", v->index, v->turn_counter);
+			v->turn_counter--;
+			return false;
+		}
+
+		/* Calculate desired direction */
+		Direction new_dir = GetDirectionTowards(v, target_x, target_y);
+
+		/* Check if we need to turn */
+		if (new_dir != v->direction) {
+			/* Track consecutive turns for stuck detection */
+			if (new_dir == v->last_direction) {
+				v->number_consecutive_turns = 0;
+			} else {
+				v->number_consecutive_turns++;
+				if (v->number_consecutive_turns > 8) {
+					/* Aircraft stuck spinning - recalculate path */
+					Debug(misc, 1, "[ModAp] Vehicle {} stuck spinning, recalculating path", v->index);
+					ClearGroundPathReservation(v->ground_path, v->index);
+					delete v->ground_path;
+					v->ground_path = nullptr;
+					v->ground_path_index = 0;
+					v->number_consecutive_turns = 0;
+					return false;
+				}
+			}
+
+			/* Initiate turn */
+			uint8_t delay = v->subtype == AIR_HELICOPTER ? 0 : 2; // Helicopters turn instantly, planes take 2 ticks
+			v->turn_counter = delay;
+			v->last_direction = v->direction;
+			v->direction = new_dir;
+			Debug(misc, 3, "[ModAp] Ground vehicle {} (subtype={}) turning from {} to {}, turn_counter={}",
+				v->index, v->subtype, v->last_direction, new_dir, v->turn_counter);
+			return false; // Don't move this tick, just turn
+		}
+
+		/* Direction is correct, now move */
 		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_TAXI);
 		if (count > 0) {
 			do {
@@ -2803,7 +2849,40 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 	}
 
 	if (dist > 0) {
-		v->direction = GetDirectionTowards(v, target_x, target_y);
+		/* Smooth turning for flying aircraft */
+		if (v->turn_counter > 0) {
+			v->turn_counter--;
+			/* Still adjust altitude while waiting to turn */
+			int target_z = GetAircraftFlightLevel(v);
+			if (v->z_pos < target_z) v->z_pos++;
+			else if (v->z_pos > target_z) v->z_pos--;
+			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
+			return;
+		}
+
+		/* Calculate desired direction */
+		Direction new_dir = GetDirectionTowards(v, target_x, target_y);
+
+		/* Check if we need to turn */
+		if (new_dir != v->direction) {
+			/* Track consecutive turns */
+			if (new_dir == v->last_direction) {
+				v->number_consecutive_turns = 0;
+			} else {
+				v->number_consecutive_turns++;
+				/* For flying, allow more turns before detecting stuck (they might be circling) */
+			}
+
+			/* Initiate turn - flying aircraft turn faster than ground */
+			v->turn_counter = v->subtype == AIR_HELICOPTER ? 0 : 1; // Helicopters instant, planes 1 tick delay
+			v->last_direction = v->direction;
+			v->direction = new_dir;
+			Debug(misc, 3, "[ModAp] Flying vehicle {} turning from {} to {}, turn_counter={}",
+				v->index, v->last_direction, new_dir, v->turn_counter);
+			return; // Don't move this tick, just turn
+		}
+
+		/* Direction is correct, now move */
 		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
 
 		/* Move */

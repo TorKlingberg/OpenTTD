@@ -42,6 +42,8 @@
 #include "direction_func.h"
 #include "tilearea_type.h"
 #include "error.h"
+#include "debug.h"
+#include "tile_map.h"
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
 #include "palette_func.h"
@@ -930,72 +932,119 @@ public:
 			return;
 		}
 
+		if (is_single_tile) {
+			/* Single tile placement - use station selection dialog */
+			this->PlaceSingleTileWithDialog(start_tile);
+			return;
+		}
+
+		/* Multi-tile drag: find existing station near the drag area.
+		 * Pass it to ALL tiles so they join the same station via distant_join,
+		 * even if a particular tile isn't directly adjacent to existing tiles. */
+		StationID nearby_station = FindNearbyStation(ta);
+		Debug(misc, 3, "[Airport] Drag-building: nearby_station={}", nearby_station != StationID::Invalid() ? (int)nearby_station.base() : -1);
+
 		/* Smart runway building: auto-add end pieces when dragging main runway piece (piece 0) */
-		bool is_main_runway = (this->selected_piece == 0); // Piece 0 = main runway middle piece
-		bool should_auto_end = is_main_runway && !is_single_tile && (ta.w > 2 || ta.h > 2);
+		bool is_main_runway = (this->selected_piece == 0);
+		bool should_auto_end = is_main_runway && (ta.w > 2 || ta.h > 2);
 
 		if (should_auto_end) {
 			/* Build runway with automatic end pieces */
-			TileIndex first_tile = INVALID_TILE;
-			TileIndex last_tile = INVALID_TILE;
-			uint tile_count = 0;
+			bool is_horizontal = (ta.w > ta.h);
 
-			/* Find first and last tiles in the area */
-			for (TileIndex tile : ta) {
-				if (first_tile == INVALID_TILE) first_tile = tile;
-				last_tile = tile;
-				tile_count++;
-			}
-
-			/* Place end piece at start */
-			this->PlaceSingleTileWithPiece(first_tile, 1); // Piece 1 = runway end
-
-			/* Place middle pieces */
-			if (tile_count > 2) {
-				bool is_first = true;
-				for (TileIndex tile : ta) {
-					if (is_first) {
-						is_first = false;
-						continue; // Skip first (already placed end)
-					}
-					if (tile == last_tile) break; // Skip last (will place end)
-					this->PlaceSingleTile(tile); // Place middle piece
+			std::vector<TileIndex> ordered_tiles;
+			if (is_horizontal) {
+				for (uint x = 0; x < ta.w; x++) {
+					ordered_tiles.push_back(TileAddXY(ta.tile, x, 0));
+				}
+			} else {
+				for (uint y = 0; y < ta.h; y++) {
+					ordered_tiles.push_back(TileAddXY(ta.tile, 0, y));
 				}
 			}
 
+			Debug(misc, 3, "[Airport] Drag-building runway: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
+
+			/* Place end piece at start */
+			this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station);
+
+			/* Place middle pieces */
+			for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
+				this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
+			}
+
 			/* Place end piece at end */
-			if (tile_count > 1) {
-				this->PlaceSingleTileWithPiece(last_tile, 1); // Piece 1 = runway end
+			if (ordered_tiles.size() > 1) {
+				this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station);
 			}
 		} else {
-			/* Normal placement: place selected piece on all tiles */
+			/* Normal multi-tile drag */
 			for (TileIndex tile : ta) {
-				this->PlaceSingleTile(tile);
+				this->PlaceDragTile(tile, this->selected_piece, nearby_station);
 			}
 		}
 	}
 
 private:
 	/**
+	 * Find an existing station owned by the local company that is adjacent to
+	 * or within the given tile area. Used to pre-determine which station drag-built
+	 * tiles should join, so all tiles in a drag join the same station.
+	 * @param ta The tile area to check around
+	 * @return The station ID if found, or StationID::Invalid() if no station nearby
+	 */
+	static StationID FindNearbyStation(TileArea ta)
+	{
+		ta.Expand(1);
+		for (TileIndex tile : ta) {
+			if (IsValidTile(tile) && IsTileType(tile, TileType::Station)) {
+				StationID sid = GetStationIndex(tile);
+				Station *st = Station::GetIfValid(sid);
+				if (st != nullptr && st->owner == _local_company) return sid;
+			}
+		}
+		return StationID::Invalid();
+	}
+
+	/**
 	 * Place a single airport piece tile
 	 * @param tile The tile to place the piece on
 	 */
 	void PlaceSingleTile(TileIndex tile)
 	{
-		this->PlaceSingleTileWithPiece(tile, this->selected_piece);
+		this->PlaceSingleTileWithDialog(tile);
 	}
 
 	/**
-	 * Place a single airport piece tile with a specific piece type
-	 * @param tile The tile to place the piece on
-	 * @param piece_index The piece index to place (overrides selected_piece)
+	 * Post a single tile build command for a drag operation.
+	 * Bypasses ShowSelectStationIfNeeded - all tiles are posted directly.
+	 * @param tile The tile to build on
+	 * @param piece_index The piece type to build
+	 * @param nearby_station Station to join (Invalid = auto-detect via GetStationAround)
 	 */
-	void PlaceSingleTileWithPiece(TileIndex tile, uint8_t piece_index)
+	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station)
 	{
 		uint8_t gfx = GetModularAirportPieceGfx(piece_index, this->rotation);
-		bool adjacent = _ctrl_pressed;
+		uint8_t rotation = this->rotation;
+		uint8_t taxi_dir_mask = this->taxi_dir_mask;
+		bool one_way_taxi = this->one_way_taxi;
 
-		/* Capture taxi direction data to pass to command */
+		/* Pass the nearby station as station_to_join. In the command handler:
+		 * - GetStationAround checks adjacent tiles for a station to join.
+		 * - If no adjacent station found, distant_join uses nearby_station.
+		 * This ensures all drag tiles join the same station even if not all
+		 * are directly adjacent to existing tiles. */
+		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
+			tile, gfx, nearby_station, false, rotation, taxi_dir_mask, one_way_taxi);
+	}
+
+	/**
+	 * Place a single tile with station selection dialog (for non-drag placement).
+	 */
+	void PlaceSingleTileWithDialog(TileIndex tile)
+	{
+		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
+		bool adjacent = _ctrl_pressed;
 		uint8_t rotation = this->rotation;
 		uint8_t taxi_dir_mask = this->taxi_dir_mask;
 		bool one_way_taxi = this->one_way_taxi;
