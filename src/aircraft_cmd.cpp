@@ -2771,12 +2771,12 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 			}
 
 			/* Initiate turn */
-			uint8_t delay = v->subtype == AIR_HELICOPTER ? 0 : 2; // Helicopters turn instantly, planes take 2 ticks
+			uint8_t delay = v->subtype == AIR_HELICOPTER ? 0 : 2 * _settings_game.vehicle.plane_speed;
 			v->turn_counter = delay;
 			v->last_direction = v->direction;
 			v->direction = new_dir;
-			Debug(misc, 3, "[ModAp] Ground vehicle {} (subtype={}) turning from {} to {}, turn_counter={}",
-				v->index, v->subtype, v->last_direction, new_dir, v->turn_counter);
+			/* Update visual so the intermediate 45° direction is rendered */
+			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 			return false; // Don't move this tick, just turn
 		}
 
@@ -2877,8 +2877,8 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 			v->turn_counter = v->subtype == AIR_HELICOPTER ? 0 : 1; // Helicopters instant, planes 1 tick delay
 			v->last_direction = v->direction;
 			v->direction = new_dir;
-			Debug(misc, 3, "[ModAp] Flying vehicle {} turning from {} to {}, turn_counter={}",
-				v->index, v->last_direction, new_dir, v->turn_counter);
+			/* Update visual so the intermediate 45° direction is rendered */
+			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 			return; // Don't move this tick, just turn
 		}
 
