@@ -1623,7 +1623,6 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			if (goal != INVALID_TILE) {
 				v->ground_path_goal = goal;
 				v->modular_ground_target = target;
-				AircraftLeaveHangar(v, exit_dir);
 				return;
 			}
 		} else {
@@ -1637,7 +1636,6 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			if (runway != INVALID_TILE) {
 				v->ground_path_goal = runway;
 				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-				AircraftLeaveHangar(v, exit_dir);
 				return;
 			}
 		}
@@ -2827,6 +2825,11 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	const int target_x = TileX(next_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int target_y = TileY(next_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
+
+	/* Keep aircraft listed in the hangar window until they actually leave the hangar tile. */
+	if (v->vehstatus.Test(VehState::Hidden) && dist > 0) {
+		AircraftLeaveHangar(v, GetModularHangarExitDirection(st, v->tile));
+	}
 
 	if (dist > 0) {
 		/* Smooth turning: wait for turn to complete before moving */
