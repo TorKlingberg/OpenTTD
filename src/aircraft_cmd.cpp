@@ -1810,8 +1810,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 	bool closed = st->airport.blocks.Test(AirportBlock::AirportClosed);
 	bool is_modular = st->airport.blocks.Test(AirportBlock::Modular);
 	if (is_modular) {
-		if (closed) Debug(misc, 5, "[ModAp] airport {} flagged closed; ignoring for landing", st->index);
-		closed = false;
+		if (closed) Debug(misc, 5, "[ModAp] airport {} flagged closed; denying landing", st->index);
 		Debug(misc, 3, "[ModAp] Vehicle {} in FLYING state at modular airport {}", v->index, st->index);
 	}
 
