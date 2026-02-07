@@ -2711,12 +2711,20 @@ static void HandleModularGroundArrival(Aircraft *v)
 
 		case MGT_TERMINAL:
 		case MGT_HELIPAD:
+			if (IsAirport(Tile(v->tile))) {
+				SetAirportTileReservation(Tile(v->tile), true);
+				SetAirportTileReserver(Tile(v->tile), v->index);
+			}
 			AircraftEntersTerminal(v);
 			v->state = (v->subtype == AIR_HELICOPTER) ? HELIPAD1 : TERM1;
 			v->modular_ground_target = MGT_NONE;
 			break;
 
 		case MGT_HANGAR:
+			if (IsAirport(Tile(v->tile))) {
+				SetAirportTileReservation(Tile(v->tile), true);
+				SetAirportTileReserver(Tile(v->tile), v->index);
+			}
 			Debug(misc, 3, "[ModAp] Vehicle {} entering hangar at tile {}", v->index, v->tile.base());
 			VehicleEnterDepot(v);
 			v->state = HANGAR;
@@ -2738,15 +2746,6 @@ static void HandleModularGroundArrival(Aircraft *v)
 		default:
 			v->modular_ground_target = MGT_NONE;
 			break;
-	}
-
-	/* Keep the arrival tile reserved if it's a parking spot */
-	if (v->modular_ground_target == MGT_TERMINAL || v->modular_ground_target == MGT_HELIPAD || v->modular_ground_target == MGT_HANGAR) {
-		Tile t(v->tile);
-		if (IsAirport(t)) {
-			SetAirportTileReservation(t, true);
-			SetAirportTileReserver(t, v->index);
-		}
 	}
 }
 
