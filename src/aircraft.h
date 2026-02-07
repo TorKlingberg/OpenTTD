@@ -92,6 +92,7 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	uint8_t modular_ground_target = 0; ///< Modular ground destination (terminal/hangar/runway)
 	TileIndex modular_takeoff_tile = INVALID_TILE; ///< Runway tile targeted for modular takeoff
 	uint16_t modular_takeoff_progress = 0; ///< Progress along modular takeoff roll
+	std::vector<TileIndex> modular_runway_reservation{}; ///< Reserved contiguous runway tiles for landing/takeoff
 	TileIndex ground_path_last_tile = INVALID_TILE; ///< Last tile seen while taxiing
 	uint8_t ground_path_stall_counter = 0; ///< Ticks without progress on ground path
 
