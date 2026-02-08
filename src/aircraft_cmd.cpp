@@ -2602,8 +2602,32 @@ static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex land
 		return INVALID_TILE;
 	}
 
-	/* Get the other end of the runway */
-	return GetRunwayOtherEnd(st, landing_tile);
+	/* Cap rollout distance on long runways; short runways still roll out to the end. */
+	static constexpr size_t MAX_ROLLOUT_TILES = 4;
+
+	std::vector<TileIndex> runway_tiles;
+	if (!GetContiguousModularRunwayTiles(st, landing_tile, runway_tiles) || runway_tiles.empty()) {
+		return INVALID_TILE;
+	}
+
+	TileIndex other_end = GetRunwayOtherEnd(st, landing_tile);
+
+	auto it_landing = std::find(runway_tiles.begin(), runway_tiles.end(), landing_tile);
+	auto it_other = std::find(runway_tiles.begin(), runway_tiles.end(), other_end);
+	if (it_landing == runway_tiles.end() || it_other == runway_tiles.end()) {
+		return other_end;
+	}
+
+	const size_t landing_index = static_cast<size_t>(it_landing - runway_tiles.begin());
+	const size_t other_index = static_cast<size_t>(it_other - runway_tiles.begin());
+
+	if (landing_index < other_index) {
+		const size_t target_index = std::min(landing_index + MAX_ROLLOUT_TILES, other_index);
+		return runway_tiles[target_index];
+	}
+
+	const size_t steps = std::min(MAX_ROLLOUT_TILES, landing_index - other_index);
+	return runway_tiles[landing_index - steps];
 }
 
 static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
