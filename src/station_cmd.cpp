@@ -2853,6 +2853,38 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		tile_data.user_taxi_dir_mask = taxi_dir_mask;
 		tile_data.one_way_taxi = one_way_taxi;
 		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
+		auto is_runway_piece = [](uint8_t piece_type) {
+			switch (piece_type) {
+				case APT_RUNWAY_1:
+				case APT_RUNWAY_2:
+				case APT_RUNWAY_3:
+				case APT_RUNWAY_4:
+				case APT_RUNWAY_5:
+				case APT_RUNWAY_END:
+				case APT_RUNWAY_SMALL_NEAR_END:
+				case APT_RUNWAY_SMALL_MIDDLE:
+				case APT_RUNWAY_SMALL_FAR_END:
+					return true;
+				default:
+					return false;
+			}
+		};
+
+		/* If this extends an existing runway, inherit its direction/usage flags. */
+		if (is_runway_piece(tile_data.piece_type)) {
+			const bool horizontal = (rotation % 2) == 0;
+			const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+
+			const ModularAirportTileData *prev = st->airport.GetModularTileData(tile - diff);
+			if (prev != nullptr && is_runway_piece(prev->piece_type)) {
+				tile_data.runway_flags = prev->runway_flags;
+			} else {
+				const ModularAirportTileData *next = st->airport.GetModularTileData(tile + diff);
+				if (next != nullptr && is_runway_piece(next->piece_type)) {
+					tile_data.runway_flags = next->runway_flags;
+				}
+			}
+		}
 
 		tile_data_vec.push_back(tile_data);
 		st->airport.modular_tile_index_dirty = true;
