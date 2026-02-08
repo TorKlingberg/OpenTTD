@@ -2071,6 +2071,55 @@ static bool IsModularHelipadPiece(uint8_t gfx)
 	}
 }
 
+/**
+ * Determine whether a runway end tile is at the "low" end of its contiguous runway.
+ * "Low" means the end with lower X (horizontal) or lower Y (vertical).
+ * @param st Station the tile belongs to.
+ * @param tile The runway end tile to check.
+ * @return true if this is the low-coordinate end, false if high-coordinate end.
+ */
+static bool IsRunwayEndLow(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return true;
+
+	bool horizontal = (data->rotation % 2) == 0;
+	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+
+	/* Check if runway extends in the positive direction from this tile */
+	TileIndex next = tile + diff;
+	const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
+	bool extends_positive = (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type));
+
+	/* Check if runway extends in the negative direction from this tile */
+	TileIndex prev = tile - diff;
+	const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+	bool extends_negative = (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type));
+
+	/* If runway only extends positive, we're at the low end.
+	 * If runway only extends negative, we're at the high end.
+	 * If it extends both ways, we're not an end tile (shouldn't happen for end pieces). */
+	if (extends_positive && !extends_negative) return true;  /* Low end */
+	if (!extends_positive && extends_negative) return false;  /* High end */
+
+	/* Single tile runway or middle piece: treat as low end */
+	return true;
+}
+
+/**
+ * Get the runway usage flags for a runway containing the given tile.
+ * All tiles in a contiguous runway share the same flags.
+ * @param st Station the tile belongs to.
+ * @param tile Any tile in the runway.
+ * @return The runway_flags value, or RUF_DEFAULT if not found.
+ */
+static uint8_t GetRunwayFlags(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return RUF_DEFAULT;
+	return data->runway_flags;
+}
+
 static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
 {
 	const ModularAirportTileData *data = st->airport.GetModularTileData(start_tile);
@@ -2193,23 +2242,25 @@ static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 		if (!is_runway && !is_helipad) continue;
 
-		/* Helicopters prefer helipads, but can use runways if no helipad. 
-		   Planes must use runways. */
 		if (is_heli) {
-			/* If we found a helipad, ignore runways (unless we haven't found a helipad yet, but sorting handles that) */
-			/* Actually, let's just score helipads much better */
-			if (is_runway) {
-				// Only use runway if we haven't found a helipad
-				// We handle this by adding a massive penalty to runways for helis
-			}
+			/* Helicopters prefer helipads but can use runways */
 		} else {
-			if (is_helipad) continue; // Planes can't land on helipads
+			if (is_helipad) continue; /* Planes can't land on helipads */
 		}
 
 		/* Only consider runway ends as valid landing targets */
 		if (is_runway) {
 			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
 			if (!is_end) continue;
+
+			/* Check runway flags: is landing allowed? */
+			uint8_t flags = GetRunwayFlags(st, data.tile);
+			if (!(flags & RUF_LANDING)) continue;
+
+			/* Check direction flags: is landing from this end allowed? */
+			bool is_low = IsRunwayEndLow(st, data.tile);
+			if (is_low && !(flags & RUF_DIR_LOW)) continue;
+			if (!is_low && !(flags & RUF_DIR_HIGH)) continue;
 		}
 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
@@ -2218,7 +2269,7 @@ static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 		int score = dist_flight;
 
-		if (is_heli && is_runway) score += 1000000; // Prefer helipads significantly
+		if (is_heli && is_runway) score += 1000000; /* Prefer helipads significantly */
 
 		if (has_term) {
 			/* Calculate distance from the *other* end of the runway to the terminal.
@@ -2614,35 +2665,45 @@ static TileIndex FindFreeModularHangar(const Station *st)
 	return INVALID_TILE;
 }
 
-static TileIndex FindModularRunwayTileForTakeoff(const Station *st, [[maybe_unused]] const Aircraft *v)
+/**
+ * Find a runway end tile suitable for takeoff, respecting runway usage flags.
+ * Returns the end tile where the aircraft should start its takeoff roll.
+ */
+static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 {
-	/* For takeoff, always use the same end as landing (bottom-left = SE end).
-	   This matches stock airport behavior. */
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
-	/* Find all runway tiles */
-	std::vector<TileIndex> runway_tiles;
+	TileIndex best_tile = INVALID_TILE;
+	int best_score = INT_MAX;
+
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (IsModularRunwayPiece(data.piece_type)) {
-			runway_tiles.push_back(data.tile);
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+
+		/* Only consider runway end pieces as takeoff start points */
+		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+		if (!is_end) continue;
+
+		/* Check runway flags: is takeoff allowed? */
+		uint8_t flags = GetRunwayFlags(st, data.tile);
+		if (!(flags & RUF_TAKEOFF)) continue;
+
+		/* Check direction flags: is takeoff from this end allowed? */
+		bool is_low = IsRunwayEndLow(st, data.tile);
+		if (is_low && !(flags & RUF_DIR_LOW)) continue;
+		if (!is_low && !(flags & RUF_DIR_HIGH)) continue;
+
+		/* Score by distance from aircraft's current position (prefer closest runway) */
+		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		int score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+
+		if (score < best_score) {
+			best_score = score;
+			best_tile = data.tile;
 		}
 	}
 
-	if (runway_tiles.empty()) return INVALID_TILE;
-
-	/* Find the SE end (max X+Y) - this is the bottom-left visually, same as landing */
-	TileIndex max_tile = runway_tiles[0];
-	int max_sum = TileX(max_tile) + TileY(max_tile);
-
-	for (TileIndex tile : runway_tiles) {
-		int sum = TileX(tile) + TileY(tile);
-		if (sum > max_sum) {
-			max_sum = sum;
-			max_tile = tile;
-		}
-	}
-
-	return max_tile;
+	return best_tile;
 }
 
 static void ClearGroundPathReservation(const std::vector<TileIndex> *path, VehicleID vid, const Aircraft *v)

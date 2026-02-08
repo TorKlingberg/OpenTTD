@@ -32,6 +32,13 @@ struct RoadStopTileData {
 	uint8_t animation_frame = 0;
 };
 
+/** Runway usage flags for modular airport tiles. */
+static constexpr uint8_t RUF_LANDING  = 0x01; ///< Landing allowed on this runway
+static constexpr uint8_t RUF_TAKEOFF  = 0x02; ///< Takeoff allowed on this runway
+static constexpr uint8_t RUF_DIR_LOW  = 0x04; ///< Operations from low-coordinate end (lower X or Y)
+static constexpr uint8_t RUF_DIR_HIGH = 0x08; ///< Operations from high-coordinate end (higher X or Y)
+static constexpr uint8_t RUF_DEFAULT  = 0x0F; ///< All operations and directions allowed
+
 /** Modular airport tile data - stores taxi directions and piece metadata */
 struct ModularAirportTileData {
 	TileIndex tile = INVALID_TILE;
@@ -40,6 +47,7 @@ struct ModularAirportTileData {
 	uint8_t user_taxi_dir_mask = 0;    ///< bit: 0=N, 1=E, 2=S, 3=W
 	bool one_way_taxi = false;
 	uint8_t auto_taxi_dir_mask = 0;    ///< calculated from piece_type + rotation
+	uint8_t runway_flags = RUF_DEFAULT; ///< Runway usage flags (landing/takeoff/direction)
 };
 
 /** StationRect - used to track station spread out rectangle - cheaper than scanning whole map */

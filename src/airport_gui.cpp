@@ -61,6 +61,8 @@ static int _selected_airport_index;            ///< the index of the selected ai
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 static StationID _last_modular_airport_station = StationID::Invalid();
 
+bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
+
 static void ShowBuildAirportPicker(Window *parent);
 static void ShowBuildModularAirportWindow(Window *parent);
 
@@ -771,10 +773,14 @@ public:
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_S, true);
 		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_W, true);
 		this->UpdatePlacementCursor();
+		_show_runway_direction_overlay = this->show_taxi_arrows;
+		MarkWholeScreenDirty();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		_show_runway_direction_overlay = false;
+		MarkWholeScreenDirty();
 		ResetObjectToPlace();
 		this->PickerWindowBase::Close();
 	}
@@ -856,8 +862,9 @@ public:
 
 			case WID_MA_TOGGLE_SHOW_ARROWS:
 				this->show_taxi_arrows = !this->show_taxi_arrows;
+				_show_runway_direction_overlay = this->show_taxi_arrows;
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
-				this->SetDirty();
+				MarkWholeScreenDirty();
 				break;
 
 			case WID_MA_TOGGLE_SNAP:
@@ -870,8 +877,71 @@ public:
 		}
 	}
 
+	/**
+	 * Cycle runway flags when overlay is active and user clicks a runway tile.
+	 * Left-click cycles direction, Ctrl+click cycles usage (landing/takeoff).
+	 * @return true if the click was handled as a runway flag edit.
+	 */
+	bool TryEditRunwayFlags(TileIndex tile)
+	{
+		if (!_show_runway_direction_overlay) return false;
+		if (!IsValidTile(tile) || !IsTileType(tile, TileType::Station)) return false;
+
+		Station *st = Station::GetByTile(tile);
+		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
+
+		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+		if (data == nullptr) return false;
+
+		/* Check if it's a runway piece */
+		switch (data->piece_type) {
+			case APT_RUNWAY_1:
+			case APT_RUNWAY_2:
+			case APT_RUNWAY_3:
+			case APT_RUNWAY_4:
+			case APT_RUNWAY_5:
+			case APT_RUNWAY_END:
+			case APT_RUNWAY_SMALL_NEAR_END:
+			case APT_RUNWAY_SMALL_MIDDLE:
+			case APT_RUNWAY_SMALL_FAR_END:
+				break;
+			default:
+				return false;
+		}
+
+		uint8_t flags = data->runway_flags;
+
+		if (_ctrl_pressed) {
+			/* Ctrl+click: cycle usage (both -> landing only -> takeoff only -> both) */
+			uint8_t usage = flags & (RUF_LANDING | RUF_TAKEOFF);
+			if (usage == (RUF_LANDING | RUF_TAKEOFF)) {
+				flags = (flags & ~(RUF_LANDING | RUF_TAKEOFF)) | RUF_LANDING;
+			} else if (usage == RUF_LANDING) {
+				flags = (flags & ~(RUF_LANDING | RUF_TAKEOFF)) | RUF_TAKEOFF;
+			} else {
+				flags = (flags & ~(RUF_LANDING | RUF_TAKEOFF)) | RUF_LANDING | RUF_TAKEOFF;
+			}
+		} else {
+			/* Left-click: cycle direction (both -> low only -> high only -> both) */
+			uint8_t dirs = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+			if (dirs == (RUF_DIR_LOW | RUF_DIR_HIGH)) {
+				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_LOW;
+			} else if (dirs == RUF_DIR_LOW) {
+				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_HIGH;
+			} else {
+				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_LOW | RUF_DIR_HIGH;
+			}
+		}
+
+		Command<CMD_SET_RUNWAY_FLAGS>::Post(tile, flags);
+		return true;
+	}
+
 	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
 	{
+		/* When overlay is active, clicking on runway tiles edits their flags */
+		if (this->TryEditRunwayFlags(tile)) return;
+
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
 			return;

@@ -553,6 +553,7 @@ public:
 	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  SLE_UINT8),
 	    SLE_VAR(ModularAirportTileData, one_way_taxi,        SLE_BOOL),
 	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, runway_flags,        SLE_UINT8),
 	};
 	static inline const SaveLoadCompatTable compat_description = {};
 

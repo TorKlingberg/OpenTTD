@@ -506,6 +506,16 @@ struct Airport : public TileArea {
 		return &(*this->modular_tile_data)[it->second];
 	}
 
+	/**
+	 * Get mutable modular tile data for a specific tile.
+	 * @param tile The tile to query.
+	 * @return Pointer to tile data or nullptr if not found.
+	 */
+	ModularAirportTileData* GetModularTileData(TileIndex tile)
+	{
+		return const_cast<ModularAirportTileData*>(std::as_const(*this).GetModularTileData(tile));
+	}
+
 	/** Ensure modular data vector exists. */
 	void EnsureModularDataExists()
 	{

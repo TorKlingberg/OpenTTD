@@ -83,6 +83,8 @@
 
 #include "safeguards.h"
 
+extern bool _show_runway_direction_overlay;
+
 /**
  * Static instance of FlowStat::SharesMap.
  * Note: This instance is created on task start.
@@ -2862,6 +2864,77 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	return cost;
 }
 
+/**
+ * Set runway usage flags on a modular airport tile and propagate to contiguous runway.
+ * @param flags Operation to perform.
+ * @param tile Tile to set flags on.
+ * @param runway_flags New runway flags (RUF_LANDING, RUF_TAKEOFF, RUF_DIR_LOW, RUF_DIR_HIGH).
+ * @return The cost of this operation or an error.
+ */
+CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runway_flags)
+{
+	if (!IsValidTile(tile)) return CMD_ERROR;
+	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
+
+	Station *st = Station::GetByTile(tile);
+	if (st == nullptr) return CMD_ERROR;
+
+	CommandCost ret = CheckOwnership(st->owner);
+	if (ret.Failed()) return ret;
+
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
+
+	/* Validate flags: at least one operation and one direction must be set */
+	if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
+	if ((runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH)) == 0) return CMD_ERROR;
+
+	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return CMD_ERROR;
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Set flags on this tile and all contiguous runway tiles */
+		bool horizontal = (data->rotation % 2) == 0;
+		TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+
+		/* Walk to the low end first */
+		TileIndex first = tile;
+		while (true) {
+			TileIndex prev = first - diff;
+			ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+			if (prev_data == nullptr) break;
+			/* Check if piece_type is a runway piece using the gfx values */
+			bool is_rw = (prev_data->piece_type == APT_RUNWAY_1 || prev_data->piece_type == APT_RUNWAY_2 ||
+			              prev_data->piece_type == APT_RUNWAY_3 || prev_data->piece_type == APT_RUNWAY_4 ||
+			              prev_data->piece_type == APT_RUNWAY_5 || prev_data->piece_type == APT_RUNWAY_END ||
+			              prev_data->piece_type == APT_RUNWAY_SMALL_NEAR_END || prev_data->piece_type == APT_RUNWAY_SMALL_MIDDLE ||
+			              prev_data->piece_type == APT_RUNWAY_SMALL_FAR_END);
+			if (!is_rw) break;
+			first = prev;
+		}
+
+		/* Walk from low end to high end, setting flags on each tile */
+		TileIndex current = first;
+		while (true) {
+			ModularAirportTileData *cur_data = st->airport.GetModularTileData(current);
+			if (cur_data == nullptr) break;
+			bool is_rw = (cur_data->piece_type == APT_RUNWAY_1 || cur_data->piece_type == APT_RUNWAY_2 ||
+			              cur_data->piece_type == APT_RUNWAY_3 || cur_data->piece_type == APT_RUNWAY_4 ||
+			              cur_data->piece_type == APT_RUNWAY_5 || cur_data->piece_type == APT_RUNWAY_END ||
+			              cur_data->piece_type == APT_RUNWAY_SMALL_NEAR_END || cur_data->piece_type == APT_RUNWAY_SMALL_MIDDLE ||
+			              cur_data->piece_type == APT_RUNWAY_SMALL_FAR_END);
+			if (!is_rw) break;
+
+			cur_data->runway_flags = runway_flags;
+
+			TileIndex next = current + diff;
+			if (next == current) break; /* Shouldn't happen, but safety */
+			current = next;
+		}
+	}
+
+	return CommandCost();
+}
+
 static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 {
 	Station *st = Station::GetByTile(tile);
@@ -3696,6 +3769,78 @@ static void DrawTile_Station(TileInfo *ti)
 	}
 
 	DrawRailTileSeq(ti, t, TO_BUILDINGS, total_offset, relocation, palette);
+
+	/* Draw runway direction overlay arrows */
+	if (_show_runway_direction_overlay && IsAirport(ti->tile)) {
+		Station *station = Station::GetByTile(ti->tile);
+		if (station != nullptr && station->airport.blocks.Test(AirportBlock::Modular)) {
+			const ModularAirportTileData *tile_data = station->airport.GetModularTileData(ti->tile);
+			if (tile_data != nullptr) {
+				bool is_runway = false;
+				switch (tile_data->piece_type) {
+					case APT_RUNWAY_1:
+					case APT_RUNWAY_2:
+					case APT_RUNWAY_3:
+					case APT_RUNWAY_4:
+					case APT_RUNWAY_5:
+					case APT_RUNWAY_END:
+					case APT_RUNWAY_SMALL_NEAR_END:
+					case APT_RUNWAY_SMALL_MIDDLE:
+					case APT_RUNWAY_SMALL_FAR_END:
+						is_runway = true;
+						break;
+				}
+
+				if (is_runway) {
+					uint8_t flags = tile_data->runway_flags;
+					bool horizontal = (tile_data->rotation % 2) == 0;
+
+					/* Use one-way road arrow sprites - they're isometric and tile-sized.
+					 * Layout: SPR_ONEWAY_BASE + offset
+					 *   +0..+2: X-axis (flat) - 0=direction1, 1=direction2, 2=both
+					 *   +3..+5: Y-axis (flat) - 3=direction1, 4=direction2, 5=both */
+					SpriteID base = SPR_ONEWAY_BASE;
+
+					/* Determine which arrows to draw based on flags */
+					bool dir_low = (flags & RUF_DIR_LOW) != 0;
+					bool dir_high = (flags & RUF_DIR_HIGH) != 0;
+					bool can_land = (flags & RUF_LANDING) != 0;
+					bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
+
+					if (can_land || can_takeoff) {
+						/* Arrow sprite index: 0=one way, 1=other way
+						 * For X-axis: 0=SW arrow, 1=NE arrow
+						 * For Y-axis: 3=SE arrow, 4=NW arrow */
+						SpriteID sprite;
+						PaletteID pal_overlay;
+
+						if (dir_low && dir_high) {
+							/* Both directions - use "both" sprite (index 2 or 5) */
+							sprite = base + (horizontal ? 2 : 5);
+						} else if (dir_low) {
+							/* Low end only */
+							sprite = base + (horizontal ? 0 : 3);
+						} else {
+							/* High end only */
+							sprite = base + (horizontal ? 1 : 4);
+						}
+
+						/* Color based on usage: green=both, blue=landing, yellow=takeoff */
+						if (can_land && can_takeoff) {
+							pal_overlay = PAL_NONE;
+						} else if (can_land) {
+							pal_overlay = PALETTE_SEL_TILE_BLUE;
+						} else {
+							pal_overlay = PALETTE_SEL_TILE_RED;
+						}
+
+						DrawGroundSpriteAt(sprite, pal_overlay, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
+					}
+				}
+			}
+		}
+	}
+
 	DrawBridgeMiddle(ti, GetStationBlockedPillars(bridgeable_info, GetStationGfx(ti->tile)));
 }
 
