@@ -94,6 +94,7 @@ static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircra
 static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
 static void ClearModularRunwayReservation(Aircraft *v);
 static bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile);
+static bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, VehicleID self);
 static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass *apc);
 static void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v);
 static bool CanUseModularGroundRouting(const Station *st, const Aircraft *v);
@@ -2679,6 +2680,19 @@ static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex land
 	return runway_tiles[other_index];
 }
 
+static bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, VehicleID self)
+{
+	for (const Aircraft *other : Aircraft::Iterate()) {
+		if (other->index == self) continue;
+		if (!other->IsNormalAircraft()) continue;
+		if (!IsValidTile(other->tile)) continue;
+		if (other->tile != tile) continue;
+		if (other->targetairport != st->index && other->last_station_visited != st->index) continue;
+		return true;
+	}
+	return false;
+}
+
 static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
@@ -2697,6 +2711,7 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 				if (v != nullptr && GetAirportTileReserver(t) == v->index) return data.tile;
 				continue;
 			}
+			if (v != nullptr && IsModularTileOccupiedByOtherAircraft(st, data.tile, v->index)) continue;
 
 			/* Avoid assigning stands that are currently unreachable from our position. */
 			int score = 0;
@@ -2910,6 +2925,18 @@ static void HandleModularGroundArrival(Aircraft *v)
 
 		case MGT_TERMINAL:
 		case MGT_HELIPAD:
+			if (v->modular_ground_target == MGT_TERMINAL &&
+					IsModularTileOccupiedByOtherAircraft(st, v->tile, v->index)) {
+				/* Reservation desync safety: if another aircraft is already on this stand,
+				 * re-target to a different stand instead of stacking aircraft on one tile. */
+				TileIndex goal = FindFreeModularTerminal(st, v);
+				if (goal != INVALID_TILE && goal != v->tile) {
+					v->ground_path_goal = goal;
+					v->modular_ground_target = MGT_TERMINAL;
+					v->state = TERM1;
+					return;
+				}
+			}
 			if (IsAirportTile(v->tile)) {
 				Tile t(v->tile);
 				SetAirportTileReservation(t, true);
