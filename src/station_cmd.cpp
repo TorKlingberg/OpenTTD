@@ -3825,7 +3825,9 @@ static void DrawTile_Station(TileInfo *ti)
 							sprite = base + (horizontal ? 1 : 4);
 						}
 
-						/* Color based on usage: green=both, blue=landing, yellow=takeoff */
+						/* Keep arrow sprite default-coloured; state colour is shown via tile overlay.
+						 * The one-way arrow base sprite uses fixed colour indices, so palette remaps
+						 * do not reliably tint it red/blue. */
 						if (can_land && can_takeoff) {
 							pal_overlay = PAL_NONE;
 						} else if (can_land) {
@@ -3834,7 +3836,13 @@ static void DrawTile_Station(TileInfo *ti)
 							pal_overlay = PALETTE_SEL_TILE_RED;
 						}
 
-						DrawGroundSpriteAt(sprite, pal_overlay, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
+						/* Draw directional arrow. */
+						DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
+
+						/* Draw a coloured selection outline to show usage mode. */
+						if (pal_overlay != PAL_NONE) {
+							DrawGroundSpriteAt(SPR_SELECT_TILE + SlopeToSpriteOffset(ti->tileh), pal_overlay, 0, 0, 7);
+						}
 					}
 				}
 			}
