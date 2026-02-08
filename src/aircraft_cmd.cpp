@@ -1625,6 +1625,10 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				v->modular_ground_target = target;
 				return;
 			}
+
+			/* No free stand/helipad yet: keep waiting in hangar.
+			 * Do not fall back to legacy hangar logic for modular airports. */
+			return;
 		} else {
 			if (v->subtype == AIR_HELICOPTER) {
 				AircraftLeaveHangar(v, exit_dir);
@@ -1638,6 +1642,10 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
 				return;
 			}
+
+			/* No usable takeoff runway yet: keep waiting in hangar.
+			 * Do not fall back to legacy hangar logic for modular airports. */
+			return;
 		}
 	}
 
@@ -2693,16 +2701,22 @@ static void HandleModularGroundArrival(Aircraft *v)
 					target = MGT_HANGAR;
 				}
 
-				if (goal == INVALID_TILE) {
-					goal = FindFreeModularTerminal(st, v);
-					target = MGT_TERMINAL;
-				}
+					if (goal == INVALID_TILE) {
+						goal = FindFreeModularTerminal(st, v);
+						target = MGT_TERMINAL;
+					}
 
-				if (goal != INVALID_TILE) {
-					v->ground_path_goal = goal;
-					v->modular_ground_target = target;
-					v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
-				}
+					/* Overflow: if all stands are full, clear runway via hangar parking. */
+					if (goal == INVALID_TILE) {
+						goal = FindFreeModularHangar(st);
+						target = MGT_HANGAR;
+					}
+
+					if (goal != INVALID_TILE) {
+						v->ground_path_goal = goal;
+						v->modular_ground_target = target;
+						v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
+					}
 			}
 			break;
 
