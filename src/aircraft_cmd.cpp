@@ -47,6 +47,7 @@
 #include "safeguards.h"
 
 #include <map>
+#include <set>
 
 void Aircraft::UpdateDeltaXY()
 {
@@ -94,7 +95,7 @@ static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex land
 static void ClearModularRunwayReservation(Aircraft *v);
 static bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile);
 static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass *apc);
-static void LogModularTakeoffRunwayUnavailable(const Aircraft *v);
+static void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v);
 static bool CanUseModularGroundRouting(const Station *st, const Aircraft *v);
 
 static constexpr uint8_t MGT_NONE = 0;
@@ -1647,7 +1648,7 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
 				return;
 			}
-			LogModularTakeoffRunwayUnavailable(v);
+			LogModularTakeoffRunwayUnavailable(st, v);
 
 			/* No usable takeoff runway yet: keep waiting in hangar.
 			 * Do not fall back to legacy hangar logic for modular airports. */
@@ -1738,7 +1739,7 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 			Debug(misc, 3, "[ModAp] Vehicle {} found takeoff runway tile {}", v->index, goal.base());
 			return;
 		}
-		LogModularTakeoffRunwayUnavailable(v);
+		LogModularTakeoffRunwayUnavailable(st, v);
 		return;
 	}
 
@@ -2770,20 +2771,17 @@ static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircra
 	int best_fallback_score = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (!IsModularRunwayPiece(data.piece_type)) continue;
-
-		/* Only consider runway end pieces as takeoff start points */
 		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
 		if (!is_end) continue;
 
-		/* Check runway flags: is takeoff allowed? */
-		uint8_t flags = GetRunwayFlags(st, data.tile);
-		if (!(flags & RUF_TAKEOFF)) continue;
+		const uint8_t flags = GetRunwayFlags(st, data.tile);
+		if ((flags & RUF_TAKEOFF) == 0) continue;
 
-		/* Check direction flags: is takeoff from this end allowed? */
-		bool is_low = IsRunwayEndLow(st, data.tile);
-		if (is_low && !(flags & RUF_DIR_LOW)) continue;
-		if (!is_low && !(flags & RUF_DIR_HIGH)) continue;
+		/* Direction bits select which runway end is valid for operations.
+		 * A takeoff must start at the allowed end, never from a middle tile. */
+		const bool is_low = IsRunwayEndLow(st, data.tile);
+		if (is_low && (flags & RUF_DIR_LOW) == 0) continue;
+		if (!is_low && (flags & RUF_DIR_HIGH) == 0) continue;
 
 		/* Keep a distance-based fallback so we don't deadlock if path probing fails transiently. */
 		int fallback_score = 0;
@@ -2797,7 +2795,7 @@ static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircra
 			best_fallback_tile = data.tile;
 		}
 
-		/* Prefer runway entries that are currently reachable by ground path. */
+		/* Prefer reachable takeoff ends. */
 		if (!can_ground_route) continue;
 		AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
 		if (!path.found) continue;
@@ -2807,7 +2805,6 @@ static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircra
 		}
 	}
 
-	if (can_ground_route) return best_path_tile;
 	if (best_path_tile != INVALID_TILE) return best_path_tile;
 	return best_fallback_tile;
 }
@@ -2975,7 +2972,7 @@ struct ModularTakeoffFailLogState {
 	uint32_t suppressed_count = 0;
 };
 
-static void LogModularTakeoffRunwayUnavailable(const Aircraft *v)
+static void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v)
 {
 	static std::map<VehicleID, ModularTakeoffFailLogState> fail_state;
 	static constexpr uint64_t LOG_INTERVAL_TICKS = 74;
@@ -2992,6 +2989,30 @@ static void LogModularTakeoffRunwayUnavailable(const Aircraft *v)
 		Debug(misc, 3, "[ModAp] Vehicle {} failed to find takeoff runway ({} suppressed)", v->index, state.suppressed_count);
 	} else {
 		Debug(misc, 3, "[ModAp] Vehicle {} failed to find takeoff runway", v->index);
+	}
+
+	if (st != nullptr && st->airport.modular_tile_data != nullptr) {
+		const bool can_ground_route = CanUseModularGroundRouting(st, v);
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			const bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+			if (!is_end) continue;
+
+			const uint8_t flags = GetRunwayFlags(st, data.tile);
+			const bool mode_ok = (flags & RUF_TAKEOFF) != 0;
+			const bool is_low = IsRunwayEndLow(st, data.tile);
+			const bool dir_ok = is_low ? ((flags & RUF_DIR_LOW) != 0) : ((flags & RUF_DIR_HIGH) != 0);
+
+			bool path_ok = false;
+			int path_cost = -1;
+			if (can_ground_route) {
+				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+				path_ok = path.found;
+				path_cost = path.found ? path.cost : -1;
+			}
+
+			Debug(misc, 3, "[ModAp]  takeoff end {} flags={:x} mode_ok={} dir_ok={} is_low={} path_ok={} cost={}",
+				data.tile.base(), flags, mode_ok, dir_ok, is_low, path_ok, path_cost);
+		}
 	}
 
 	state.last_tick = now;

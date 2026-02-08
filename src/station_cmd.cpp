@@ -3951,16 +3951,17 @@ static void DrawTile_Station(TileInfo *ti)
 					SpriteID base = SPR_ONEWAY_BASE;
 					const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
 
-					/* Map N/E/S/W to one-way arrow sprites:
-					 * N -> NW, E -> NE, S -> SE, W -> SW. */
+					/* Map taxi direction bits to arrow sprites.
+					 * SPR_ONEWAY_BASE sprite directions are opposite of our N/E/S/W
+					 * movement bits, so flip by 180 degrees for display. */
 					if (dir == 0x01) {
-						sprite = base + 4; // NW arrow
+						sprite = base + 3; // N movement -> SE-pointing sprite
 					} else if (dir == 0x02) {
-						sprite = base + 1; // NE arrow
+						sprite = base + 0; // E movement -> SW-pointing sprite
 					} else if (dir == 0x04) {
-						sprite = base + 3; // SE arrow
+						sprite = base + 4; // S movement -> NW-pointing sprite
 					} else if (dir == 0x08) {
-						sprite = base + 0; // SW arrow
+						sprite = base + 1; // W movement -> NE-pointing sprite
 					}
 
 					if (sprite != 0) DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
