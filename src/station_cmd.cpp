@@ -85,6 +85,26 @@
 
 extern bool _show_runway_direction_overlay;
 
+static bool IsModularTaxiwayPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_APRON_HOR:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON:
+		case APT_ARPON_N:
+		case APT_APRON_E:
+		case APT_APRON_S:
+		case APT_APRON_W:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return true;
+		default:
+			return false;
+	}
+}
+
 /**
  * Static instance of FlowStat::SharesMap.
  * Note: This instance is created on task start.
@@ -2850,9 +2870,17 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		tile_data.tile = tile;
 		tile_data.piece_type = static_cast<uint8_t>(gfx); // For now, use gfx as piece_type
 		tile_data.rotation = rotation;
-		tile_data.user_taxi_dir_mask = taxi_dir_mask;
-		tile_data.one_way_taxi = one_way_taxi;
 		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
+		taxi_dir_mask &= 0x0F;
+
+		/* One-way taxi only applies to taxiway/apron surface tiles and requires exactly one valid direction. */
+		if (IsModularTaxiwayPiece(tile_data.piece_type) && one_way_taxi && HasExactlyOneBit(taxi_dir_mask) && (tile_data.auto_taxi_dir_mask & taxi_dir_mask) != 0) {
+			tile_data.one_way_taxi = true;
+			tile_data.user_taxi_dir_mask = taxi_dir_mask;
+		} else {
+			tile_data.one_way_taxi = false;
+			tile_data.user_taxi_dir_mask = 0x0F;
+		}
 		auto is_runway_piece = [](uint8_t piece_type) {
 			switch (piece_type) {
 				case APT_RUNWAY_1:
@@ -2963,6 +2991,47 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 			if (next == current) break; /* Shouldn't happen, but safety */
 			current = next;
 		}
+	}
+
+	return CommandCost();
+}
+
+/**
+ * Set one-way taxi flags on a modular airport taxiway tile.
+ * @param flags Operation to perform.
+ * @param tile Tile to set flags on.
+ * @param taxi_dir_mask User direction mask (N/E/S/W bits).
+ * @param one_way_taxi If false, taxiway is unrestricted and mask is ignored.
+ * @return The cost of this operation or an error.
+ */
+CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi)
+{
+	if (!IsValidTile(tile)) return CMD_ERROR;
+	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
+
+	Station *st = Station::GetByTile(tile);
+	if (st == nullptr) return CMD_ERROR;
+
+	CommandCost ret = CheckOwnership(st->owner);
+	if (ret.Failed()) return ret;
+
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
+
+	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr || !IsModularTaxiwayPiece(data->piece_type)) return CMD_ERROR;
+
+	const uint8_t auto_dirs = CalculateAutoTaxiDirectionsForGfx(data->piece_type, data->rotation);
+	taxi_dir_mask &= 0x0F;
+
+	if (one_way_taxi) {
+		if (!HasExactlyOneBit(taxi_dir_mask)) return CMD_ERROR;
+		if ((auto_dirs & taxi_dir_mask) == 0) return CMD_ERROR;
+	}
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		data->one_way_taxi = one_way_taxi;
+		data->user_taxi_dir_mask = one_way_taxi ? taxi_dir_mask : 0x0F;
+		MarkTileDirtyByTile(tile);
 	}
 
 	return CommandCost();
@@ -3803,7 +3872,7 @@ static void DrawTile_Station(TileInfo *ti)
 
 	DrawRailTileSeq(ti, t, TO_BUILDINGS, total_offset, relocation, palette);
 
-	/* Draw runway direction overlay arrows */
+	/* Draw modular airport direction overlay arrows */
 	if (_show_runway_direction_overlay && IsAirport(ti->tile)) {
 		Station *station = Station::GetByTile(ti->tile);
 		if (station != nullptr && station->airport.blocks.Test(AirportBlock::Modular)) {
@@ -3877,6 +3946,24 @@ static void DrawTile_Station(TileInfo *ti)
 							DrawGroundSpriteAt(SPR_SELECT_TILE + SlopeToSpriteOffset(ti->tileh), pal_overlay, 0, 0, 7);
 						}
 					}
+				} else if (IsModularTaxiwayPiece(tile_data->piece_type) && tile_data->one_way_taxi && HasExactlyOneBit(tile_data->user_taxi_dir_mask)) {
+					SpriteID sprite = 0;
+					SpriteID base = SPR_ONEWAY_BASE;
+					const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
+
+					/* Map N/E/S/W to one-way arrow sprites:
+					 * N -> NW, E -> NE, S -> SE, W -> SW. */
+					if (dir == 0x01) {
+						sprite = base + 4; // NW arrow
+					} else if (dir == 0x02) {
+						sprite = base + 1; // NE arrow
+					} else if (dir == 0x04) {
+						sprite = base + 3; // SE arrow
+					} else if (dir == 0x08) {
+						sprite = base + 0; // SW arrow
+					}
+
+					if (sprite != 0) DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
 				}
 			}
 		}

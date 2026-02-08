@@ -70,6 +70,31 @@ static bool IsNonTaxiableBuilding(uint8_t piece_type)
 }
 
 /**
+ * Check if a piece type is an editable taxiway tile.
+ * @param piece_type The airport piece type.
+ * @return True if the tile is a taxiway tile.
+ */
+static bool IsTaxiwayPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_APRON_HOR:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON:
+		case APT_ARPON_N:
+		case APT_APRON_E:
+		case APT_APRON_S:
+		case APT_APRON_W:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
  * Check if two tiles can be connected based on taxi directions.
  * @param st The station.
  * @param from Source tile.
@@ -96,7 +121,10 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Get effective taxi directions */
 	uint8_t from_auto = CalculateAutoTaxiDirectionsForGfx(from_data->piece_type, from_data->rotation);
-	uint8_t from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
+	uint8_t from_dirs = from_auto;
+	if (IsTaxiwayPiece(from_data->piece_type) && from_data->one_way_taxi) {
+		from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
+	}
 	
 	bool from_ok = (from_dirs & dir_bit) != 0;
 
@@ -114,13 +142,12 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	else if (dir_bit == 0x04) reverse_dir_bit = 0x01; // South -> North
 	else if (dir_bit == 0x08) reverse_dir_bit = 0x02; // West -> East
 
-	uint8_t to_auto = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
-	uint8_t to_dirs = GetEffectiveTaxiDirections(to_auto, to_data->user_taxi_dir_mask);
+	uint8_t to_dirs = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
 	
 	bool to_ok = (to_dirs & reverse_dir_bit) != 0;
 
 	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
-		Debug(misc, 3, "[ModAp] Hangar connect check V2: from={}, to={}, dir={}, from_dirs={:x} (auto={:x}, user={:x}), to_dirs={:x}, from_ok={}, to_ok={}",
+		Debug(misc, 5, "[ModAp] Hangar connect check V2: from={}, to={}, dir={}, from_dirs={:x} (auto={:x}, user={:x}), to_dirs={:x}, from_ok={}, to_ok={}",
 			from.base(), to.base(), dir_bit, from_dirs, from_auto, from_data->user_taxi_dir_mask, to_dirs, from_ok, to_ok);
 	}
 
@@ -131,7 +158,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		Tile t(to);
 		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) {
 			if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
-				Debug(misc, 3, "[ModAp] Hangar connect blocked by reservation on {}", to.base());
+				Debug(misc, 5, "[ModAp] Hangar connect blocked by reservation on {}", to.base());
 			}
 			return false;
 		}

@@ -231,6 +231,7 @@ enum Commands : uint8_t {
 	CMD_BUILD_AIRPORT,                ///< build an airport
 	CMD_BUILD_MODULAR_AIRPORT_TILE,   ///< build a modular airport tile
 	CMD_SET_RUNWAY_FLAGS,             ///< set runway usage flags on modular airport tiles
+	CMD_SET_TAXIWAY_FLAGS,            ///< set one-way taxi flags on modular airport taxiway tiles
 
 	CMD_BUILD_DOCK,                   ///< build a dock
 

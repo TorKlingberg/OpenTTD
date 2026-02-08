@@ -171,6 +171,26 @@ static bool IsModularRunwayGfx(uint8_t gfx)
 	}
 }
 
+static bool IsModularTaxiwayGfx(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_APRON_HOR:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON:
+		case APT_ARPON_N:
+		case APT_APRON_E:
+		case APT_APRON_S:
+		case APT_APRON_W:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return true;
+		default:
+			return false;
+	}
+}
+
 static bool IsModularTerminalGfx(uint8_t gfx)
 {
 	switch (gfx) {
@@ -937,10 +957,49 @@ public:
 		return true;
 	}
 
+	/**
+	 * Cycle taxiway one-way flags when overlay is active and user clicks a taxiway tile.
+	 * Cycle order: unrestricted -> N -> E -> S -> W -> unrestricted.
+	 * @return true if the click was handled as a taxiway flag edit.
+	 */
+	bool TryEditTaxiwayFlags(TileIndex tile)
+	{
+		if (!_show_runway_direction_overlay) return false;
+		if (!IsValidTile(tile) || !IsTileType(tile, TileType::Station)) return false;
+
+		Station *st = Station::GetByTile(tile);
+		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
+
+		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+		if (data == nullptr || !IsModularTaxiwayGfx(data->piece_type)) return false;
+
+		bool next_one_way = true;
+		uint8_t next_mask = 0x01; // North
+
+		if (!data->one_way_taxi) {
+			next_one_way = true;
+			next_mask = 0x01; // N
+		} else if (data->user_taxi_dir_mask == 0x01) {
+			next_mask = 0x02; // E
+		} else if (data->user_taxi_dir_mask == 0x02) {
+			next_mask = 0x04; // S
+		} else if (data->user_taxi_dir_mask == 0x04) {
+			next_mask = 0x08; // W
+		} else {
+			next_one_way = false;
+			next_mask = 0x0F; // unrestricted
+		}
+
+		Command<CMD_SET_TAXIWAY_FLAGS>::Post(tile, next_mask, next_one_way);
+		return true;
+	}
+
 	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
 	{
 		/* When overlay is active, clicking on runway tiles edits their flags */
 		if (this->TryEditRunwayFlags(tile)) return;
+		/* When overlay is active, clicking on taxiway tiles edits one-way exit direction */
+		if (this->TryEditTaxiwayFlags(tile)) return;
 
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
