@@ -2925,6 +2925,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 			if (!is_rw) break;
 
 			cur_data->runway_flags = runway_flags;
+			MarkTileDirtyByTile(current);
 
 			TileIndex next = current + diff;
 			if (next == current) break; /* Shouldn't happen, but safety */
