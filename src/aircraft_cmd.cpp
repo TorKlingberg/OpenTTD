@@ -2229,6 +2229,20 @@ static bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, Ti
 	return true;
 }
 
+static bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *st, TileIndex runway_tile)
+{
+	std::vector<TileIndex> runway_tiles;
+	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) return false;
+
+	for (TileIndex tile : runway_tiles) {
+		Tile t(tile);
+		if (!IsAirport(t)) continue;
+		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) return true;
+	}
+
+	return false;
+}
+
 static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
@@ -2268,6 +2282,11 @@ static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 			bool is_low = IsRunwayEndLow(st, data.tile);
 			if (is_low && !(flags & RUF_DIR_LOW)) continue;
 			if (!is_low && !(flags & RUF_DIR_HIGH)) continue;
+
+			/* Avoid converging all arrivals onto one runway:
+			 * if this runway is currently reserved by another aircraft,
+			 * pick a different eligible runway instead. */
+			if (v->subtype == AIR_AIRCRAFT && IsContiguousModularRunwayReservedByOther(v, st, data.tile)) continue;
 		}
 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;

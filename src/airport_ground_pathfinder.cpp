@@ -95,6 +95,23 @@ static bool IsTaxiwayPiece(uint8_t piece_type)
 }
 
 /**
+ * Check if a piece type is an aircraft parking tile that should not be used as pass-through route.
+ * @param piece_type The airport piece type.
+ * @return True if this tile is parking-only (stand variants).
+ */
+static bool IsParkingOnlyTile(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
  * Check if two tiles can be connected based on taxi directions.
  * @param st The station.
  * @param from Source tile.
@@ -134,6 +151,9 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
+	/* Stands are parking endpoints, not taxi-through tiles.
+	 * Allow entering one only if it's our current tile or final goal. */
+	if (v != nullptr && IsParkingOnlyTile(to_data->piece_type) && to != v->tile && to != v->ground_path_goal) return false;
 
 	/* Determine reverse direction (from 'to' back to 'from') */
 	uint8_t reverse_dir_bit = 0;
