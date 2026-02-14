@@ -3331,6 +3331,7 @@ static void LogModularAirportLayout(const Station *st)
 static void LogModularVehicleReservationState(const Station *st, const Aircraft *v, std::string_view reason)
 {
 	if (st == nullptr || v == nullptr || st->airport.modular_tile_data == nullptr) return;
+	if (_debug_misc_level < 2) return;
 
 	std::vector<TileIndex> owned_tiles;
 	std::vector<TileIndex> owned_runway_tiles;
@@ -3366,7 +3367,7 @@ static void LogModularVehicleReservationState(const Station *st, const Aircraft 
 		v->modular_runway_reservation.size(), owned_tiles.size(), owned_runway_tiles.size(),
 		tracked_but_unowned, owned_runway_untracked);
 
-	if (!owned_tiles.empty()) {
+	if (_debug_misc_level >= 3 && !owned_tiles.empty()) {
 		std::string owned;
 		for (TileIndex tile : owned_tiles) {
 			if (!owned.empty()) owned += ",";
@@ -3374,7 +3375,7 @@ static void LogModularVehicleReservationState(const Station *st, const Aircraft 
 		}
 		Debug(misc, 2, "[ModAp] V{} owned-reservations [{}]", v->index, owned);
 	}
-	if (!v->modular_runway_reservation.empty()) {
+	if (_debug_misc_level >= 3 && !v->modular_runway_reservation.empty()) {
 		std::string tracked;
 		for (TileIndex tile : v->modular_runway_reservation) {
 			if (!tracked.empty()) tracked += ",";
@@ -3387,6 +3388,7 @@ static void LogModularVehicleReservationState(const Station *st, const Aircraft 
 static void LogModularTrafficSnapshot(const Station *st, std::string_view reason, const Aircraft *focus = nullptr)
 {
 	if (st == nullptr || st->airport.modular_tile_data == nullptr) return;
+	if (_debug_misc_level < 3) return;
 
 	/* Keep snapshots cheap and rate-limited: these are for deadlock telemetry, not full dumps. */
 	static std::unordered_map<uint64_t, uint64_t> last_snapshot_tick;
@@ -3416,13 +3418,13 @@ static void LogModularTrafficSnapshot(const Station *st, std::string_view reason
 		if (a->modular_ground_target == MGT_RUNWAY_TAKEOFF) takeoff_wait_count++;
 	}
 
-	Debug(misc, 2, "[ModAp] snapshot station={} reason='{}' tick={} focus={} aircraft={} waiting_takeoff={} reserved_tiles={} reserved_runway={}",
+	Debug(misc, 3, "[ModAp] snapshot station={} reason='{}' tick={} focus={} aircraft={} waiting_takeoff={} reserved_tiles={} reserved_runway={}",
 		st->index, reason, now, focus != nullptr ? focus->index.base() : 0,
 		aircraft_count, takeoff_wait_count, reserved_tiles, reserved_runway_tiles);
 
 	if (focus != nullptr) {
 		const size_t path_len = focus->ground_path != nullptr ? focus->ground_path->size() : 0;
-		Debug(misc, 2, "[ModAp] snapshot focus V{} state={} tile={} goal={} tgt={} path={}/{} stall={} runway_res={}",
+		Debug(misc, 3, "[ModAp] snapshot focus V{} state={} tile={} goal={} tgt={} path={}/{} stall={} runway_res={}",
 			focus->index.base(), focus->state, IsValidTile(focus->tile) ? focus->tile.base() : 0,
 			IsValidTile(focus->ground_path_goal) ? focus->ground_path_goal.base() : 0,
 			focus->modular_ground_target, focus->ground_path_index, path_len,
