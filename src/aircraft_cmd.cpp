@@ -94,7 +94,6 @@ static TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v);
 static TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v);
 static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 static TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, TileIndex runway_end);
-static bool HasModularTakeoffInProgress(const Station *st, const Aircraft *self);
 static TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
 static void ClearModularRunwayReservation(Aircraft *v);
 static void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, TileIndex keep_tile = INVALID_TILE);
@@ -1767,15 +1766,6 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 			}
 		}
 		if (!go_to_hangar) {
-			/* Dispatch one fixed-wing departure at a time to avoid taxi deadlocks on
-			 * compact modular layouts. Additional aircraft wait at stands. */
-			if (v->subtype != AIR_HELICOPTER && HasModularTakeoffInProgress(st, v)) {
-				if (ShouldLogModularRateLimited(v->index, 29, 128)) {
-					Debug(misc, 2, "[ModAp] Vehicle {} waiting at stand: takeoff taxi already in progress", v->index);
-				}
-				return;
-			}
-
 			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 			if (runway != INVALID_TILE) {
 				v->modular_takeoff_tile = runway;
@@ -3125,30 +3115,6 @@ static bool IsModularHangarPiece(uint8_t piece_type)
 	return piece_type == APT_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SE;
 }
 
-static bool HasModularTakeoffInProgress(const Station *st, const Aircraft *self)
-{
-	if (st == nullptr) return false;
-
-	for (const Aircraft *a : Aircraft::Iterate()) {
-		if (a == self || !a->IsNormalAircraft()) continue;
-		if (a->subtype == AIR_HELICOPTER) continue;
-		if (a->targetairport != st->index && a->last_station_visited != st->index) continue;
-
-		/* Only treat as active takeoff when aircraft actually occupies/holds runway resources.
-		 * A plane stuck waiting at a stand/queue tile must not block all other departures. */
-		if (a->modular_ground_target == MGT_RUNWAY_TAKEOFF) {
-			if (!a->modular_runway_reservation.empty()) return true;
-			if (IsValidTile(a->tile)) {
-				const ModularAirportTileData *cur_data = st->airport.GetModularTileData(a->tile);
-				if (cur_data != nullptr && IsModularRunwayPiece(cur_data->piece_type)) return true;
-			}
-		}
-		if (a->state == TAKEOFF || a->state == STARTTAKEOFF || a->state == ENDTAKEOFF) return true;
-	}
-
-	return false;
-}
-
 static bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleID reserver)
 {
 	if (st == nullptr || !IsValidTile(tile)) return false;
@@ -3315,7 +3281,7 @@ static TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *
 	if (runway_end == INVALID_TILE || v == nullptr) return runway_end;
 	if (!CanUseModularGroundRouting(st, v)) return runway_end;
 
-	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, nullptr);
+	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v);
 	if (!path.found || path.tiles.empty()) return INVALID_TILE;
 
 	TileIndex queue_tile = runway_end;
