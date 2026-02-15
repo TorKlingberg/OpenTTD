@@ -111,6 +111,7 @@ static uint8_t FindTaxiSegmentIndex(const TaxiPath *path, uint16_t tile_index);
 static TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr);
 static bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_tile, TileIndex ground_goal);
 static void SetTaxiReservation(Aircraft *v, TileIndex tile);
+static bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
 
 static constexpr uint8_t MGT_NONE = 0;
 static constexpr uint8_t MGT_TERMINAL = 1;
@@ -3468,6 +3469,37 @@ static bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segmen
 	return true;
 }
 
+static bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
+{
+	TileIndex alt_goal = INVALID_TILE;
+	uint8_t alt_target = v->modular_ground_target;
+
+	switch (v->modular_ground_target) {
+		case MGT_TERMINAL:
+			alt_goal = FindFreeModularTerminal(st, v);
+			alt_target = MGT_TERMINAL;
+			break;
+		case MGT_HELIPAD:
+			alt_goal = FindFreeModularHelipad(st, v);
+			alt_target = MGT_HELIPAD;
+			break;
+		case MGT_HANGAR:
+			alt_goal = FindFreeModularHangar(st, v);
+			alt_target = MGT_HANGAR;
+			break;
+		default:
+			return false;
+	}
+
+	if (alt_goal == INVALID_TILE || alt_goal == v->ground_path_goal) return false;
+
+	v->ground_path_goal = alt_goal;
+	v->modular_ground_target = alt_target;
+	ClearTaxiPathState(v, v->tile);
+	v->taxi_wait_counter = 0;
+	return true;
+}
+
 static void HandleModularGroundArrival(Aircraft *v)
 {
 	const Station *st = Station::Get(v->targetairport);
@@ -3800,6 +3832,12 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
+			if (v->taxi_wait_counter > 64) {
+				if (!TryRetargetModularGroundGoal(v, st)) {
+					ClearTaxiPathState(v, v->tile);
+					v->taxi_wait_counter = 0;
+				}
+			}
 			return false;
 		}
 
@@ -3834,7 +3872,12 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	if (need_reserve && !TryReserveTaxiSegment(v, st, next_segment)) {
 		v->taxi_wait_counter++;
-		if (v->taxi_wait_counter > 64) ClearTaxiPathState(v, v->tile);
+		if (v->taxi_wait_counter > 64) {
+			if (!TryRetargetModularGroundGoal(v, st)) {
+				ClearTaxiPathState(v, v->tile);
+				v->taxi_wait_counter = 0;
+			}
+		}
 		return false;
 	}
 	v->taxi_wait_counter = 0;
