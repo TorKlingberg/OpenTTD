@@ -94,6 +94,7 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	uint16_t taxi_wait_counter = 0; ///< Wait counter when blocked on segment reservation
 	TileIndex ground_path_goal = INVALID_TILE; ///< Goal tile for ground movement
 	TileIndex modular_landing_tile = INVALID_TILE; ///< Runway tile targeted for modular landing
+	TileIndex modular_landing_goal = INVALID_TILE; ///< Ground destination preselected during landing commit
 	uint8_t modular_landing_stage = 0; ///< Landing stage for modular approach
 	uint8_t modular_ground_target = 0; ///< Modular ground destination (terminal/hangar/runway)
 	TileIndex modular_takeoff_tile = INVALID_TILE; ///< Runway tile targeted for modular takeoff
