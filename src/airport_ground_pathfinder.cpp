@@ -174,15 +174,8 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	if (!from_ok) return false; // Direction not allowed from 'from'
 	if (!to_ok) return false; // Reverse direction not allowed
 
-	if (v != nullptr) {
-		Tile t(to);
-		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) {
-			if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
-				Debug(misc, 5, "[ModAp] Hangar connect blocked by reservation on {}", to.base());
-			}
-			return false;
-		}
-	}
+	/* Reservation checking removed: the pathfinder now finds topology-only paths.
+	 * Reservations are handled by the segment-based reservation system. */
 
 	return true;
 }
@@ -348,5 +341,106 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	}
 
 	/* No path found */
+	return result;
+}
+
+/**
+ * Check if a piece type is a modular runway piece.
+ * (Local copy to avoid cross-file dependency on aircraft_cmd.cpp)
+ */
+static bool IsModularRunwayPieceLocal(uint8_t gfx)
+{
+	switch (gfx) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Check if a tile is a one-way taxiway tile.
+ * @param st The station.
+ * @param tile The tile to check.
+ * @return True if the tile is a taxiway piece with one_way_taxi set.
+ */
+bool IsOneWayTaxiTile(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return false;
+	return IsTaxiwayPiece(data->piece_type) && data->one_way_taxi;
+}
+
+/**
+ * Classify a tile within an airport path into a segment type.
+ * @param st The station.
+ * @param tile The tile to classify.
+ * @return The segment type for this tile.
+ */
+static TaxiSegmentType ClassifyTile(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return TaxiSegmentType::FREE_MOVE;
+
+	if (IsModularRunwayPieceLocal(data->piece_type)) return TaxiSegmentType::RUNWAY;
+	if (IsTaxiwayPiece(data->piece_type) && data->one_way_taxi) return TaxiSegmentType::ONE_WAY;
+	return TaxiSegmentType::FREE_MOVE;
+}
+
+/**
+ * Walk a path and group consecutive same-type tiles into segments.
+ * @param st The station.
+ * @param tiles The path tiles.
+ * @return Vector of classified segments.
+ */
+static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const std::vector<TileIndex> &tiles)
+{
+	std::vector<TaxiSegment> segments;
+	if (tiles.empty()) return segments;
+
+	TaxiSegmentType current_type = ClassifyTile(st, tiles[0]);
+	uint16_t seg_start = 0;
+
+	for (uint16_t i = 1; i < static_cast<uint16_t>(tiles.size()); i++) {
+		TaxiSegmentType tile_type = ClassifyTile(st, tiles[i]);
+		if (tile_type != current_type) {
+			segments.push_back({current_type, seg_start, static_cast<uint16_t>(i - 1)});
+			current_type = tile_type;
+			seg_start = i;
+		}
+	}
+	/* Close the last segment */
+	segments.push_back({current_type, seg_start, static_cast<uint16_t>(tiles.size() - 1)});
+
+	return segments;
+}
+
+/**
+ * Build a classified taxi path from start to goal.
+ * Calls A* pathfinder (topology only) then classifies tiles into segments.
+ * @param st The station containing the airport.
+ * @param start Starting tile.
+ * @param goal Goal tile.
+ * @param v The aircraft (optional, for stand avoidance).
+ * @return A TaxiPath with tiles and segments filled in.
+ */
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v)
+{
+	TaxiPath result;
+
+	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v);
+	if (!path.found) return result;
+
+	result.tiles = std::move(path.tiles);
+	result.segments = ClassifyTaxiSegments(st, result.tiles);
+	result.valid = true;
 	return result;
 }

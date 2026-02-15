@@ -12,6 +12,7 @@
 
 #include "station_map.h"
 #include "vehicle_base.h"
+#include "airport_ground_pathfinder.h"
 
 /**
  * Base values for flight levels above ground level for 'normal' flight and holding patterns.
