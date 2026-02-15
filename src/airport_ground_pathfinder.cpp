@@ -24,6 +24,7 @@
 
 /** Maximum number of iterations for pathfinding (prevent infinite loops) */
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
+static bool IsModularRunwayPieceLocal(uint8_t gfx);
 
 /** Node in the A* search */
 struct PathNode {
@@ -148,6 +149,15 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Get tile data for 'to' */
 	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
 	if (to_data == nullptr) return false;
+	const bool from_is_runway = IsModularRunwayPieceLocal(from_data->piece_type);
+	const bool to_is_runway = IsModularRunwayPieceLocal(to_data->piece_type);
+
+	/* Runway tiles may only connect along the same runway axis.
+	 * This prevents crossovers between adjacent/parallel runways. */
+	if (from_is_runway && to_is_runway) {
+		const bool horizontal = (from_data->rotation % 2) == 0;
+		if ((horizontal && dy != 0) || (!horizontal && dx != 0)) return false;
+	}
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;

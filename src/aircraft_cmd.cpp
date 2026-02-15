@@ -3882,6 +3882,10 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	v->taxi_wait_counter = 0;
 
+	/* Final safety gate before movement: never enter a tile currently occupied by another aircraft,
+	 * even if reservation ownership was stale. */
+	if (next_tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, next_tile, v->index)) return false;
+
 	const int target_x = TileX(next_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int target_y = TileY(next_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
