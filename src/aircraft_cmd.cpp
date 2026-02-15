@@ -3791,7 +3791,8 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 			v->taxi_path == nullptr ||
 			!v->taxi_path->valid ||
 			v->taxi_path->tiles.empty() ||
-			v->taxi_path->tiles.front() != v->tile ||
+			v->taxi_path_index >= v->taxi_path->tiles.size() ||
+			v->taxi_path->tiles[v->taxi_path_index] != v->tile ||
 			v->taxi_path->tiles.back() != v->ground_path_goal;
 	if (needs_rebuild) {
 		ClearTaxiPathState(v, v->tile);
