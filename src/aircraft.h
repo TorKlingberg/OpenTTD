@@ -87,6 +87,11 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	/* Modular airport ground pathfinding */
 	std::vector<TileIndex> *ground_path = nullptr; ///< Ground path for modular airports
 	uint16_t ground_path_index = 0; ///< Current position in ground path
+	TaxiPath *taxi_path = nullptr; ///< Classified taxi path for modular airports
+	uint16_t taxi_path_index = 0; ///< Current position in taxi_path->tiles
+	uint8_t taxi_current_segment = 0; ///< Current segment index in taxi_path->segments
+	std::vector<TileIndex> taxi_reserved_tiles{}; ///< Non-runway reservations held by segment logic
+	uint16_t taxi_wait_counter = 0; ///< Wait counter when blocked on segment reservation
 	TileIndex ground_path_goal = INVALID_TILE; ///< Goal tile for ground movement
 	TileIndex modular_landing_tile = INVALID_TILE; ///< Runway tile targeted for modular landing
 	uint8_t modular_landing_stage = 0; ///< Landing stage for modular approach
