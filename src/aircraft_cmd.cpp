@@ -3626,22 +3626,16 @@ static void HandleModularGroundArrival(Aircraft *v)
 			break;
 
 			case MGT_RUNWAY_TAKEOFF:
-				/* Queue point before runway: wait here until the selected runway can be fully reserved. */
+				/* Keep progressing through one-way queue tiles toward runway entry.
+				 * Runway reservation is enforced only when actually entering runway tiles. */
 				{
-					static std::map<VehicleID, uint64_t> next_queue_clearance_check_tick;
 					const ModularAirportTileData *tile_data = st->airport.GetModularTileData(v->tile);
 					const bool on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
 
 					if (!on_runway) {
-						/* While waiting in queue, keep only the queue tile reservation.
-						 * This prevents stale runway/taxi reservations from deadlocking traffic,
-						 * but avoid scanning/clearing every tick. */
 						if (HasModularReservationOutsideTile(st, v->index, v->tile) || !v->modular_runway_reservation.empty()) {
 							ClearModularRunwayReservation(v);
 							ClearModularAirportReservationsByVehicle(st, v->index, v->tile);
-							if (ShouldLogModularRateLimited(v->index, 17, 128)) {
-								LogModularVehicleReservationState(st, v, "queue cleaned stale reservations");
-							}
 						}
 						if (IsAirportTile(v->tile)) {
 							Tile t(v->tile);
@@ -3649,57 +3643,19 @@ static void HandleModularGroundArrival(Aircraft *v)
 							SetAirportTileReserver(t, v->index);
 						}
 
-						const uint64_t now = TimerGameTick::counter;
-						uint64_t &next_check_tick = next_queue_clearance_check_tick[v->index];
-						if (now < next_check_tick) {
-							if (v->ground_path_goal != v->tile) v->ground_path_goal = v->tile;
-							v->state = TERM1;
-							return;
-						}
-						next_check_tick = now + 8;
-
 						if (v->modular_takeoff_tile == INVALID_TILE) {
 							v->modular_takeoff_tile = FindModularRunwayTileForTakeoff(st, v);
 						}
-
 						if (v->modular_takeoff_tile == INVALID_TILE) {
-							if (ShouldLogModularRateLimited(v->index, 3, 128)) {
-								LogModularVehicleReservationState(st, v, "queue wait clearance");
-							}
-							if (v->ground_path_goal != v->tile) v->ground_path_goal = v->tile;
+							v->ground_path_goal = v->tile;
 							v->state = TERM1;
 							return;
 						}
 
-						/* Clearance to approach runway threshold:
-						 * do NOT reserve full runway yet; reserve happens only at runway entry. */
-						if (IsContiguousModularRunwayBusyByOther(v, st, v->modular_takeoff_tile)) {
-							/* Yield runway exits to rollout/landing traffic: if runway is busy by another
-							 * aircraft, queueing takeoff aircraft should vacate chokepoints when possible. */
-							TileIndex stand = FindFreeModularTerminal(st, v);
-							if (stand != INVALID_TILE && stand != v->tile) {
-								if (ShouldLogModularRateLimited(v->index, 31, 64)) {
-									Debug(misc, 2, "[ModAp] V{} queue-yield: runway {} busy, vacating queue {} -> stand {}",
-										v->index, v->modular_takeoff_tile.base(), v->tile.base(), stand.base());
-								}
-								ClearModularRunwayReservation(v);
-								v->ground_path_goal = stand;
-								v->modular_ground_target = MGT_TERMINAL;
-								v->state = TERM1;
-								return;
-							}
-							if (v->ground_path_goal != v->tile) v->ground_path_goal = v->tile;
-							v->state = TERM1;
-							return;
-						}
-
-						LogModularVehicleReservationState(st, v, "queue clearance granted (approach)");
-						next_queue_clearance_check_tick.erase(v->index);
 						v->ground_path_goal = v->modular_takeoff_tile;
 						v->state = TERM1;
 						return;
 					}
-					next_queue_clearance_check_tick.erase(v->index);
 				}
 
 			/* On runway entry tile: only start takeoff if full runway reservation is held.
