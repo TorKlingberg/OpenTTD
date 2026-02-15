@@ -24,6 +24,7 @@
 
 /** Maximum number of iterations for pathfinding (prevent infinite loops) */
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
+static bool IsModularRunwayPieceLocal(uint8_t gfx);
 
 /** Node in the A* search */
 struct PathNode {
@@ -155,6 +156,15 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Get tile data for 'to' */
 	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
 	if (to_data == nullptr) return false;
+
+	/* Ground taxi routing should not enter runway tiles unless runway is the explicit goal.
+	 * This prevents post-landing/terminal taxi from crossing active runways. */
+	if (v != nullptr &&
+			IsModularRunwayPieceLocal(to_data->piece_type) &&
+			!IsModularRunwayPieceLocal(from_data->piece_type) &&
+			to != v->ground_path_goal) {
+		return false;
+	}
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
