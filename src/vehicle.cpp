@@ -976,6 +976,22 @@ void CallVehicleTicks()
 			continue;
 		}
 
+		/* Hard guard against leaked company context from any vehicle tick.
+		 * When this leaks, the whole simulation can stall/crash later in GameLoop. */
+		if (_current_company != OWNER_NONE) {
+			if (v->type == VEH_AIRCRAFT) {
+				const Aircraft *a = Aircraft::From(v);
+				Debug(misc, 0,
+					"[TickGuard] Vehicle {} (aircraft state={} targetairport={} tile={}) leaked _current_company={} after Tick(); forcing OWNER_NONE",
+					v->index, a->state, a->targetairport, IsValidTile(a->tile) ? a->tile.base() : 0, _current_company.base());
+			} else {
+				Debug(misc, 0,
+					"[TickGuard] Vehicle {} (type={}) leaked _current_company={} after Tick(); forcing OWNER_NONE",
+					v->index, v->type, _current_company.base());
+			}
+			_current_company = OWNER_NONE;
+		}
+
 		assert(Vehicle::Get(vehicle_index) == v);
 
 		switch (v->type) {

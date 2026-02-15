@@ -22,6 +22,8 @@
 #include <dlfcn.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #ifdef WITH_UNOFFICIAL_BREAKPAD
 #	include <client/mac/handler/exception_handler.h>
@@ -38,6 +40,13 @@
 #endif
 
 #define MAX_STACK_FRAMES 64
+
+static inline void SafeStderrWrite(const char *msg, size_t len)
+{
+	/* Best effort only; this is used from crash/signal paths. */
+	if (msg == nullptr || len == 0) return;
+	(void)write(STDERR_FILENO, msg, len);
+}
 
 /** The signals we want our crash handler to handle. */
 static constexpr int _signals_to_handle[] = { SIGSEGV, SIGABRT, SIGFPE, SIGBUS, SIGILL, SIGSYS, SIGQUIT };
@@ -91,7 +100,8 @@ class CrashLogOSX : public CrashLog {
 
 		/* Setup a longjump in case a crash happens. */
 		if (setjmp(this->internal_fault_jmp_buf) != 0) {
-			fmt::print("Something went wrong when attempting to fill {} section of the crash log.\n", section_name);
+			static constexpr char msg[] = "Something went wrong while filling a crash-log section.\n";
+			SafeStderrWrite(msg, sizeof(msg) - 1);
 
 			/* Reset the signals and continue on. The handler is responsible for dealing with the crash. */
 			sigset_t sigs;
@@ -180,7 +190,8 @@ static sigset_t SetSignals(void(*handler)(int))
 static void CDECL HandleInternalCrash(int)
 {
 	if (CrashLogOSX::current == nullptr || !CrashLogOSX::current->try_execute_active) {
-		fmt::print("Something went seriously wrong when creating the crash log. Aborting.\n");
+		static constexpr char msg[] = "Something went seriously wrong when creating the crash log. Aborting.\n";
+		SafeStderrWrite(msg, sizeof(msg) - 1);
 		_exit(1);
 	}
 
@@ -205,23 +216,27 @@ static void CDECL HandleCrash(int signum)
 	sigprocmask(SIG_UNBLOCK, &sigs, &old_sigset);
 
 	if (_gamelog.TestEmergency()) {
-		ShowMacDialog("A serious fault condition occurred in the game. The game will shut down.",
-				"As you loaded an emergency savegame no crash information will be generated.\n",
-				"Quit");
+		if (pthread_main_np() != 0) {
+			ShowMacDialog("A serious fault condition occurred in the game. The game will shut down.",
+					"As you loaded an emergency savegame no crash information will be generated.\n",
+					"Quit");
+		}
 		_exit(3);
 	}
 
 	if (SaveloadCrashWithMissingNewGRFs()) {
-		ShowMacDialog("A serious fault condition occurred in the game. The game will shut down.",
-				"As you loaded an savegame for which you do not have the required NewGRFs no crash information will be generated.\n",
-				"Quit");
+		if (pthread_main_np() != 0) {
+			ShowMacDialog("A serious fault condition occurred in the game. The game will shut down.",
+					"As you loaded an savegame for which you do not have the required NewGRFs no crash information will be generated.\n",
+					"Quit");
+		}
 		_exit(3);
 	}
 
 	CrashLogOSX *log = new CrashLogOSX(signum);
 	CrashLogOSX::current = log;
 	log->MakeCrashLog();
-	if (VideoDriver::GetInstance() == nullptr || VideoDriver::GetInstance()->HasGUI()) {
+	if ((VideoDriver::GetInstance() == nullptr || VideoDriver::GetInstance()->HasGUI()) && pthread_main_np() != 0) {
 		log->DisplayCrashDialog();
 	}
 

@@ -16,6 +16,7 @@
 #include <system_error>
 #include <thread>
 #include <mutex>
+#include <cstdlib>
 
 /**
  * Sleep on the current thread for a defined time.
@@ -58,17 +59,19 @@ inline bool StartNewThread(std::thread *thr, std::string_view name, TFn&& _Fx, T
 					std::lock_guard<std::mutex> lock(thread_startup_mutex);
 				}
 
-				SetCurrentThreadName(name);
-				CrashLog::InitThread();
-				try {
-					/* Call user function with the given arguments. */
-					F(A...);
-				} catch (std::exception &e) {
-					FatalError("Unhandled exception in {} thread: {}", name, e.what());
-				} catch (...) {
-					NOT_REACHED();
-				}
-			}, std::string{name}, std::forward<TFn>(_Fx), std::forward<TArgs>(_Ax)...);
+					SetCurrentThreadName(name);
+					CrashLog::InitThread();
+					try {
+						/* Call user function with the given arguments. */
+						F(A...);
+					} catch (std::exception &e) {
+						FatalError("Unhandled exception in {} thread: {}", name, e.what());
+					} catch (...) {
+						SetCurrentThreadName(name);
+						CrashLog::SetErrorMessage(fmt::format("Unhandled non-std exception in thread {}", name));
+						abort();
+					}
+				}, std::string{name}, std::forward<TFn>(_Fx), std::forward<TArgs>(_Ax)...);
 
 		if (thr != nullptr) {
 			*thr = std::move(t);
