@@ -159,6 +159,10 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		if ((horizontal && dy != 0) || (!horizontal && dx != 0)) return false;
 	}
 
+	/* Do not enter landing-only runways from apron/taxiway tiles.
+	 * This prevents aircraft from wandering onto active landing strips. */
+	if (!from_is_runway && to_is_runway && (to_data->runway_flags & RUF_TAKEOFF) == 0) return false;
+
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
 	/* Stands are parking endpoints — avoid routing through occupied ones.
