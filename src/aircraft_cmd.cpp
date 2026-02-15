@@ -2430,9 +2430,12 @@ static bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex run
 	TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
 	if (rollout == INVALID_TILE) return true;
 
-	/* During approach the aircraft is still in-air, so stand-goal checks that depend on v->ground_path_goal
-	 * can reject valid stand endpoints. Use topology-only path build for landing-chain probing. */
-	TaxiPath path = BuildTaxiPath(st, rollout, ground_goal, nullptr);
+	/* Probe landing-chain feasibility with endpoint-only parking rules enabled for this goal.
+	 * This avoids reserving paths that pass through parking-only tiles and later stall on ground. */
+	const TileIndex previous_goal = v->ground_path_goal;
+	v->ground_path_goal = ground_goal;
+	TaxiPath path = BuildTaxiPath(st, rollout, ground_goal, v);
+	v->ground_path_goal = previous_goal;
 	if (!path.valid || path.tiles.empty() || path.segments.empty()) {
 		ClearModularRunwayReservation(v);
 		return false;
@@ -3018,7 +3021,7 @@ static TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] con
 			/* Avoid assigning stands that are currently unreachable from our position. */
 			int score = 0;
 			if (can_ground_route) {
-				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v);
 				if (!path.found) continue;
 				score = path.cost;
 			} else if (v != nullptr) {
@@ -3060,7 +3063,7 @@ static TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v)
 
 			int score = 0;
 			if (can_ground_route) {
-				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v);
 				if (!path.found) continue;
 				score = path.cost;
 			} else if (v != nullptr) {
@@ -3105,7 +3108,7 @@ static TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v)
 
 		if (!can_ground_route) continue;
 
-		AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+		AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v);
 		if (!path.found) continue;
 		if (best_path_tile == INVALID_TILE || path.cost < best_path_score) {
 			best_path_score = path.cost;
@@ -3800,6 +3803,21 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
+			if (v->taxi_wait_counter > 64) {
+				TileIndex alt_goal = INVALID_TILE;
+				uint8_t alt_target = v->modular_ground_target;
+				switch (v->modular_ground_target) {
+					case MGT_TERMINAL: alt_goal = FindFreeModularTerminal(st, v); alt_target = MGT_TERMINAL; break;
+					case MGT_HELIPAD:  alt_goal = FindFreeModularHelipad(st, v);  alt_target = MGT_HELIPAD;  break;
+					case MGT_HANGAR:   alt_goal = FindFreeModularHangar(st, v);   alt_target = MGT_HANGAR;   break;
+					default: break;
+				}
+				if (alt_goal != INVALID_TILE && alt_goal != v->ground_path_goal) {
+					v->ground_path_goal = alt_goal;
+					v->modular_ground_target = alt_target;
+					v->taxi_wait_counter = 0;
+				}
+			}
 			return false;
 		}
 
