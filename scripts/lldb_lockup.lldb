@@ -1,0 +1,15 @@
+settings set target.inline-breakpoint-strategy always
+settings set stop-disassembly-display never
+
+breakpoint set -n __cxa_throw
+breakpoint set -f src/core/backup_type.hpp -l 52
+breakpoint set -n abort
+breakpoint set -n __assert_rtn
+
+command alias btall thread backtrace all
+command alias regs register read
+
+# Start with lower-noise logging; increase in-game if needed.
+settings clear target.run-args
+settings append target.run-args -d misc=2 -I OpenGFX -S NoSound -M NoMusic
+run

@@ -1,0 +1,8 @@
+settings clear target.run-args
+settings append target.run-args -d misc=2 -I OpenGFX -S NoSound -M NoMusic
+breakpoint set -n __assert_rtn
+breakpoint set -n abort
+process handle -s true -n true -p true SIGABRT SIGSEGV SIGBUS SIGILL SIGFPE SIGSYS
+breakpoint command add -o "thread backtrace all" -o "quit" 1
+breakpoint command add -o "thread backtrace all" -o "quit" 2
+run
