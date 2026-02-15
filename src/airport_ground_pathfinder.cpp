@@ -105,6 +105,15 @@ static bool IsParkingOnlyTile(uint8_t piece_type)
 		case APT_STAND:
 		case APT_STAND_1:
 		case APT_STAND_PIER_NE:
+		case APT_DEPOT_SE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
 			return true;
 		default:
 			return false;
