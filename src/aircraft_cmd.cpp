@@ -3317,7 +3317,7 @@ static TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *
 	if (runway_end == INVALID_TILE || v == nullptr) return runway_end;
 	if (!CanUseModularGroundRouting(st, v)) return runway_end;
 
-	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v);
+	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, nullptr);
 	if (!path.found || path.tiles.empty()) return INVALID_TILE;
 
 	TileIndex queue_tile = runway_end;
