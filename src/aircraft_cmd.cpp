@@ -115,6 +115,7 @@ static bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex run
 static void SetTaxiReservation(Aircraft *v, TileIndex tile);
 static bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
 static bool IsModularHangarTile(const Station *st, TileIndex tile);
+static bool IsModularHangarPiece(uint8_t piece_type);
 
 static constexpr uint8_t MGT_NONE = 0;
 static constexpr uint8_t MGT_TERMINAL = 1;
@@ -2289,6 +2290,71 @@ static void ClearModularAirportReservationsByVehicle(const Station *st, VehicleI
 			SetAirportTileReservation(t, false);
 		}
 	}
+}
+
+/**
+ * Teleport all ground aircraft on a modular airport tile to the nearest hangar.
+ * Used when a tile is being removed from under an aircraft.
+ * @param tile The tile being removed.
+ * @param st The station.
+ * @param execute If true, actually perform the teleport. If false, just check feasibility.
+ * @return True if there are no aircraft to move, or if all can be teleported to a hangar.
+ */
+bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
+{
+	/* Collect primary aircraft on this tile (same pattern as IsModularTileOccupiedByOtherAircraft). */
+	std::vector<Aircraft *> to_teleport;
+	for (Aircraft *a : Aircraft::Iterate()) {
+		if (!a->IsNormalAircraft()) continue;
+		if (a->tile != tile) continue;
+		to_teleport.push_back(a);
+	}
+
+	if (to_teleport.empty()) return true;
+
+	/* Find a hangar to teleport to (must not be the tile being removed). */
+	TileIndex hangar = INVALID_TILE;
+	if (st->airport.modular_tile_data != nullptr) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (data.tile == tile) continue;
+			if (!IsModularHangarPiece(data.piece_type)) continue;
+			hangar = data.tile;
+			break;
+		}
+	}
+
+	if (hangar == INVALID_TILE) return false;
+
+	if (!execute) return true;
+
+	/* Actually teleport each aircraft to the hangar. */
+	for (Aircraft *v : to_teleport) {
+		ClearTaxiPathState(v);
+		ClearModularRunwayReservation(v);
+		ClearModularAirportReservationsByVehicle(st, v->index);
+
+		v->ground_path_goal = INVALID_TILE;
+		v->modular_ground_target = MGT_NONE;
+		v->modular_landing_tile = INVALID_TILE;
+		v->modular_landing_goal = INVALID_TILE;
+		v->modular_landing_stage = 0;
+		v->modular_takeoff_tile = INVALID_TILE;
+		v->modular_takeoff_progress = 0;
+
+		/* Move to hangar tile. */
+		int hx = TileX(hangar) * TILE_SIZE + TILE_SIZE / 2;
+		int hy = TileY(hangar) * TILE_SIZE + TILE_SIZE / 2;
+		int hz = GetTileMaxPixelZ(hangar);
+
+		v->tile = hangar;
+		SetAircraftPosition(v, hx, hy, hz);
+		VehicleEnterDepot(v);
+
+		Debug(misc, 1, "[ModAp] Teleported vehicle {} from removed tile {} to hangar {}",
+			v->index, tile.base(), hangar.base());
+	}
+
+	return true;
 }
 
 static bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interval_ticks)

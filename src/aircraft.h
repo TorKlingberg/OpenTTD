@@ -156,5 +156,6 @@ void GetRotorImage(const Aircraft *v, EngineImageType image_type, VehicleSpriteS
 
 Station *GetTargetAirportIfValid(const Aircraft *v);
 void HandleMissingAircraftOrders(Aircraft *v);
+bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute);
 
 #endif /* AIRCRAFT_H */

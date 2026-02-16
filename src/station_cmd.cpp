@@ -3046,8 +3046,11 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 		if (ret.Failed()) return ret;
 	}
 
-	CommandCost ret = EnsureNoVehicleOnGround(tile);
-	if (ret.Failed()) return ret;
+	/* Teleport any ground aircraft to the nearest hangar instead of blocking removal.
+	 * If no hangar is available, the removal is blocked. */
+	if (!TeleportAircraftOnModularTile(tile, st, flags.Test(DoCommandFlag::Execute))) {
+		return CommandCost(STR_ERROR_AIRCRAFT_IN_THE_WAY);
+	}
 
 	CommandCost cost(EXPENSES_CONSTRUCTION, _price[Price::ClearStationAirport]);
 
