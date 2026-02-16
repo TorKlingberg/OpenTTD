@@ -295,10 +295,24 @@ struct DepotWindow : Window {
 		OrderBackup::Reset();
 	}
 
+	bool HasValidDepotTile() const
+	{
+		Tile tile(this->window_number);
+		switch (this->type) {
+			case VEH_TRAIN:    return IsRailDepotTile(tile);
+			case VEH_ROAD:     return IsRoadDepotTile(tile);
+			case VEH_SHIP:     return IsShipDepotTile(tile);
+			case VEH_AIRCRAFT: return IsTileType(tile, TileType::Station) && IsAirport(tile);
+			default:           return false;
+		}
+	}
+
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		CloseWindowById(WC_BUILD_VEHICLE, this->window_number);
-		CloseWindowById(GetWindowClassForVehicleType(this->type), VehicleListIdentifier(VL_DEPOT_LIST, this->type, this->owner, this->GetDestinationIndex()).ToWindowNumber(), false);
+		if (this->HasValidDepotTile()) {
+			CloseWindowById(GetWindowClassForVehicleType(this->type), VehicleListIdentifier(VL_DEPOT_LIST, this->type, this->owner, this->GetDestinationIndex()).ToWindowNumber(), false);
+		}
 		OrderBackup::Reset(TileIndex(this->window_number));
 		this->Window::Close();
 	}
@@ -453,7 +467,10 @@ struct DepotWindow : Window {
 
 	std::string GetWidgetString(WidgetID widget, StringID stringid) const override
 	{
-		if (widget == WID_D_CAPTION) return GetString(STR_DEPOT_CAPTION, this->type, this->GetDestinationIndex());
+		if (widget == WID_D_CAPTION) {
+			if (!this->HasValidDepotTile()) return {};
+			return GetString(STR_DEPOT_CAPTION, this->type, this->GetDestinationIndex());
+		}
 
 		return this->Window::GetWidgetString(widget, stringid);
 	}
@@ -744,6 +761,11 @@ struct DepotWindow : Window {
 
 	void OnPaint() override
 	{
+		if (!this->HasValidDepotTile()) {
+			this->Close();
+			return;
+		}
+
 		this->RefreshVehicleList();
 
 		if (this->check_unitnumber_digits) {
@@ -1161,6 +1183,7 @@ struct DepotWindow : Window {
 	 */
 	inline DestinationID GetDestinationIndex() const
 	{
+		if (!this->HasValidDepotTile()) return DestinationID{};
 		return GetDepotDestinationIndex(this->window_number);
 	}
 };
