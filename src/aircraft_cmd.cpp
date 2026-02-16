@@ -1588,9 +1588,23 @@ static Direction GetModularHangarExitDirection(const Station *st, TileIndex tile
 	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return DIR_SE; // Fallback
 
-	/* Base direction for APT_DEPOT_SE is South-East (3).
-	   Rotation adds 90 degrees (2 units) per step. */
-	return (Direction)((DIR_SE + data->rotation * 2) % 8);
+	switch (data->piece_type) {
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW:
+			return DIR_SW;
+		case APT_DEPOT_NW:
+		case APT_SMALL_DEPOT_NW:
+			return DIR_NW;
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE:
+			return DIR_NE;
+		case APT_DEPOT_SE:
+		case APT_SMALL_DEPOT_SE:
+		default: {
+			/* Canonical modular storage keeps hangars as *_SE and uses rotation for orientation. */
+			return (Direction)((DIR_SE + (data->rotation % 4) * 2) % 8);
+		}
+	}
 }
 
 /**
@@ -3116,7 +3130,7 @@ static TileIndex FindNearestModularRunwayExitTile(const Station *st, const Aircr
 		if (st->airport.modular_tile_data == nullptr) return false;
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 			const bool is_service = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1 ||
-					data.piece_type == APT_DEPOT_SE || data.piece_type == APT_SMALL_DEPOT_SE ||
+					IsModularHangarPiece(data.piece_type) ||
 					IsModularHelipadPiece(data.piece_type));
 			if (!is_service) continue;
 			AirportGroundPath p = FindAirportGroundPath(st, from_tile, data.tile, nullptr);
@@ -3172,7 +3186,7 @@ static TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft
 	int best_cost = INT_MAX;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		const bool is_service = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1 ||
-				data.piece_type == APT_DEPOT_SE || data.piece_type == APT_SMALL_DEPOT_SE ||
+				IsModularHangarPiece(data.piece_type) ||
 				IsModularHelipadPiece(data.piece_type));
 		if (!is_service) continue;
 		AirportGroundPath p = FindAirportGroundPath(st, start_tile, data.tile, nullptr);
@@ -3322,7 +3336,7 @@ static TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v)
 	int best_fallback_score = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (data.piece_type != APT_DEPOT_SE && data.piece_type != APT_SMALL_DEPOT_SE) continue;
+		if (!IsModularHangarPiece(data.piece_type)) continue;
 
 		int fallback_score = 0;
 		if (v != nullptr) {
@@ -3353,7 +3367,19 @@ static TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v)
 
 static bool IsModularHangarPiece(uint8_t piece_type)
 {
-	return piece_type == APT_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SE;
+	switch (piece_type) {
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return true;
+		default:
+			return false;
+	}
 }
 
 /** Check if a tile is a multi-capacity hangar/depot on this airport. */
@@ -3557,7 +3583,7 @@ static TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *
 		 * and only on currently free tiles to avoid hard blocking by parked aircraft. */
 		const bool service_tile = (td != nullptr) &&
 				(td->piece_type == APT_STAND || td->piece_type == APT_STAND_1 ||
-				 td->piece_type == APT_DEPOT_SE || td->piece_type == APT_SMALL_DEPOT_SE ||
+				 IsModularHangarPiece(td->piece_type) ||
 				 IsModularHelipadPiece(td->piece_type));
 		if (service_tile) {
 			queue_tile = tile;

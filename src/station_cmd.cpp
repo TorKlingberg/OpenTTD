@@ -129,7 +129,11 @@ bool IsHangar(Tile t)
 
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
 		const ModularAirportTileData *data = st->airport.GetModularTileData(t);
-		return data != nullptr && (data->piece_type == APT_DEPOT_SE || data->piece_type == APT_SMALL_DEPOT_SE);
+		return data != nullptr && (
+				data->piece_type == APT_DEPOT_SE || data->piece_type == APT_DEPOT_SW ||
+				data->piece_type == APT_DEPOT_NW || data->piece_type == APT_DEPOT_NE ||
+				data->piece_type == APT_SMALL_DEPOT_SE || data->piece_type == APT_SMALL_DEPOT_SW ||
+				data->piece_type == APT_SMALL_DEPOT_NW || data->piece_type == APT_SMALL_DEPOT_NE);
 	}
 
 	const AirportSpec *as = st->airport.GetSpec();
@@ -3687,6 +3691,46 @@ static void DrawTile_Station(TileInfo *ti)
 			assert(ats->grf_prop.subst_id != INVALID_AIRPORTTILE);
 			gfx = ats->grf_prop.subst_id;
 		}
+
+		const Station *airport_st = Station::GetByTile(ti->tile);
+		if (airport_st != nullptr && airport_st->airport.blocks.Test(AirportBlock::Modular)) {
+			const ModularAirportTileData *md = airport_st->airport.GetModularTileData(ti->tile);
+			if (md != nullptr) {
+				const bool is_large_hangar =
+						md->piece_type == APT_DEPOT_SE || md->piece_type == APT_DEPOT_SW ||
+						md->piece_type == APT_DEPOT_NW || md->piece_type == APT_DEPOT_NE;
+				const bool is_small_hangar =
+						md->piece_type == APT_SMALL_DEPOT_SE || md->piece_type == APT_SMALL_DEPOT_SW ||
+						md->piece_type == APT_SMALL_DEPOT_NW || md->piece_type == APT_SMALL_DEPOT_NE;
+
+				if (is_large_hangar || is_small_hangar) {
+					uint8_t visual_rot = md->rotation % 4;
+
+					/* Compatibility for saves written when directional hangars were encoded in piece_type. */
+					switch (md->piece_type) {
+						case APT_DEPOT_SW:
+						case APT_SMALL_DEPOT_SW: visual_rot = 1; break;
+						case APT_DEPOT_NW:
+						case APT_SMALL_DEPOT_NW: visual_rot = 2; break;
+						case APT_DEPOT_NE:
+						case APT_SMALL_DEPOT_NE: visual_rot = 3; break;
+						default: break;
+					}
+
+					if (is_small_hangar && visual_rot == 0) {
+						t = &_station_display_modular_small_hangar_se;
+					} else {
+						switch (visual_rot) {
+							case 0: t = &_station_display_modular_hangar_se; break;
+							case 1: t = &_station_display_modular_hangar_sw; break;
+							case 2: t = &_station_display_modular_hangar_nw; break;
+							default: t = &_station_display_modular_hangar_ne; break;
+						}
+					}
+				}
+			}
+		}
+
 		switch (gfx) {
 			case APT_RADAR_GRASS_FENCE_SW:
 				t = &_station_display_datas_airport_radar_grass_fence_sw[GetAnimationFrame(ti->tile)];

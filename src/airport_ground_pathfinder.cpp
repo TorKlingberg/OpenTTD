@@ -183,7 +183,10 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	
 	bool to_ok = (to_dirs & reverse_dir_bit) != 0;
 
-	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SE) {
+	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_DEPOT_SW ||
+			from_data->piece_type == APT_DEPOT_NW || from_data->piece_type == APT_DEPOT_NE ||
+			from_data->piece_type == APT_SMALL_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SW ||
+			from_data->piece_type == APT_SMALL_DEPOT_NW || from_data->piece_type == APT_SMALL_DEPOT_NE) {
 		Debug(misc, 5, "[ModAp] Hangar connect check V2: from={}, to={}, dir={}, from_dirs={:x} (auto={:x}, user={:x}), to_dirs={:x}, from_ok={}, to_ok={}",
 			from.base(), to.base(), dir_bit, from_dirs, from_auto, from_data->user_taxi_dir_mask, to_dirs, from_ok, to_ok);
 	}
@@ -209,7 +212,11 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 
 	/* Check if this is a hangar for extra logging */
 	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
-	bool is_hangar = (tile_data && (tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_SMALL_DEPOT_SE));
+	bool is_hangar = (tile_data &&
+			(tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_DEPOT_SW ||
+			 tile_data->piece_type == APT_DEPOT_NW || tile_data->piece_type == APT_DEPOT_NE ||
+			 tile_data->piece_type == APT_SMALL_DEPOT_SE || tile_data->piece_type == APT_SMALL_DEPOT_SW ||
+			 tile_data->piece_type == APT_SMALL_DEPOT_NW || tile_data->piece_type == APT_SMALL_DEPOT_NE));
 
 	/* Check all 4 orthogonal directions */
 	static const int dx[] = {0, 1, 0, -1};  // N, E, S, W

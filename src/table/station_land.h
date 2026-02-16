@@ -680,6 +680,21 @@ static const DrawTileSeqStruct _station_display_datas_waypoint_Y[] = {
 #define TILE_SPRITE_LINE_NOTHING(img) { {img, PAL_NONE} },
 #define TILE_SPRITE_NULL() { {0, 0} },
 
+static const DrawTileSpriteSpan _station_display_modular_hangar_se(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_se);
+
+static const DrawTileSpriteSpan _station_display_modular_hangar_sw(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_sw);
+
+static const DrawTileSpriteSpan _station_display_modular_hangar_nw(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_nw);
+
+static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_ne);
+
+static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
+
 extern const DrawTileSpriteSpan _station_display_datas_rail[] = {
 	TILE_SPRITE_LINE(SPR_RAIL_TRACK_X,               _station_display_datas_0)
 	TILE_SPRITE_LINE(SPR_RAIL_TRACK_Y,               _station_display_datas_1)
