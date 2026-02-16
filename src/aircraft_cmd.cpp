@@ -1738,6 +1738,17 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 			 * instead of idling forever on apron/one-way holding tiles. */
 			if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
 				if (TryRetargetModularGroundGoal(v, st)) return;
+				if (v->modular_ground_target == MGT_ROLLOUT) {
+					TileIndex holding = FindModularRolloutHoldingTile(st, v, v->tile);
+					if (holding != INVALID_TILE && holding != v->tile) {
+						v->ground_path_goal = holding;
+						v->state = TERM1;
+						if (ShouldLogModularRateLimited(v->index, 34, 64)) {
+							Debug(misc, 2, "[ModAp] Vehicle {} rollout keepalive: move to holding tile {}", v->index, holding.base());
+						}
+						return;
+					}
+				}
 			}
 			return;
 		}
@@ -2393,11 +2404,14 @@ static bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, c
 		const bool tied_to_station = (other->targetairport == st->index || other->last_station_visited == st->index);
 		if (!tied_to_station) continue;
 
+		const ModularAirportTileData *other_tile_data = (IsValidTile(other->tile) ? st->airport.GetModularTileData(other->tile) : nullptr);
+		const bool other_on_runway = (other_tile_data != nullptr && IsModularRunwayPiece(other_tile_data->piece_type));
+
 		const bool in_runway_flow =
 				other->state == LANDING || other->state == ENDLANDING ||
 				other->state == HELILANDING || other->state == HELIENDLANDING ||
 				other->state == TAKEOFF || other->state == STARTTAKEOFF || other->state == ENDTAKEOFF ||
-				other->modular_ground_target == MGT_ROLLOUT;
+				(other->modular_ground_target == MGT_ROLLOUT && other_on_runway);
 		if (!in_runway_flow) continue;
 
 		bool overlaps = false;
@@ -3305,11 +3319,13 @@ static bool TryClearStaleModularReservation(const Station *st, TileIndex tile, V
 	const bool tied_to_station = (a->targetairport == st->index || a->last_station_visited == st->index);
 	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
 	const bool tile_is_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
+	const ModularAirportTileData *owner_tile_data = (IsValidTile(a->tile) ? st->airport.GetModularTileData(a->tile) : nullptr);
+	const bool owner_on_runway = (owner_tile_data != nullptr && IsModularRunwayPiece(owner_tile_data->piece_type));
 	const bool in_runway_flow =
-			a->state == FLYING || a->state == LANDING || a->state == ENDLANDING ||
+			a->state == LANDING || a->state == ENDLANDING ||
 			a->state == HELILANDING || a->state == HELIENDLANDING ||
 			a->state == TAKEOFF || a->state == STARTTAKEOFF || a->state == ENDTAKEOFF ||
-			a->modular_ground_target == MGT_ROLLOUT || a->modular_ground_target == MGT_RUNWAY_TAKEOFF;
+			(a->modular_ground_target == MGT_ROLLOUT && owner_on_runway) || a->modular_ground_target == MGT_RUNWAY_TAKEOFF;
 
 	/* Runway reservations owned by aircraft still in landing/takeoff flow for this station
 	 * are never stale, even if transiently untracked by path state. */
@@ -3972,6 +3988,22 @@ static void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft
 static bool AirportMoveModular(Aircraft *v, const Station *st)
 {
 	if (v->ground_path_goal == INVALID_TILE) return true;
+
+	/* Ground-path movement must never run at flight/takeoff speeds.
+	 * If landing/takeoff transitions leave residual high speed, clamp before any
+	 * pathing/reservation decisions to avoid long-tail runway deadlocks. */
+	if (v->cur_speed > SPEED_LIMIT_TAXI) {
+		if (ShouldLogModularRateLimited(v->index, 35, 128)) {
+			Debug(misc, 1, "[ModAp] V{} clamp pre-ground-move speed {}->{} state={} tile={} goal={} tgt={}",
+				v->index, v->cur_speed, SPEED_LIMIT_TAXI, v->state,
+				IsValidTile(v->tile) ? v->tile.base() : 0,
+				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
+				v->modular_ground_target);
+		}
+		v->cur_speed = SPEED_LIMIT_TAXI;
+		v->subspeed = 0;
+		v->modular_takeoff_progress = 0;
+	}
 
 	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
 		ClearTaxiPathState(v);
