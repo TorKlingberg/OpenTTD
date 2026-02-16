@@ -996,15 +996,15 @@ public:
 
 	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
 	{
-		/* When overlay is active, clicking on runway tiles edits their flags */
-		if (this->TryEditRunwayFlags(tile)) return;
-		/* When overlay is active, clicking on taxiway tiles edits one-way exit direction */
-		if (this->TryEditTaxiwayFlags(tile)) return;
-
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
 			return;
 		}
+
+		/* When overlay is active, clicking on runway tiles edits their flags */
+		if (this->TryEditRunwayFlags(tile)) return;
+		/* When overlay is active, clicking on taxiway tiles edits one-way exit direction */
+		if (this->TryEditTaxiwayFlags(tile)) return;
 
 		/* Determine if this piece type supports drag-building */
 		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 4);      // Pieces 0-4: Runways
