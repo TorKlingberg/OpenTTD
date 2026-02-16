@@ -4058,15 +4058,16 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 	/* Ground-path movement must never run at flight/takeoff speeds.
 	 * If landing/takeoff transitions leave residual high speed, clamp before any
 	 * pathing/reservation decisions to avoid long-tail runway deadlocks. */
-	if (v->cur_speed > SPEED_LIMIT_TAXI) {
+	const uint scaled_taxi_limit = SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed;
+	if (v->cur_speed > scaled_taxi_limit) {
 		if (ShouldLogModularRateLimited(v->index, 35, 128)) {
 			Debug(misc, 1, "[ModAp] V{} clamp pre-ground-move speed {}->{} state={} tile={} goal={} tgt={}",
-				v->index, v->cur_speed, SPEED_LIMIT_TAXI, v->state,
+				v->index, v->cur_speed, scaled_taxi_limit, v->state,
 				IsValidTile(v->tile) ? v->tile.base() : 0,
 				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 				v->modular_ground_target);
 		}
-		v->cur_speed = SPEED_LIMIT_TAXI;
+		v->cur_speed = scaled_taxi_limit;
 		v->subspeed = 0;
 		v->modular_takeoff_progress = 0;
 	}
@@ -4417,8 +4418,8 @@ static void AirportGoToNextPosition(Aircraft *v)
 				ClearModularRunwayReservation(v);
 				v->ground_path_goal = INVALID_TILE;
 				v->modular_ground_target = MGT_NONE;
-				if (v->cur_speed > SPEED_LIMIT_TAXI) {
-					v->cur_speed = SPEED_LIMIT_TAXI;
+				if (v->cur_speed > SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed) {
+					v->cur_speed = SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed;
 					v->subspeed = 0;
 				}
 				v->state = TERM1;
@@ -4432,12 +4433,12 @@ static void AirportGoToNextPosition(Aircraft *v)
 				/* Defensive recovery: some transitional states can leave an aircraft in
 				 * a ground state with flight-speed leftovers. Keep it on-ground and
 				 * clamp to taxi, instead of bouncing back to FLYING and starving runways. */
-				if (v->cur_speed > SPEED_LIMIT_TAXI) {
+				if (v->cur_speed > SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed) {
 					Debug(misc, 0, "[ModAp] V{} invalid ground state {} at speed {} on tile {}, clamping to taxi recovery",
 						v->index, v->state, v->cur_speed, IsValidTile(v->tile) ? v->tile.base() : 0);
 
 					if (IsValidTile(v->tile) && st->TileBelongsToAirport(v->tile)) {
-						v->cur_speed = SPEED_LIMIT_TAXI;
+						v->cur_speed = SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed;
 						v->subspeed = 0;
 						v->modular_takeoff_progress = 0;
 						ClearTaxiPathState(v);
