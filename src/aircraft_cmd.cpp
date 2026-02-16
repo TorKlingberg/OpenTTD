@@ -1588,23 +1588,19 @@ static Direction GetModularHangarExitDirection(const Station *st, TileIndex tile
 	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return DIR_SE; // Fallback
 
+	uint8_t hangar_rot = data->rotation % 4;
 	switch (data->piece_type) {
 		case APT_DEPOT_SW:
-		case APT_SMALL_DEPOT_SW:
-			return DIR_SW;
+		case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
 		case APT_DEPOT_NW:
-		case APT_SMALL_DEPOT_NW:
-			return DIR_NW;
+		case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
 		case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_NE:
-			return DIR_NE;
-		case APT_DEPOT_SE:
-		case APT_SMALL_DEPOT_SE:
-		default: {
-			/* Canonical modular storage keeps hangars as *_SE and uses rotation for orientation. */
-			return (Direction)((DIR_SE + (data->rotation % 4) * 2) % 8);
-		}
+		case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
+		default: break;
 	}
+
+	/* Keep hangar exit direction consistent with hangar taxi-direction mapping. */
+	return (Direction)((DIR_SE + ((4 - hangar_rot) % 4) * 2) % 8);
 }
 
 /**

@@ -2869,10 +2869,34 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		);
 		st->airport.modular_tile_index_dirty = true;
 
+		auto canonical_hangar_piece_to_directional = [](uint8_t piece_type, uint8_t rot) -> uint8_t {
+			const uint8_t r = rot % 4;
+			switch (piece_type) {
+				case APT_DEPOT_SE:
+					switch (r) {
+						case 0: return APT_DEPOT_SE;
+						case 1: return APT_DEPOT_NE;
+						case 2: return APT_DEPOT_NW;
+						default: return APT_DEPOT_SW;
+					}
+				case APT_SMALL_DEPOT_SE:
+					switch (r) {
+						case 0: return APT_SMALL_DEPOT_SE;
+						case 1: return APT_SMALL_DEPOT_NE;
+						case 2: return APT_SMALL_DEPOT_NW;
+						default: return APT_SMALL_DEPOT_SW;
+					}
+				default:
+					return piece_type;
+			}
+		};
+
 		/* Create and store new tile data */
 		ModularAirportTileData tile_data;
 		tile_data.tile = tile;
-		tile_data.piece_type = static_cast<uint8_t>(gfx); // For now, use gfx as piece_type
+		/* Keep station map gfx canonical (< NEW_AIRPORTTILE_OFFSET), but store directional
+		 * hangar orientation in modular metadata for robust logic/pathfinding. */
+		tile_data.piece_type = canonical_hangar_piece_to_directional(static_cast<uint8_t>(gfx), rotation);
 		tile_data.rotation = rotation;
 		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
 		taxi_dir_mask &= 0x0F;
