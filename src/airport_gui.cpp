@@ -69,9 +69,6 @@ static void ShowBuildModularAirportWindow(Window *parent);
 SpriteID GetCustomAirportSprite(const AirportSpec *as, uint8_t layout);
 
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
-static constexpr int MODULAR_AIRPORT_GRID_W = 10;
-static constexpr int MODULAR_AIRPORT_GRID_H = 10;
-
 struct ModularAirportPiece {
 	StringID name;
 	PixelColour colour;
@@ -106,7 +103,6 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},
 };
 
-static constexpr uint8_t MODULAR_AIRPORT_PIECE_EMPTY = 0xFF;
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
 
 static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t rotation)
@@ -153,24 +149,6 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t
 	}
 }
 
-static bool IsModularRunwayGfx(uint8_t gfx)
-{
-	switch (gfx) {
-		case APT_RUNWAY_1:
-		case APT_RUNWAY_2:
-		case APT_RUNWAY_3:
-		case APT_RUNWAY_4:
-		case APT_RUNWAY_5:
-		case APT_RUNWAY_END:
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default:
-			return false;
-	}
-}
-
 static bool IsModularTaxiwayGfx(uint8_t gfx)
 {
 	switch (gfx) {
@@ -185,29 +163,6 @@ static bool IsModularTaxiwayGfx(uint8_t gfx)
 		case APT_APRON_W:
 		case APT_APRON_HALF_EAST:
 		case APT_APRON_HALF_WEST:
-			return true;
-		default:
-			return false;
-	}
-}
-
-static bool IsModularTerminalGfx(uint8_t gfx)
-{
-	switch (gfx) {
-		case APT_BUILDING_1:
-		case APT_ROUND_TERMINAL:
-		case APT_STAND:
-		case APT_STAND_1:
-		case APT_STAND_PIER_NE:
-		case APT_DEPOT_SE:
-		case APT_SMALL_DEPOT_SE:
-		case APT_HELIPAD_1:
-		case APT_HELIPAD_2:
-		case APT_HELIPAD_2_FENCE_NW:
-		case APT_HELIPAD_2_FENCE_NE_SE:
-		case APT_HELIPAD_3_FENCE_SE_SW:
-		case APT_HELIPAD_3_FENCE_NW_SW:
-		case APT_HELIPAD_3_FENCE_NW:
 			return true;
 		default:
 			return false;
