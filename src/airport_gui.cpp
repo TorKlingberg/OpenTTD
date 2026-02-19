@@ -99,7 +99,7 @@ static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airpo
 static uint8_t GetModularAirportPieceGfx(uint8_t piece, uint8_t rotation)
 {
 	switch (piece) {
-		case 0:  return APT_RUNWAY_1;
+		case 0:  return APT_RUNWAY_5;
 		case 1:  return APT_RUNWAY_END;
 		case 2:  return APT_RUNWAY_SMALL_MIDDLE;
 		case 3:  return APT_BUILDING_1;
