@@ -2807,18 +2807,32 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 	CommandCost cost(EXPENSES_CONSTRUCTION);
 	int allowed_z = -1;
-	ret = CheckBuildableTile(tile, {}, allowed_z, true);
-	if (ret.Failed()) return ret;
-	cost.AddCost(ret.GetCost());
 
-	ret = Command<CMD_LANDSCAPE_CLEAR>::Do(flags, tile);
-	if (ret.Failed()) return ret;
-	cost.AddCost(ret.GetCost());
+	/* Check if we're replacing an existing modular airport tile.
+	 * In that case, skip the landscape clear (which would fail with Auto flag or
+	 * destroy station state) and just check for vehicles on the tile. */
+	bool is_modular_replace = IsTileType(tile, TileType::Station) && IsAirport(tile) &&
+			Station::GetByTile(tile)->airport.blocks.Test(AirportBlock::Modular);
+	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
+
+	if (is_modular_replace) {
+		ret = EnsureNoVehicleOnGround(tile);
+		if (ret.Failed()) return ret;
+		allowed_z = GetTileMaxZ(tile);
+	} else {
+		ret = CheckBuildableTile(tile, {}, allowed_z, true);
+		if (ret.Failed()) return ret;
+		cost.AddCost(ret.GetCost());
+
+		ret = Command<CMD_LANDSCAPE_CLEAR>::Do(flags, tile);
+		if (ret.Failed()) return ret;
+		cost.AddCost(ret.GetCost());
+	}
 
 	TileArea airport_area(tile, 1, 1);
 
 	Station *st = nullptr;
-	ret = FindJoiningStation(StationID::Invalid(), station_to_join, allow_adjacent, airport_area, &st);
+	ret = FindJoiningStation(existing_at_tile, station_to_join, allow_adjacent, airport_area, &st);
 	if (ret.Failed()) return ret;
 
 	/* Distant join */
@@ -3741,7 +3755,8 @@ static void DrawTile_Station(TileInfo *ti)
 						default: break;
 					}
 
-					if (is_small_hangar && visual_rot == 0) {
+					if (is_small_hangar) {
+						/* Only one small hangar sprite exists (SE-facing); use it for all rotations. */
 						t = &_station_display_modular_small_hangar_se;
 					} else {
 						switch (visual_rot) {

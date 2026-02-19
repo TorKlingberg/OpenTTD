@@ -106,7 +106,7 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, uint8_t rotation)
 		case 4:  return APT_ROUND_TERMINAL;
 		case 5:  return APT_DEPOT_SE;
 		case 6:  return APT_SMALL_DEPOT_SE;
-		case 7:  return APT_HELIPAD_1;
+		case 7:  return APT_HELIPAD_2;
 		case 8:  return APT_STAND;
 		case 9:  return APT_APRON;
 		case 10: return APT_TOWER;
