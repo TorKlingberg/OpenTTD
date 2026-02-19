@@ -2808,11 +2808,17 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	CommandCost cost(EXPENSES_CONSTRUCTION);
 	int allowed_z = -1;
 
-	/* Check if we're replacing an existing modular airport tile.
+	/* Check if we're replacing a grass or empty modular airport tile.
 	 * In that case, skip the landscape clear (which would fail with Auto flag or
 	 * destroy station state) and just check for vehicles on the tile. */
-	bool is_modular_replace = IsTileType(tile, TileType::Station) && IsAirport(tile) &&
-			Station::GetByTile(tile)->airport.blocks.Test(AirportBlock::Modular);
+	auto IsReplaceableTile = [](TileIndex t) {
+		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) return false;
+		const Station *st = Station::GetByTile(t);
+		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
+		const ModularAirportTileData *md = st->airport.GetModularTileData(t);
+		return md != nullptr && (md->piece_type == APT_GRASS_1 || md->piece_type == APT_EMPTY);
+	};
+	bool is_modular_replace = IsReplaceableTile(tile);
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
 
 	if (is_modular_replace) {
