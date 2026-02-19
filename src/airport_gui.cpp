@@ -75,70 +75,46 @@ struct ModularAirportPiece {
 };
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           PC_DARK_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       PC_DARK_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_NEAR, PC_DARK_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID,  PC_DARK_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_FAR,  PC_DARK_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TAXIWAY,          PC_LIGHT_BLUE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TAXIWAY_CROSS,    PC_LIGHT_BLUE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         PC_ORANGE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   PC_ORANGE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           PC_DARK_RED},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     PC_DARK_RED},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          PC_LIGHT_YELLOW},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            PC_YELLOW},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND_1,          PC_YELLOW},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND_PIER,       PC_YELLOW},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            PC_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON_EDGE,       PC_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON_HALF_E,     PC_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON_HALF_W,     PC_GREY},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            PC_ORANGE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            PC_ORANGE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      PC_ORANGE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            PC_GREEN},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            PC_WHITE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FENCE,            PC_VERY_DARK_BROWN},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           PC_DARK_GREY},   // 0
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       PC_DARK_GREY},   // 1
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, PC_DARK_GREY},   // 2  (smart-drag: auto-adds near/far ends)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         PC_ORANGE},      // 3
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   PC_ORANGE},      // 4
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           PC_DARK_RED},    // 5
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     PC_DARK_RED},    // 6
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          PC_LIGHT_YELLOW},// 7
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            PC_YELLOW},      // 8
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            PC_GREY},        // 9
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            PC_ORANGE},      // 10
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            PC_ORANGE},      // 11
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      PC_ORANGE},      // 12
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            PC_GREEN},       // 13
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            PC_WHITE},       // 14
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FENCE,            PC_VERY_DARK_BROWN}, // 15
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},       // 16
 };
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
 
-static uint8_t GetModularAirportPieceGfx(uint8_t piece, [[maybe_unused]] uint8_t rotation)
+static uint8_t GetModularAirportPieceGfx(uint8_t piece, uint8_t rotation)
 {
 	switch (piece) {
-		case 0: return APT_RUNWAY_1;
-		case 1: return APT_RUNWAY_END;
-		case 2: return APT_RUNWAY_SMALL_NEAR_END;
-		case 3: return APT_RUNWAY_SMALL_MIDDLE;
-		case 4: return APT_RUNWAY_SMALL_FAR_END;
-		case 5: return (rotation % 2 == 0) ? APT_APRON_HOR : APT_APRON_VER_CROSSING_N;
-		case 6: return (rotation % 2 == 0) ? APT_APRON_HOR_CROSSING_E : APT_APRON_VER_CROSSING_S;
-		case 7: return APT_BUILDING_1;
-		case 8: return APT_ROUND_TERMINAL;
-		case 9: return APT_DEPOT_SE;
-		case 10: return APT_SMALL_DEPOT_SE;
-		case 11: return APT_HELIPAD_1;
-		case 12: return APT_STAND;
-		case 13: return APT_STAND_1;
-		case 14: return APT_STAND_PIER_NE;
-		case 15: return APT_APRON;
-		case 16:
-			switch (rotation % 4) {
-				case 0: return APT_ARPON_N;
-				case 1: return APT_APRON_E;
-				case 2: return APT_APRON_S;
-				default: return APT_APRON_W;
-			}
-		case 17: return APT_APRON_HALF_EAST;
-		case 18: return APT_APRON_HALF_WEST;
-		case 19: return APT_TOWER;
-		case 20: return APT_RADAR_FENCE_NE;
-		case 21: return APT_RADIO_TOWER_FENCE_NE;
-		case 22: return APT_GRASS_1;
-		case 23: return APT_EMPTY;
-		case 24:
+		case 0:  return APT_RUNWAY_1;
+		case 1:  return APT_RUNWAY_END;
+		case 2:  return APT_RUNWAY_SMALL_MIDDLE;
+		case 3:  return APT_BUILDING_1;
+		case 4:  return APT_ROUND_TERMINAL;
+		case 5:  return APT_DEPOT_SE;
+		case 6:  return APT_SMALL_DEPOT_SE;
+		case 7:  return APT_HELIPAD_1;
+		case 8:  return APT_STAND;
+		case 9:  return APT_APRON;
+		case 10: return APT_TOWER;
+		case 11: return APT_RADAR_FENCE_NE;
+		case 12: return APT_RADIO_TOWER_FENCE_NE;
+		case 13: return APT_GRASS_1;
+		case 14: return APT_EMPTY;
+		case 15:
 			switch (rotation % 4) {
 				case 0: return APT_APRON_FENCE_NE;
 				case 1: return APT_APRON_FENCE_SE;
@@ -723,30 +699,17 @@ public:
 
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
-	static constexpr int TAXI_DIR_N = 1 << 0;
-	static constexpr int TAXI_DIR_E = 1 << 1;
-	static constexpr int TAXI_DIR_S = 1 << 2;
-	static constexpr int TAXI_DIR_W = 1 << 3;
 
 	int piece_line_height = 0;
 	uint8_t selected_piece = 0;
 	uint8_t rotation = 0;
-	uint8_t taxi_dir_mask = TAXI_DIR_N | TAXI_DIR_E | TAXI_DIR_S | TAXI_DIR_W;
-	bool one_way_taxi = false;
 	bool show_taxi_arrows = true;
-	bool snap_to_grid = true;
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
 	{
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
-		this->SetWidgetLoweredState(WID_MA_TOGGLE_ONEWAY, this->one_way_taxi);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
-		this->SetWidgetLoweredState(WID_MA_TOGGLE_SNAP, this->snap_to_grid);
-		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_N, true);
-		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_E, true);
-		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_S, true);
-		this->SetWidgetLoweredState(WID_MA_TAXI_DIR_W, true);
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
 		MarkWholeScreenDirty();
@@ -824,28 +787,11 @@ public:
 				this->SetDirty();
 				break;
 
-			case WID_MA_TAXI_DIR_N: this->ToggleTaxiDir(TAXI_DIR_N, WID_MA_TAXI_DIR_N); break;
-			case WID_MA_TAXI_DIR_E: this->ToggleTaxiDir(TAXI_DIR_E, WID_MA_TAXI_DIR_E); break;
-			case WID_MA_TAXI_DIR_S: this->ToggleTaxiDir(TAXI_DIR_S, WID_MA_TAXI_DIR_S); break;
-			case WID_MA_TAXI_DIR_W: this->ToggleTaxiDir(TAXI_DIR_W, WID_MA_TAXI_DIR_W); break;
-
-			case WID_MA_TOGGLE_ONEWAY:
-				this->one_way_taxi = !this->one_way_taxi;
-				this->SetWidgetLoweredState(WID_MA_TOGGLE_ONEWAY, this->one_way_taxi);
-				this->SetDirty();
-				break;
-
 			case WID_MA_TOGGLE_SHOW_ARROWS:
 				this->show_taxi_arrows = !this->show_taxi_arrows;
 				_show_runway_direction_overlay = this->show_taxi_arrows;
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 				MarkWholeScreenDirty();
-				break;
-
-			case WID_MA_TOGGLE_SNAP:
-				this->snap_to_grid = !this->snap_to_grid;
-				this->SetWidgetLoweredState(WID_MA_TOGGLE_SNAP, this->snap_to_grid);
-				this->SetDirty();
 				break;
 
 			default: break;
@@ -962,16 +908,16 @@ public:
 		if (this->TryEditTaxiwayFlags(tile)) return;
 
 		/* Determine if this piece type supports drag-building */
-		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 4);      // Pieces 0-4: Runways
-		bool is_taxiway = (this->selected_piece == 5 || this->selected_piece == 6);     // Pieces 5-6: Taxiways
-		bool is_apron = (this->selected_piece == 15);                                    // Piece 15: Apron
-		bool is_grass = (this->selected_piece == 22);                                    // Piece 22: Grass
+		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 2);  // Pieces 0-2: Runways
+		bool is_apron  = (this->selected_piece == 9);                                // Piece 9: Apron
+		bool is_grass  = (this->selected_piece == 13);                               // Piece 13: Grass
+		bool is_empty  = (this->selected_piece == 14);                               // Piece 14: Empty
 
-		bool supports_drag = is_runway || is_taxiway || is_apron || is_grass;
+		bool supports_drag = is_runway || is_apron || is_grass || is_empty;
 
 		if (supports_drag) {
 			/* Enable drag-building */
-			if (is_runway || is_taxiway) {
+			if (is_runway) {
 				/* Linear pieces: allow drag in X or Y direction only */
 				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
 			} else {
@@ -1028,9 +974,10 @@ public:
 		StationID nearby_station = FindNearbyStation(ta);
 		Debug(misc, 3, "[Airport] Drag-building: nearby_station={}", nearby_station != StationID::Invalid() ? (int)nearby_station.base() : -1);
 
-		/* Smart runway building: auto-add end pieces when dragging main runway piece (piece 0) */
-		bool is_main_runway = (this->selected_piece == 0);
-		bool should_auto_end = is_main_runway && (ta.w > 2 || ta.h > 2);
+		/* Smart runway building: auto-add end pieces when dragging runway pieces (pieces 0 and 2) */
+		bool is_main_runway  = (this->selected_piece == 0);
+		bool is_small_runway = (this->selected_piece == 2);
+		bool should_auto_end = (is_main_runway || is_small_runway) && (ta.w > 2 || ta.h > 2);
 
 		if (should_auto_end) {
 			/* Build runway with automatic end pieces */
@@ -1049,17 +996,24 @@ public:
 
 			Debug(misc, 3, "[Airport] Drag-building runway: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
 
-			/* Place end piece at start */
-			this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station);
-
-			/* Place middle pieces */
-			for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
-				this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
-			}
-
-			/* Place end piece at end */
-			if (ordered_tiles.size() > 1) {
-				this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station);
+			if (is_main_runway) {
+				/* Place large runway end pieces at both ends */
+				this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station);
+				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
+					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
+				}
+				if (ordered_tiles.size() > 1) {
+					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station);
+				}
+			} else {
+				/* Small runway: near-end at back (bottom-left), far-end at front (top-right) */
+				this->PlaceDragTileRawGfx(ordered_tiles.back(),  APT_RUNWAY_SMALL_NEAR_END, nearby_station);
+				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
+					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
+				}
+				if (ordered_tiles.size() > 1) {
+					this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station);
+				}
 			}
 		} else {
 			/* Normal multi-tile drag */
@@ -1109,9 +1063,6 @@ private:
 	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station)
 	{
 		uint8_t gfx = GetModularAirportPieceGfx(piece_index, this->rotation);
-		uint8_t rotation = this->rotation;
-		uint8_t taxi_dir_mask = this->taxi_dir_mask;
-		bool one_way_taxi = this->one_way_taxi;
 
 		/* Pass the nearby station as station_to_join. In the command handler:
 		 * - GetStationAround checks adjacent tiles for a station to join.
@@ -1119,7 +1070,17 @@ private:
 		 * This ensures all drag tiles join the same station even if not all
 		 * are directly adjacent to existing tiles. */
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, rotation, taxi_dir_mask, one_way_taxi);
+			tile, gfx, nearby_station, false, this->rotation, (uint8_t)0x0F, false);
+	}
+
+	/**
+	 * Post a drag tile build command using a raw gfx value (bypasses piece-index lookup).
+	 * Used for auto-placed runway end pieces.
+	 */
+	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station)
+	{
+		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
+			tile, gfx, nearby_station, false, this->rotation, (uint8_t)0x0F, false);
 	}
 
 	/**
@@ -1130,16 +1091,14 @@ private:
 		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
 		bool adjacent = _ctrl_pressed;
 		uint8_t rotation = this->rotation;
-		uint8_t taxi_dir_mask = this->taxi_dir_mask;
-		bool one_way_taxi = this->one_way_taxi;
 
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_TILE>()),
-						tile, gfx, StationID::Invalid(), adjacent, rotation, taxi_dir_mask, one_way_taxi).Succeeded();
+						tile, gfx, StationID::Invalid(), adjacent, rotation, (uint8_t)0x0F, false).Succeeded();
 			} else {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-						tile, gfx, to_join, adjacent, rotation, taxi_dir_mask, one_way_taxi);
+						tile, gfx, to_join, adjacent, rotation, (uint8_t)0x0F, false);
 			}
 		};
 
@@ -1153,11 +1112,10 @@ private:
 	 */
 	bool ValidateDragBuild(const TileArea &ta)
 	{
-		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 4);
-		bool is_taxiway = (this->selected_piece == 5 || this->selected_piece == 6);
+		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 2);
 
-		/* For runways and taxiways, validate linear alignment */
-		if (is_runway || is_taxiway) {
+		/* For runways, validate linear alignment */
+		if (is_runway) {
 			DiagDirection dir = DiagdirBetweenTiles(ta.tile, TileAddXY(ta.tile, ta.w - 1, ta.h - 1));
 			if (dir == INVALID_DIAGDIR && (ta.w > 1 || ta.h > 1)) {
 				/* Not a straight line */
@@ -1184,13 +1142,6 @@ private:
 	}
 
 private:
-	void ToggleTaxiDir(uint8_t dir_bit, WidgetID widget)
-	{
-		this->taxi_dir_mask ^= dir_bit;
-		this->SetWidgetLoweredState(widget, (this->taxi_dir_mask & dir_bit) != 0);
-		this->SetDirty();
-	}
-
 	void UpdatePlacementCursor()
 	{
 		SetTileSelectSize(1, 1);
@@ -1220,18 +1171,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_DECREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_DECREASE),
 					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_INCREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_INCREASE),
 				EndContainer(),
-				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_TAXI_DIR_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TAXI_DIR_LABEL), SetFill(1, 0),
-				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_N), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_N),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_E), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_E),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_S), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_S),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TAXI_DIR_W), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_DIR_W),
-				EndContainer(),
-				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_ONEWAY), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SHOW_ARROWS), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SNAP), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP),
-				EndContainer(),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SHOW_ARROWS), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS), SetFill(1, 0),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),
