@@ -4048,7 +4048,7 @@ static void DrawTile_Station(TileInfo *ti)
 
 				if (is_runway) {
 					uint8_t flags = tile_data->runway_flags;
-					bool horizontal = (tile_data->rotation % 2) == 0;
+					bool horizontal = true; // runways only run NE-SW (X-axis direction)
 
 					/* Use one-way road arrow sprites - they're isometric and tile-sized.
 					 * Layout: SPR_ONEWAY_BASE + offset
