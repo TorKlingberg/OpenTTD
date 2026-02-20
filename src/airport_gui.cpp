@@ -90,13 +90,12 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      PC_ORANGE},      // 12
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            PC_GREEN},       // 13
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            PC_WHITE},       // 14
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FENCE,            PC_VERY_DARK_BROWN}, // 15
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},       // 16
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},       // 15
 };
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
 
-static uint8_t GetModularAirportPieceGfx(uint8_t piece, uint8_t rotation)
+static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 {
 	switch (piece) {
 		case 0:  return APT_RUNWAY_5;
@@ -114,13 +113,6 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece, uint8_t rotation)
 		case 12: return APT_RADIO_TOWER_FENCE_NE;
 		case 13: return APT_GRASS_1;
 		case 14: return APT_EMPTY;
-		case 15:
-			switch (rotation % 4) {
-				case 0: return APT_APRON_FENCE_NE;
-				case 1: return APT_APRON_FENCE_SE;
-				case 2: return APT_APRON_FENCE_SW;
-				default: return APT_APRON_FENCE_NW;
-			}
 		default: return APT_APRON;
 	}
 }
@@ -1062,7 +1054,7 @@ private:
 	 */
 	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station)
 	{
-		uint8_t gfx = GetModularAirportPieceGfx(piece_index, this->rotation);
+		uint8_t gfx = GetModularAirportPieceGfx(piece_index);
 
 		/* Pass the nearby station as station_to_join. In the command handler:
 		 * - GetStationAround checks adjacent tiles for a station to join.
@@ -1088,7 +1080,7 @@ private:
 	 */
 	void PlaceSingleTileWithDialog(TileIndex tile)
 	{
-		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece, this->rotation);
+		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece);
 		bool adjacent = _ctrl_pressed;
 		uint8_t rotation = this->rotation;
 
