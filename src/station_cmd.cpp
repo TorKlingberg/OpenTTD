@@ -3675,6 +3675,35 @@ static bool DrawCustomStationFoundations(const StationSpec *statspec, BaseStatio
 	return true;
 }
 
+/**
+ * Return a 4-bit mask (N=0x01, E=0x02, S=0x04, W=0x08) of edges where perimeter
+ * fences should be suppressed for a modular airport tile, because aircraft
+ * physically transit that edge (runway flight axis, hangar exit, explicit fence tiles).
+ */
+static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
+{
+	/* Runway pieces: open on the two ends along the flight axis. */
+	switch (piece_type) {
+		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
+		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return (rotation % 2 == 0) ? 0x0A : 0x05; // horizontal (NE+SW open) or vertical (NW+SE open)
+		/* Hangar pieces: open only on the single exit edge. */
+		case APT_DEPOT_SE: case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_SE: case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW: case APT_SMALL_DEPOT_NE:
+			return CalculateAutoTaxiDirectionsForGfx(piece_type, rotation);
+		/* Player-placed fence tiles: skip auto-fencing entirely. */
+		case APT_APRON_FENCE_NE: case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_SW: case APT_APRON_FENCE_NW:
+			return 0x0F;
+		/* Everything else: no suppression, fence all perimeter edges. */
+		default:
+			return 0x00;
+	}
+}
+
 static void DrawTile_Station(TileInfo *ti)
 {
 	const NewGRFSpriteLayout *layout = nullptr;
@@ -3963,6 +3992,38 @@ static void DrawTile_Station(TileInfo *ti)
 	}
 
 	DrawRailTileSeq(ti, t, TO_BUILDINGS, total_offset, relocation, palette);
+
+	/* Auto-draw perimeter fences for modular airport tiles. */
+	if (IsAirport(ti->tile)) {
+		const Station *fence_st = Station::GetByTile(ti->tile);
+		if (fence_st != nullptr && fence_st->airport.blocks.Test(AirportBlock::Modular)) {
+			const ModularAirportTileData *fence_md = fence_st->airport.GetModularTileData(ti->tile);
+			if (fence_md != nullptr) {
+				const uint8_t open_mask = GetModularTileFenceOpenMask(fence_md->piece_type, fence_md->rotation);
+
+				static constexpr struct {
+					int8_t dx, dy;
+					uint8_t dir_bit;
+					SpriteID spr;
+					int8_t fx, fy;
+				} kEdges[] = {
+					{  0, -1, 0x01, SPR_AIRPORT_FENCE_X,  0,  0 }, // dy=-1 → NW on screen → NW fence
+					{ +1,  0, 0x02, SPR_AIRPORT_FENCE_Y, 15,  0 }, // dx=+1 → SW on screen → SW fence
+					{  0, +1, 0x04, SPR_AIRPORT_FENCE_X,  0, 15 }, // dy=+1 → SE on screen → SE fence
+					{ -1,  0, 0x08, SPR_AIRPORT_FENCE_Y,  0,  0 }, // dx=-1 → NE on screen → NE fence
+				};
+
+				for (const auto &e : kEdges) {
+					if (open_mask & e.dir_bit) continue; // aircraft transit edge, skip
+					TileIndex nb = TileAddXY(ti->tile, e.dx, e.dy);
+					if (IsValidTile(nb) && fence_st->TileBelongsToAirport(nb)) continue; // interior edge
+					DrawGroundSpriteAt(e.spr | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE,
+					                   e.fx, e.fy,
+					                   GetPartialPixelZ(e.fx, e.fy, ti->tileh));
+				}
+			}
+		}
+	}
 
 	/* Draw modular airport direction overlay arrows */
 	if (_show_runway_direction_overlay && IsAirport(ti->tile)) {
