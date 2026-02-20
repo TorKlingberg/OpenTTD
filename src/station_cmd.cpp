@@ -3688,7 +3688,7 @@ static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
 		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
 		case APT_RUNWAY_SMALL_FAR_END:
-			return (rotation % 2 == 0) ? 0x0A : 0x05; // horizontal (NE+SW open) or vertical (NW+SE open)
+			return 0x0A; // runways only run NE-SW (dx direction); open NE (0x08) + SW (0x02) ends
 		/* Hangar pieces: open only on the single exit edge. */
 		case APT_DEPOT_SE: case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
 		case APT_SMALL_DEPOT_SE: case APT_SMALL_DEPOT_SW:
