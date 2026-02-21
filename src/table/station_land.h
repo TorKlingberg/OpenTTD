@@ -160,62 +160,50 @@ static const DrawTileSeqStruct _station_display_passenger_tunnel[] = {
 
 static const DrawTileSeqStruct _station_display_radar_1_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_1)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_2_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_2)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_3_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_3)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_4_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_4)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_5_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_5)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_6_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_6)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_7_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_7)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_8_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_8)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_9_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_9)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_10_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_A)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_11_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_B)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_12_fence_sw[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_C)
-	TILE_SEQ_LINE(15,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_transmitter_fence_ne[] = {
@@ -342,62 +330,50 @@ static const DrawTileSeqStruct _station_display_tower[] = {
  *BEGIN */
 static const DrawTileSeqStruct _station_display_radar_1_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_1)   // turning radar
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_2_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_2)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_3_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_3)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_4_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_4)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_5_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_5)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_6_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_6)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_7_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_7)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_8_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_8)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_9_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_9)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_10_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_A)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_11_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_B)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_radar_12_fence_ne[] = {
 	TILE_SEQ_LINE(7,  7,  0,  2,  2,  8, SPR_AIRPORT_RADAR_C)
-	TILE_SEQ_LINE(0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 /* END */
 
