@@ -209,6 +209,7 @@ struct BuildAirToolbarWindow : Window {
 	{
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
 		if (_settings_client.gui.link_terraform_toolbar) CloseWindowById(WC_SCEN_LAND_GEN, 0, false);
+		CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);  // closes stock picker or modular window, whichever is open
 		this->Window::Close();
 	}
 
@@ -248,8 +249,8 @@ struct BuildAirToolbarWindow : Window {
 				break;
 
 			case WID_AT_MODULAR:
+				this->last_user_action = INVALID_WIDGET;   // must come first
 				ShowBuildModularAirportWindow(this);
-				this->last_user_action = INVALID_WIDGET;
 				break;
 
 			case WID_AT_DEMOLISH:
@@ -297,10 +298,8 @@ struct BuildAirToolbarWindow : Window {
 	void OnPlaceObjectAbort() override
 	{
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
-
 		this->RaiseButtons();
-
-		CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
+		if (this->last_user_action == WID_AT_AIRPORT) CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
 		CloseWindowById(WC_SELECT_STATION, 0);
 	}
 
@@ -731,7 +730,9 @@ public:
 	{
 		_show_runway_direction_overlay = false;
 		MarkWholeScreenDirty();
-		ResetObjectToPlace();
+		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
+			ResetObjectToPlace();
+		}
 		CloseWindowByClass(WC_BUILD_DEPOT);
 		this->PickerWindowBase::Close();
 	}
@@ -1495,6 +1496,7 @@ static WindowDesc _build_airport_desc(
 
 static void ShowBuildAirportPicker(Window *parent)
 {
+	CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
 	new BuildAirportWindow(_build_airport_desc, parent);
 }
 
