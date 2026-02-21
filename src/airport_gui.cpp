@@ -39,6 +39,7 @@
 #include "airport_pathfinder.h"
 #include "airport_ground_pathfinder.h"
 #include "landscape_cmd.h"
+#include "landscape.h"
 #include "zoom_func.h"
 #include "map_func.h"
 #include "direction_func.h"
@@ -754,6 +755,34 @@ public:
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
 			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y);
+		} else if (widget == WID_MA_PIECE_4 || widget == WID_MA_PIECE_5) {
+			/* Match the richer hangar preview style from the direction picker (ground + wall),
+			 * but draw one zoom step smaller so it fits the toolbar button. */
+			ZoomLevel icon_zoom = _gui_zoom;
+			if (icon_zoom < ZoomLevel::Max) ++icon_zoom;
+
+			int tile_w = UnScaleByZoom(64 * ZOOM_BASE, icon_zoom);
+			int tile_h = UnScaleByZoom(48 * ZOOM_BASE, icon_zoom);
+			int anchor = UnScaleByZoom(31 * ZOOM_BASE, icon_zoom);
+			int x = (ir.Width()  - tile_w) / 2 + anchor;
+			int y = (ir.Height() + tile_h) / 2 - anchor;
+
+			const DrawTileSprites *t = GetModularHangarTileLayout(_modular_hangar_rotation, widget == WID_MA_PIECE_5);
+			PaletteID pal = GetCompanyPalette(_local_company);
+			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
+			for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
+				SpriteID image = dtss.image.sprite;
+				PaletteID seq_pal = dtss.image.pal;
+
+				/* TTD sprite 0 means no sprite. */
+				if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) continue;
+
+				seq_pal = SpriteLayoutPaletteTransform(image, seq_pal, pal);
+				if (dtss.IsParentSprite()) {
+					Point pt = RemapCoords(dtss.origin.x, dtss.origin.y, dtss.origin.z);
+					DrawSprite(image, seq_pal, x + UnScaleByZoom(pt.x, icon_zoom), y + UnScaleByZoom(pt.y, icon_zoom), nullptr, icon_zoom);
+				}
+			}
 		} else {
 			ZoomLevel icon_zoom = _gui_zoom;
 			if (widget != WID_MA_PIECE_6 && icon_zoom < ZoomLevel::Max) ++icon_zoom;
