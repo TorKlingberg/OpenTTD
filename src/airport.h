@@ -43,10 +43,10 @@ enum AirportTypes : uint8_t {
 	AT_DUMMY           = 255, ///< Dummy airport.
 };
 
-const uint8_t MODULAR_HOLDING_WP_COUNT = 8;
-const uint16_t MODULAR_HOLDING_TICKS_PER_WP = 32;
-const int MODULAR_HOLDING_MARGIN_TILES = 12;
-const int MODULAR_LANDING_GATE_MAX_DIST_TILES = 25;
+static constexpr uint8_t MODULAR_HOLDING_WP_COUNT = 8;
+static constexpr uint16_t MODULAR_HOLDING_TICKS_PER_WP = 64;
+static constexpr int MODULAR_HOLDING_MARGIN_TILES = 12;
+static constexpr int MODULAR_LANDING_GATE_MAX_DIST_TILES = 25;
 
 struct ModularHoldingLoop {
 	struct Waypoint {

@@ -2887,11 +2887,31 @@ static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_
 	const int threshold_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int threshold_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
 
-	if (threshold_y == approach_y) {
-		return (threshold_x > approach_x) ? DIR_SE : DIR_NW;
-	} else {
-		return (threshold_y > approach_y) ? DIR_SW : DIR_NE;
+	const int dx = threshold_x - approach_x;
+	const int dy = threshold_y - approach_y;
+	if (dx == 0 && dy == 0) return DIR_N;
+
+	/* Match the vehicle movement vectors (see GetNewVehiclePos delta table). */
+	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1, 0, 1, 1, 1, 0};
+	static constexpr int8_t dir_dy[DIR_END] = {-1, 0, 1, 1, 1, 0, -1, -1};
+
+	Direction best_dir = DIR_N;
+	int64_t best_dot = INT64_MIN;
+	int64_t best_cross_abs = INT64_MAX;
+
+	for (int d = DIR_BEGIN; d < DIR_END; ++d) {
+		const int64_t vx = dir_dx[d];
+		const int64_t vy = dir_dy[d];
+		const int64_t dot = vx * dx + vy * dy;
+		const int64_t cross_abs = std::abs(vx * dy - vy * dx);
+		if (dot > best_dot || (dot == best_dot && cross_abs < best_cross_abs)) {
+			best_dot = dot;
+			best_cross_abs = cross_abs;
+			best_dir = static_cast<Direction>(d);
+		}
 	}
+
+	return best_dir;
 }
 
 static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
@@ -2950,9 +2970,7 @@ static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loo
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
-		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END ||
-				data.piece_type == APT_RUNWAY_END_FENCE_SE || data.piece_type == APT_RUNWAY_END_FENCE_NW || data.piece_type == APT_RUNWAY_END_FENCE_NW_SW ||
-				data.piece_type == APT_RUNWAY_END_FENCE_SE_SW || data.piece_type == APT_RUNWAY_END_FENCE_NE_NW || data.piece_type == APT_RUNWAY_END_FENCE_NE_SE;
+		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
 		if (!is_end) continue;
 
 		const uint8_t flags = GetRunwayFlags(st, data.tile);

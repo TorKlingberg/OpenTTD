@@ -3153,6 +3153,9 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			st->airport.modular_tile_data = nullptr;
 			delete st->airport.modular_tile_index;
 			st->airport.modular_tile_index = nullptr;
+			delete st->airport.modular_holding_loop;
+			st->airport.modular_holding_loop = nullptr;
+			st->airport.modular_holding_loop_dirty = true;
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
 			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
@@ -3233,6 +3236,9 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		st->airport.modular_tile_data = nullptr;
 		delete st->airport.modular_tile_index;
 		st->airport.modular_tile_index = nullptr;
+		delete st->airport.modular_holding_loop;
+		st->airport.modular_holding_loop = nullptr;
+		st->airport.modular_holding_loop_dirty = true;
 
 		st->rect.AfterRemoveRect(st, st->airport);
 
