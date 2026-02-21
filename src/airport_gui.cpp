@@ -732,16 +732,9 @@ public:
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
-		Dimension max_d = {};
-		for (int i = 0; i < PIECE_COUNT; ++i) {
-			const auto &p = _modular_airport_pieces[i];
-			Dimension d = (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? GetSpriteSize(p.icon) : GetSpriteSize(p.icon, nullptr, _gui_zoom);
-			max_d.width = std::max(max_d.width, d.width);
-			max_d.height = std::max(max_d.height, d.height);
-		}
-
-		size.width = std::max(size.width, max_d.width + WidgetDimensions::scaled.bevel.Horizontal() + ScaleGUITrad(4));
-		size.height = std::max(size.height, max_d.height + WidgetDimensions::scaled.bevel.Vertical() + ScaleGUITrad(4));
+		/* Keep piece buttons the same size as standard construction toolbar buttons. */
+		size.width = std::max<uint>(size.width, ScaleGUITrad(22));
+		size.height = std::max<uint>(size.height, ScaleGUITrad(22));
 	}
 
 	void DrawWidget(const Rect &r, WidgetID widget) const override
@@ -762,12 +755,14 @@ public:
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
 			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y);
 		} else {
-			Dimension d = GetSpriteSize(piece.icon, &offset, _gui_zoom);
+			ZoomLevel icon_zoom = _gui_zoom;
+			if (widget != WID_MA_PIECE_6 && icon_zoom < ZoomLevel::Max) ++icon_zoom;
+			Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
 			d.width  -= offset.x;
 			d.height -= offset.y;
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, _gui_zoom);
+			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
 		}
 	}
 
