@@ -69,10 +69,10 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_1,  ///< Terminal (alternate orientation) button.
 	WID_MACP_PIECE_2,  ///< Terminal (other) button.
 	WID_MACP_PIECE_3,  ///< Round terminal button.
-	WID_MACP_PIECE_4,  ///< Tower button.
-	WID_MACP_PIECE_5,  ///< Radar button.
-	WID_MACP_PIECE_6,  ///< Radio tower button.
-	WID_MACP_PIECE_7,  ///< Low building button.
+	WID_MACP_PIECE_4,  ///< Low terminal button.
+	WID_MACP_PIECE_5,  ///< Tower button.
+	WID_MACP_PIECE_6,  ///< Radar button.
+	WID_MACP_PIECE_7,  ///< Radio tower button.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;
