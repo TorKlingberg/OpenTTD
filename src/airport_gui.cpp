@@ -735,10 +735,16 @@ public:
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
-		/* Use a fixed DPI-stable size matching a full tile rather than measuring sprites,
-		 * which would vary between monitors with different DPI / sprite resolution sets. */
-		size.width  = std::max(size.width,  static_cast<uint>(ScaleGUITrad(64) + WidgetDimensions::scaled.bevel.Horizontal()));
-		size.height = std::max(size.height, static_cast<uint>(ScaleGUITrad(48) + WidgetDimensions::scaled.bevel.Vertical()));
+		Dimension max_d = {};
+		for (int i = 0; i < PIECE_COUNT; ++i) {
+			const auto &p = _modular_airport_pieces[i];
+			Dimension d = (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? GetSpriteSize(p.icon) : GetSpriteSize(p.icon, nullptr, ICON_ZOOM);
+			max_d.width = std::max(max_d.width, d.width);
+			max_d.height = std::max(max_d.height, d.height);
+		}
+
+		size.width = std::max(size.width, max_d.width + WidgetDimensions::scaled.bevel.Horizontal() + ScaleGUITrad(4));
+		size.height = std::max(size.height, max_d.height + WidgetDimensions::scaled.bevel.Vertical() + ScaleGUITrad(4));
 	}
 
 	void DrawWidget(const Rect &r, WidgetID widget) const override
