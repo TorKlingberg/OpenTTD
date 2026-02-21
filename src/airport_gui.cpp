@@ -1000,13 +1000,14 @@ public:
 					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station, drag_rotation);
 				}
 			} else {
-				/* Small runway: near-end at back (bottom-left), far-end at front (top-right) */
-				this->PlaceDragTileRawGfx(ordered_tiles.back(),  APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
+				/* Small runway: place contiguously front→middles→back so each tile is adjacent
+				 * to the last, allowing GetStationAround to find the growing station. */
+				this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
 					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
+					this->PlaceDragTileRawGfx(ordered_tiles.back(), APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
 				}
 			}
 		} else {
