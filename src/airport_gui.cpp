@@ -64,7 +64,7 @@ static int _selected_airport_index;            ///< the index of the selected ai
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 static StationID _last_modular_airport_station = StationID::Invalid();
 static uint8_t _modular_hangar_rotation = 0;   ///< 0=SE, 1=NE, 2=NW, 3=SW
-static uint8_t _modular_cosmetic_piece = 0;    ///< 0=Terminal,1=Round terminal,2=Tower,3=Radar,4=Radio tower
+static uint8_t _modular_cosmetic_piece = 0;    ///< Selected cosmetic piece in _cosmetic_pieces.
 
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
 
@@ -84,15 +84,21 @@ struct CosmeticPiece {
 	StringID name;
 	SpriteID icon;    ///< Small icon at Out2x zoom (for toolbar button)
 	uint8_t apt_gfx;  ///< AirportTiles value for placement and full-size picker preview
+	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
 };
 
 static constexpr CosmeticPiece _cosmetic_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,       SPR_AIRPORT_TERMINAL_A, APT_BUILDING_1},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND, SPR_AIRPORT_CONCOURSE,  APT_ROUND_TERMINAL},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,          SPR_AIRPORT_TOWER,      APT_TOWER},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,          SPR_AIRPORT_RADAR_5,    APT_RADAR_FENCE_NE},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,    SPR_TRANSMITTER,        APT_RADIO_TOWER_FENCE_NE},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         SPR_AIRPORT_TERMINAL_C,       APT_BUILDING_1,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT,     SPR_AIRPORT_TERMINAL_A,       APT_BUILDING_2,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER,   SPR_AIRPORT_TERMINAL_B,       APT_BUILDING_3,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   SPR_AIRPORT_CONCOURSE,        APT_ROUND_TERMINAL,      3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            SPR_AIRPORT_TOWER,            APT_TOWER,               3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          APT_RADAR_FENCE_NE,      0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      SPR_TRANSMITTER,              APT_RADIO_TOWER_FENCE_NE, 14},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_LOW_BUILDING,     SPR_AIRPORT_HELIDEPOT_OFFICE, APT_LOW_BUILDING,        0},
 };
+
+static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_NSRUNWAY2,              PC_DARK_GREY},    // 0
@@ -117,7 +123,7 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 		case 0:  return APT_RUNWAY_5;
 		case 1:  return APT_RUNWAY_END;
 		case 2:  return APT_RUNWAY_SMALL_MIDDLE;
-		case 3:  return _cosmetic_pieces[_modular_cosmetic_piece].apt_gfx;
+		case 3:  return _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)].apt_gfx;
 		case 4:  return APT_DEPOT_SE;
 		case 5:  return APT_SMALL_DEPOT_SE;
 		case 6:  return APT_HELIPAD_2;
@@ -1317,6 +1323,7 @@ public:
 	BuildModularCosmeticPickerWindow(WindowDesc &desc, Window *parent)
 		: PickerWindowBase(desc, parent)
 	{
+		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces)) _modular_cosmetic_piece = 0;
 		this->InitNested(0);
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
 	}
@@ -1348,11 +1355,7 @@ public:
 		d.height -= offset.y;
 		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-		/* Keep terminals/tower close to full size, but bias slightly downward so the
-		 * lowest pixels clip in the fixed-size preview and the icon reads less oversized. */
-		if (piece_idx <= 2) y += ScaleSpriteTrad(3);
-		/* Show only the upper part of the radio tower: move down so the bottom is clipped. */
-		if (piece_idx == 4) y += ScaleSpriteTrad(14);
+		y += ScaleSpriteTrad(piece.preview_y_offset);
 		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
 	}
 
@@ -1376,18 +1379,28 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 			             STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
-		NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
+		NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
 		                          SetPIPRatio(1, 0, 1), SetPadding(WidgetDimensions::unscaled.picker),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_0), SetFill(0, 0),
-				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_1), SetFill(0, 0),
-				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_2), SetFill(0, 0),
-				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_3), SetFill(0, 0),
-				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_4), SetFill(0, 0),
-				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_0), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_1), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_2), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_3), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND),
+			EndContainer(),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_4), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_5), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_6), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_7), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_LOW_BUILDING),
+			EndContainer(),
 		EndContainer(),
 	EndContainer(),
 };

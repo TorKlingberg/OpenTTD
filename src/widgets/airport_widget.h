@@ -66,13 +66,16 @@ enum ModularAirportHangarPickerWidgets : WidgetID {
 enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_CAPTION,
 	WID_MACP_PIECE_0,  ///< Terminal button.
-	WID_MACP_PIECE_1,  ///< Round terminal button.
-	WID_MACP_PIECE_2,  ///< Tower button.
-	WID_MACP_PIECE_3,  ///< Radar button.
-	WID_MACP_PIECE_4,  ///< Radio tower button.
+	WID_MACP_PIECE_1,  ///< Terminal (alternate orientation) button.
+	WID_MACP_PIECE_2,  ///< Terminal (other) button.
+	WID_MACP_PIECE_3,  ///< Round terminal button.
+	WID_MACP_PIECE_4,  ///< Tower button.
+	WID_MACP_PIECE_5,  ///< Radar button.
+	WID_MACP_PIECE_6,  ///< Radio tower button.
+	WID_MACP_PIECE_7,  ///< Low building button.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;
-static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_4;
+static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_7;
 
 #endif /* WIDGETS_AIRPORT_WIDGET_H */
