@@ -83,6 +83,33 @@ Multiple directions can be combined using bitwise OR:
 | 0x0C    | S + W      | Two adjacent directions |
 | 0x09    | W + N      | Two adjacent directions |
 
+## Modular Runway Direction Flags
+
+For modular airports, runway direction flags use **travel-direction semantics**:
+
+- `RUF_DIR_LOW`: operations traveling toward the low-coordinate end (lower X or Y)
+- `RUF_DIR_HIGH`: operations traveling toward the high-coordinate end (higher X or Y)
+
+This is different from an "operations starting from this end" interpretation.
+
+### What This Means in Practice
+
+- Landing:
+  - Touchdown at low end implies rollout toward high end, so it requires `RUF_DIR_HIGH`.
+  - Touchdown at high end implies rollout toward low end, so it requires `RUF_DIR_LOW`.
+- Takeoff:
+  - Starting from low end means accelerating toward high end, so it requires `RUF_DIR_HIGH`.
+  - Starting from high end means accelerating toward low end, so it requires `RUF_DIR_LOW`.
+
+### Visual Overlay Notes
+
+Runway overlay arrows use `SPR_ONEWAY_BASE` sprites. Observed in-game mapping:
+
+- `RUF_DIR_LOW` (travel toward low X/Y) → aircraft move SW or SE on screen → sprites 0 (X-axis) and 3 (Y-axis)
+- `RUF_DIR_HIGH` (travel toward high X/Y) → aircraft move NE or NW on screen → sprites 1 (X-axis) and 4 (Y-axis)
+
+The apparent paradox: "toward low X" means decreasing X, which is left-ish on screen (West bitmask direction), which appears SW in the isometric view — so sprite 0 (SW arrow) is correct. Do not invert based on the flag name alone; validate against observed aircraft movement.
+
 ## Rotation Values
 
 Airport pieces can be rotated in 90° increments:
@@ -192,5 +219,5 @@ Surrounding tiles (user's compass labels → actual coordinates):
 
 ---
 
-**Last Updated**: 2026-01-25
+**Last Updated**: 2026-02-21
 **Author**: Based on empirical testing and bug fix for hangar direction confusion (SE vs South)

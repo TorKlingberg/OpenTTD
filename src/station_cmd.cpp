@@ -4072,8 +4072,11 @@ static void DrawTile_Station(TileInfo *ti)
 
 					/* Use one-way road arrow sprites - they're isometric and tile-sized.
 					 * Layout: SPR_ONEWAY_BASE + offset
-					 *   +0..+2: X-axis (flat) - 0=direction1, 1=direction2, 2=both
-					 *   +3..+5: Y-axis (flat) - 3=direction1, 4=direction2, 5=both */
+					 *   +0..+2: X-axis (flat) - 0=SW, 1=NE, 2=both
+					 *   +3..+5: Y-axis (flat) - 3=SE, 4=NW, 5=both
+					 *
+					 * IMPORTANT: Keep the mapping below aligned to observed aircraft movement
+					 * for runway flags. Do not swap low/high purely from coordinate intuition. */
 					SpriteID base = SPR_ONEWAY_BASE;
 
 					/* Determine which arrows to draw based on flags */
@@ -4083,9 +4086,13 @@ static void DrawTile_Station(TileInfo *ti)
 					bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
 
 					if (can_land || can_takeoff) {
-						/* Arrow sprite index: 0=one way, 1=other way
-						 * For X-axis: 0=SW arrow, 1=NE arrow
-						 * For Y-axis: 3=SE arrow, 4=NW arrow */
+						/* Visual mapping for runway flags (verified against in-game aircraft movement):
+						 * dir_low  -> X:SW (0), Y:SE (3)   [arrow points in the travel direction]
+						 * dir_high -> X:NE (1), Y:NW (4)
+						 *
+						 * Note: despite RUF_DIR_LOW meaning "toward low coordinates" (see coords.md),
+						 * aircraft travelling toward low-X/Y move SW/SE on screen, so the SW/SE
+						 * sprites are correct. Do not invert based on the flag name alone. */
 						SpriteID sprite;
 						PaletteID pal_overlay;
 
@@ -4093,10 +4100,10 @@ static void DrawTile_Station(TileInfo *ti)
 							/* Both directions - use "both" sprite (index 2 or 5) */
 							sprite = base + (horizontal ? 2 : 5);
 						} else if (dir_low) {
-							/* Low end only */
+							/* Low-direction only (see mapping note above). */
 							sprite = base + (horizontal ? 0 : 3);
 						} else {
-							/* High end only */
+							/* High-direction only (see mapping note above). */
 							sprite = base + (horizontal ? 1 : 4);
 						}
 
