@@ -11,6 +11,8 @@
 #include "economy_func.h"
 #include "window_gui.h"
 #include "station_gui.h"
+#include "station_func.h"
+#include "sprite.h"
 #include "terraform_gui.h"
 #include "sound_func.h"
 #include "window_func.h"
@@ -60,6 +62,7 @@ static AirportClassID _selected_airport_class; ///< the currently visible airpor
 static int _selected_airport_index;            ///< the index of the selected airport in the current class or -1
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 static StationID _last_modular_airport_station = StationID::Invalid();
+static uint8_t _modular_hangar_rotation = 0;  ///< 0=SE, 1=NE, 2=NW, 3=SW
 
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
 
@@ -70,27 +73,28 @@ SpriteID GetCustomAirportSprite(const AirportSpec *as, uint8_t layout);
 
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
 struct ModularAirportPiece {
-	StringID name;
+	StringID name;    ///< Full name (used as tooltip)
+	StringID abbrev;  ///< Short label (displayed on button)
 	PixelColour colour;
 };
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           PC_DARK_GREY},   // 0
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       PC_DARK_GREY},   // 1
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, PC_DARK_GREY},   // 2  (smart-drag: auto-adds near/far ends)
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         PC_ORANGE},      // 3
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   PC_ORANGE},      // 4
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           PC_DARK_RED},    // 5
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     PC_DARK_RED},    // 6
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          PC_LIGHT_YELLOW},// 7
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            PC_YELLOW},      // 8
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            PC_GREY},        // 9
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            PC_ORANGE},      // 10
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            PC_ORANGE},      // 11
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      PC_ORANGE},      // 12
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            PC_GREEN},       // 13
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            PC_WHITE},       // 14
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            PC_WHITE},       // 15
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SHORT,        PC_DARK_GREY},   // 0
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END_SHORT,    PC_DARK_GREY},   // 1
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_SHORT,  PC_DARK_GREY},   // 2  (smart-drag: auto-adds near/far ends)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_SHORT,      PC_ORANGE},      // 3
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND_SHORT,PC_ORANGE},      // 4
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR_SHORT,        PC_DARK_RED},    // 5
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR_SHORT,  PC_DARK_RED},    // 6
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD_SHORT,       PC_LIGHT_YELLOW},// 7
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND_SHORT,         PC_YELLOW},      // 8
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON_SHORT,         PC_GREY},        // 9
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER_SHORT,         PC_ORANGE},      // 10
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_SHORT,         PC_ORANGE},      // 11
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER_SHORT,   PC_ORANGE},      // 12
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS_SHORT,         PC_GREEN},       // 13
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY_SHORT,         PC_WHITE},       // 14
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE_SHORT,         PC_WHITE},       // 15
 };
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
@@ -689,18 +693,19 @@ public:
 	}};
 };
 
+static void ShowModularHangarPicker(Window *parent, bool is_large);
+
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
 
-	int piece_line_height = 0;
 	uint8_t selected_piece = 0;
-	uint8_t rotation = 0;
 	bool show_taxi_arrows = true;
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
 	{
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
+		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
@@ -712,73 +717,28 @@ public:
 		_show_runway_direction_overlay = false;
 		MarkWholeScreenDirty();
 		ResetObjectToPlace();
+		CloseWindowByClass(WC_BUILD_DEPOT);
 		this->PickerWindowBase::Close();
 	}
 
-	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
+	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
 	{
-		switch (widget) {
-			case WID_MA_PIECES: {
-				Dimension d = {0, 0};
-				for (const auto &piece : _modular_airport_pieces) {
-					d = maxdim(d, GetStringBoundingBox(piece.name));
-				}
-				this->piece_line_height = GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal;
-				d.width += padding.width + WidgetDimensions::scaled.matrix.Horizontal();
-				d.height = PIECE_COUNT * this->piece_line_height + WidgetDimensions::scaled.matrix.Vertical();
-				size = maxdim(size, d);
-				break;
+		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
+			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
+			this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+			this->selected_piece = new_piece;
+			this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
+			this->UpdatePlacementCursor();
+			this->SetDirty();
+			if (new_piece == 5 || new_piece == 6) {
+				ShowModularHangarPicker(this, new_piece == 5);
+			} else {
+				CloseWindowByClass(WC_BUILD_DEPOT);
 			}
-
-			default: break;
+			return;
 		}
-	}
 
-	void DrawWidget(const Rect &r, WidgetID widget) const override
-	{
 		switch (widget) {
-			case WID_MA_PIECES: {
-				Rect row = r.WithHeight(this->piece_line_height).Shrink(WidgetDimensions::scaled.bevel);
-				Rect text = r.WithHeight(this->piece_line_height).Shrink(WidgetDimensions::scaled.matrix);
-				for (int i = 0; i < PIECE_COUNT; i++) {
-					if (i == this->selected_piece) {
-						GfxFillRect(row, PC_DARK_BLUE);
-					}
-					DrawString(text, _modular_airport_pieces[i].name, i == this->selected_piece ? TC_WHITE : TC_BLACK);
-					row = row.Translate(0, this->piece_line_height);
-					text = text.Translate(0, this->piece_line_height);
-				}
-				break;
-			}
-
-			default: break;
-		}
-	}
-
-	void OnClick(Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
-	{
-		switch (widget) {
-			case WID_MA_PIECES: {
-				Rect list = this->GetWidget<NWidgetBase>(widget)->GetCurrentRect().Shrink(WidgetDimensions::scaled.bevel);
-				int row = (pt.y - list.top) / this->piece_line_height;
-				if (row >= 0 && row < PIECE_COUNT) {
-					this->selected_piece = static_cast<uint8_t>(row);
-					this->UpdatePlacementCursor();
-					this->SetDirty();
-				}
-				break;
-			}
-
-			case WID_MA_ROTATE_DECREASE:
-				this->rotation = (this->rotation + 3) % 4;
-				this->SetDirty();
-				break;
-
-			case WID_MA_ROTATE_INCREASE:
-				this->rotation = (this->rotation + 1) % 4;
-				this->SetDirty();
-				break;
-
 			case WID_MA_TOGGLE_SHOW_ARROWS:
 				this->show_taxi_arrows = !this->show_taxi_arrows;
 				_show_runway_direction_overlay = this->show_taxi_arrows;
@@ -1061,10 +1021,9 @@ private:
 	 * @param piece_index The piece type to build
 	 * @param nearby_station Station to join (Invalid = auto-detect via GetStationAround)
 	 */
-	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station, uint8_t rot = 0xFF)
+	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station, uint8_t rot = 0)
 	{
 		uint8_t gfx = GetModularAirportPieceGfx(piece_index);
-		if (rot == 0xFF) rot = this->rotation;
 
 		/* Pass the nearby station as station_to_join. In the command handler:
 		 * - GetStationAround checks adjacent tiles for a station to join.
@@ -1079,9 +1038,8 @@ private:
 	 * Post a drag tile build command using a raw gfx value (bypasses piece-index lookup).
 	 * Used for auto-placed runway end pieces.
 	 */
-	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station, uint8_t rot = 0xFF)
+	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station, uint8_t rot = 0)
 	{
-		if (rot == 0xFF) rot = this->rotation;
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
 			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false);
 	}
@@ -1093,15 +1051,17 @@ private:
 	{
 		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece);
 		bool adjacent = _ctrl_pressed;
-		uint8_t rotation = this->rotation;
+		/* Use hangar rotation for hangar pieces; rotation 0 for everything else. */
+		uint8_t rot = (this->selected_piece == 5 || this->selected_piece == 6)
+		              ? _modular_hangar_rotation : 0;
 
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_TILE>()),
-						tile, gfx, StationID::Invalid(), adjacent, rotation, (uint8_t)0x0F, false).Succeeded();
+						tile, gfx, StationID::Invalid(), adjacent, rot, (uint8_t)0x0F, false).Succeeded();
 			} else {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-						tile, gfx, to_join, adjacent, rotation, (uint8_t)0x0F, false);
+						tile, gfx, to_join, adjacent, rot, (uint8_t)0x0F, false);
 			}
 		};
 
@@ -1156,27 +1116,131 @@ private:
 	}
 };
 
+/** Hangar direction picker window (opened when clicking a hangar piece button). */
+class BuildModularHangarPickerWindow : public PickerWindowBase {
+	bool large_hangar; ///< true = large hangar (piece 5), false = small (piece 6)
+
+	/** Widget-to-rotation mapping: NW=2, NE=1, SW=3, SE=0 */
+	static constexpr uint8_t _widget_to_rot[4] = {2, 1, 3, 0}; // indexed by (widget - WID_MAHP_DIR_NW)
+
+public:
+	BuildModularHangarPickerWindow(WindowDesc &desc, Window *parent, bool is_large)
+		: PickerWindowBase(desc, parent), large_hangar(is_large)
+	{
+		this->InitNested(0);
+		/* Lower the button matching the current rotation */
+		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {
+			if (_widget_to_rot[w - WID_MAHP_DIR_NW] == _modular_hangar_rotation) {
+				this->LowerWidget(w);
+				break;
+			}
+		}
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
+	{
+		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
+		size.width  = ScaleGUITrad(64) + WidgetDimensions::scaled.fullbevel.Horizontal();
+		size.height = ScaleGUITrad(48) + WidgetDimensions::scaled.fullbevel.Vertical();
+	}
+
+	void DrawWidget(const Rect &r, WidgetID widget) const override
+	{
+		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
+
+		DrawPixelInfo tmp_dpi;
+		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
+		if (FillDrawPixelInfo(&tmp_dpi, ir)) {
+			AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+			int x = (ir.Width()  - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
+			int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
+			uint8_t rot = _widget_to_rot[widget - WID_MAHP_DIR_NW];
+			/* Use the modular hangar layout directly — StationPickerDrawSprite can't handle
+			 * the high gfx indices (APT_DEPOT_NW/NE/SW = 88-90) which are beyond the
+			 * airport tile layout table size and get clamped to index 0 (apron). */
+			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
+			PaletteID pal = GetCompanyPalette(_local_company);
+			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
+			DrawRailTileSeqInGUI(x, y, t, 0, 0, pal);
+		}
+	}
+
+	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
+	{
+		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
+
+		/* Raise old selection */
+		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {
+			if (_widget_to_rot[w - WID_MAHP_DIR_NW] == _modular_hangar_rotation) {
+				this->RaiseWidget(w);
+				break;
+			}
+		}
+		_modular_hangar_rotation = _widget_to_rot[widget - WID_MAHP_DIR_NW];
+		this->LowerWidget(widget);
+		SndClickBeep();
+		this->SetDirty();
+	}
+};
+
+static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_hangar_picker_widgets = {
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
+		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN, WID_MAHP_CAPTION),
+			SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_HANGAR_PICKER_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+	EndContainer(),
+	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
+		NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1), SetPadding(WidgetDimensions::unscaled.picker),
+			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHP_DIR_NW), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHP_DIR_SW), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+			EndContainer(),
+			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHP_DIR_NE), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHP_DIR_SE), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+			EndContainer(),
+		EndContainer(),
+	EndContainer(),
+};
+
+static WindowDesc _build_modular_hangar_picker_desc(
+	WDP_AUTO, {}, 0, 0,
+	WC_BUILD_DEPOT, WC_BUILD_STATION,
+	WindowDefaultFlag::Construction,
+	_nested_build_modular_hangar_picker_widgets
+);
+
+static void ShowModularHangarPicker(Window *parent, bool is_large)
+{
+	CloseWindowByClass(WC_BUILD_DEPOT);
+	new BuildModularHangarPickerWindow(_build_modular_hangar_picker_desc, parent, is_large);
+}
+
 static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airport_widgets = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
 		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
 		NWidget(WWT_STICKYBOX, COLOUR_DARK_GREEN),
 	EndContainer(),
-	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
-		NWidget(NWID_HORIZONTAL), SetPadding(WidgetDimensions::unscaled.picker), SetPIP(0, WidgetDimensions::unscaled.hsep_wide, 0),
-			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
-				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_PIECES_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL), SetFill(1, 0),
-				NWidget(WWT_MATRIX, COLOUR_GREY, WID_MA_PIECES), SetMatrixDataTip(1, lengthof(_modular_airport_pieces), STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP),
-			EndContainer(),
-			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
-				NWidget(WWT_LABEL, INVALID_COLOUR, WID_MA_ROTATE_LABEL), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_ROTATION_LABEL), SetFill(1, 0),
-				NWidget(NWID_HORIZONTAL),
-					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_DECREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_DECREASE),
-					NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_MA_ROTATE_INCREASE), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_INCREASE),
-				EndContainer(),
-				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MA_TOGGLE_SHOW_ARROWS), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS), SetFill(1, 0),
-			EndContainer(),
-		EndContainer(),
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_0),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SHORT,        STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_1),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END_SHORT,    STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_2),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_SHORT,  STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_3),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_SHORT,      STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_4),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND_SHORT,STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_5),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR_SHORT,        STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_6),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR_SHORT,  STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_7),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD_SHORT,       STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_8),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_9),  SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_10), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_12), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER_SHORT,   STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_13), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_14), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_15), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE_SHORT,         STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE),
+		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetFill(1, 1), EndContainer(),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
 	EndContainer(),
 };
 

@@ -4215,6 +4215,24 @@ void StationPickerDrawSprite(int x, int y, StationType st, RailType railtype, Ro
 	DrawRailTileSeqInGUI(x, y, t, (st == StationType::RailWaypoint || st == StationType::RoadWaypoint) ? 0 : total_offset, 0, pal);
 }
 
+/**
+ * Get the DrawTileSprites layout for a modular airport hangar.
+ * Used by the hangar direction picker in the airport GUI.
+ * @param rotation Hangar rotation (0=SE, 1=NE, 2=NW, 3=SW).
+ * @param small_hangar True for small hangar, false for large.
+ * @return Pointer to the tile layout.
+ */
+const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar)
+{
+	if (small_hangar) return &_station_display_modular_small_hangar_se;
+	switch (rotation) {
+		case 1:  return &_station_display_modular_hangar_ne;
+		case 2:  return &_station_display_modular_hangar_nw;
+		case 3:  return &_station_display_modular_hangar_sw;
+		default: return &_station_display_modular_hangar_se;
+	}
+}
+
 static int GetSlopePixelZ_Station(TileIndex tile, uint, uint, bool)
 {
 	return GetTileMaxPixelZ(tile);

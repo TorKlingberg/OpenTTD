@@ -35,12 +35,35 @@ enum AirportPickerWidgets : WidgetID {
 
 /** Widgets of the #BuildModularAirportWindow class (prototype). */
 enum ModularAirportBuilderWidgets : WidgetID {
-	WID_MA_PIECES_LABEL,        ///< Label for pieces list.
-	WID_MA_PIECES,              ///< List of modular pieces.
-	WID_MA_ROTATE_LABEL,        ///< Label for rotation.
-	WID_MA_ROTATE_DECREASE,     ///< Rotate left.
-	WID_MA_ROTATE_INCREASE,     ///< Rotate right.
+	WID_MA_PIECE_0,             ///< Runway piece button.
+	WID_MA_PIECE_1,             ///< Runway end piece button.
+	WID_MA_PIECE_2,             ///< Small runway piece button.
+	WID_MA_PIECE_3,             ///< Terminal piece button.
+	WID_MA_PIECE_4,             ///< Round terminal piece button.
+	WID_MA_PIECE_5,             ///< Large hangar piece button.
+	WID_MA_PIECE_6,             ///< Small hangar piece button.
+	WID_MA_PIECE_7,             ///< Helipad piece button.
+	WID_MA_PIECE_8,             ///< Stand piece button.
+	WID_MA_PIECE_9,             ///< Apron piece button.
+	WID_MA_PIECE_10,            ///< Tower piece button.
+	WID_MA_PIECE_11,            ///< Radar piece button.
+	WID_MA_PIECE_12,            ///< Radio tower piece button.
+	WID_MA_PIECE_13,            ///< Grass piece button.
+	WID_MA_PIECE_14,            ///< Empty piece button.
+	WID_MA_PIECE_15,            ///< Erase piece button.
 	WID_MA_TOGGLE_SHOW_ARROWS,  ///< Show runway direction arrows toggle.
+};
+
+static constexpr WidgetID WID_MA_PIECE_FIRST = WID_MA_PIECE_0;
+static constexpr WidgetID WID_MA_PIECE_LAST  = WID_MA_PIECE_15;
+
+/** Widgets of the #BuildModularHangarPickerWindow class. */
+enum ModularAirportHangarPickerWidgets : WidgetID {
+	WID_MAHP_CAPTION,   ///< Caption.
+	WID_MAHP_DIR_NW,    ///< NW hangar direction button.
+	WID_MAHP_DIR_NE,    ///< NE hangar direction button.
+	WID_MAHP_DIR_SW,    ///< SW hangar direction button.
+	WID_MAHP_DIR_SE,    ///< SE hangar direction button.
 };
 
 #endif /* WIDGETS_AIRPORT_WIDGET_H */
