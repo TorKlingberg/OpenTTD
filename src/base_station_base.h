@@ -35,8 +35,8 @@ struct RoadStopTileData {
 /** Runway usage flags for modular airport tiles. */
 static constexpr uint8_t RUF_LANDING  = 0x01; ///< Landing allowed on this runway
 static constexpr uint8_t RUF_TAKEOFF  = 0x02; ///< Takeoff allowed on this runway
-static constexpr uint8_t RUF_DIR_LOW  = 0x04; ///< Operations from low-coordinate end (lower X or Y)
-static constexpr uint8_t RUF_DIR_HIGH = 0x08; ///< Operations from high-coordinate end (higher X or Y)
+static constexpr uint8_t RUF_DIR_LOW  = 0x04; ///< Operations traveling toward low-coordinate end (lower X or Y)
+static constexpr uint8_t RUF_DIR_HIGH = 0x08; ///< Operations traveling toward high-coordinate end (higher X or Y)
 static constexpr uint8_t RUF_DEFAULT  = 0x0F; ///< All operations and directions allowed
 
 /** Modular airport tile data - stores taxi directions and piece metadata */

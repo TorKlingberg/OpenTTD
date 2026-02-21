@@ -2710,13 +2710,14 @@ static TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				continue;
 			}
 
-			/* Check direction flags: is landing from this end allowed? */
+			/* Check direction flags with travel-direction semantics.
+			 * Landing at low end rolls toward high end, and vice versa. */
 			bool is_low = IsRunwayEndLow(st, data.tile);
-			if (is_low && !(flags & RUF_DIR_LOW)) {
+			if (is_low && !(flags & RUF_DIR_HIGH)) {
 				rejected_direction++;
 				continue;
 			}
-			if (!is_low && !(flags & RUF_DIR_HIGH)) {
+			if (!is_low && !(flags & RUF_DIR_LOW)) {
 				rejected_direction++;
 				continue;
 			}
@@ -3501,11 +3502,11 @@ static TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircra
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
 		if ((flags & RUF_TAKEOFF) == 0) continue;
 
-		/* Direction bits select which runway end is valid for operations.
-		 * A takeoff must start at the allowed end, never from a middle tile. */
+		/* Direction bits are interpreted as travel direction.
+		 * Takeoff from low end travels toward high end, and vice versa. */
 		const bool is_low = IsRunwayEndLow(st, data.tile);
-		if (is_low && (flags & RUF_DIR_LOW) == 0) continue;
-		if (!is_low && (flags & RUF_DIR_HIGH) == 0) continue;
+		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
+		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
 
 		/* Keep a distance-based fallback so we don't deadlock if path probing fails transiently. */
 		int fallback_score = 0;
@@ -4048,7 +4049,7 @@ static void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft
 			const uint8_t flags = GetRunwayFlags(st, data.tile);
 			const bool mode_ok = (flags & RUF_TAKEOFF) != 0;
 			const bool is_low = IsRunwayEndLow(st, data.tile);
-			const bool dir_ok = is_low ? ((flags & RUF_DIR_LOW) != 0) : ((flags & RUF_DIR_HIGH) != 0);
+			const bool dir_ok = is_low ? ((flags & RUF_DIR_HIGH) != 0) : ((flags & RUF_DIR_LOW) != 0);
 
 			bool path_ok = false;
 			int path_cost = -1;
