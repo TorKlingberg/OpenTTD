@@ -3833,6 +3833,23 @@ static void DrawTile_Station(TileInfo *ti)
 					default: break;
 				}
 			}
+
+			/* Auto-jetway: a plain stand adjacent to a round terminal gets a jetway sprite.
+			 * jetway_1 (APT_STAND_1)      -- terminal is one tile to the south (dy=+1)
+			 * jetway_2 (APT_STAND_PIER_NE) -- terminal is one tile to the west  (dx=-1) */
+			if (md->piece_type == APT_STAND && t == nullptr) {
+				auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
+					TileIndex nb = TileAddXY(ti->tile, dx, dy);
+					if (!IsValidTile(nb)) return 0xFF;
+					const ModularAirportTileData *nb_md = airport_st->airport.GetModularTileData(nb);
+					return nb_md != nullptr ? nb_md->piece_type : 0xFF;
+				};
+				if (NeighborPiece(0, +1) == APT_ROUND_TERMINAL) {
+					gfx = APT_STAND_1;
+				} else if (NeighborPiece(-1, 0) == APT_ROUND_TERMINAL) {
+					gfx = APT_STAND_PIER_NE;
+				}
+			}
 		}
 	}
 
