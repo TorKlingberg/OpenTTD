@@ -90,7 +90,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,       SPR_AIRPORT_TERMINAL_A, APT_BUILDING_1},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND, SPR_AIRPORT_CONCOURSE,  APT_ROUND_TERMINAL},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,          SPR_AIRPORT_TOWER,      APT_TOWER},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,          SPR_AIRPORT_RADAR_1,    APT_RADAR_FENCE_NE},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,          SPR_AIRPORT_RADAR_5,    APT_RADAR_FENCE_NE},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,    SPR_TRANSMITTER,        APT_RADIO_TOWER_FENCE_NE},
 };
 
@@ -1341,13 +1341,19 @@ public:
 		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+		ZoomLevel icon_zoom = _gui_zoom;
 		Point offset;
-		Dimension d = GetSpriteSize(piece.icon, &offset, _gui_zoom);
+		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
 		d.width  -= offset.x;
 		d.height -= offset.y;
 		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, _gui_zoom);
+		/* Keep terminals/tower close to full size, but bias slightly downward so the
+		 * lowest pixels clip in the fixed-size preview and the icon reads less oversized. */
+		if (piece_idx <= 2) y += ScaleSpriteTrad(3);
+		/* Show only the upper part of the radio tower: move down so the bottom is clipped. */
+		if (piece_idx == 4) y += ScaleSpriteTrad(14);
+		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
@@ -1409,9 +1415,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_0),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_1),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_2),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID),
-		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_3),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_4),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_5),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_3),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_6),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_7),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_8),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON),
