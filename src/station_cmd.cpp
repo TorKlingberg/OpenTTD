@@ -3688,7 +3688,9 @@ static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
 		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
 		case APT_RUNWAY_SMALL_FAR_END:
-			return 0x0A; // runways only run NE-SW (dx direction); open NE (0x08) + SW (0x02) ends
+			/* EW (rotation%2==0): open E+W ends (bits 0x02+0x08 = 0x0A)
+			 * NS (rotation%2==1): open N+S ends (bits 0x01+0x04 = 0x05) */
+			return (rotation % 2 == 0) ? 0x0A : 0x05;
 		/* Hangar pieces: open only on the single exit edge. */
 		case APT_DEPOT_SE: case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
 		case APT_SMALL_DEPOT_SE: case APT_SMALL_DEPOT_SW:
@@ -3802,8 +3804,26 @@ static void DrawTile_Station(TileInfo *ti)
 						}
 					}
 				}
+
+			/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
+			if ((md->rotation % 2) == 1) {
+				switch (md->piece_type) {
+					case APT_RUNWAY_1:
+						t = &_station_display_modular_ns_runway_1; break;
+					case APT_RUNWAY_2:
+					case APT_RUNWAY_5:
+						t = &_station_display_modular_ns_runway_2; break;
+					case APT_RUNWAY_3:
+						t = &_station_display_modular_ns_runway_3; break;
+					case APT_RUNWAY_4:
+						t = &_station_display_modular_ns_runway_4; break;
+					case APT_RUNWAY_END:
+						t = &_station_display_modular_ns_runway_end; break;
+					default: break;
+				}
 			}
 		}
+	}
 
 		switch (gfx) {
 			case APT_RADAR_GRASS_FENCE_SW:
@@ -4048,7 +4068,7 @@ static void DrawTile_Station(TileInfo *ti)
 
 				if (is_runway) {
 					uint8_t flags = tile_data->runway_flags;
-					bool horizontal = true; // runways only run NE-SW (X-axis direction)
+					bool horizontal = (tile_data->rotation % 2) == 0;
 
 					/* Use one-way road arrow sprites - they're isometric and tile-sized.
 					 * Layout: SPR_ONEWAY_BASE + offset

@@ -974,6 +974,8 @@ public:
 		if (should_auto_end) {
 			/* Build runway with automatic end pieces */
 			bool is_horizontal = (ta.w > ta.h);
+			/* Derive rotation from drag direction, ignoring the rotation widget. */
+			uint8_t drag_rotation = is_horizontal ? 0 : 1;
 
 			std::vector<TileIndex> ordered_tiles;
 			if (is_horizontal) {
@@ -990,27 +992,33 @@ public:
 
 			if (is_main_runway) {
 				/* Place large runway end pieces at both ends */
-				this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station);
+				this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
-					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
+					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station);
+					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station, drag_rotation);
 				}
 			} else {
 				/* Small runway: near-end at back (bottom-left), far-end at front (top-right) */
-				this->PlaceDragTileRawGfx(ordered_tiles.back(),  APT_RUNWAY_SMALL_NEAR_END, nearby_station);
+				this->PlaceDragTileRawGfx(ordered_tiles.back(),  APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
-					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station);
+					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station);
+					this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
 				}
 			}
 		} else {
 			/* Normal multi-tile drag */
+			bool is_runway = (this->selected_piece == 0 || this->selected_piece == 1 || this->selected_piece == 2);
 			for (TileIndex tile : ta) {
-				this->PlaceDragTile(tile, this->selected_piece, nearby_station);
+				if (is_runway) {
+					uint8_t drag_rotation = (ta.w >= ta.h) ? 0 : 1;
+					this->PlaceDragTile(tile, this->selected_piece, nearby_station, drag_rotation);
+				} else {
+					this->PlaceDragTile(tile, this->selected_piece, nearby_station);
+				}
 			}
 		}
 	}
@@ -1052,9 +1060,10 @@ private:
 	 * @param piece_index The piece type to build
 	 * @param nearby_station Station to join (Invalid = auto-detect via GetStationAround)
 	 */
-	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station)
+	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station, uint8_t rot = 0xFF)
 	{
 		uint8_t gfx = GetModularAirportPieceGfx(piece_index);
+		if (rot == 0xFF) rot = this->rotation;
 
 		/* Pass the nearby station as station_to_join. In the command handler:
 		 * - GetStationAround checks adjacent tiles for a station to join.
@@ -1062,17 +1071,18 @@ private:
 		 * This ensures all drag tiles join the same station even if not all
 		 * are directly adjacent to existing tiles. */
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, this->rotation, (uint8_t)0x0F, false);
+			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false);
 	}
 
 	/**
 	 * Post a drag tile build command using a raw gfx value (bypasses piece-index lookup).
 	 * Used for auto-placed runway end pieces.
 	 */
-	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station)
+	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station, uint8_t rot = 0xFF)
 	{
+		if (rot == 0xFF) rot = this->rotation;
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, this->rotation, (uint8_t)0x0F, false);
+			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false);
 	}
 
 	/**

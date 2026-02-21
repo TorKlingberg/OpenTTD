@@ -695,6 +695,13 @@ static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
 
+/* NS (NW-SE on screen) runway sprites for modular airports. */
+static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_ns_runway_2(PalSpriteID{SPR_NSRUNWAY2, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_ns_runway_3(PalSpriteID{SPR_NSRUNWAY3, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_ns_runway_4(PalSpriteID{SPR_NSRUNWAY4, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_ns_runway_end(PalSpriteID{SPR_NSRUNWAY_END, PAL_NONE});
+
 extern const DrawTileSpriteSpan _station_display_datas_rail[] = {
 	TILE_SPRITE_LINE(SPR_RAIL_TRACK_X,               _station_display_datas_0)
 	TILE_SPRITE_LINE(SPR_RAIL_TRACK_Y,               _station_display_datas_1)
