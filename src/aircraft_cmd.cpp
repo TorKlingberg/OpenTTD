@@ -101,6 +101,8 @@ static void ClearModularRunwayReservation(Aircraft *v);
 static void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, TileIndex keep_tile = INVALID_TILE);
 static bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interval_ticks);
 static bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile);
+static bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
+static bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 static bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker = nullptr);
 static bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleID reserver);
 static void LogModularVehicleReservationState(const Station *st, const Aircraft *v, std::string_view reason);
@@ -116,6 +118,11 @@ static void SetTaxiReservation(Aircraft *v, TileIndex tile);
 static bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
 static bool IsModularHangarTile(const Station *st, TileIndex tile);
 static bool IsModularHangarPiece(uint8_t piece_type);
+static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile);
+static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index = nullptr);
+static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v);
+static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp);
+static inline bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 
 static constexpr uint8_t MGT_NONE = 0;
 static constexpr uint8_t MGT_TERMINAL = 1;
@@ -123,6 +130,32 @@ static constexpr uint8_t MGT_HELIPAD = 2;
 static constexpr uint8_t MGT_HANGAR = 3;
 static constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 static constexpr uint8_t MGT_ROLLOUT = 5;
+
+static constexpr uint8_t MODULAR_HOLDING_WP_COUNT = 8;
+static constexpr uint16_t MODULAR_HOLDING_TICKS_PER_WP = 64;
+static constexpr int MODULAR_HOLDING_MARGIN_TILES = 12;
+static constexpr int MODULAR_LANDING_GATE_MAX_DIST_TILES = 25;
+
+struct ModularHoldingLoop {
+	struct Waypoint {
+		int x;
+		int y;
+	};
+	struct Gate {
+		TileIndex runway_tile;
+		uint8_t wp_index;
+		int approach_x;
+		int approach_y;
+		int threshold_x;
+		int threshold_y;
+		Direction approach_dir;
+	};
+
+	Waypoint wp[MODULAR_HOLDING_WP_COUNT];
+	std::vector<Gate> gates;
+};
+
+static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
 static bool AirportSetBlocks(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc);
@@ -1906,53 +1939,83 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 		/* For modular airports, handle landing differently */
 		if (st->airport.blocks.Test(AirportBlock::Modular)) {
 			v->modular_landing_goal = INVALID_TILE;
-			/* Find runway/helipad for modular airport */
-			TileIndex runway_tile = FindModularLandingTarget(st, v);
-			
-			if (runway_tile != INVALID_TILE) {
-				/* Check distance - only land if close enough (e.g. 50 tiles) */
-				/* Always use pixel coordinates as v->tile is 0 when flying */
-				int target_x = (int)TileX(runway_tile) * TILE_SIZE;
-				int target_y = (int)TileY(runway_tile) * TILE_SIZE;
-				int dist = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
+			TileIndex runway_tile = INVALID_TILE;
 
-				/* Commit to a runway only when close enough to avoid long early reservations
-				 * that can deadlock taxi egress from other runways. */
-				const int landing_commit_dist = (v->subtype == AIR_AIRCRAFT) ? 16 : 50;
-				if (dist < landing_commit_dist) {
-					TileIndex landing_goal = FindModularLandingGroundGoal(st, v);
-					v->modular_landing_goal = landing_goal;
+			if (v->subtype == AIR_HELICOPTER) {
+				/* Keep helicopter behaviour unchanged until a dedicated heli holding loop exists. */
+				runway_tile = FindModularLandingTarget(st, v);
+			} else {
+				ModularHoldingLoop loop = {};
+				ComputeModularHoldingLoop(st, loop);
+				const uint8_t aircraft_wp = GetModularHoldingWaypointIndex(v);
 
-					if (v->subtype == AIR_AIRCRAFT) {
-						if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
-							/* Never commit landing without a reserved post-touchdown chain. */
-							v->modular_landing_goal = INVALID_TILE;
-							v->state = FLYING;
-							return;
-						}
-					} else {
-						/* Helicopters: don't land without an exit plan either. */
-						if (landing_goal == INVALID_TILE) {
-							v->state = FLYING;
-							return;
-						}
-					}
+				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
+					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index)) continue;
+					if (!DirectionsWithin45(v->direction, gate.approach_dir)) continue;
 
-					/* Start landing sequence */
-					uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
-					v->modular_landing_tile = runway_tile;
-					v->modular_landing_stage = 0;
-					v->state = landingtype; // LANDING / HELILANDING
-					if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
-					if (ShouldLogModularRateLimited(v->index, 21, 64)) {
-						Debug(misc, 3, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
-					}
-					/* Don't set v->pos for modular airports - not used */
-					return;
+					const int64_t dx_axis = static_cast<int64_t>(gate.approach_x) - gate.threshold_x;
+					const int64_t dy_axis = static_cast<int64_t>(gate.approach_y) - gate.threshold_y;
+					const int64_t vx_axis = static_cast<int64_t>(v->x_pos) - gate.threshold_x;
+					const int64_t vy_axis = static_cast<int64_t>(v->y_pos) - gate.threshold_y;
+
+					const bool in_front =
+							(dx_axis == 0 || vx_axis * dx_axis > 0) &&
+							(dy_axis == 0 || vy_axis * dy_axis > 0);
+					if (!in_front) continue;
+
+					const int dist_tiles = (abs(v->x_pos - gate.threshold_x) + abs(v->y_pos - gate.threshold_y)) / TILE_SIZE;
+					if (dist_tiles > MODULAR_LANDING_GATE_MAX_DIST_TILES) continue;
+
+					if (IsContiguousModularRunwayReservedByOther(v, st, gate.runway_tile)) continue;
+					if (IsContiguousModularRunwayQueuedForTakeoffByOther(v, st, gate.runway_tile)) continue;
+
+					runway_tile = gate.runway_tile;
+					break;
 				}
 			}
-			
-			/* Too far or no runway found, keep flying */
+
+			if (runway_tile != INVALID_TILE) {
+				if (v->subtype == AIR_HELICOPTER) {
+					const int target_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+					const int target_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+					const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
+					if (dist_tiles >= 50) {
+						v->state = FLYING;
+						return;
+					}
+				}
+
+				TileIndex landing_goal = FindModularLandingGroundGoal(st, v);
+				v->modular_landing_goal = landing_goal;
+
+				if (v->subtype == AIR_AIRCRAFT) {
+					if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
+						/* Never commit landing without a reserved post-touchdown chain. */
+						v->modular_landing_goal = INVALID_TILE;
+						v->state = FLYING;
+						return;
+					}
+				} else {
+					/* Helicopters: don't land without an exit plan either. */
+					if (landing_goal == INVALID_TILE) {
+						v->state = FLYING;
+						return;
+					}
+				}
+
+				/* Start landing sequence */
+				uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
+				v->modular_landing_tile = runway_tile;
+				v->modular_landing_stage = 0;
+				v->state = landingtype; // LANDING / HELILANDING
+				if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
+				if (ShouldLogModularRateLimited(v->index, 21, 64)) {
+					Debug(misc, 3, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
+				}
+				/* Don't set v->pos for modular airports - not used */
+				return;
+			}
+
 			v->state = FLYING;
 			return;
 		}
@@ -2834,6 +2897,141 @@ static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_t
 	}
 }
 
+static inline bool DirectionsWithin45(Direction dir_a, Direction dir_b)
+{
+	DirDiff diff = DirDifference(dir_a, dir_b);
+	return diff == DIRDIFF_SAME || diff == DIRDIFF_45LEFT || diff == DIRDIFF_45RIGHT;
+}
+
+static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
+{
+	int approach_x, approach_y;
+	GetModularLandingApproachPoint(st, runway_tile, &approach_x, &approach_y);
+
+	const int threshold_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+	const int threshold_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+
+	if (threshold_x > approach_x) return DIR_E;
+	if (threshold_x < approach_x) return DIR_W;
+	if (threshold_y > approach_y) return DIR_S;
+	if (threshold_y < approach_y) return DIR_N;
+	return DIR_N;
+}
+
+static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
+{
+	int min_x = INT_MAX;
+	int min_y = INT_MAX;
+	int max_x = INT_MIN;
+	int max_y = INT_MIN;
+
+	if (st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			const int tx = static_cast<int>(TileX(data.tile));
+			const int ty = static_cast<int>(TileY(data.tile));
+			min_x = std::min(min_x, tx);
+			min_y = std::min(min_y, ty);
+			max_x = std::max(max_x, tx);
+			max_y = std::max(max_y, ty);
+		}
+	} else {
+		const int tx = static_cast<int>(TileX(st->xy));
+		const int ty = static_cast<int>(TileY(st->xy));
+		min_x = max_x = tx;
+		min_y = max_y = ty;
+	}
+
+	const int loop_x0 = (min_x - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_y0 = (min_y - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_x1 = (max_x + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_y1 = (max_y + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int cx = (loop_x0 + loop_x1) / 2;
+	const int cy = (loop_y0 + loop_y1) / 2;
+
+	loop.wp[0] = {loop_x0, loop_y0};
+	loop.wp[1] = {cx, loop_y0};
+	loop.wp[2] = {loop_x1, loop_y0};
+	loop.wp[3] = {loop_x1, cy};
+	loop.wp[4] = {loop_x1, loop_y1};
+	loop.wp[5] = {cx, loop_y1};
+	loop.wp[6] = {loop_x0, loop_y1};
+	loop.wp[7] = {loop_x0, cy};
+
+	loop.gates.clear();
+	if (st->airport.modular_tile_data == nullptr) return;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
+		if (!is_end) continue;
+
+		const uint8_t flags = GetRunwayFlags(st, data.tile);
+		if ((flags & RUF_LANDING) == 0) continue;
+
+		const bool is_low = IsRunwayEndLow(st, data.tile);
+		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
+		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
+
+		int approach_x, approach_y;
+		GetModularLandingApproachPoint(st, data.tile, &approach_x, &approach_y);
+
+		uint8_t nearest_wp = 0;
+		int best_dist = INT_MAX;
+		for (uint8_t i = 0; i < MODULAR_HOLDING_WP_COUNT; ++i) {
+			const int wp_dist = abs(loop.wp[i].x - approach_x) + abs(loop.wp[i].y - approach_y);
+			if (wp_dist < best_dist) {
+				best_dist = wp_dist;
+				nearest_wp = i;
+			}
+		}
+
+		ModularHoldingLoop::Gate gate = {};
+		gate.runway_tile = data.tile;
+		gate.wp_index = nearest_wp;
+		gate.approach_x = approach_x;
+		gate.approach_y = approach_y;
+		gate.threshold_x = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		gate.threshold_y = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		gate.approach_dir = GetRunwayApproachDirection(st, data.tile);
+		loop.gates.push_back(gate);
+	}
+}
+
+static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v)
+{
+	const uint32_t phase = v->tick_counter / MODULAR_HOLDING_TICKS_PER_WP;
+	const uint32_t offset = v->index.base() % MODULAR_HOLDING_WP_COUNT;
+	return static_cast<uint8_t>((phase + offset) % MODULAR_HOLDING_WP_COUNT);
+}
+
+static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp)
+{
+	const uint8_t diff = (aircraft_wp + MODULAR_HOLDING_WP_COUNT - gate_wp) % MODULAR_HOLDING_WP_COUNT;
+	return diff <= 1 || diff >= (MODULAR_HOLDING_WP_COUNT - 1);
+}
+
+static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index)
+{
+	ModularHoldingLoop loop = {};
+	ComputeModularHoldingLoop(st, loop);
+
+	const uint32_t offset_ticks = static_cast<uint32_t>(v->index.base() % MODULAR_HOLDING_WP_COUNT) * MODULAR_HOLDING_TICKS_PER_WP;
+	const uint32_t phase_ticks = v->tick_counter + offset_ticks;
+	const uint8_t wp = static_cast<uint8_t>((phase_ticks / MODULAR_HOLDING_TICKS_PER_WP) % MODULAR_HOLDING_WP_COUNT);
+	const uint8_t next_wp = static_cast<uint8_t>((wp + 1) % MODULAR_HOLDING_WP_COUNT);
+	const uint32_t seg_tick = phase_ticks % MODULAR_HOLDING_TICKS_PER_WP;
+
+	if (wp_index != nullptr) *wp_index = wp;
+
+	const int x0 = loop.wp[wp].x;
+	const int y0 = loop.wp[wp].y;
+	const int x1 = loop.wp[next_wp].x;
+	const int y1 = loop.wp[next_wp].y;
+
+	*target_x = x0 + static_cast<int>((static_cast<int64_t>(x1 - x0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
+	*target_y = y0 + static_cast<int>((static_cast<int64_t>(y1 - y0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
+}
+
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
 	if (v->modular_landing_tile == INVALID_TILE) {
@@ -2885,9 +3083,17 @@ static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	if (new_x != v->x_pos || new_y != v->y_pos) {
 		Direction desired_dir = GetDirectionTowards(v, target_x, target_y);
 
-		/* For landing, allow smoother turns without strict counter (aircraft is in air) */
-		/* But still limit to 45° per tick */
 		if (desired_dir != v->direction) {
+			if (v->modular_landing_stage == 0 && v->subtype == AIR_AIRCRAFT) {
+				if (v->turn_counter > 0) {
+					v->turn_counter--;
+					int z = v->z_pos;
+					if (z < target_z) z++; else if (z > target_z) z--;
+					SetAircraftPosition(v, v->x_pos, v->y_pos, z);
+					return false;
+				}
+				v->turn_counter = 1;
+			}
 			v->last_direction = v->direction;
 			v->direction = desired_dir;
 		}
@@ -4298,36 +4504,26 @@ static bool AirportMoveModular(Aircraft *v, const Station *st)
 
 static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 {
-	/* Target is the station center or runway */
-	TileIndex target = st->airport.tile;
-	if (target == INVALID_TILE) target = st->xy;
+	int target_x = 0;
+	int target_y = 0;
+	TileIndex runway = INVALID_TILE;
 
-	/* Try to target the approach point of the nearest runway/helipad */
-	TileIndex runway = FindModularLandingTarget(st, v);
-	int base_target_x, base_target_y;
-	if (runway != INVALID_TILE) {
-		GetModularLandingApproachPoint(st, runway, &base_target_x, &base_target_y);
+	if (v->subtype == AIR_AIRCRAFT) {
+		GetModularHoldingWaypointTarget(v, st, &target_x, &target_y);
 	} else {
-		base_target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
-		base_target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+		/* Keep helicopter behaviour as-is for now; loop tuning differs for rotors. */
+		TileIndex target = st->airport.tile;
+		if (target == INVALID_TILE) target = st->xy;
+		runway = FindModularLandingTarget(st, v);
+		if (runway != INVALID_TILE) {
+			GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
+		} else {
+			target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
+			target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+		}
 	}
 
-	int target_x = base_target_x;
-	int target_y = base_target_y;
-	int dist_base = abs(v->x_pos - base_target_x) + abs(v->y_pos - base_target_y);
-	static constexpr int hold_trigger_dist = 6 * static_cast<int>(TILE_SIZE);
-
-	/* Hold in an orbit around the approach point so waiting aircraft do not stack at one position. */
-	if (dist_base < hold_trigger_dist) {
-		static constexpr int hold_radius = 5 * TILE_SIZE;
-		static const int8_t hold_dx[8] = {1, 1, 0, -1, -1, -1, 0, 1};
-		static const int8_t hold_dy[8] = {0, 1, 1, 1, 0, -1, -1, -1};
-		uint8_t phase = ((v->tick_counter / 16) + v->index.base()) & 7;
-		target_x = base_target_x + hold_dx[phase] * hold_radius;
-		target_y = base_target_y + hold_dy[phase] * hold_radius;
-	}
-
-	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
+	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
 	if (v->subtype == AIR_HELICOPTER) {
 		Debug(misc, 3, "[ModAp] Fly: v=({},{},{}), target=({},{},?), dist={}, runway={}", 
@@ -4338,12 +4534,6 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 		/* Smooth turning for flying aircraft */
 		if (v->turn_counter > 0) {
 			v->turn_counter--;
-			/* Still adjust altitude while waiting to turn */
-			int target_z = GetAircraftFlightLevel(v);
-			if (v->z_pos < target_z) v->z_pos++;
-			else if (v->z_pos > target_z) v->z_pos--;
-			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
-			return;
 		}
 
 		/* Calculate desired direction */
@@ -4365,11 +4555,10 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 			v->direction = new_dir;
 			/* Update visual so the intermediate 45° direction is rendered */
 			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
-			return; // Don't move this tick, just turn
 		}
 
 		/* Direction is correct, now move */
-		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
+		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_HOLD);
 
 		/* Move */
 		for (int i = 0; i < count; i++) {
