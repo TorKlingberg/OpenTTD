@@ -105,6 +105,29 @@ static bool IsModularTaxiwayPiece(uint8_t piece_type)
 	}
 }
 
+static bool IsModularRunwayPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static inline bool IsRunwayPieceOnAxis(const ModularAirportTileData *data, bool horizontal)
+{
+	return data != nullptr && IsModularRunwayPiece(data->piece_type) && (((data->rotation % 2) == 0) == horizontal);
+}
+
 /**
  * Static instance of FlowStat::SharesMap.
  * Note: This instance is created on task start.
@@ -2952,11 +2975,11 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 			const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
 
 			const ModularAirportTileData *prev = st->airport.GetModularTileData(tile - diff);
-			if (prev != nullptr && is_runway_piece(prev->piece_type)) {
+			if (IsRunwayPieceOnAxis(prev, horizontal)) {
 				tile_data.runway_flags = prev->runway_flags;
 			} else {
 				const ModularAirportTileData *next = st->airport.GetModularTileData(tile + diff);
-				if (next != nullptr && is_runway_piece(next->piece_type)) {
+				if (IsRunwayPieceOnAxis(next, horizontal)) {
 					tile_data.runway_flags = next->runway_flags;
 				}
 			}
@@ -3009,14 +3032,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 		while (true) {
 			TileIndex prev = first - diff;
 			ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
-			if (prev_data == nullptr) break;
-			/* Check if piece_type is a runway piece using the gfx values */
-			bool is_rw = (prev_data->piece_type == APT_RUNWAY_1 || prev_data->piece_type == APT_RUNWAY_2 ||
-			              prev_data->piece_type == APT_RUNWAY_3 || prev_data->piece_type == APT_RUNWAY_4 ||
-			              prev_data->piece_type == APT_RUNWAY_5 || prev_data->piece_type == APT_RUNWAY_END ||
-			              prev_data->piece_type == APT_RUNWAY_SMALL_NEAR_END || prev_data->piece_type == APT_RUNWAY_SMALL_MIDDLE ||
-			              prev_data->piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_rw) break;
+			if (!IsRunwayPieceOnAxis(prev_data, horizontal)) break;
 			first = prev;
 		}
 
@@ -3024,13 +3040,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 		TileIndex current = first;
 		while (true) {
 			ModularAirportTileData *cur_data = st->airport.GetModularTileData(current);
-			if (cur_data == nullptr) break;
-			bool is_rw = (cur_data->piece_type == APT_RUNWAY_1 || cur_data->piece_type == APT_RUNWAY_2 ||
-			              cur_data->piece_type == APT_RUNWAY_3 || cur_data->piece_type == APT_RUNWAY_4 ||
-			              cur_data->piece_type == APT_RUNWAY_5 || cur_data->piece_type == APT_RUNWAY_END ||
-			              cur_data->piece_type == APT_RUNWAY_SMALL_NEAR_END || cur_data->piece_type == APT_RUNWAY_SMALL_MIDDLE ||
-			              cur_data->piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_rw) break;
+			if (!IsRunwayPieceOnAxis(cur_data, horizontal)) break;
 
 			cur_data->runway_flags = runway_flags;
 			MarkTileDirtyByTile(current);

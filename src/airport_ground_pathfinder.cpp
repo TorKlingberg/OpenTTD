@@ -155,8 +155,10 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Runway tiles may only connect along the same runway axis.
 	 * This prevents crossovers between adjacent/parallel runways. */
 	if (from_is_runway && to_is_runway) {
-		const bool horizontal = (from_data->rotation % 2) == 0;
-		if ((horizontal && dy != 0) || (!horizontal && dx != 0)) return false;
+		const bool from_horizontal = (from_data->rotation % 2) == 0;
+		const bool to_horizontal = (to_data->rotation % 2) == 0;
+		if (from_horizontal != to_horizontal) return false;
+		if ((from_horizontal && dy != 0) || (!from_horizontal && dx != 0)) return false;
 	}
 
 	/* Do not enter landing-only runways from apron/taxiway tiles.

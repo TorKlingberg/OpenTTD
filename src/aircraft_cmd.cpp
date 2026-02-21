@@ -2148,6 +2148,11 @@ static bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+static inline bool IsRunwayPieceOnAxis(const ModularAirportTileData *data, bool horizontal)
+{
+	return data != nullptr && IsModularRunwayPiece(data->piece_type) && (((data->rotation % 2) == 0) == horizontal);
+}
+
 static bool IsModularHelipadPiece(uint8_t gfx)
 {
 	switch (gfx) {
@@ -2182,12 +2187,12 @@ static bool IsRunwayEndLow(const Station *st, TileIndex tile)
 	/* Check if runway extends in the positive direction from this tile */
 	TileIndex next = tile + diff;
 	const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
-	bool extends_positive = (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type));
+	bool extends_positive = IsRunwayPieceOnAxis(next_data, horizontal);
 
 	/* Check if runway extends in the negative direction from this tile */
 	TileIndex prev = tile - diff;
 	const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
-	bool extends_negative = (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type));
+	bool extends_negative = IsRunwayPieceOnAxis(prev_data, horizontal);
 
 	/* If runway only extends positive, we're at the low end.
 	 * If runway only extends negative, we're at the high end.
@@ -2224,7 +2229,7 @@ static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
 	/* Determine direction by checking which neighbor is also runway */
 	TileIndex check = start_tile + diff;
 	const ModularAirportTileData *check_data = st->airport.GetModularTileData(check);
-	if (check_data == nullptr || !IsModularRunwayPiece(check_data->piece_type)) {
+	if (!IsRunwayPieceOnAxis(check_data, horizontal)) {
 		diff = -diff; /* Go the other way */
 	}
 
@@ -2234,7 +2239,7 @@ static TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile)
 	/* Walk until we find the end */
 	while (true) {
 		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
-		if (next_data == nullptr || !IsModularRunwayPiece(next_data->piece_type)) {
+		if (!IsRunwayPieceOnAxis(next_data, horizontal)) {
 			return current;
 		}
 		current = next;
@@ -2256,19 +2261,19 @@ static bool GetContiguousModularRunwayTiles(const Station *st, TileIndex start_t
 	while (true) {
 		TileIndex prev = first - diff;
 		const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
-		if (prev_data == nullptr || !IsModularRunwayPiece(prev_data->piece_type)) break;
+		if (!IsRunwayPieceOnAxis(prev_data, horizontal)) break;
 		first = prev;
 	}
 
 	TileIndex current = first;
 	while (true) {
 		const ModularAirportTileData *current_data = st->airport.GetModularTileData(current);
-		if (current_data == nullptr || !IsModularRunwayPiece(current_data->piece_type)) break;
+		if (!IsRunwayPieceOnAxis(current_data, horizontal)) break;
 		tiles.push_back(current);
 
 		TileIndex next = current + diff;
 		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
-		if (next_data == nullptr || !IsModularRunwayPiece(next_data->piece_type)) break;
+		if (!IsRunwayPieceOnAxis(next_data, horizontal)) break;
 		current = next;
 	}
 
@@ -2802,8 +2807,8 @@ static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_t
 		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
 		const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
 
-		if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) runway_extends_positive = true;
-		if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) runway_extends_negative = true;
+		if (IsRunwayPieceOnAxis(next_data, horizontal)) runway_extends_positive = true;
+		if (IsRunwayPieceOnAxis(prev_data, horizontal)) runway_extends_negative = true;
 	} else {
 		/* Check Y axis neighbors */
 		TileIndex next = runway_tile + TileDiffXY(0, 1);
@@ -2811,8 +2816,8 @@ static void GetModularLandingApproachPoint(const Station *st, TileIndex runway_t
 		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
 		const ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
 
-		if (next_data != nullptr && IsModularRunwayPiece(next_data->piece_type)) runway_extends_positive = true;
-		if (prev_data != nullptr && IsModularRunwayPiece(prev_data->piece_type)) runway_extends_negative = true;
+		if (IsRunwayPieceOnAxis(next_data, horizontal)) runway_extends_positive = true;
+		if (IsRunwayPieceOnAxis(prev_data, horizontal)) runway_extends_negative = true;
 	}
 
 	/* If we are at the negative end (runway extends positive), approach from negative */
