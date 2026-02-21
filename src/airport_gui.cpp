@@ -100,7 +100,7 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_TERMINAL_A,     PC_ORANGE},       // 3 (cosmetic picker)
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           SPR_AIRPORT_HANGAR_FRONT,   PC_DARK_RED},     // 4
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     SPR_AIRFIELD_HANGAR_FRONT,  PC_DARK_RED},     // 5
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          SPR_AIRPORT_HELIPAD,        PC_LIGHT_YELLOW}, // 6
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          SPR_NEWHELIPAD,             PC_LIGHT_YELLOW}, // 6
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            SPR_AIRPORT_AIRCRAFT_STAND, PC_YELLOW},       // 7
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            SPR_AIRPORT_APRON,          PC_GREY},         // 8
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            SPR_AIRFIELD_APRON_C,       PC_GREEN},        // 9
@@ -703,9 +703,11 @@ public:
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 
+static constexpr ZoomLevel MODULAR_ICON_ZOOM = ZoomLevel::Normal; ///< Zoom level for modular airport toolbar icons.
+
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
-	static constexpr ZoomLevel ICON_ZOOM = ZoomLevel::Out2x; ///< Zoom level for piece button icons.
+	static constexpr ZoomLevel ICON_ZOOM = MODULAR_ICON_ZOOM;
 
 	uint8_t selected_piece = 0;
 	bool show_taxi_arrows = true;
@@ -733,17 +735,10 @@ public:
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
-		/* Size all piece buttons uniformly to fit the largest icon at the reduced zoom level. */
-		Dimension max_dim = {0, 0};
-		for (const auto &piece : _modular_airport_pieces) {
-			Point offset;
-			Dimension d = GetSpriteSize(piece.icon, &offset, ICON_ZOOM);
-			d.width  -= offset.x;
-			d.height -= offset.y;
-			max_dim = maxdim(max_dim, d);
-		}
-		size.width  = std::max(size.width,  max_dim.width  + WidgetDimensions::scaled.bevel.Horizontal());
-		size.height = std::max(size.height, max_dim.height + WidgetDimensions::scaled.bevel.Vertical());
+		/* Use a fixed DPI-stable size matching a full tile rather than measuring sprites,
+		 * which would vary between monitors with different DPI / sprite resolution sets. */
+		size.width  = std::max(size.width,  static_cast<uint>(ScaleGUITrad(64) + WidgetDimensions::scaled.bevel.Horizontal()));
+		size.height = std::max(size.height, static_cast<uint>(ScaleGUITrad(48) + WidgetDimensions::scaled.bevel.Vertical()));
 	}
 
 	void DrawWidget(const Rect &r, WidgetID widget) const override
@@ -755,29 +750,56 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		Point offset;
-		Dimension d = GetSpriteSize(piece.icon, &offset, ICON_ZOOM);
-		d.width  -= offset.x;
-		d.height -= offset.y;
-		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
-		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, ICON_ZOOM);
+		if (widget == WID_MA_PIECE_LAST) {
+			/* Demolish: draw at full scale to match other toolbar demolish buttons. */
+			Dimension d = GetSpriteSize(piece.icon, &offset);
+			d.width  -= offset.x;
+			d.height -= offset.y;
+			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y);
+		} else {
+			Dimension d = GetSpriteSize(piece.icon, &offset, ICON_ZOOM);
+			d.width  -= offset.x;
+			d.height -= offset.y;
+			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, ICON_ZOOM);
+		}
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
 	{
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
-			this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
-			this->selected_piece = new_piece;
-			this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
-			this->UpdatePlacementCursor();
-			this->SetDirty();
-			if (new_piece == 4 || new_piece == 5) {
-				ShowModularHangarPicker(this, new_piece == 4);
-			} else if (new_piece == 3) {
-				ShowModularCosmeticPicker(this);
+			bool already_selected = (new_piece == this->selected_piece);
+			bool picker_open = (FindWindowByClass(WC_BUILD_DEPOT) != nullptr);
+			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5);
+			/* Toggle: clicking the same picker-piece again closes the picker. */
+			bool toggle_close = (already_selected && picker_open && wants_picker);
+
+			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+			if (toggle_close) {
+				/* Deselect everything: no piece highlighted, cursor reset to arrow. */
+				this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 			} else {
-				CloseWindowByClass(WC_BUILD_DEPOT);
+				this->selected_piece = new_piece;
+				this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
+			}
+			this->SetDirty();
+
+			/* Always close any open picker FIRST — PickerWindowBase::Close calls
+			 * ResetObjectToPlace, so the cursor must be re-set afterwards. */
+			CloseWindowByClass(WC_BUILD_DEPOT);
+			this->UpdatePlacementCursor();
+
+			/* Re-open picker (unless we just toggled it closed). */
+			if (wants_picker && !toggle_close) {
+				if (new_piece == 4 || new_piece == 5) {
+					ShowModularHangarPicker(this, new_piece == 4);
+				} else {
+					ShowModularCosmeticPicker(this);
+				}
 			}
 			return;
 		}
@@ -1152,7 +1174,9 @@ private:
 	void UpdatePlacementCursor()
 	{
 		SetTileSelectSize(1, 1);
-		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
+		if (this->selected_piece >= PIECE_COUNT) {
+			ResetObjectToPlace();
+		} else if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			SetObjectToPlace(ANIMCURSOR_DEMOLISH, PAL_NONE, HT_RECT | HT_DIAGONAL, this->window_class, this->window_number);
 		} else {
 			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
@@ -1276,6 +1300,7 @@ public:
 	                      [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MACP_PIECE_FIRST || widget > WID_MACP_PIECE_LAST) return;
+		/* Fixed DPI-stable size matching the hangar picker (full tile view). */
 		size.width  = ScaleGUITrad(64) + WidgetDimensions::scaled.fullbevel.Horizontal();
 		size.height = ScaleGUITrad(48) + WidgetDimensions::scaled.fullbevel.Vertical();
 	}
@@ -1283,20 +1308,19 @@ public:
 	void DrawWidget(const Rect &r, WidgetID widget) const override
 	{
 		if (widget < WID_MACP_PIECE_FIRST || widget > WID_MACP_PIECE_LAST) return;
+		uint8_t piece_idx = static_cast<uint8_t>(widget - WID_MACP_PIECE_FIRST);
+		const CosmeticPiece &piece = _cosmetic_pieces[piece_idx];
 		DrawPixelInfo tmp_dpi;
 		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
-		int x = (ir.Width()  - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
-		int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
-		uint8_t piece_idx = static_cast<uint8_t>(widget - WID_MACP_PIECE_FIRST);
-		const DrawTileSprites *t = GetStationTileLayout(StationType::Airport,
-		                               _cosmetic_pieces[piece_idx].apt_gfx);
-		PaletteID pal = GetCompanyPalette(_local_company);
-		DrawSprite(t->ground.sprite,
-		           HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE,
-		           x, y);
-		DrawRailTileSeqInGUI(x, y, t, 0, 0, pal);
+		Point offset;
+		Dimension d = GetSpriteSize(piece.icon, &offset, MODULAR_ICON_ZOOM);
+		d.width  -= offset.x;
+		d.height -= offset.y;
+		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, MODULAR_ICON_ZOOM);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
@@ -1366,7 +1390,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_8),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_9),  SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_10), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY),
-		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE),
+		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetFill(1, 1), EndContainer(),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
