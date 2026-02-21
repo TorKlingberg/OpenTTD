@@ -416,6 +416,7 @@ enum SaveLoadVersion : uint16_t {
 	SLV_BUOYS_AT_0_0,                       ///< 364  PR#14983 Allow to build buoys at (0x0).
 	SLV_MODULAR_AIRPORT,                    ///< 365  Modular airports.
 	SLV_MODULAR_AIRPORT_PATHFINDING,        ///< 366  Modular airport pathfinding data.
+	SLV_AIRPORT_THROUGHPUT,                 ///< 367  Modular airport throughput counters.
 
 	SL_MAX_VERSION,                         ///< Highest possible saveload version
 };

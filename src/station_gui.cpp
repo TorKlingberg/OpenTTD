@@ -1913,6 +1913,11 @@ struct StationViewWindow : public Window {
 					ToPercent8(ge->rating)));
 			tr.top += GetCharacterHeight(FS_NORMAL);
 		}
+		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			tr.top += WidgetDimensions::scaled.vsep_wide;
+			DrawString(tr, GetString(STR_STATION_AIRPORT_THROUGHPUT, st->airport_arrivals_last_month, st->airport_departures_last_month));
+			tr.top += GetCharacterHeight(FS_NORMAL);
+		}
 		return CeilDiv(tr.top - r.top - WidgetDimensions::scaled.framerect.top, GetCharacterHeight(FS_NORMAL));
 	}
 

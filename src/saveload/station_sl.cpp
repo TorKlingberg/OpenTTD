@@ -669,6 +669,11 @@ public:
 		SLE_CONDVAR(Station, always_accepted,            SLE_UINT64,                 SLV_EXTEND_CARGOTYPES, SL_MAX_VERSION),
 		SLEG_CONDSTRUCTLIST("speclist", SlRoadStopTileData,                          SLV_NEWGRF_ROAD_STOPS, SLV_ROAD_STOP_TILE_DATA),
 		SLEG_STRUCTLIST("goods", SlStationGoods),
+
+		SLE_CONDVAR(Station, airport_arrivals_this_month,   SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_arrivals_last_month,   SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_departures_this_month, SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_departures_last_month, SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
 	};
 	static inline const SaveLoadCompatTable compat_description = _station_normal_sl_compat;
 

@@ -601,6 +601,11 @@ public:
 	uint8_t last_vehicle_type = 0;
 	std::list<Vehicle *> loading_vehicles{};
 	std::array<GoodsEntry, NUM_CARGO> goods; ///< Goods at this station
+
+	uint16_t airport_arrivals_this_month   = 0; ///< Aircraft arrivals at this airport this month
+	uint16_t airport_arrivals_last_month   = 0; ///< Aircraft arrivals at this airport last month
+	uint16_t airport_departures_this_month = 0; ///< Aircraft departures from this airport this month
+	uint16_t airport_departures_last_month = 0; ///< Aircraft departures from this airport last month
 	CargoTypes always_accepted{}; ///< Bitmask of always accepted cargo types (by houses, HQs, industry tiles when industry doesn't accept cargo)
 
 	IndustryList industries_near{}; ///< Cached list of industries near the station that can accept cargo, @see DeliverGoodsToIndustry()

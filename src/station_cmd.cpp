@@ -5046,6 +5046,10 @@ static const IntervalTimer<TimerGameEconomy> _economy_stations_monthly({TimerGam
 			ge.status.Set(GoodsEntry::State::LastMonth, ge.status.Test(GoodsEntry::State::CurrentMonth));
 			ge.status.Reset(GoodsEntry::State::CurrentMonth);
 		}
+		st->airport_arrivals_last_month   = st->airport_arrivals_this_month;
+		st->airport_departures_last_month = st->airport_departures_this_month;
+		st->airport_arrivals_this_month   = 0;
+		st->airport_departures_this_month = 0;
 	}
 });
 
