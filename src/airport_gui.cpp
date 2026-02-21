@@ -703,11 +703,8 @@ public:
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 
-static constexpr ZoomLevel MODULAR_ICON_ZOOM = ZoomLevel::Normal; ///< Zoom level for modular airport toolbar icons.
-
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
-	static constexpr ZoomLevel ICON_ZOOM = MODULAR_ICON_ZOOM;
 
 	uint8_t selected_piece = 0;
 	bool show_taxi_arrows = true;
@@ -738,7 +735,7 @@ public:
 		Dimension max_d = {};
 		for (int i = 0; i < PIECE_COUNT; ++i) {
 			const auto &p = _modular_airport_pieces[i];
-			Dimension d = (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? GetSpriteSize(p.icon) : GetSpriteSize(p.icon, nullptr, ICON_ZOOM);
+			Dimension d = (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) ? GetSpriteSize(p.icon) : GetSpriteSize(p.icon, nullptr, _gui_zoom);
 			max_d.width = std::max(max_d.width, d.width);
 			max_d.height = std::max(max_d.height, d.height);
 		}
@@ -765,12 +762,12 @@ public:
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
 			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y);
 		} else {
-			Dimension d = GetSpriteSize(piece.icon, &offset, ICON_ZOOM);
+			Dimension d = GetSpriteSize(piece.icon, &offset, _gui_zoom);
 			d.width  -= offset.x;
 			d.height -= offset.y;
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, ICON_ZOOM);
+			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, _gui_zoom);
 		}
 	}
 
@@ -1321,12 +1318,12 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		Point offset;
-		Dimension d = GetSpriteSize(piece.icon, &offset, MODULAR_ICON_ZOOM);
+		Dimension d = GetSpriteSize(piece.icon, &offset, _gui_zoom);
 		d.width  -= offset.x;
 		d.height -= offset.y;
 		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, MODULAR_ICON_ZOOM);
+		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, _gui_zoom);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
