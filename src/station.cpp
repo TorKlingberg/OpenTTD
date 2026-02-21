@@ -135,6 +135,9 @@ Station::~Station()
 
 	/* Clear the persistent storage. */
 	delete this->airport.psa;
+	delete this->airport.modular_tile_data;
+	delete this->airport.modular_tile_index;
+	delete this->airport.modular_holding_loop;
 
 	if (this->owner == OWNER_NONE) {
 		/* Invalidate all in case of oil rigs. */

@@ -2987,6 +2987,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 		tile_data_vec.push_back(tile_data);
 		st->airport.modular_tile_index_dirty = true;
+		st->airport.modular_holding_loop_dirty = true;
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
@@ -3050,6 +3051,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 			if (next == current) break; /* Shouldn't happen, but safety */
 			current = next;
 		}
+		st->airport.modular_holding_loop_dirty = true;
 	}
 
 	return CommandCost();
@@ -3126,6 +3128,7 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 				tile_data_vec.end()
 			);
 			st->airport.modular_tile_index_dirty = true;
+			st->airport.modular_holding_loop_dirty = true;
 		}
 
 		st->rect.AfterRemoveTile(st, tile);

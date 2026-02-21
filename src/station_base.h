@@ -381,6 +381,8 @@ struct Airport : public TileArea {
 	std::vector<ModularAirportTileData> *modular_tile_data = nullptr; ///< Tile data for modular airports
 	mutable std::unordered_map<TileIndex, size_t> *modular_tile_index = nullptr; ///< Tile index for modular airport data
 	mutable bool modular_tile_index_dirty = false; ///< Whether modular tile index needs rebuild
+	mutable ModularHoldingLoop *modular_holding_loop = nullptr; ///< Cached holding loop for modular airports
+	mutable bool modular_holding_loop_dirty = true; ///< Whether modular holding loop needs rebuild
 
 	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there

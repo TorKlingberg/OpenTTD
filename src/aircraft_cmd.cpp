@@ -119,6 +119,8 @@ static bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
 static bool IsModularHangarTile(const Station *st, TileIndex tile);
 static bool IsModularHangarPiece(uint8_t piece_type);
 static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile);
+static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st);
+static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
 static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index = nullptr);
 static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v);
 static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp);
@@ -131,31 +133,6 @@ static constexpr uint8_t MGT_HANGAR = 3;
 static constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 static constexpr uint8_t MGT_ROLLOUT = 5;
 
-static constexpr uint8_t MODULAR_HOLDING_WP_COUNT = 8;
-static constexpr uint16_t MODULAR_HOLDING_TICKS_PER_WP = 64;
-static constexpr int MODULAR_HOLDING_MARGIN_TILES = 12;
-static constexpr int MODULAR_LANDING_GATE_MAX_DIST_TILES = 25;
-
-struct ModularHoldingLoop {
-	struct Waypoint {
-		int x;
-		int y;
-	};
-	struct Gate {
-		TileIndex runway_tile;
-		uint8_t wp_index;
-		int approach_x;
-		int approach_y;
-		int threshold_x;
-		int threshold_y;
-		Direction approach_dir;
-	};
-
-	Waypoint wp[MODULAR_HOLDING_WP_COUNT];
-	std::vector<Gate> gates;
-};
-
-static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
 static bool AirportSetBlocks(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc);
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc);
@@ -1945,8 +1922,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				/* Keep helicopter behaviour unchanged until a dedicated heli holding loop exists. */
 				runway_tile = FindModularLandingTarget(st, v);
 			} else {
-				ModularHoldingLoop loop = {};
-				ComputeModularHoldingLoop(st, loop);
+				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 				const uint8_t aircraft_wp = GetModularHoldingWaypointIndex(v);
 
 				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
@@ -2911,11 +2887,23 @@ static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_
 	const int threshold_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
 	const int threshold_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
 
-	if (threshold_x > approach_x) return DIR_E;
-	if (threshold_x < approach_x) return DIR_W;
-	if (threshold_y > approach_y) return DIR_S;
-	if (threshold_y < approach_y) return DIR_N;
-	return DIR_N;
+	if (threshold_y == approach_y) {
+		return (threshold_x > approach_x) ? DIR_SE : DIR_NW;
+	} else {
+		return (threshold_y > approach_y) ? DIR_SW : DIR_NE;
+	}
+}
+
+static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
+{
+	if (st->airport.modular_holding_loop_dirty || st->airport.modular_holding_loop == nullptr) {
+		if (st->airport.modular_holding_loop == nullptr) {
+			st->airport.modular_holding_loop = new ModularHoldingLoop();
+		}
+		ComputeModularHoldingLoop(st, *st->airport.modular_holding_loop);
+		st->airport.modular_holding_loop_dirty = false;
+	}
+	return *st->airport.modular_holding_loop;
 }
 
 static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
@@ -2962,7 +2950,9 @@ static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loo
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
-		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
+		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END ||
+				data.piece_type == APT_RUNWAY_END_FENCE_SE || data.piece_type == APT_RUNWAY_END_FENCE_NW || data.piece_type == APT_RUNWAY_END_FENCE_NW_SW ||
+				data.piece_type == APT_RUNWAY_END_FENCE_SE_SW || data.piece_type == APT_RUNWAY_END_FENCE_NE_NW || data.piece_type == APT_RUNWAY_END_FENCE_NE_SE;
 		if (!is_end) continue;
 
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
@@ -3007,13 +2997,13 @@ static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v)
 static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp)
 {
 	const uint8_t diff = (aircraft_wp + MODULAR_HOLDING_WP_COUNT - gate_wp) % MODULAR_HOLDING_WP_COUNT;
-	return diff <= 1 || diff >= (MODULAR_HOLDING_WP_COUNT - 1);
+	/* Gate is active when approaching the waypoint (diff 7) or at the waypoint (diff 0) */
+	return diff == 0 || diff == (MODULAR_HOLDING_WP_COUNT - 1);
 }
 
 static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index)
 {
-	ModularHoldingLoop loop = {};
-	ComputeModularHoldingLoop(st, loop);
+	const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 
 	const uint32_t offset_ticks = static_cast<uint32_t>(v->index.base() % MODULAR_HOLDING_WP_COUNT) * MODULAR_HOLDING_TICKS_PER_WP;
 	const uint32_t phase_ticks = v->tick_counter + offset_ticks;
@@ -3031,6 +3021,7 @@ static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st
 	*target_x = x0 + static_cast<int>((static_cast<int64_t>(x1 - x0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
 	*target_y = y0 + static_cast<int>((static_cast<int64_t>(y1 - y0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
 }
+
 
 static bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
@@ -4562,6 +4553,7 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 
 		/* Move */
 		for (int i = 0; i < count; i++) {
+			if (v->x_pos == target_x && v->y_pos == target_y) break;
 			GetNewVehiclePosResult gp = GetNewVehiclePos(v);
 			v->x_pos = gp.x;
 			v->y_pos = gp.y;
@@ -4573,8 +4565,6 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 			else if (v->z_pos > target_z) v->z_pos--;
 
 			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
-
-			if ((uint)(abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) < TILE_SIZE) break;
 		}
 	}
 }
