@@ -3021,6 +3021,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return CMD_ERROR;
+	if (!IsModularRunwayPiece(data->piece_type)) return CMD_ERROR;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		/* Set flags on this tile and all contiguous runway tiles */
