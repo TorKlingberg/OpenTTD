@@ -91,8 +91,8 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 | File | Purpose |
 |------|---------|
-| `src/aircraft_cmd.cpp` | All aircraft movement logic (~4600 lines). Modular airport logic starts around line 110. |
-| `src/aircraft.h` | Aircraft struct. Modular fields at lines 87-100. |
+| `src/aircraft_cmd.cpp` | All aircraft movement logic (~5000 lines). Modular airport logic starts around line 110. |
+| `src/aircraft.h` | Aircraft struct. Modular fields at lines 87-101. |
 | `src/airport_ground_pathfinder.cpp` | A* ground pathfinder + segment classification |
 | `src/airport_ground_pathfinder.h` | `TaxiPath`, `TaxiSegment`, `TaxiSegmentType`, `BuildTaxiPath` |
 | `src/base_station_base.h` | `ModularAirportTileData` struct (per-tile metadata) |
@@ -137,7 +137,7 @@ struct TaxiPath {
     bool valid;
 };
 
-// Aircraft modular fields (aircraft.h:87-100)
+// Aircraft modular fields (aircraft.h:87-101)
 TaxiPath *taxi_path;              // Current active path (owned, heap-allocated)
 uint16_t taxi_path_index;         // Current tile index in taxi_path->tiles
 uint8_t  taxi_current_segment;    // Current segment index
@@ -149,6 +149,7 @@ TileIndex modular_landing_tile;   // Runway tile committed for landing
 TileIndex modular_landing_goal;   // Stand pre-selected at landing commit time
 TileIndex modular_takeoff_tile;   // Runway tile for takeoff
 std::vector<TileIndex> modular_runway_reservation; // Reserved runway tiles
+uint32_t modular_holding_wp_index; // Per-aircraft position on holding loop (UINT32_MAX = uninitialised, not saved)
 ```
 
 ## Aircraft State Machine
@@ -202,7 +203,7 @@ Key helper functions in `aircraft_cmd.cpp`:
 
 ## Saveload
 
-Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/station_sl.cpp`. Aircraft modular fields (`taxi_path`, `taxi_reserved_tiles`, etc.) are **not** saved — recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/station_sl.cpp`. Aircraft modular fields (`taxi_path`, `taxi_reserved_tiles`, `modular_holding_wp_index`, etc.) are **not** saved — recomputed on load. `taxi_path` is a heap pointer and must never be saved.
 
 ## Common Pitfalls
 
@@ -213,3 +214,7 @@ Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/sta
 - Modular hangar visuals are rotation-driven in draw code; pathfinding/logic must use `piece_type` from modular tile metadata, not inferred sprite gfx.
 - For modular hangars, the rotation-to-exit mapping used for robust E/W behavior is inverse-style (`rot=0..3 -> SE, NE, NW, SW`) when assigning directional hangar piece type.
 - Depot windows can outlive tile deletion. Guard depot UI reads (`GetDepotDestinationIndex`, caption setup, vehicle list invalidation) with a valid depot tile check.
+- **Holding loop — don't use `tick_counter` or `running_ticks` for phase timing**: both are `uint8_t` and wrap at 256 ticks. Use `TimerGameTick::counter` (uint64_t monotonic global) for loop phase calculations.
+- **Holding loop — movement must be unconditional**: `UpdateAircraftSpeed` and the position-update loop must NOT be inside `if (dist > 0)`. If guarded, the plane freezes for up to 64 ticks whenever it catches its lookahead target.
+- **Holding loop — use ghost for movement, nearest-waypoint only for gate checks**: using nearest-waypoint as the movement target locks each plane to the nearest section of the loop, causing separate orbits per runway. The ghost (time-based `TimerGameTick::counter`) ensures planes traverse the full unified Dubins loop past all runway gates.
+- **Holding loop — reset `modular_holding_wp_index` on landing commit**: set to `UINT32_MAX` when entering LANDING state so the next FLYING entry reinitialises from the ghost phase at the correct position.

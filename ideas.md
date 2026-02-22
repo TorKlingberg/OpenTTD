@@ -3,3 +3,5 @@
 * Broken down planes should follow same pattern as others.
 
 * Extract modular airport code to its own files.
+
+* A toggle button next to "show directions" that shows the holding pattern waypoints and lines between them.
