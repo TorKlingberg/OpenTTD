@@ -43,10 +43,12 @@ enum AirportTypes : uint8_t {
 	AT_DUMMY           = 255, ///< Dummy airport.
 };
 
-static constexpr uint8_t MODULAR_HOLDING_WP_COUNT = 8;
 static constexpr uint16_t MODULAR_HOLDING_TICKS_PER_WP = 64;
 static constexpr int MODULAR_HOLDING_MARGIN_TILES = 12;
 static constexpr int MODULAR_LANDING_GATE_MAX_DIST_TILES = 25;
+static constexpr int MODULAR_HOLDING_OVERSHOOT_TILES   = 10; ///< tiles past gate before turning
+static constexpr int MODULAR_HOLDING_TURN_RADIUS_TILES = 6;  ///< Dubins min turn radius
+static constexpr int MODULAR_HOLDING_SAMPLE_INTERVAL_PX = 48; ///< ~3 tiles per waypoint
 
 struct ModularHoldingLoop {
 	struct Waypoint {
@@ -55,7 +57,7 @@ struct ModularHoldingLoop {
 	};
 	struct Gate {
 		TileIndex runway_tile;
-		uint8_t wp_index;
+		uint32_t  wp_index;       ///< index into waypoints vector
 		int approach_x;
 		int approach_y;
 		int threshold_x;
@@ -63,8 +65,8 @@ struct ModularHoldingLoop {
 		Direction approach_dir;
 	};
 
-	Waypoint wp[MODULAR_HOLDING_WP_COUNT];
-	std::vector<Gate> gates;
+	std::vector<Waypoint> waypoints; ///< variable-length Dubins-path loop
+	std::vector<Gate>     gates;
 };
 
 /** Flags for airport movement data. */

@@ -49,6 +49,10 @@
 #include <map>
 #include <set>
 #include <chrono>
+#include <cmath>
+#include <algorithm>
+#include <array>
+#include <limits>
 
 void Aircraft::UpdateDeltaXY()
 {
@@ -121,9 +125,9 @@ static bool IsModularHangarPiece(uint8_t piece_type);
 static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile);
 static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st);
 static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
-static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index = nullptr);
-static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v);
-static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp);
+static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index = nullptr);
+static uint32_t GetModularHoldingWaypointIndex(const Aircraft *v, uint32_t n_wp);
+static bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp);
 static inline bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 
 static constexpr uint8_t MGT_NONE = 0;
@@ -1923,10 +1927,11 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				runway_tile = FindModularLandingTarget(st, v);
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
-				const uint8_t aircraft_wp = GetModularHoldingWaypointIndex(v);
+				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
+				const uint32_t aircraft_wp = GetModularHoldingWaypointIndex(v, n_wp);
 
 				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
-					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index)) continue;
+					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index, n_wp)) continue;
 					if (!DirectionsWithin45(v->direction, gate.approach_dir)) continue;
 
 					const int64_t dx_axis = static_cast<int64_t>(gate.approach_x) - gate.threshold_x;
@@ -2914,6 +2919,346 @@ static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_
 	return best_dir;
 }
 
+struct DubinsArc {
+	double cx;
+	double cy;
+	double r;
+	double a0;
+	double sweep; // CCW positive, CW negative
+};
+
+struct DubinsSeg {
+	bool is_arc;
+	DubinsArc arc;
+	double x0;
+	double y0;
+	double x1;
+	double y1;
+};
+
+struct DubinsPath {
+	std::vector<DubinsSeg> segs;
+	double length;
+	bool valid;
+};
+
+static constexpr double DUBINS_PI = 3.14159265358979323846;
+
+static double NormalizeAngle2Pi(double a)
+{
+	a = std::fmod(a, 2.0 * DUBINS_PI);
+	if (a < 0.0) a += 2.0 * DUBINS_PI;
+	return a;
+}
+
+static void DirToVec(Direction d, double &dx, double &dy)
+{
+	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1, 0, 1, 1, 1, 0};
+	static constexpr int8_t dir_dy[DIR_END] = {-1, 0, 1, 1, 1, 0, -1, -1};
+
+	const int ix = dir_dx[d];
+	const int iy = dir_dy[d];
+	const double len = std::hypot(static_cast<double>(ix), static_cast<double>(iy));
+	if (len <= 0.0) {
+		dx = 1.0;
+		dy = 0.0;
+		return;
+	}
+	dx = ix / len;
+	dy = iy / len;
+}
+
+static void AddWaypoint(std::vector<ModularHoldingLoop::Waypoint> &out, double x, double y)
+{
+	const int ix = static_cast<int>(std::lround(x));
+	const int iy = static_cast<int>(std::lround(y));
+	if (!out.empty() && out.back().x == ix && out.back().y == iy) return;
+	out.push_back({ix, iy});
+}
+
+static void AppendFallbackRectLoopWaypoints(std::vector<ModularHoldingLoop::Waypoint> &out, int min_x, int min_y, int max_x, int max_y)
+{
+	const int loop_x0 = (min_x - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_y0 = (min_y - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_x1 = (max_x + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int loop_y1 = (max_y + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
+	const int cx = (loop_x0 + loop_x1) / 2;
+	const int cy = (loop_y0 + loop_y1) / 2;
+
+	out.clear();
+	out.push_back({loop_x0, loop_y0});
+	out.push_back({cx, loop_y0});
+	out.push_back({loop_x1, loop_y0});
+	out.push_back({loop_x1, cy});
+	out.push_back({loop_x1, loop_y1});
+	out.push_back({cx, loop_y1});
+	out.push_back({loop_x0, loop_y1});
+	out.push_back({loop_x0, cy});
+}
+
+static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
+		double x2, double y2, double hdx2, double hdy2, double radius)
+{
+	DubinsPath best = {};
+	best.valid = false;
+	best.length = std::numeric_limits<double>::infinity();
+
+	if (radius <= 0.0) return best;
+
+	const double th1 = std::atan2(hdy1, hdx1);
+	const double th2 = std::atan2(hdy2, hdx2);
+	const double dx = (x2 - x1) / radius;
+	const double dy = (y2 - y1) / radius;
+	const double d = std::hypot(dx, dy);
+	if (d < 1e-9) return best;
+
+	const double theta = std::atan2(dy, dx);
+	const double alpha = NormalizeAngle2Pi(th1 - theta);
+	const double beta = NormalizeAngle2Pi(th2 - theta);
+
+	struct Candidate {
+		double t;
+		double p;
+		double q;
+		char types[3];
+		bool valid;
+	};
+
+	auto eval_lsl = [&]() -> Candidate {
+		Candidate c = {};
+		c.types[0] = 'L'; c.types[1] = 'S'; c.types[2] = 'L';
+		const double tmp0 = d + std::sin(alpha) - std::sin(beta);
+		const double p2 = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (std::sin(alpha) - std::sin(beta));
+		if (p2 < 0.0) return c;
+		const double tmp1 = std::atan2(std::cos(beta) - std::cos(alpha), tmp0);
+		c.t = NormalizeAngle2Pi(-alpha + tmp1);
+		c.p = std::sqrt(std::max(0.0, p2));
+		c.q = NormalizeAngle2Pi(beta - tmp1);
+		c.valid = true;
+		return c;
+	};
+
+	auto eval_rsr = [&]() -> Candidate {
+		Candidate c = {};
+		c.types[0] = 'R'; c.types[1] = 'S'; c.types[2] = 'R';
+		const double tmp0 = d - std::sin(alpha) + std::sin(beta);
+		const double p2 = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (-std::sin(alpha) + std::sin(beta));
+		if (p2 < 0.0) return c;
+		const double tmp1 = std::atan2(std::cos(alpha) - std::cos(beta), tmp0);
+		c.t = NormalizeAngle2Pi(alpha - tmp1);
+		c.p = std::sqrt(std::max(0.0, p2));
+		c.q = NormalizeAngle2Pi(-beta + tmp1);
+		c.valid = true;
+		return c;
+	};
+
+	auto eval_lsr = [&]() -> Candidate {
+		Candidate c = {};
+		c.types[0] = 'L'; c.types[1] = 'S'; c.types[2] = 'R';
+		const double p2 = -2.0 + d * d + 2.0 * std::cos(alpha - beta) + 2.0 * d * (std::sin(alpha) + std::sin(beta));
+		if (p2 < 0.0) return c;
+		const double p = std::sqrt(std::max(0.0, p2));
+		const double tmp2 = std::atan2(-std::cos(alpha) - std::cos(beta), d + std::sin(alpha) + std::sin(beta)) - std::atan2(-2.0, p);
+		c.t = NormalizeAngle2Pi(-alpha + tmp2);
+		c.p = p;
+		c.q = NormalizeAngle2Pi(-beta + tmp2);
+		c.valid = true;
+		return c;
+	};
+
+	auto eval_rsl = [&]() -> Candidate {
+		Candidate c = {};
+		c.types[0] = 'R'; c.types[1] = 'S'; c.types[2] = 'L';
+		const double p2 = -2.0 + d * d + 2.0 * std::cos(alpha - beta) - 2.0 * d * (std::sin(alpha) + std::sin(beta));
+		if (p2 < 0.0) return c;
+		const double p = std::sqrt(std::max(0.0, p2));
+		const double tmp2 = std::atan2(std::cos(alpha) + std::cos(beta), d - std::sin(alpha) - std::sin(beta)) - std::atan2(2.0, p);
+		c.t = NormalizeAngle2Pi(alpha - tmp2);
+		c.p = p;
+		c.q = NormalizeAngle2Pi(beta - tmp2);
+		c.valid = true;
+		return c;
+	};
+
+	const std::array<Candidate, 4> candidates = {eval_rsr(), eval_lsl(), eval_rsl(), eval_lsr()};
+
+	for (const Candidate &cand : candidates) {
+		if (!cand.valid) continue;
+		const double cand_len = (cand.t + cand.p + cand.q) * radius;
+		if (cand_len >= best.length) continue;
+
+		std::vector<DubinsSeg> segs;
+		segs.reserve(3);
+		double px = x1;
+		double py = y1;
+		double th = th1;
+
+		auto append_arc = [&](char turn_type, double arc_angle) {
+			if (arc_angle <= 1e-9) return;
+
+			const bool left = (turn_type == 'L');
+			const double cx = left ? (px - radius * std::sin(th)) : (px + radius * std::sin(th));
+			const double cy = left ? (py + radius * std::cos(th)) : (py - radius * std::cos(th));
+			const double a0 = std::atan2(py - cy, px - cx);
+			const double sweep = left ? arc_angle : -arc_angle;
+			const double a1 = a0 + sweep;
+			const double nx = cx + radius * std::cos(a1);
+			const double ny = cy + radius * std::sin(a1);
+
+			DubinsSeg seg = {};
+			seg.is_arc = true;
+			seg.arc = {cx, cy, radius, a0, sweep};
+			seg.x0 = px;
+			seg.y0 = py;
+			seg.x1 = nx;
+			seg.y1 = ny;
+			segs.push_back(seg);
+
+			px = nx;
+			py = ny;
+			th = NormalizeAngle2Pi(th + sweep);
+		};
+
+		auto append_straight = [&](double dist) {
+			if (dist <= 1e-9) return;
+			const double nx = px + dist * std::cos(th);
+			const double ny = py + dist * std::sin(th);
+			DubinsSeg seg = {};
+			seg.is_arc = false;
+			seg.x0 = px;
+			seg.y0 = py;
+			seg.x1 = nx;
+			seg.y1 = ny;
+			segs.push_back(seg);
+			px = nx;
+			py = ny;
+		};
+
+		append_arc(cand.types[0], cand.t);
+		append_straight(cand.p * radius);
+		append_arc(cand.types[2], cand.q);
+
+		best.segs = std::move(segs);
+		best.length = cand_len;
+		best.valid = true;
+	}
+
+	return best;
+}
+
+static void SampleDubinsPath(const DubinsPath &path, double step_px, std::vector<ModularHoldingLoop::Waypoint> &out)
+{
+	if (!path.valid || step_px <= 0.0) return;
+
+	for (const DubinsSeg &seg : path.segs) {
+		if (seg.is_arc) {
+			const double radius = seg.arc.r;
+			const double sweep_abs = std::abs(seg.arc.sweep);
+			if (radius <= 0.0 || sweep_abs <= 1e-9) continue;
+
+			const double step_ang = step_px / radius;
+			if (step_ang <= 0.0) continue;
+			const int count = static_cast<int>(std::floor(sweep_abs / step_ang));
+			const double sign = (seg.arc.sweep >= 0.0) ? 1.0 : -1.0;
+			for (int i = 1; i <= count; ++i) {
+				const double a = seg.arc.a0 + sign * static_cast<double>(i) * step_ang;
+				if (std::abs(a - (seg.arc.a0 + seg.arc.sweep)) <= 1e-9) break;
+				const double x = seg.arc.cx + radius * std::cos(a);
+				const double y = seg.arc.cy + radius * std::sin(a);
+				AddWaypoint(out, x, y);
+			}
+		} else {
+			const double dx = seg.x1 - seg.x0;
+			const double dy = seg.y1 - seg.y0;
+			const double len = std::hypot(dx, dy);
+			if (len <= 1e-9) continue;
+
+			const int count = static_cast<int>(std::floor(len / step_px));
+			for (int i = 1; i <= count; ++i) {
+				const double t = (static_cast<double>(i) * step_px) / len;
+				if (t >= 1.0 - 1e-9) break;
+				AddWaypoint(out, seg.x0 + dx * t, seg.y0 + dy * t);
+			}
+		}
+	}
+}
+
+struct GateInfo {
+	TileIndex runway_tile;
+	int gate_x;
+	int gate_y;
+	int threshold_x;
+	int threshold_y;
+	Direction approach_dir;
+	double hdx;
+	double hdy;
+	double sort_angle;
+};
+
+static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
+{
+	gates.clear();
+	if (st->airport.modular_tile_data == nullptr) return;
+
+	int min_x = INT_MAX;
+	int min_y = INT_MAX;
+	int max_x = INT_MIN;
+	int max_y = INT_MIN;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		const int tx = static_cast<int>(TileX(data.tile));
+		const int ty = static_cast<int>(TileY(data.tile));
+		min_x = std::min(min_x, tx);
+		min_y = std::min(min_y, ty);
+		max_x = std::max(max_x, tx);
+		max_y = std::max(max_y, ty);
+	}
+	if (min_x == INT_MAX) return;
+
+	const double center_x = static_cast<double>((min_x + max_x) * TILE_SIZE) / 2.0 + TILE_SIZE / 2.0;
+	const double center_y = static_cast<double>((min_y + max_y) * TILE_SIZE) / 2.0 + TILE_SIZE / 2.0;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
+		if (!is_end) continue;
+
+		const uint8_t flags = GetRunwayFlags(st, data.tile);
+		if ((flags & RUF_LANDING) == 0) continue;
+
+		const bool is_low = IsRunwayEndLow(st, data.tile);
+		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
+		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
+
+		int approach_x = 0;
+		int approach_y = 0;
+		GetModularLandingApproachPoint(st, data.tile, &approach_x, &approach_y);
+		const int threshold_x = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		const int threshold_y = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+		const Direction approach_dir = GetRunwayApproachDirection(st, data.tile);
+
+		double hdx = 1.0;
+		double hdy = 0.0;
+		DirToVec(approach_dir, hdx, hdy);
+
+		GateInfo gate = {};
+		gate.runway_tile = data.tile;
+		gate.gate_x = approach_x;
+		gate.gate_y = approach_y;
+		gate.threshold_x = threshold_x;
+		gate.threshold_y = threshold_y;
+		gate.approach_dir = approach_dir;
+		gate.hdx = hdx;
+		gate.hdy = hdy;
+		gate.sort_angle = std::atan2(static_cast<double>(approach_y) - center_y, static_cast<double>(approach_x) - center_x);
+		gates.push_back(gate);
+	}
+
+	std::sort(gates.begin(), gates.end(), [](const GateInfo &a, const GateInfo &b) {
+		if (a.sort_angle != b.sort_angle) return a.sort_angle < b.sort_angle;
+		return a.runway_tile.base() < b.runway_tile.base();
+	});
+}
+
 static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
 {
 	if (st->airport.modular_holding_loop_dirty || st->airport.modular_holding_loop == nullptr) {
@@ -2949,92 +3294,117 @@ static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loo
 		min_y = max_y = ty;
 	}
 
-	const int loop_x0 = (min_x - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
-	const int loop_y0 = (min_y - MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
-	const int loop_x1 = (max_x + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
-	const int loop_y1 = (max_y + MODULAR_HOLDING_MARGIN_TILES) * TILE_SIZE + TILE_SIZE / 2;
-	const int cx = (loop_x0 + loop_x1) / 2;
-	const int cy = (loop_y0 + loop_y1) / 2;
-
-	loop.wp[0] = {loop_x0, loop_y0};
-	loop.wp[1] = {cx, loop_y0};
-	loop.wp[2] = {loop_x1, loop_y0};
-	loop.wp[3] = {loop_x1, cy};
-	loop.wp[4] = {loop_x1, loop_y1};
-	loop.wp[5] = {cx, loop_y1};
-	loop.wp[6] = {loop_x0, loop_y1};
-	loop.wp[7] = {loop_x0, cy};
-
+	loop.waypoints.clear();
 	loop.gates.clear();
-	if (st->airport.modular_tile_data == nullptr) return;
 
-	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (!IsModularRunwayPiece(data.piece_type)) continue;
-		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
-		if (!is_end) continue;
+	std::vector<GateInfo> gates;
+	GatherAndSortGates(st, gates);
+	if (gates.empty()) {
+		AppendFallbackRectLoopWaypoints(loop.waypoints, min_x, min_y, max_x, max_y);
+		return;
+	}
 
-		const uint8_t flags = GetRunwayFlags(st, data.tile);
-		if ((flags & RUF_LANDING) == 0) continue;
+	const double overshoot_px = static_cast<double>(MODULAR_HOLDING_OVERSHOOT_TILES * TILE_SIZE);
+	const double radius_px = static_cast<double>(MODULAR_HOLDING_TURN_RADIUS_TILES * TILE_SIZE);
+	const double sample_px = static_cast<double>(MODULAR_HOLDING_SAMPLE_INTERVAL_PX);
 
-		const bool is_low = IsRunwayEndLow(st, data.tile);
-		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
-		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
-
-		int approach_x, approach_y;
-		GetModularLandingApproachPoint(st, data.tile, &approach_x, &approach_y);
-
-		uint8_t nearest_wp = 0;
-		int best_dist = INT_MAX;
-		for (uint8_t i = 0; i < MODULAR_HOLDING_WP_COUNT; ++i) {
-			const int wp_dist = abs(loop.wp[i].x - approach_x) + abs(loop.wp[i].y - approach_y);
-			if (wp_dist < best_dist) {
-				best_dist = wp_dist;
-				nearest_wp = i;
-			}
-		}
+	for (size_t i = 0; i < gates.size(); ++i) {
+		const GateInfo &cur = gates[i];
+		const GateInfo &next = gates[(i + 1) % gates.size()];
 
 		ModularHoldingLoop::Gate gate = {};
-		gate.runway_tile = data.tile;
-		gate.wp_index = nearest_wp;
-		gate.approach_x = approach_x;
-		gate.approach_y = approach_y;
-		gate.threshold_x = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-		gate.threshold_y = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-		gate.approach_dir = GetRunwayApproachDirection(st, data.tile);
+		gate.runway_tile = cur.runway_tile;
+		gate.wp_index = static_cast<uint32_t>(loop.waypoints.size());
+		gate.approach_x = cur.gate_x;
+		gate.approach_y = cur.gate_y;
+		gate.threshold_x = cur.threshold_x;
+		gate.threshold_y = cur.threshold_y;
+		gate.approach_dir = cur.approach_dir;
 		loop.gates.push_back(gate);
+
+		AddWaypoint(loop.waypoints, cur.gate_x, cur.gate_y);
+
+		const double ex = static_cast<double>(cur.gate_x) + cur.hdx * overshoot_px;
+		const double ey = static_cast<double>(cur.gate_y) + cur.hdy * overshoot_px;
+		const double ox = ex - static_cast<double>(cur.gate_x);
+		const double oy = ey - static_cast<double>(cur.gate_y);
+		const double over_len = std::hypot(ox, oy);
+		if (over_len > 1e-9) {
+			const int count = static_cast<int>(std::floor(over_len / sample_px));
+			for (int s = 1; s <= count; ++s) {
+				const double t = (static_cast<double>(s) * sample_px) / over_len;
+				if (t >= 1.0 - 1e-9) break;
+				AddWaypoint(loop.waypoints, static_cast<double>(cur.gate_x) + ox * t, static_cast<double>(cur.gate_y) + oy * t);
+			}
+		}
+		AddWaypoint(loop.waypoints, ex, ey);
+
+		DubinsPath path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
+				static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
+				radius_px);
+		if (!path.valid) {
+			path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
+					static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
+					radius_px * 0.5);
+		}
+		if (!path.valid) {
+			const double sx = static_cast<double>(next.gate_x) - ex;
+			const double sy = static_cast<double>(next.gate_y) - ey;
+			const double slen = std::hypot(sx, sy);
+			if (slen > 1e-9) {
+				const int count = static_cast<int>(std::floor(slen / sample_px));
+				for (int s = 1; s <= count; ++s) {
+					const double t = (static_cast<double>(s) * sample_px) / slen;
+					if (t >= 1.0 - 1e-9) break;
+					AddWaypoint(loop.waypoints, ex + sx * t, ey + sy * t);
+				}
+			}
+			continue;
+		}
+
+		SampleDubinsPath(path, sample_px, loop.waypoints);
 	}
 }
 
-static uint8_t GetModularHoldingWaypointIndex(const Aircraft *v)
+static uint32_t GetModularHoldingWaypointIndex(const Aircraft *v, uint32_t n_wp)
 {
-	const uint32_t phase = v->tick_counter / MODULAR_HOLDING_TICKS_PER_WP;
-	const uint32_t offset = v->index.base() % MODULAR_HOLDING_WP_COUNT;
-	return static_cast<uint8_t>((phase + offset) % MODULAR_HOLDING_WP_COUNT);
+	if (n_wp == 0) return 0;
+	const uint32_t offset = (v->index.base() % n_wp) * MODULAR_HOLDING_TICKS_PER_WP;
+	return static_cast<uint32_t>((v->tick_counter + offset) / MODULAR_HOLDING_TICKS_PER_WP) % n_wp;
 }
 
-static bool IsHoldingGateActive(uint8_t aircraft_wp, uint8_t gate_wp)
+static bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp)
 {
-	const uint8_t diff = (aircraft_wp + MODULAR_HOLDING_WP_COUNT - gate_wp) % MODULAR_HOLDING_WP_COUNT;
-	/* Gate is active when approaching the waypoint (diff 7) or at the waypoint (diff 0) */
-	return diff == 0 || diff == (MODULAR_HOLDING_WP_COUNT - 1);
+	if (n_wp == 0) return false;
+	const uint32_t diff = (aircraft_wp + n_wp - gate_wp) % n_wp;
+	return diff == 0 || diff == (n_wp - 1);
 }
 
-static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint8_t *wp_index)
+static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index)
 {
 	const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
+	const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
+	if (n_wp == 0) {
+		TileIndex target = st->airport.tile;
+		if (target == INVALID_TILE) target = st->xy;
+		*target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
+		*target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+		if (wp_index != nullptr) *wp_index = 0;
+		return;
+	}
 
-	const uint32_t offset_ticks = static_cast<uint32_t>(v->index.base() % MODULAR_HOLDING_WP_COUNT) * MODULAR_HOLDING_TICKS_PER_WP;
+	const uint32_t offset_ticks = (v->index.base() % n_wp) * MODULAR_HOLDING_TICKS_PER_WP;
 	const uint32_t phase_ticks = v->tick_counter + offset_ticks;
-	const uint8_t wp = static_cast<uint8_t>((phase_ticks / MODULAR_HOLDING_TICKS_PER_WP) % MODULAR_HOLDING_WP_COUNT);
-	const uint8_t next_wp = static_cast<uint8_t>((wp + 1) % MODULAR_HOLDING_WP_COUNT);
+	const uint32_t wp = (phase_ticks / MODULAR_HOLDING_TICKS_PER_WP) % n_wp;
+	const uint32_t next_wp = (wp + 1) % n_wp;
 	const uint32_t seg_tick = phase_ticks % MODULAR_HOLDING_TICKS_PER_WP;
 
 	if (wp_index != nullptr) *wp_index = wp;
 
-	const int x0 = loop.wp[wp].x;
-	const int y0 = loop.wp[wp].y;
-	const int x1 = loop.wp[next_wp].x;
-	const int y1 = loop.wp[next_wp].y;
+	const int x0 = loop.waypoints[wp].x;
+	const int y0 = loop.waypoints[wp].y;
+	const int x1 = loop.waypoints[next_wp].x;
+	const int y1 = loop.waypoints[next_wp].y;
 
 	*target_x = x0 + static_cast<int>((static_cast<int64_t>(x1 - x0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
 	*target_y = y0 + static_cast<int>((static_cast<int64_t>(y1 - y0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);

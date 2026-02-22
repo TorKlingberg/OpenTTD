@@ -2973,15 +2973,23 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		if (is_runway_piece(tile_data.piece_type)) {
 			const bool horizontal = (rotation % 2) == 0;
 			const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+			bool inherited_runway_flags = false;
 
 			const ModularAirportTileData *prev = st->airport.GetModularTileData(tile - diff);
 			if (IsRunwayPieceOnAxis(prev, horizontal)) {
 				tile_data.runway_flags = prev->runway_flags;
+				inherited_runway_flags = true;
 			} else {
 				const ModularAirportTileData *next = st->airport.GetModularTileData(tile + diff);
 				if (IsRunwayPieceOnAxis(next, horizontal)) {
 					tile_data.runway_flags = next->runway_flags;
+					inherited_runway_flags = true;
 				}
+			}
+
+			if (!inherited_runway_flags) {
+				/* Default new isolated runways to one-way up-screen landing. */
+				tile_data.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW;
 			}
 		}
 
