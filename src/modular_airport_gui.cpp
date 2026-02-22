@@ -50,6 +50,8 @@
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
 #include "palette_func.h"
+#include "gfx_func.h"
+#include "modular_airport_cmd.h"
 #include "modular_airport_gui.h"
 
 #include "widgets/airport_widget.h"
@@ -66,6 +68,7 @@ static uint8_t _modular_hangar_rotation = 0;   ///< 0=SE, 1=NE, 2=NW, 3=SW
 static uint8_t _modular_cosmetic_piece = 0;    ///< Selected cosmetic piece in _cosmetic_pieces.
 
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
+bool _show_holding_overlay = false;          ///< Show holding loop overlay in viewport
 
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
 struct ModularAirportPiece {
@@ -157,6 +160,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 
 	uint8_t selected_piece = 0;
 	bool show_taxi_arrows = true;
+	bool show_holding_loop = false;
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
@@ -164,14 +168,17 @@ public:
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
 		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
+		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
+		_show_holding_overlay = this->show_holding_loop;
 		MarkWholeScreenDirty();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		_show_runway_direction_overlay = false;
+		_show_holding_overlay = false;
 		MarkWholeScreenDirty();
 		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 			ResetObjectToPlace();
@@ -286,6 +293,13 @@ public:
 				this->show_taxi_arrows = !this->show_taxi_arrows;
 				_show_runway_direction_overlay = this->show_taxi_arrows;
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
+				MarkWholeScreenDirty();
+				break;
+
+			case WID_MA_TOGGLE_SHOW_HOLDING:
+				this->show_holding_loop = !this->show_holding_loop;
+				_show_holding_overlay = this->show_holding_loop;
+				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
 				MarkWholeScreenDirty();
 				break;
 
@@ -887,6 +901,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), EndContainer(),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_HOLDING), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
 	EndContainer(),
 };
 
@@ -896,6 +912,99 @@ static WindowDesc _build_modular_airport_desc(
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_airport_widgets
 );
+
+/** Convert world pixel coordinates to screen pixel coordinates for the holding overlay. */
+static Point HoldingWorldToScreen(const Viewport &vp, int wx, int wy)
+{
+	Point p = RemapCoords(wx, wy, 0);
+	p.x = UnScaleByZoom(p.x - vp.virtual_left, vp.zoom) + vp.left;
+	p.y = UnScaleByZoom(p.y - vp.virtual_top,  vp.zoom) + vp.top;
+	return p;
+}
+
+/** Conservative AABB visibility check — GfxDrawLine clips anyway; this skips obviously off-screen segments. */
+static bool HoldingSegVis(Point a, Point b, const DrawPixelInfo *dpi)
+{
+	int l = dpi->left, r = l + dpi->width, t = dpi->top, bot = t + dpi->height;
+	return !(   (a.x < l   && b.x < l)
+	         || (a.y < t   && b.y < t)
+	         || (a.x > r   && b.x > r)
+	         || (a.y > bot && b.y > bot));
+}
+
+/** Draw a quadratic-Bezier approach curve from the approach fix to the runway threshold. */
+static void DrawHoldingApproachCurve(const Viewport &vp, const DrawPixelInfo *dpi,
+	int ax, int ay, int tx, int ty, Direction approach_dir)
+{
+	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1,  0, 1, 1, 1, 0};
+	static constexpr int8_t dir_dy[DIR_END] = {-1,  0,  1,  1, 1, 0,-1,-1};
+
+	double ddx = dir_dx[approach_dir], ddy = dir_dy[approach_dir];
+	double dlen = std::hypot(ddx, ddy);
+	if (dlen > 0.0) { ddx /= dlen; ddy /= dlen; }
+
+	double dist = std::hypot((double)(tx - ax), (double)(ty - ay));
+	double flen = std::clamp(dist / 3.0, 2.0 * TILE_SIZE, 6.0 * TILE_SIZE);
+
+	/* F = threshold retreated along inbound heading */
+	double fx = tx - ddx * flen, fy = ty - ddy * flen;
+
+	/* Control point: bent to the correct side */
+	double cross = (tx - ax) * ddy - (ty - ay) * ddx;
+	double side  = (cross >= 0.0) ? 1.0 : -1.0;
+	double cx = fx + (-ddy) * side * flen * 0.7;
+	double cy = fy + ( ddx) * side * flen * 0.7;
+
+	/* Sample quadratic Bezier A→C→F */
+	constexpr int N = 12;
+	Point prev = HoldingWorldToScreen(vp, ax, ay);
+	for (int i = 1; i <= N; ++i) {
+		double t  = (double)i / N;
+		double mt = 1.0 - t;
+		double bx = mt*mt*ax + 2*mt*t*cx + t*t*fx;
+		double by = mt*mt*ay + 2*mt*t*cy + t*t*fy;
+		Point cur = HoldingWorldToScreen(vp, (int)bx, (int)by);
+		if (HoldingSegVis(prev, cur, dpi)) GfxDrawLine(prev.x, prev.y, cur.x, cur.y, PC_YELLOW, 1);
+		prev = cur;
+	}
+
+	/* Straight segment F→threshold */
+	Point pf = HoldingWorldToScreen(vp, (int)fx, (int)fy);
+	Point pt = HoldingWorldToScreen(vp, tx, ty);
+	if (HoldingSegVis(pf, pt, dpi)) GfxDrawLine(pf.x, pf.y, pt.x, pt.y, PC_YELLOW, 1);
+
+	/* Red threshold marker */
+	GfxFillRect(pt.x - 3, pt.y - 3, pt.x + 3, pt.y + 3, PC_RED);
+}
+
+void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
+{
+	for (const Station *st : Station::Iterate()) {
+		if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
+
+		const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
+		const size_t n = loop.waypoints.size();
+		if (n < 2) continue;
+
+		/* Draw the loop polyline */
+		for (size_t i = 0; i < n; ++i) {
+			const auto &a = loop.waypoints[i];
+			const auto &b = loop.waypoints[(i + 1) % n];
+			Point pa = HoldingWorldToScreen(vp, a.x, a.y);
+			Point pb = HoldingWorldToScreen(vp, b.x, b.y);
+			if (HoldingSegVis(pa, pb, dpi)) GfxDrawLine(pa.x, pa.y, pb.x, pb.y, PC_WHITE, 1);
+		}
+
+		/* Draw gate approach curves and threshold markers */
+		for (const auto &gate : loop.gates) {
+			DrawHoldingApproachCurve(vp, dpi,
+				gate.approach_x, gate.approach_y,
+				gate.threshold_x, gate.threshold_y,
+				gate.approach_dir);
+		}
+	}
+}
+
 void ShowBuildModularAirportWindow(Window *parent)
 {
 	CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);

@@ -11,6 +11,8 @@
 #define MODULAR_AIRPORT_GUI_H
 
 #include "station_type.h"
+#include "viewport_type.h"
+#include "gfx_type.h"
 
 struct Window;
 
@@ -18,5 +20,8 @@ void ShowBuildModularAirportWindow(Window *parent);
 
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;
+extern bool _show_holding_overlay;
+
+void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi);
 
 #endif /* MODULAR_AIRPORT_GUI_H */

@@ -81,6 +81,7 @@
 #include "tilehighlight_func.h"
 #include "window_gui.h"
 #include "linkgraph/linkgraph_gui.h"
+#include "modular_airport_gui.h"
 #include "viewport_kdtree.h"
 #include "town_kdtree.h"
 #include "viewport_sprite_sorter.h"
@@ -1865,6 +1866,12 @@ void ViewportDoDraw(const Viewport &vp, int left, int top, int right, int bottom
 		dp.left = x;
 		dp.top = y;
 		vp.overlay->Draw(&dp);
+	}
+
+	if (_show_holding_overlay) {
+		dp.left = x;
+		dp.top  = y;
+		DrawModularHoldingOverlay(vp, &dp);
 	}
 
 	if (!_vd.string_sprites_to_draw.empty()) {
