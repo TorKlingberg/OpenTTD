@@ -913,10 +913,16 @@ static WindowDesc _build_modular_airport_desc(
 	_nested_build_modular_airport_widgets
 );
 
-/** Convert world pixel coordinates to screen pixel coordinates for the holding overlay. */
-static Point HoldingWorldToScreen(const Viewport &vp, int wx, int wy)
+/** Typical cruise altitude: midpoint of the [AIRCRAFT_MIN, AIRCRAFT_MAX] band that GetAircraftFlightLevel enforces. */
+static constexpr int HOLDING_OVERLAY_CRUISE_ALTITUDE = (AIRCRAFT_MIN_FLYING_ALTITUDE + AIRCRAFT_MAX_FLYING_ALTITUDE) / 2;
+
+/**
+ * Convert world pixel coordinates + altitude to screen pixel coordinates for the holding overlay.
+ * @param altitude  Height above terrain in the same units as aircraft z_pos.
+ */
+static Point HoldingWorldToScreen(const Viewport &vp, int wx, int wy, int altitude = HOLDING_OVERLAY_CRUISE_ALTITUDE)
 {
-	Point p = RemapCoords(wx, wy, 0);
+	Point p = RemapCoords(wx, wy, GetSlopePixelZ(wx, wy) + altitude);
 	p.x = UnScaleByZoom(p.x - vp.virtual_left, vp.zoom) + vp.left;
 	p.y = UnScaleByZoom(p.y - vp.virtual_top,  vp.zoom) + vp.top;
 	return p;
@@ -932,51 +938,6 @@ static bool HoldingSegVis(Point a, Point b, const DrawPixelInfo *dpi)
 	         || (a.y > bot && b.y > bot));
 }
 
-/** Draw a quadratic-Bezier approach curve from the approach fix to the runway threshold. */
-static void DrawHoldingApproachCurve(const Viewport &vp, const DrawPixelInfo *dpi,
-	int ax, int ay, int tx, int ty, Direction approach_dir)
-{
-	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1,  0, 1, 1, 1, 0};
-	static constexpr int8_t dir_dy[DIR_END] = {-1,  0,  1,  1, 1, 0,-1,-1};
-
-	double ddx = dir_dx[approach_dir], ddy = dir_dy[approach_dir];
-	double dlen = std::hypot(ddx, ddy);
-	if (dlen > 0.0) { ddx /= dlen; ddy /= dlen; }
-
-	double dist = std::hypot((double)(tx - ax), (double)(ty - ay));
-	double flen = std::clamp(dist / 3.0, 2.0 * TILE_SIZE, 6.0 * TILE_SIZE);
-
-	/* F = threshold retreated along inbound heading */
-	double fx = tx - ddx * flen, fy = ty - ddy * flen;
-
-	/* Control point: bent to the correct side */
-	double cross = (tx - ax) * ddy - (ty - ay) * ddx;
-	double side  = (cross >= 0.0) ? 1.0 : -1.0;
-	double cx = fx + (-ddy) * side * flen * 0.7;
-	double cy = fy + ( ddx) * side * flen * 0.7;
-
-	/* Sample quadratic Bezier A→C→F */
-	constexpr int N = 12;
-	Point prev = HoldingWorldToScreen(vp, ax, ay);
-	for (int i = 1; i <= N; ++i) {
-		double t  = (double)i / N;
-		double mt = 1.0 - t;
-		double bx = mt * mt * (double)ax + 2 * mt * t * cx + t * t * fx;
-		double by = mt * mt * (double)ay + 2 * mt * t * cy + t * t * fy;
-		Point cur = HoldingWorldToScreen(vp, (int)std::round(bx), (int)std::round(by));
-		if (HoldingSegVis(prev, cur, dpi)) GfxDrawLine(prev.x, prev.y, cur.x, cur.y, PC_YELLOW, 1);
-		prev = cur;
-	}
-
-	/* Straight segment F→threshold */
-	Point pf = HoldingWorldToScreen(vp, (int)fx, (int)fy);
-	Point pt = HoldingWorldToScreen(vp, tx, ty);
-	if (HoldingSegVis(pf, pt, dpi)) GfxDrawLine(pf.x, pf.y, pt.x, pt.y, PC_YELLOW, 1);
-
-	/* Red threshold marker */
-	GfxFillRect(pt.x - 3, pt.y - 3, pt.x + 3, pt.y + 3, PC_RED);
-}
-
 void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 {
 	for (const Station *st : Station::Iterate()) {
@@ -986,7 +947,7 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		const size_t n = loop.waypoints.size();
 		if (n < 2) continue;
 
-		/* Draw the loop polyline */
+		/* Draw the loop polyline at aircraft cruise altitude (white). */
 		for (size_t i = 0; i < n; ++i) {
 			const auto &a = loop.waypoints[i];
 			const auto &b = loop.waypoints[(i + 1) % n];
@@ -995,12 +956,22 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			if (HoldingSegVis(pa, pb, dpi)) GfxDrawLine(pa.x, pa.y, pb.x, pb.y, PC_WHITE, 1);
 		}
 
-		/* Draw gate approach curves and threshold markers */
 		for (const auto &gate : loop.gates) {
-			DrawHoldingApproachCurve(vp, dpi,
-				gate.approach_x, gate.approach_y,
-				gate.threshold_x, gate.threshold_y,
-				gate.approach_dir);
+			/* Yellow: loop gate waypoint → approach fix (the peel-off turn, still at altitude). */
+			if (gate.wp_index < n) {
+				const auto &wp = loop.waypoints[gate.wp_index];
+				Point pwp = HoldingWorldToScreen(vp, wp.x, wp.y);
+				Point pap = HoldingWorldToScreen(vp, gate.approach_x, gate.approach_y);
+				if (HoldingSegVis(pwp, pap, dpi)) GfxDrawLine(pwp.x, pwp.y, pap.x, pap.y, PC_YELLOW, 1);
+			}
+
+			/* Yellow: approach fix → threshold (straight final, descends from altitude to ground). */
+			Point pap = HoldingWorldToScreen(vp, gate.approach_x, gate.approach_y);
+			Point pth = HoldingWorldToScreen(vp, gate.threshold_x, gate.threshold_y, 0);
+			if (HoldingSegVis(pap, pth, dpi)) GfxDrawLine(pap.x, pap.y, pth.x, pth.y, PC_YELLOW, 1);
+
+			/* Red threshold marker at ground level. */
+			GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
 		}
 	}
 }
