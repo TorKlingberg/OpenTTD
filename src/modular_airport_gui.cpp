@@ -431,6 +431,11 @@ public:
 
 	void OnPlaceMouseUp([[maybe_unused]] ViewportPlaceMethod select_method, ViewportDragDropSelectionProcess select_proc, [[maybe_unused]] Point pt, TileIndex start_tile, TileIndex end_tile) override
 	{
+		/* Mirror other build toolbars: ignore canceled mouse-up events. */
+		if (pt.x == -1) return;
+		/* Guard against out-of-bounds drag endpoints before constructing TileArea. */
+		if (start_tile >= Map::Size() || end_tile >= Map::Size()) return;
+
 		if (select_proc == DDSP_DEMOLISH_AREA) {
 			/* Erase mode */
 			if (start_tile != end_tile) {
