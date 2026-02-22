@@ -52,22 +52,16 @@ if (dx == -1) dir_bit = 0x08;  // Code label: "West"
 
 ### Viewport Appearance (Empirical Test)
 
-A test airport was built with a hangar at (36, 60) and pieces placed all around it. Here's how coordinate changes appear on screen:
+A test airport was built with pieces placed all around. Here's how coordinate changes appear on screen and map to overlay sprites:
 
-| Code Label | Bitmask | Coord Change | Viewport Appearance | Example Positions |
-|------------|---------|--------------|---------------------|-------------------|
-| "East"     | 0x02    | (+1, 0)      | Right-ish diagonal  | (36,60)→(37,60)  |
-| "South"    | 0x04    | (0, +1)      | Down-right diagonal | (36,60)→(36,61)  |
-| "West"     | 0x08    | (-1, 0)      | Left-ish diagonal   | (36,60)→(35,60)  |
-| "North"    | 0x01    | (0, -1)      | Up-left diagonal    | (36,60)→(36,59)  |
+| Code Label | Bitmask | Coord Change | Viewport Appearance | SPR_ONEWAY_BASE Offset |
+|------------|---------|--------------|---------------------|------------------------|
+| "North"    | 0x01    | (0, -1)      | Up-left (NW)        | +3                     |
+| "East"     | 0x02    | (+1, 0)      | Down-left (SW)      | +0                     |
+| "South"    | 0x04    | (0, +1)      | Down-right (SE)     | +4                     |
+| "West"     | 0x08    | (-1, 0)      | Up-right (NE)       | +1                     |
 
-**Key Insight:** The hangar door at rotation=0 faces **down-right** on your screen, which corresponds to **increasing Y** (the code's "South" direction, bitmask 0x04).
-
-### Why This Matters
-
-The original code incorrectly set hangars to 0x02 ("East"), which is dx=+1. This would require the apron to be at +X position (appears more horizontal/right).
-
-But the hangar graphic clearly faces down-right, which is dy=+1 ("South", 0x04). That's why your vertical line of aprons (same X, increasing Y) didn't connect until we fixed the code.
+**Key Insight:** Coordinate changes move along the diagonal axes of the viewport.
 
 ## Combined Direction Bitmasks
 
@@ -103,12 +97,20 @@ This is different from an "operations starting from this end" interpretation.
 
 ### Visual Overlay Notes
 
-Runway overlay arrows use `SPR_ONEWAY_BASE` sprites. Observed in-game mapping:
+Runway and taxiway overlay arrows use `SPR_ONEWAY_BASE` sprites. Verified in-game mapping:
 
-- `RUF_DIR_LOW` (travel toward low X/Y) → aircraft move SW or SE on screen → sprites 0 (X-axis) and 3 (Y-axis)
-- `RUF_DIR_HIGH` (travel toward high X/Y) → aircraft move NE or NW on screen → sprites 1 (X-axis) and 4 (Y-axis)
+- **Sprite 0**: SW (Increasing X)
+- **Sprite 1**: NE (Decreasing X)
+- **Sprite 3**: NW (Decreasing Y)
+- **Sprite 4**: SE (Increasing Y)
 
-The apparent paradox: "toward low X" means decreasing X, which is left-ish on screen (West bitmask direction), which appears SW in the isometric view — so sprite 0 (SW arrow) is correct. Do not invert based on the flag name alone; validate against observed aircraft movement.
+**Modular Runway Direction Flags:**
+- `RUF_DIR_LOW` (Decreasing coordinate) points **NW** (3) or **NE** (1).
+- `RUF_DIR_HIGH` (Increasing coordinate) points **SE** (4) or **SW** (0).
+
+**Modular Airport Axis Mapping:**
+- **Rotation 0 & 2**: NE-SW axis. Corresponds to `ROAD_X` (Sprite offset 0).
+- **Rotation 1 & 3**: NW-SE axis. Corresponds to `ROAD_Y` (Sprite offset 3).
 
 ## Rotation Values
 
@@ -164,30 +166,11 @@ Saying "north" or "south" for viewport directions is confusing in isometric view
 
 When you see `dir_bit = 0x04; // South` in the code, don't think "southward on a compass". Think "dy=+1 direction" or "down-right on screen". The label is just a convenience.
 
-## Practical Example: Connecting to a Hangar
-
-**Scenario:** You place a hangar at position (40, 50) with rotation=0.
-
-**Question:** Where should you place the connecting apron?
-
-**Answer:**
-1. Hangar at rot=0 allows bitmask **0x04** (code's "South")
-2. Bitmask 0x04 = dy=+1 (increase Y, same X)
-3. Apron must be at position **(40, 51)**
-
-**On screen:** The apron will appear in the down-right direction from the hangar, which is exactly where the hangar door faces.
-
-**If the hangar were rotated 90° (rot=1):**
-1. Hangar at rot=1 allows bitmask **0x08** (code's "West")
-2. Bitmask 0x08 = dx=-1 (decrease X, same Y)
-3. Apron must be at position **(39, 50)**
-4. On screen: down-left from the hangar
-
 ## Empirical Test Data
 
 Test airport: Hangar at (36, 60) with gfx=24, rot=0
 
-Surrounding tiles (user's compass labels → actual coordinates):
+Surrounding tiles (user's compass labels -> actual coordinates):
 
 | User Label | Visual Position | Coordinates | Delta from Hangar | Movement Type |
 |------------|----------------|-------------|-------------------|---------------|
@@ -206,9 +189,9 @@ Surrounding tiles (user's compass labels → actual coordinates):
 
 | What You Want | Coordinate Change | Code Bitmask | Code Label |
 |---------------|-------------------|--------------|------------|
-| Right-ish on screen | dx = +1, dy = 0 | 0x02 | "East" |
+| Down-left on screen | dx = +1, dy = 0 | 0x02 | "East" |
 | Down-right on screen | dx = 0, dy = +1 | 0x04 | "South" |
-| Left-ish on screen | dx = -1, dy = 0 | 0x08 | "West" |
+| Up-right on screen | dx = -1, dy = 0 | 0x08 | "West" |
 | Up-left on screen | dx = 0, dy = -1 | 0x01 | "North" |
 
 ## References
@@ -220,4 +203,4 @@ Surrounding tiles (user's compass labels → actual coordinates):
 ---
 
 **Last Updated**: 2026-02-21
-**Author**: Based on empirical testing and bug fix for hangar direction confusion (SE vs South)
+**Author**: Based on empirical testing and finalized ground arrow verified mappings.

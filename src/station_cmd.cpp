@@ -4123,13 +4123,12 @@ static void DrawTile_Station(TileInfo *ti)
 					bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
 
 					if (can_land || can_takeoff) {
-						/* Visual mapping for runway flags (verified against in-game aircraft movement):
-						 * dir_low  -> X:SW (0), Y:SE (3)   [arrow points in the travel direction]
-						 * dir_high -> X:NE (1), Y:NW (4)
+						/* Visual mapping for runway flags (verified against oneway.png):
+						 * rotation=0 (NE-SW): dir_low (low coord) is NE (1), dir_high (high coord) is SW (0)
+						 * rotation=1 (NW-SE): dir_low (low coord) is NW (3), dir_high (high coord) is SE (4)
 						 *
-						 * Note: despite RUF_DIR_LOW meaning "toward low coordinates" (see coords.md),
-						 * aircraft travelling toward low-X/Y move SW/SE on screen, so the SW/SE
-						 * sprites are correct. Do not invert based on the flag name alone. */
+						 * Note: SPR_ONEWAY_BASE +0..2 are SW/NE (road Axis 0), +3..5 are NW/SE (road Axis 1).
+						 * Modular rotation 0/2 is Axis 0, 1/3 is Axis 1. */
 						SpriteID sprite;
 						PaletteID pal_overlay;
 
@@ -4137,11 +4136,11 @@ static void DrawTile_Station(TileInfo *ti)
 							/* Both directions - use "both" sprite (index 2 or 5) */
 							sprite = base + (horizontal ? 2 : 5);
 						} else if (dir_low) {
-							/* Low-direction only (see mapping note above). */
-							sprite = base + (horizontal ? 0 : 3);
+							/* Low-direction only (toward decreasing coordinates). */
+							sprite = base + (horizontal ? 1 : 3);
 						} else {
-							/* High-direction only (see mapping note above). */
-							sprite = base + (horizontal ? 1 : 4);
+							/* High-direction only (toward increasing coordinates). */
+							sprite = base + (horizontal ? 0 : 4);
 						}
 
 						/* Keep arrow sprite default-coloured; state colour is shown via tile overlay.
@@ -4169,16 +4168,19 @@ static void DrawTile_Station(TileInfo *ti)
 					const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
 
 					/* Map taxi direction bits to arrow sprites.
-					 * SPR_ONEWAY_BASE sprite directions are opposite of our N/E/S/W
-					 * movement bits, so flip by 180 degrees for display. */
+					 * N/E/S/W bits match coordinate movement:
+					 * dir 0x01 (dy=-1) -> up-right (NE) -> sprite 1
+					 * dir 0x02 (dx=+1) -> down-right (SE) -> sprite 4
+					 * dir 0x04 (dy=+1) -> down-left (SW) -> sprite 0
+					 * dir 0x08 (dx=-1) -> up-left (NW) -> sprite 3 */
 					if (dir == 0x01) {
-						sprite = base + 3; // N movement -> SE-pointing sprite
+						sprite = base + 3; // dy=-1 -> NW
 					} else if (dir == 0x02) {
-						sprite = base + 0; // E movement -> SW-pointing sprite
+						sprite = base + 0; // dx=+1 -> SW
 					} else if (dir == 0x04) {
-						sprite = base + 4; // S movement -> NW-pointing sprite
+						sprite = base + 4; // dy=+1 -> SE
 					} else if (dir == 0x08) {
-						sprite = base + 1; // W movement -> NE-pointing sprite
+						sprite = base + 1; // dx=-1 -> NE
 					}
 
 					if (sprite != 0) DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
