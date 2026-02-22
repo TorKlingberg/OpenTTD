@@ -961,9 +961,9 @@ static void DrawHoldingApproachCurve(const Viewport &vp, const DrawPixelInfo *dp
 	for (int i = 1; i <= N; ++i) {
 		double t  = (double)i / N;
 		double mt = 1.0 - t;
-		double bx = mt*mt*ax + 2*mt*t*cx + t*t*fx;
-		double by = mt*mt*ay + 2*mt*t*cy + t*t*fy;
-		Point cur = HoldingWorldToScreen(vp, (int)bx, (int)by);
+		double bx = mt * mt * (double)ax + 2 * mt * t * cx + t * t * fx;
+		double by = mt * mt * (double)ay + 2 * mt * t * cy + t * t * fy;
+		Point cur = HoldingWorldToScreen(vp, (int)std::round(bx), (int)std::round(by));
 		if (HoldingSegVis(prev, cur, dpi)) GfxDrawLine(prev.x, prev.y, cur.x, cur.y, PC_YELLOW, 1);
 		prev = cur;
 	}
