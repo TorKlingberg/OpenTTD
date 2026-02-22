@@ -91,7 +91,11 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 | File | Purpose |
 |------|---------|
-| `src/aircraft_cmd.cpp` | All aircraft movement logic (~5000 lines). Modular airport logic starts around line 110. |
+| `src/modular_airport_cmd.cpp` | All modular airport movement, reservation, holding-loop, and pathfinding logic (~2500 lines). |
+| `src/modular_airport_cmd.h` | Declarations + inline helpers (`IsModularRunwayPiece`, `IsRunwayPieceOnAxis`, MGT_* constants). |
+| `src/modular_airport_gui.cpp` | Modular airport builder UI (`BuildModularAirportWindow` + hangar/cosmetic pickers). |
+| `src/modular_airport_gui.h` | `ShowBuildModularAirportWindow` + shared GUI globals. |
+| `src/aircraft_cmd.cpp` | Classic FTA state machine, event handlers, shared mechanics (`UpdateAircraftSpeed`, etc.). |
 | `src/aircraft.h` | Aircraft struct. Modular fields at lines 87-101. |
 | `src/airport_ground_pathfinder.cpp` | A* ground pathfinder + segment classification |
 | `src/airport_ground_pathfinder.h` | `TaxiPath`, `TaxiSegment`, `TaxiSegmentType`, `BuildTaxiPath` |
@@ -99,7 +103,7 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 | `src/station_map.h` | Tile reservation functions: `HasAirportTileReservation`, `SetAirportTileReservation`, `GetAirportTileReserver` |
 | `src/table/airporttile_ids.h` | `AirportTiles` enum: `APT_STAND`, `APT_APRON`, `APT_RUNWAY_*`, `APT_DEPOT_*`, etc. |
 | `src/station_cmd.cpp` | `CmdBuildModularAirportTile`, `CmdSetTaxiwayFlags`, `CmdSetRunwayFlags` |
-| `src/airport_gui.cpp` | Airport tile placement UI |
+| `src/airport_gui.cpp` | Shared airport toolbar + classic FTA airport picker UI |
 
 ## Tile Classification
 
@@ -193,7 +197,7 @@ TAKEOFF / STARTTAKEOFF / ENDTAKEOFF
 
 **Runway**: `TryReserveContiguousModularRunway` atomically reserves all tiles of the contiguous runway. Landing uses `TryReserveLandingChain` (runway + exit path) before committing to land.
 
-Key helper functions in `aircraft_cmd.cpp`:
+Key helper functions in `modular_airport_cmd.cpp`:
 - `TryReserveLandingChain` — reserves runway + exit path before landing commit
 - `SetTaxiReservation` / `ClearTaxiReservation` — per-tile reservation wrappers
 - `ClearTaxiPathState` — releases all non-runway reservations and frees `taxi_path`
