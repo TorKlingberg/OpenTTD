@@ -945,7 +945,7 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 
 		const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 		const size_t n = loop.waypoints.size();
-		if (n < 2) continue;
+		if (n < 2 || loop.gates.empty()) continue; /* Skip fallback rectangular loop (no gates). */
 
 		/* Draw the loop polyline at aircraft cruise altitude (white). */
 		for (size_t i = 0; i < n; ++i) {
