@@ -98,6 +98,7 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	TileIndex modular_takeoff_tile = INVALID_TILE; ///< Runway tile targeted for modular takeoff
 	uint16_t modular_takeoff_progress = 0; ///< Progress along modular takeoff roll
 	std::vector<TileIndex> modular_runway_reservation{}; ///< Reserved contiguous runway tiles for landing/takeoff
+	uint32_t modular_holding_wp_index = UINT32_MAX; ///< Per-aircraft position on holding loop (UINT32_MAX = uninitialised, not saved)
 
 	Aircraft(VehicleID index) : SpecializedVehicleBase(index) {}
 	/** We want to 'destruct' the right class. */

@@ -125,8 +125,8 @@ static bool IsModularHangarPiece(uint8_t piece_type);
 static Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile);
 static const ModularHoldingLoop &GetModularHoldingLoop(const Station *st);
 static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
-static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index = nullptr);
-static uint32_t GetModularHoldingWaypointIndex(const Aircraft *v, uint32_t n_wp);
+static void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index = nullptr);
+static uint32_t GetNearestModularHoldingWaypoint(const Aircraft *v, const ModularHoldingLoop &loop);
 static bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp);
 static inline bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 
@@ -1928,7 +1928,9 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
-				const uint32_t aircraft_wp = GetModularHoldingWaypointIndex(v, n_wp);
+				/* Position-based nearest waypoint — consistent with movement targeting,
+				 * so the gate fires when the aircraft is physically near the gate waypoint. */
+				const uint32_t aircraft_wp = GetNearestModularHoldingWaypoint(v, loop);
 
 				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
 					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index, n_wp)) continue;
@@ -1988,6 +1990,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
 				v->modular_landing_tile = runway_tile;
 				v->modular_landing_stage = 0;
+				v->modular_holding_wp_index = UINT32_MAX; // reset; next FLYING entry reinitialises from ghost phase
 				v->state = landingtype; // LANDING / HELILANDING
 				if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
 				if (ShouldLogModularRateLimited(v->index, 21, 64)) {
@@ -3366,11 +3369,24 @@ static void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loo
 	}
 }
 
-static uint32_t GetModularHoldingWaypointIndex(const Aircraft *v, uint32_t n_wp)
+/**
+ * Find the waypoint in the holding loop closest to the aircraft's current pixel position.
+ * Position-based (not time-based) so it works correctly regardless of aircraft speed,
+ * and avoids the "ghost laps the plane" problem that occurs with phase-driven targeting.
+ */
+static uint32_t GetNearestModularHoldingWaypoint(const Aircraft *v, const ModularHoldingLoop &loop)
 {
+	const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
 	if (n_wp == 0) return 0;
-	const uint32_t offset = (v->index.base() % n_wp) * MODULAR_HOLDING_TICKS_PER_WP;
-	return static_cast<uint32_t>((v->tick_counter + offset) / MODULAR_HOLDING_TICKS_PER_WP) % n_wp;
+	uint32_t nearest = 0;
+	int64_t min_d2 = INT64_MAX;
+	for (uint32_t i = 0; i < n_wp; ++i) {
+		const int64_t dx = v->x_pos - loop.waypoints[i].x;
+		const int64_t dy = v->y_pos - loop.waypoints[i].y;
+		const int64_t d2 = dx * dx + dy * dy;
+		if (d2 < min_d2) { min_d2 = d2; nearest = i; }
+	}
+	return nearest;
 }
 
 static bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp)
@@ -3380,7 +3396,7 @@ static bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t
 	return diff == 0 || diff == (n_wp - 1);
 }
 
-static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index)
+static void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index)
 {
 	const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 	const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
@@ -3393,21 +3409,41 @@ static void GetModularHoldingWaypointTarget(const Aircraft *v, const Station *st
 		return;
 	}
 
-	const uint32_t offset_ticks = (v->index.base() % n_wp) * MODULAR_HOLDING_TICKS_PER_WP;
-	const uint32_t phase_ticks = v->tick_counter + offset_ticks;
-	const uint32_t wp = (phase_ticks / MODULAR_HOLDING_TICKS_PER_WP) % n_wp;
-	const uint32_t next_wp = (wp + 1) % n_wp;
-	const uint32_t seg_tick = phase_ticks % MODULAR_HOLDING_TICKS_PER_WP;
+	static constexpr uint32_t LOOKAHEAD = 5; ///< Waypoints ahead of base to steer toward.
+	/* ADVANCE_DIST_SQ: when the aircraft is within this squared-pixel distance of the
+	 * current target waypoint, advance the base index by one.  Advancing early (before
+	 * reaching the exact pixel) prevents the aircraft from catching the target and
+	 * circling it while waiting for the ghost clock to tick. */
+	static constexpr int ADVANCE_DIST    = TILE_SIZE * 3; // 3 tiles
+	static constexpr int ADVANCE_DIST_SQ = ADVANCE_DIST * ADVANCE_DIST;
 
-	if (wp_index != nullptr) *wp_index = wp;
+	/* Initialise or reinitialise the per-aircraft base index from the time-based ghost.
+	 * The ghost spreads aircraft around the whole loop via their vehicle-index offset, so
+	 * planes that arrive at the airport at different times start at different loop phases
+	 * and visit both runway gates.  UINT32_MAX (or a stale index >= n_wp) means the
+	 * index needs to be set. */
+	if (v->modular_holding_wp_index == UINT32_MAX || v->modular_holding_wp_index >= n_wp) {
+		const uint64_t offset   = static_cast<uint64_t>(v->index.base() % n_wp) * MODULAR_HOLDING_TICKS_PER_WP;
+		const uint64_t phase    = TimerGameTick::counter + offset;
+		v->modular_holding_wp_index = static_cast<uint32_t>((phase / MODULAR_HOLDING_TICKS_PER_WP) % n_wp);
+	}
 
-	const int x0 = loop.waypoints[wp].x;
-	const int y0 = loop.waypoints[wp].y;
-	const int x1 = loop.waypoints[next_wp].x;
-	const int y1 = loop.waypoints[next_wp].y;
+	/* Advance the base index whenever the aircraft closes within ADVANCE_DIST of the
+	 * current lookahead target.  This decouples progress from the ghost clock and means
+	 * the target moves continuously as the aircraft flies, preventing it from catching
+	 * a fixed point and circling it. */
+	const uint32_t target_wp = (v->modular_holding_wp_index + LOOKAHEAD) % n_wp;
+	const int64_t tdx = v->x_pos - loop.waypoints[target_wp].x;
+	const int64_t tdy = v->y_pos - loop.waypoints[target_wp].y;
+	if (tdx * tdx + tdy * tdy <= ADVANCE_DIST_SQ) {
+		v->modular_holding_wp_index = (v->modular_holding_wp_index + 1) % n_wp;
+	}
 
-	*target_x = x0 + static_cast<int>((static_cast<int64_t>(x1 - x0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
-	*target_y = y0 + static_cast<int>((static_cast<int64_t>(y1 - y0) * seg_tick) / MODULAR_HOLDING_TICKS_PER_WP);
+	/* Recompute target after possible advance. */
+	const uint32_t final_target_wp = (v->modular_holding_wp_index + LOOKAHEAD) % n_wp;
+	*target_x = loop.waypoints[final_target_wp].x;
+	*target_y = loop.waypoints[final_target_wp].y;
+	if (wp_index != nullptr) *wp_index = v->modular_holding_wp_index;
 }
 
 
@@ -4888,7 +4924,14 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 	TileIndex runway = INVALID_TILE;
 
 	if (v->subtype == AIR_AIRCRAFT) {
-		GetModularHoldingWaypointTarget(v, st, &target_x, &target_y);
+		uint32_t nearest_wp = 0;
+		GetModularHoldingWaypointTarget(v, st, &target_x, &target_y, &nearest_wp);
+		/* Log at level 3 once every ~256 ticks per aircraft (staggered by vehicle index). */
+		if ((TimerGameTick::counter & 0xFF) == (v->index.base() & 0xFF)) {
+			const uint32_t n_wp = static_cast<uint32_t>(GetModularHoldingLoop(st).waypoints.size());
+			Debug(misc, 3, "[ModAp] Hold V{}: nearest={}/{} pos=({},{}) target=({},{})",
+				v->index, nearest_wp, n_wp, v->x_pos, v->y_pos, target_x, target_y);
+		}
 	} else {
 		/* Keep helicopter behaviour as-is for now; loop tuning differs for rotors. */
 		TileIndex target = st->airport.tile;
@@ -4909,51 +4952,44 @@ static void AirportMoveModularFlying(Aircraft *v, const Station *st)
 			v->x_pos, v->y_pos, v->z_pos, target_x, target_y, dist, runway.base());
 	}
 
+	/* Rate-limited turning: only apply a new heading once turn_counter reaches 0 and there
+	 * is a non-zero distance to the target. Mirrors the FTA SlowTurn logic (~line 1138)
+	 * which uses 2*plane_speed ticks between turns to prevent rapid heading flips. */
 	if (dist > 0) {
-		/* Smooth turning for flying aircraft */
 		if (v->turn_counter > 0) {
 			v->turn_counter--;
-		}
-
-		/* Calculate desired direction */
-		Direction new_dir = GetDirectionTowards(v, target_x, target_y);
-
-		/* Check if we need to turn */
-		if (new_dir != v->direction) {
-			/* Track consecutive turns */
-			if (new_dir == v->last_direction) {
-				v->number_consecutive_turns = 0;
-			} else {
-				v->number_consecutive_turns++;
-				/* For flying, allow more turns before detecting stuck (they might be circling) */
+		} else {
+			Direction new_dir = GetDirectionTowards(v, target_x, target_y);
+			if (new_dir != v->direction) {
+				if (new_dir == v->last_direction) {
+					v->number_consecutive_turns = 0;
+				} else {
+					v->number_consecutive_turns++;
+				}
+				v->turn_counter = 2 * _settings_game.vehicle.plane_speed;
+				v->last_direction = v->direction;
+				v->direction = new_dir;
+				SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 			}
-
-			/* Initiate turn - flying aircraft turn faster than ground */
-			v->turn_counter = v->subtype == AIR_HELICOPTER ? 0 : 1; // Helicopters instant, planes 1 tick delay
-			v->last_direction = v->direction;
-			v->direction = new_dir;
-			/* Update visual so the intermediate 45° direction is rendered */
-			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 		}
+	}
 
-		/* Direction is correct, now move */
-		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_HOLD);
+	/* Always update speed and move regardless of dist. The target is a lookahead waypoint
+	 * that the ghost advances discretely every MODULAR_HOLDING_TICKS_PER_WP ticks; wrapping
+	 * all movement inside `if (dist > 0)` caused the aircraft to freeze for up to one full
+	 * waypoint period (~1 s) each time it caught the target. */
+	int count = UpdateAircraftSpeed(v, SPEED_LIMIT_HOLD);
+	for (int i = 0; i < count; i++) {
+		GetNewVehiclePosResult gp = GetNewVehiclePos(v);
+		v->x_pos = gp.x;
+		v->y_pos = gp.y;
+		v->tile = TileIndex{}; // In air
 
-		/* Move */
-		for (int i = 0; i < count; i++) {
-			if (v->x_pos == target_x && v->y_pos == target_y) break;
-			GetNewVehiclePosResult gp = GetNewVehiclePos(v);
-			v->x_pos = gp.x;
-			v->y_pos = gp.y;
-			v->tile = TileIndex{}; // In air
+		int target_z = GetAircraftFlightLevel(v);
+		if (v->z_pos < target_z) v->z_pos++;
+		else if (v->z_pos > target_z) v->z_pos--;
 
-			/* Altitude correction */
-			int target_z = GetAircraftFlightLevel(v);
-			if (v->z_pos < target_z) v->z_pos++;
-			else if (v->z_pos > target_z) v->z_pos--;
-
-			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
-		}
+		SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 	}
 }
 
