@@ -72,6 +72,7 @@
 #include "cheat_type.h"
 #include "road_func.h"
 #include "station_layout_type.h"
+#include "modular_airport_cmd.h"
 
 #include "widgets/station_widget.h"
 #include "widgets/misc_widget.h"
@@ -103,29 +104,6 @@ static bool IsModularTaxiwayPiece(uint8_t piece_type)
 		default:
 			return false;
 	}
-}
-
-static bool IsModularRunwayPiece(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_RUNWAY_1:
-		case APT_RUNWAY_2:
-		case APT_RUNWAY_3:
-		case APT_RUNWAY_4:
-		case APT_RUNWAY_5:
-		case APT_RUNWAY_END:
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default:
-			return false;
-	}
-}
-
-static inline bool IsRunwayPieceOnAxis(const ModularAirportTileData *data, bool horizontal)
-{
-	return data != nullptr && IsModularRunwayPiece(data->piece_type) && (((data->rotation % 2) == 0) == horizontal);
 }
 
 /**

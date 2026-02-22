@@ -54,11 +54,15 @@ add_files(
     aircraft.h
     aircraft_cmd.cpp
     aircraft_cmd.h
+    modular_airport_cmd.cpp
+    modular_airport_cmd.h
     aircraft_gui.cpp
     airport.cpp
     airport.h
     airport_cmd.h
     airport_gui.cpp
+    modular_airport_gui.cpp
+    modular_airport_gui.h
     airport_pathfinder.cpp
     airport_pathfinder.h
     airport_ground_pathfinder.cpp
