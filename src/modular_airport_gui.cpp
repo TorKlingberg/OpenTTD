@@ -326,6 +326,11 @@ public:
 		}
 
 		uint8_t flags = data->runway_flags;
+		/* Runway direction is one-way only. Normalize invalid/legacy masks. */
+		uint8_t dirs = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+		if (dirs != RUF_DIR_LOW && dirs != RUF_DIR_HIGH) {
+			flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_LOW;
+		}
 
 		if (_ctrl_pressed) {
 			/* Ctrl+click: cycle usage (both -> landing only -> takeoff only -> both) */
@@ -338,15 +343,9 @@ public:
 				flags = (flags & ~(RUF_LANDING | RUF_TAKEOFF)) | RUF_LANDING | RUF_TAKEOFF;
 			}
 		} else {
-			/* Left-click: cycle direction (both -> low only -> high only -> both) */
-			uint8_t dirs = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
-			if (dirs == (RUF_DIR_LOW | RUF_DIR_HIGH)) {
-				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_LOW;
-			} else if (dirs == RUF_DIR_LOW) {
-				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_HIGH;
-			} else {
-				flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | RUF_DIR_LOW | RUF_DIR_HIGH;
-			}
+			/* Left-click: toggle one-way direction (low <-> high). */
+			dirs = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+			flags = (flags & ~(RUF_DIR_LOW | RUF_DIR_HIGH)) | (dirs == RUF_DIR_LOW ? RUF_DIR_HIGH : RUF_DIR_LOW);
 		}
 
 		Command<CMD_SET_RUNWAY_FLAGS>::Post(tile, flags);

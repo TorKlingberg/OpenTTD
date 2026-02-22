@@ -3002,9 +3002,10 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 
 	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
 
-	/* Validate flags: at least one operation and one direction must be set */
+	/* Validate flags: at least one operation and exactly one direction must be set */
 	if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
-	if ((runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH)) == 0) return CMD_ERROR;
+	uint8_t dir_flags = runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+	if (dir_flags != RUF_DIR_LOW && dir_flags != RUF_DIR_HIGH) return CMD_ERROR;
 
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return CMD_ERROR;
