@@ -3103,22 +3103,34 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_EMPTY_FENCE_NE:
 			return APT_EMPTY;
 
-		/* Buildings/terminals/pier/radar → cosmetic building */
+		/* Buildings — preserve variety using cosmetic picker pieces */
 		case APT_BUILDING_1:
+			return APT_BUILDING_1;
 		case APT_BUILDING_2:
+			return APT_BUILDING_2;
 		case APT_BUILDING_3:
+			return APT_BUILDING_3;
 		case APT_ROUND_TERMINAL:
-		case APT_SMALL_BUILDING_1:
-		case APT_SMALL_BUILDING_2:
-		case APT_SMALL_BUILDING_3:
-		case APT_PIER:
-		case APT_PIER_NW_NE:
-		case APT_RADAR_FENCE_SW:
-		case APT_RADAR_FENCE_NE:
-		case APT_RADIO_TOWER_FENCE_NE:
+			return APT_ROUND_TERMINAL;
 		case APT_LOW_BUILDING:
 		case APT_LOW_BUILDING_FENCE_N:
 		case APT_LOW_BUILDING_FENCE_NW:
+			return APT_LOW_BUILDING;
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+			return APT_RADAR_FENCE_NE;
+		case APT_RADIO_TOWER_FENCE_NE:
+			return APT_RADIO_TOWER_FENCE_NE;
+
+		/* Small buildings — available in cosmetic picker */
+		case APT_SMALL_BUILDING_1:
+			return APT_SMALL_BUILDING_1;
+		case APT_SMALL_BUILDING_2:
+			return APT_SMALL_BUILDING_2;
+		case APT_SMALL_BUILDING_3:
+			return APT_SMALL_BUILDING_3;
+		case APT_PIER:
+		case APT_PIER_NW_NE:
 			return APT_BUILDING_1;
 
 		default:
@@ -3324,11 +3336,11 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			}
 
 			Tile t(cur_tile);
-			MakeAirport(t, st->owner, st->index, stock_gfx, WaterClass::Invalid);
+			MakeAirport(t, st->owner, st->index, piece_type, WaterClass::Invalid);
 			SetStationTileRandomBits(t, GB(Random(), 0, 4));
 			st->airport.Add(cur_tile);
 
-			if (AirportTileSpec::Get(GetTranslatedAirportTileID(stock_gfx))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+			if (AirportTileSpec::Get(GetTranslatedAirportTileID(piece_type))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
 
 			ModularAirportTileData tile_data;
 			tile_data.tile = cur_tile;
