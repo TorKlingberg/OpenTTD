@@ -2850,6 +2850,16 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
 	}
 
+	/* Enforce same height level across the entire modular airport. */
+	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) &&
+			st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
+		int existing_z = GetTileMaxZ(st->airport.modular_tile_data->front().tile);
+		int new_z = GetTileMaxZ(tile);
+		if (new_z != existing_z) {
+			return CommandCost(STR_ERROR_FLAT_LAND_REQUIRED);
+		}
+	}
+
 	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
 	if (ret.Failed()) return ret;
 
@@ -2976,6 +2986,10 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.modular_holding_loop_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
+
+		/* Mark tile dirty with generous height to ensure tall building sprites
+		 * (terminals, towers, radar) are fully redrawn immediately. */
+		MarkTileDirtyByTile(tile, 0, TILE_HEIGHT * 4);
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);

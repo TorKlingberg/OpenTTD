@@ -98,7 +98,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_NSRUNWAY2,              PC_DARK_GREY},    // 0
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY},    // 0
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       SPR_NSRUNWAY_END,           PC_DARK_GREY},    // 1
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, SPR_AIRFIELD_RUNWAY_MIDDLE, PC_DARK_GREY},    // 2  (smart-drag: auto-adds near/far ends)
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_TERMINAL_A,     PC_ORANGE},       // 3 (cosmetic picker)
@@ -257,14 +257,11 @@ public:
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
 			bool already_selected = (new_piece == this->selected_piece);
-			bool picker_open = (FindWindowByClass(WC_BUILD_DEPOT) != nullptr);
 			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5);
-			/* Toggle: clicking the same picker-piece again closes the picker. */
-			bool toggle_close = (already_selected && picker_open && wants_picker);
 
 			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
-			if (toggle_close) {
-				/* Deselect everything: no piece highlighted, cursor reset to arrow. */
+			if (already_selected) {
+				/* Toggle off: clicking the same piece deselects it. */
 				this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 			} else {
 				this->selected_piece = new_piece;
@@ -277,8 +274,8 @@ public:
 			CloseWindowByClass(WC_BUILD_DEPOT);
 			this->UpdatePlacementCursor();
 
-			/* Re-open picker (unless we just toggled it closed). */
-			if (wants_picker && !toggle_close) {
+			/* Open picker for pieces that need one (unless we just toggled off). */
+			if (wants_picker && !already_selected) {
 				if (new_piece == 4 || new_piece == 5) {
 					ShowModularHangarPicker(this, new_piece == 4);
 				} else {
@@ -654,6 +651,33 @@ private:
 			if (piece_count < 3) {
 				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_RUNWAY_TOO_SHORT), {}, WL_INFO);
 				return false;
+			}
+		}
+
+		/* All tiles in the drag must be at the same height level. */
+		int required_z = -1;
+		for (TileIndex tile : ta) {
+			if (!IsValidTile(tile)) continue;
+			int z = GetTileMaxZ(tile);
+			if (required_z < 0) {
+				required_z = z;
+			} else if (z != required_z) {
+				ShowErrorMessage(GetEncodedString(STR_ERROR_FLAT_LAND_REQUIRED), {}, WL_INFO);
+				return false;
+			}
+		}
+
+		/* If joining an existing modular airport, the drag must match its height. */
+		StationID nearby = FindNearbyStation(ta);
+		if (nearby != StationID::Invalid()) {
+			Station *st = Station::GetIfValid(nearby);
+			if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) &&
+					st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
+				int existing_z = GetTileMaxZ(st->airport.modular_tile_data->front().tile);
+				if (required_z >= 0 && required_z != existing_z) {
+					ShowErrorMessage(GetEncodedString(STR_ERROR_FLAT_LAND_REQUIRED), {}, WL_INFO);
+					return false;
+				}
 			}
 		}
 

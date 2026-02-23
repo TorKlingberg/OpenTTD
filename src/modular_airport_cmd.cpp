@@ -1039,7 +1039,7 @@ static void SampleDubinsPath(const DubinsPath &path, double step_px, std::vector
 			const double len = std::hypot(dx, dy);
 			if (len <= 1e-9) continue;
 
-			const int count = static_cast<int>(std::floor(len / step_px));
+			const int count = static_cast<int>(std::floor(len / step_px + 1e-7));
 			for (int i = 1; i <= count; ++i) {
 				const double t = (static_cast<double>(i) * step_px) / len;
 				if (t >= 1.0 - 1e-9) break;
@@ -1058,7 +1058,8 @@ struct GateInfo {
 	Direction approach_dir;
 	double hdx;
 	double hdy;
-	double sort_angle;
+	int rel_x; ///< gate_x - center_x (integer, for deterministic angular sort)
+	int rel_y; ///< gate_y - center_y (integer, for deterministic angular sort)
 };
 
 static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
@@ -1080,8 +1081,9 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 	}
 	if (min_x == INT_MAX) return;
 
-	const double center_x = static_cast<double>((min_x + max_x) * TILE_SIZE) / 2.0 + TILE_SIZE / 2.0;
-	const double center_y = static_cast<double>((min_y + max_y) * TILE_SIZE) / 2.0 + TILE_SIZE / 2.0;
+	/* Use doubled coordinates to avoid fractional center (integer-exact for deterministic sorting). */
+	const int center_2x = (min_x + max_x) * TILE_SIZE + TILE_SIZE;
+	const int center_2y = (min_y + max_y) * TILE_SIZE + TILE_SIZE;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
@@ -1115,12 +1117,26 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 		gate.approach_dir = approach_dir;
 		gate.hdx = hdx;
 		gate.hdy = hdy;
-		gate.sort_angle = std::atan2(static_cast<double>(approach_y) - center_y, static_cast<double>(approach_x) - center_x);
+		gate.rel_x = approach_x * 2 - center_2x;
+		gate.rel_y = approach_y * 2 - center_2y;
 		gates.push_back(gate);
 	}
 
-	std::sort(gates.begin(), gates.end(), [](const GateInfo &a, const GateInfo &b) {
-		if (a.sort_angle != b.sort_angle) return a.sort_angle < b.sort_angle;
+	/* Deterministic angular sort using integer quadrant + cross-product (no transcendental functions).
+	 * This avoids floating-point non-determinism that could cause multiplayer desyncs. */
+	auto Quadrant = [](int x, int y) -> int {
+		if (x > 0 && y >= 0) return 0;
+		if (x <= 0 && y > 0) return 1;
+		if (x < 0 && y <= 0) return 2;
+		return 3;
+	};
+	std::sort(gates.begin(), gates.end(), [&Quadrant](const GateInfo &a, const GateInfo &b) {
+		int qa = Quadrant(a.rel_x, a.rel_y);
+		int qb = Quadrant(b.rel_x, b.rel_y);
+		if (qa != qb) return qa < qb;
+		/* Same quadrant: use cross-product for deterministic ordering. */
+		int64_t cross = static_cast<int64_t>(a.rel_x) * b.rel_y - static_cast<int64_t>(a.rel_y) * b.rel_x;
+		if (cross != 0) return cross > 0;
 		return a.runway_tile.base() < b.runway_tile.base();
 	});
 }
