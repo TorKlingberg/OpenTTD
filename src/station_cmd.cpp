@@ -2794,6 +2794,8 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
  * @param one_way_taxi whether taxi is one-way only
  * @return the cost of this operation or an error
  */
+static Money GetModularAirportPieceBuildCost(uint8_t piece_type);
+
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
@@ -2863,7 +2865,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
 	if (ret.Failed()) return ret;
 
-	cost.AddCost(_price[Price::BuildStationAirport]);
+	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		bool new_facility = !st->facilities.Test(StationFacility::Airport);
@@ -3150,6 +3152,145 @@ struct StockTileOverride {
 	uint8_t piece_type;
 };
 
+static constexpr StockTileOverride _country_stock_to_modular_overrides[] = {
+	{0, 0, APT_GRASS_1}, {2, 0, APT_GRASS_1},  /* flank low building with grass */
+	{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
+};
+
+static uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type)
+{
+	std::span<const StockTileOverride> tile_overrides;
+	switch (airport_type) {
+		case AT_SMALL:
+			tile_overrides = _country_stock_to_modular_overrides;
+			break;
+		default:
+			break;
+	}
+
+	for (const auto &ovr : tile_overrides) {
+		if (ovr.x == dx && ovr.y == dy) return ovr.piece_type;
+	}
+	return piece_type;
+}
+
+static Money ScaleModularAirportCost(Money base, uint16_t percent)
+{
+	/* Keep costs integral while preserving intended ratios. */
+	return static_cast<Money>((static_cast<int64_t>(base) * percent + 50) / 100);
+}
+
+static Money GetModularAirportPieceBuildCost(uint8_t piece_type)
+{
+	const Money base = _price[Price::BuildStationAirport];
+
+	switch (piece_type) {
+		/* New runway pieces */
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+			return ScaleModularAirportCost(base, 155);
+
+		/* Old/small runway pieces */
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return ScaleModularAirportCost(base, 125);
+
+		/* Stands */
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return ScaleModularAirportCost(base, 135);
+
+		/* Apron / taxiway surfaces */
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_E:
+		case APT_ARPON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_PIER_NW_NE:
+		case APT_PIER:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return ScaleModularAirportCost(base, 90);
+
+		/* Hangars */
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+			return ScaleModularAirportCost(base, 170);
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return ScaleModularAirportCost(base, 145);
+
+		/* Helipad / heliport */
+		case APT_HELIPORT:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return ScaleModularAirportCost(base, 145);
+
+		/* Big terminals */
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+			return ScaleModularAirportCost(base, 30);
+
+		/* Low terminal */
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+			return ScaleModularAirportCost(base, 18);
+
+		/* Ops/cosmetic structures */
+		case APT_TOWER:
+		case APT_TOWER_FENCE_SW:
+		case APT_RADAR_GRASS_FENCE_SW:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+		case APT_RADIO_TOWER_FENCE_NE:
+		case APT_GRASS_FENCE_NE_FLAG_2:
+			return ScaleModularAirportCost(base, 24);
+
+		/* Grass/empty/filler */
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_2:
+		case APT_GRASS_1:
+		case APT_GRASS_FENCE_NE_FLAG:
+			return ScaleModularAirportCost(base, 8);
+
+		default:
+			return base;
+	}
+}
+
 /**
  * Build a stock airport layout as a modular airport.
  * @param flags Command flags.
@@ -3234,7 +3375,12 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 	}
 
 	for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
-		cost.AddCost(_price[Price::BuildStationAirport]);
+		TileIndex cur_tile = iter;
+		int dx = TileX(cur_tile) - TileX(tile);
+		int dy = TileY(cur_tile) - TileY(tile);
+		uint8_t piece_type = MapStockGfxToModularPiece(iter.GetStationGfx());
+		piece_type = ApplyStockTileOverride(airport_type, dx, dy, piece_type);
+		cost.AddCost(GetModularAirportPieceBuildCost(piece_type));
 	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {
@@ -3263,20 +3409,12 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			{10, RUF_LANDING | RUF_DIR_LOW},
 		};
 
-		/* Per-airport tile overrides */
-		static const StockTileOverride country_overrides[] = {
-			{0, 0, APT_GRASS_1}, {2, 0, APT_GRASS_1},  /* flank low building with grass */
-			{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
-		};
-
 		/* Select configs based on airport type */
 		std::span<const StockRunwayConfig> runway_configs;
-		std::span<const StockTileOverride> tile_overrides;
 
 		switch (airport_type) {
 			case AT_SMALL:
 				runway_configs = country_runways;
-				tile_overrides = country_overrides;
 				break;
 			case AT_COMMUTER:
 				runway_configs = commuter_runways;
@@ -3296,8 +3434,6 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			default:
 				break;
 		}
-
-		/* No map needed — overrides are small, just linear scan */
 
 		nearest->noise_reached += newnoise_level;
 
@@ -3321,14 +3457,8 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			int dx = TileX(cur_tile) - TileX(tile);
 			int dy = TileY(cur_tile) - TileY(tile);
 
-			/* Check for override */
 			uint8_t piece_type = MapStockGfxToModularPiece(stock_gfx);
-			for (const auto &ovr : tile_overrides) {
-				if (ovr.x == dx && ovr.y == dy) {
-					piece_type = ovr.piece_type;
-					break;
-				}
-			}
+			piece_type = ApplyStockTileOverride(airport_type, dx, dy, piece_type);
 
 			Tile t(cur_tile);
 			MakeAirport(t, st->owner, st->index, piece_type, WaterClass::Invalid);
