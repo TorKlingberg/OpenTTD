@@ -85,6 +85,7 @@
 #include "safeguards.h"
 
 extern bool _show_runway_direction_overlay;
+extern bool _show_holding_overlay;
 
 static bool IsModularTaxiwayPiece(uint8_t piece_type)
 {
@@ -2974,6 +2975,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		tile_data_vec.push_back(tile_data);
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.modular_holding_loop_dirty = true;
+		if (_show_holding_overlay) MarkWholeScreenDirty();
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
@@ -3039,6 +3041,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 			current = next;
 		}
 		st->airport.modular_holding_loop_dirty = true;
+		if (_show_holding_overlay) MarkWholeScreenDirty();
 	}
 
 	return CommandCost();
@@ -3116,6 +3119,7 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			);
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.modular_holding_loop_dirty = true;
+		if (_show_holding_overlay) MarkWholeScreenDirty();
 		}
 
 		st->rect.AfterRemoveTile(st, tile);
@@ -3143,6 +3147,7 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			delete st->airport.modular_holding_loop;
 			st->airport.modular_holding_loop = nullptr;
 			st->airport.modular_holding_loop_dirty = true;
+		if (_show_holding_overlay) MarkWholeScreenDirty();
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
 			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
@@ -3226,6 +3231,7 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		delete st->airport.modular_holding_loop;
 		st->airport.modular_holding_loop = nullptr;
 		st->airport.modular_holding_loop_dirty = true;
+		if (_show_holding_overlay) MarkWholeScreenDirty();
 
 		st->rect.AfterRemoveRect(st, st->airport);
 
