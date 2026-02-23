@@ -3095,8 +3095,9 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_GRASS_2:
 		case APT_GRASS_FENCE_SW:
 		case APT_GRASS_FENCE_NE_FLAG:
-		case APT_GRASS_FENCE_NE_FLAG_2:
 			return APT_GRASS_1;
+		case APT_GRASS_FENCE_NE_FLAG_2:
+			return APT_GRASS_FENCE_NE_FLAG_2; // Preserve modular windsock.
 
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
