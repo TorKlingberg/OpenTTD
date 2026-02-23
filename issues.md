@@ -1,4 +1,12 @@
+* Sometimes when building an airport building, parts of the building don't appear immediately.
+
 * Pressing buttons like runway again should unpress them, and stop building runways.
+
+* Airports can be built on slopes. They should require entirely flat terrain. Or at least the entire airport should be on the same level.
+
+* "Show holding loop" button needs its own icon
+
+* Runway button should show runway going east-west instead 
 
 *  While the logic is sound for single-player, the use of double in simulation-critical code poses a risk of desyncs in multiplayer:
    - Sampling Count: The use of std::floor(len / step_px) on floating-point lengths is dangerous. If two clients calculate the length with even a tiny discrepancy (e.g., due to different CPU architectures or compiler optimizations), they might end up with a different number of waypoints in the waypoints vector. This will cause an immediate desync when
