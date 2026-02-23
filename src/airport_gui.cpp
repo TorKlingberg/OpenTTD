@@ -63,6 +63,7 @@
 static AirportClassID _selected_airport_class; ///< the currently visible airport class
 static int _selected_airport_index;            ///< the index of the selected airport in the current class or -1
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
+static bool _build_airport_as_modular = false; ///< whether to build stock airports as modular
 
 static void ShowBuildAirportPicker(Window *parent);
 
@@ -99,10 +100,18 @@ static void PlaceAirport(TileIndex tile)
 	bool adjacent = _ctrl_pressed;
 
 	auto proc = [=](bool test, StationID to_join) -> bool {
-		if (test) {
-			return Command<CMD_BUILD_AIRPORT>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_AIRPORT>()), tile, airport_type, layout, StationID::Invalid(), adjacent).Succeeded();
+		if (_build_airport_as_modular) {
+			if (test) {
+				return Command<CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK>()), tile, airport_type, layout, StationID::Invalid(), adjacent).Succeeded();
+			} else {
+				return Command<CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, airport_type, layout, to_join, adjacent);
+			}
 		} else {
-			return Command<CMD_BUILD_AIRPORT>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, airport_type, layout, to_join, adjacent);
+			if (test) {
+				return Command<CMD_BUILD_AIRPORT>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_AIRPORT>()), tile, airport_type, layout, StationID::Invalid(), adjacent).Succeeded();
+			} else {
+				return Command<CMD_BUILD_AIRPORT>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, airport_type, layout, to_join, adjacent);
+			}
 		}
 	};
 
@@ -304,6 +313,7 @@ public:
 
 		this->SetWidgetLoweredState(WID_AP_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_AP_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
+		this->SetWidgetLoweredState(WID_AP_BUILD_AS_MODULAR, _build_airport_as_modular);
 		this->OnInvalidateData();
 
 		/* Ensure airport class is valid (changing NewGRFs). */
@@ -566,6 +576,13 @@ public:
 				this->UpdateSelectSize();
 				this->SetDirty();
 				break;
+
+			case WID_AP_BUILD_AS_MODULAR:
+				_build_airport_as_modular = !_build_airport_as_modular;
+				this->SetWidgetLoweredState(WID_AP_BUILD_AS_MODULAR, _build_airport_as_modular);
+				this->SetDirty();
+				SndClickBeep();
+				break;
 		}
 	}
 
@@ -654,6 +671,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_airport_widget
 					EndContainer(),
 				EndContainer(),
 			EndContainer(),
+			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BUILD_AS_MODULAR), SetMinimalSize(0, 12), SetFill(1, 0),
+								SetStringTip(STR_STATION_BUILD_AIRPORT_AS_MODULAR, STR_STATION_BUILD_AIRPORT_AS_MODULAR_TOOLTIP),
 			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_AP_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
 		EndContainer(),
 	EndContainer(),

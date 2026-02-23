@@ -3002,6 +3002,384 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 }
 
 /**
+ * Map a stock airport tile GFX to the equivalent modular piece type.
+ * @param stock_gfx The stock airport tile GFX from the airport layout table.
+ * @return The modular piece_type to use.
+ */
+static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
+{
+	switch (stock_gfx) {
+		/* Runway tiles — keep as-is */
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return stock_gfx;
+
+		/* Runway end fence variants → functional runway end */
+		case APT_RUNWAY_END_FENCE_SE:
+		case APT_RUNWAY_END_FENCE_NW:
+		case APT_RUNWAY_END_FENCE_NW_SW:
+		case APT_RUNWAY_END_FENCE_SE_SW:
+		case APT_RUNWAY_END_FENCE_NE_NW:
+		case APT_RUNWAY_END_FENCE_NE_SE:
+			return APT_RUNWAY_END;
+
+		/* Runway fence (decorative shoulder) → runway middle */
+		case APT_RUNWAY_FENCE_NW:
+			return APT_RUNWAY_5;
+
+		/* Apron variants → plain apron */
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_E:
+		case APT_ARPON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return APT_APRON;
+
+		/* Stands */
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return APT_STAND;
+
+		/* Hangars — keep directional piece as-is */
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return stock_gfx;
+
+		/* Helipads → helipad_2 */
+		case APT_HELIPORT:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return APT_HELIPAD_2;
+
+		/* Tower */
+		case APT_TOWER:
+		case APT_TOWER_FENCE_SW:
+			return APT_TOWER;
+
+		/* Grass/empty */
+		case APT_GRASS_1:
+		case APT_GRASS_2:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_FENCE_NE_FLAG:
+		case APT_GRASS_FENCE_NE_FLAG_2:
+		case APT_RADAR_GRASS_FENCE_SW:
+			return APT_GRASS_1;
+
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+			return APT_EMPTY;
+
+		/* Buildings/terminals/pier/radar → cosmetic building */
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+		case APT_PIER:
+		case APT_PIER_NW_NE:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+		case APT_RADIO_TOWER_FENCE_NE:
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+			return APT_BUILDING_1;
+
+		default:
+			return APT_BUILDING_1;
+	}
+}
+
+/** Per-airport runway configuration: which Y-row gets which flags. */
+struct StockRunwayConfig {
+	int y_row;
+	uint8_t runway_flags;
+};
+
+/** Per-airport tile override: force a specific modular piece at a given offset. */
+struct StockTileOverride {
+	int x;
+	int y;
+	uint8_t piece_type;
+};
+
+/**
+ * Build a stock airport layout as a modular airport.
+ * @param flags Command flags.
+ * @param tile Top-left tile of the airport.
+ * @param airport_type Type of airport (AT_SMALL, AT_LARGE, etc.).
+ * @param layout Layout index.
+ * @param station_to_join Station to join, or NEW_STATION.
+ * @param allow_adjacent Whether to allow adjacent stations.
+ * @return The cost or an error.
+ */
+CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile, uint8_t airport_type, uint8_t layout, StationID station_to_join, bool allow_adjacent)
+{
+	bool reuse = (station_to_join != NEW_STATION);
+	if (!reuse) station_to_join = StationID::Invalid();
+	bool distant_join = (station_to_join != StationID::Invalid());
+
+	if (distant_join && (!_settings_game.station.distant_join_stations || !Station::IsValidID(station_to_join))) return CMD_ERROR;
+
+	if (airport_type >= NUM_AIRPORTS) return CMD_ERROR;
+
+	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
+	if (ret.Failed()) return ret;
+
+	const AirportSpec *as = AirportSpec::Get(airport_type);
+	if (!as->IsAvailable() || layout >= as->layouts.size()) return CMD_ERROR;
+	if (!as->IsWithinMapBounds(layout, tile)) return CMD_ERROR;
+
+	Direction rotation = as->layouts[layout].rotation;
+	int w = as->size_x;
+	int h = as->size_y;
+	if (rotation == DIR_E || rotation == DIR_W) std::swap(w, h);
+	TileArea airport_area = TileArea(tile, w, h);
+
+	if (w > _settings_game.station.station_spread || h > _settings_game.station.station_spread) {
+		return CommandCost(STR_ERROR_STATION_TOO_SPREAD_OUT);
+	}
+
+	AirportTileTableIterator tile_iter(as->layouts[layout].tiles, tile);
+	CommandCost cost = CheckFlatLandAirport(tile_iter, flags);
+	if (cost.Failed()) return cost;
+
+	/* Noise checks */
+	uint dist;
+	Town *nearest = AirportGetNearestTown(as, rotation, tile, std::move(tile_iter), dist);
+	uint newnoise_level = GetAirportNoiseLevelForDistance(as, dist);
+
+	StringID authority_refuse_message = STR_NULL;
+	Town *authority_refuse_town = nullptr;
+
+	if (_settings_game.economy.station_noise_level) {
+		if ((nearest->noise_reached + newnoise_level) > nearest->MaxTownNoise()) {
+			authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_NOISE;
+			authority_refuse_town = nearest;
+		}
+	} else if (_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
+		Town *t = ClosestTownFromTile(tile, UINT_MAX);
+		uint num = 0;
+		for (const Station *st : Station::Iterate()) {
+			if (st->town == t && st->facilities.Test(StationFacility::Airport) && st->airport.type != AT_OILRIG) num++;
+		}
+		if (num >= 2) {
+			authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT;
+			authority_refuse_town = t;
+		}
+	}
+
+	if (authority_refuse_message != STR_NULL) {
+		return CommandCostWithParam(authority_refuse_message, authority_refuse_town->index);
+	}
+
+	Station *st = nullptr;
+	ret = FindJoiningStation(StationID::Invalid(), station_to_join, allow_adjacent, airport_area, &st);
+	if (ret.Failed()) return ret;
+
+	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
+
+	ret = BuildStationPart(&st, flags, reuse, airport_area, GetAirport(airport_type)->flags.Test(AirportFTAClass::Flag::Airplanes) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT);
+	if (ret.Failed()) return ret;
+
+	if (st != nullptr && st->airport.tile != INVALID_TILE) {
+		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
+	}
+
+	for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
+		cost.AddCost(_price[Price::BuildStationAirport]);
+	}
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Per-airport runway configs */
+		static const StockRunwayConfig country_runways[] = {
+			{2, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+		};
+		static const StockRunwayConfig commuter_runways[] = {
+			{3, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+		};
+		static const StockRunwayConfig city_runways[] = {
+			{5, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+		};
+		static const StockRunwayConfig metropolitan_runways[] = {
+			{4, RUF_TAKEOFF | RUF_DIR_LOW},
+			{5, RUF_LANDING | RUF_DIR_LOW},
+		};
+		static const StockRunwayConfig international_runways[] = {
+			{0, RUF_TAKEOFF | RUF_DIR_HIGH},
+			{6, RUF_LANDING | RUF_DIR_LOW},
+		};
+		static const StockRunwayConfig intercontinental_runways[] = {
+			{1, RUF_TAKEOFF | RUF_DIR_HIGH},
+			{10, RUF_LANDING | RUF_DIR_LOW},
+		};
+
+		/* Per-airport tile overrides */
+		static const StockTileOverride country_overrides[] = {
+			{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
+		};
+
+		/* Select configs based on airport type */
+		std::span<const StockRunwayConfig> runway_configs;
+		std::span<const StockTileOverride> tile_overrides;
+
+		switch (airport_type) {
+			case AT_SMALL:
+				runway_configs = country_runways;
+				tile_overrides = country_overrides;
+				break;
+			case AT_COMMUTER:
+				runway_configs = commuter_runways;
+				break;
+			case AT_LARGE:
+				runway_configs = city_runways;
+				break;
+			case AT_METROPOLITAN:
+				runway_configs = metropolitan_runways;
+				break;
+			case AT_INTERNATIONAL:
+				runway_configs = international_runways;
+				break;
+			case AT_INTERCON:
+				runway_configs = intercontinental_runways;
+				break;
+			default:
+				break;
+		}
+
+		/* No map needed — overrides are small, just linear scan */
+
+		nearest->noise_reached += newnoise_level;
+
+		st->AddFacility(StationFacility::Airport, tile);
+		st->airport.type = airport_type;
+		st->airport.layout = layout;
+		st->airport.blocks = {};
+		st->airport.blocks.Set(AirportBlock::Modular);
+		st->airport.rotation = rotation;
+
+		st->rect.BeforeAddRect(tile, w, h, StationRect::ADD_TRY);
+
+		st->airport.EnsureModularDataExists();
+		auto &tile_data_vec = *st->airport.modular_tile_data;
+
+		for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
+			TileIndex cur_tile = iter;
+			StationGfx stock_gfx = iter.GetStationGfx();
+
+			/* Compute (dx, dy) offset from base tile */
+			int dx = TileX(cur_tile) - TileX(tile);
+			int dy = TileY(cur_tile) - TileY(tile);
+
+			/* Check for override */
+			uint8_t piece_type = MapStockGfxToModularPiece(stock_gfx);
+			for (const auto &ovr : tile_overrides) {
+				if (ovr.x == dx && ovr.y == dy) {
+					piece_type = ovr.piece_type;
+					break;
+				}
+			}
+
+			/* For intercontinental: y=0 and y=9 fence-runway rows are decorative shoulders */
+			if (airport_type == AT_INTERCON && (dy == 0 || dy == 9)) {
+				if (IsModularRunwayPiece(piece_type)) {
+					piece_type = APT_GRASS_1;
+				}
+			}
+
+			Tile t(cur_tile);
+			MakeAirport(t, st->owner, st->index, stock_gfx, WaterClass::Invalid);
+			SetStationTileRandomBits(t, GB(Random(), 0, 4));
+			st->airport.Add(cur_tile);
+
+			if (AirportTileSpec::Get(GetTranslatedAirportTileID(stock_gfx))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+
+			ModularAirportTileData tile_data;
+			tile_data.tile = cur_tile;
+			tile_data.piece_type = piece_type;
+			tile_data.rotation = 0; /* Stock layout 0 = DIR_N; all horizontal runways */
+			tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(piece_type, 0);
+			tile_data.one_way_taxi = false;
+			tile_data.user_taxi_dir_mask = 0x0F;
+			tile_data.runway_flags = 0;
+
+			tile_data_vec.push_back(tile_data);
+		}
+
+		/* Runway flags post-pass: set flags on all runway tiles in the configured Y-rows */
+		for (const auto &rc : runway_configs) {
+			for (auto &td : tile_data_vec) {
+				if (!IsModularRunwayPiece(td.piece_type)) continue;
+				/* Compute Y offset of this tile from base */
+				int td_dy = TileY(td.tile) - TileY(tile);
+				if (td_dy == rc.y_row) {
+					td.runway_flags = rc.runway_flags;
+				}
+			}
+		}
+
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.modular_holding_loop_dirty = true;
+
+		/* Trigger animations */
+		for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
+			TriggerAirportTileAnimation(st, iter, AirportAnimationTrigger::Built);
+		}
+
+		UpdateAirplanesOnNewStation(st);
+
+		Company::Get(st->owner)->infrastructure.airport++;
+
+		st->AfterStationTileSetChange(true, StationType::Airport);
+		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+
+		if (_settings_game.economy.station_noise_level) {
+			SetWindowDirty(WC_TOWN_VIEW, nearest->index);
+		}
+
+		if (_show_holding_overlay) MarkWholeScreenDirty();
+	}
+
+	return cost;
+}
+
+/**
  * Set runway usage flags on a modular airport tile and propagate to contiguous runway.
  * @param flags Operation to perform.
  * @param tile Tile to set flags on.

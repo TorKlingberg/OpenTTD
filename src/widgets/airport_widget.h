@@ -31,6 +31,7 @@ enum AirportPickerWidgets : WidgetID {
 	WID_AP_BTN_DONTHILIGHT, ///< Don't show the coverage button.
 	WID_AP_BTN_DOHILIGHT,   ///< Show the coverage button.
 	WID_AP_ACCEPTANCE,      ///< Acceptance info.
+	WID_AP_BUILD_AS_MODULAR, ///< Checkbox: build as modular airport.
 };
 
 /** Widgets of the #BuildModularAirportWindow class (prototype). */
