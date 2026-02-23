@@ -3096,7 +3096,6 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_GRASS_FENCE_SW:
 		case APT_GRASS_FENCE_NE_FLAG:
 		case APT_GRASS_FENCE_NE_FLAG_2:
-		case APT_RADAR_GRASS_FENCE_SW:
 			return APT_GRASS_1;
 
 		case APT_EMPTY:
@@ -3118,6 +3117,7 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 			return APT_LOW_BUILDING;
 		case APT_RADAR_FENCE_SW:
 		case APT_RADAR_FENCE_NE:
+		case APT_RADAR_GRASS_FENCE_SW:
 			return APT_RADAR_FENCE_NE;
 		case APT_RADIO_TOWER_FENCE_NE:
 			return APT_RADIO_TOWER_FENCE_NE;
@@ -3129,7 +3129,7 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 			return APT_LOW_BUILDING;
 		case APT_PIER:
 		case APT_PIER_NW_NE:
-			return APT_BUILDING_1;
+			return APT_APRON;
 
 		default:
 			return APT_BUILDING_1;
@@ -3256,7 +3256,9 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			{6, RUF_LANDING | RUF_DIR_LOW},
 		};
 		static const StockRunwayConfig intercontinental_runways[] = {
+			{0, RUF_TAKEOFF | RUF_DIR_HIGH},
 			{1, RUF_TAKEOFF | RUF_DIR_HIGH},
+			{9, RUF_LANDING | RUF_DIR_LOW},
 			{10, RUF_LANDING | RUF_DIR_LOW},
 		};
 
@@ -3324,13 +3326,6 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 				if (ovr.x == dx && ovr.y == dy) {
 					piece_type = ovr.piece_type;
 					break;
-				}
-			}
-
-			/* For intercontinental: y=0 and y=9 fence-runway rows are decorative shoulders */
-			if (airport_type == AT_INTERCON && (dy == 0 || dy == 9)) {
-				if (IsModularRunwayPiece(piece_type)) {
-					piece_type = APT_GRASS_1;
 				}
 			}
 
