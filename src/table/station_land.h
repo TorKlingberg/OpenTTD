@@ -208,7 +208,6 @@ static const DrawTileSeqStruct _station_display_radar_12_fence_sw[] = {
 
 static const DrawTileSeqStruct _station_display_transmitter_fence_ne[] = {
 	TILE_SEQ_LINE( 7,  7,  0,  2,  2, 70, SPR_TRANSMITTER)
-	TILE_SEQ_LINE( 0,  0,  0,  1, 16,  6, SPR_AIRPORT_FENCE_Y | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
 static const DrawTileSeqStruct _station_display_datas_terminal_c_2[] = {
