@@ -2987,9 +2987,12 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		st->airport.modular_holding_loop_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
 
-		/* Mark tile dirty with generous height to ensure tall building sprites
-		 * (terminals, towers, radar) are fully redrawn immediately. */
-		MarkTileDirtyByTile(tile, 0, TILE_HEIGHT * 4);
+		/* Mark tile and neighbors dirty to ensure tall building sprites
+		 * (terminals, towers, radar) that extend beyond tile bounds are fully redrawn. */
+		MarkTileDirtyByTile(tile, 0, 8);
+		if (TileX(tile) > 0 && TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 1));
+		if (TileX(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 0));
+		if (TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(0, 1));
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
