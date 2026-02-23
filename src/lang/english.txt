@@ -3009,8 +3009,11 @@ STR_STATION_BUILD_AIRPORT_CAPTION                               :{WHITE}Airport 
 STR_STATION_BUILD_AIRPORT_TOOLTIP                               :{BLACK}Select size/type of airport
 STR_STATION_BUILD_AIRPORT_CLASS_LABEL                           :{BLACK}Airport class
 STR_STATION_BUILD_AIRPORT_LAYOUT_NAME                           :{BLACK}Layout {NUM}
-STR_STATION_BUILD_AIRPORT_AS_MODULAR                            :{BLACK}Build as modular
-STR_STATION_BUILD_AIRPORT_AS_MODULAR_TOOLTIP                    :{BLACK}When enabled, builds the selected airport as a modular airport that can be edited tile-by-tile
+STR_STATION_BUILD_AIRPORT_MODULAR_LABEL                         :{BLACK}Build as modular
+STR_STATION_BUILD_AIRPORT_MODULAR_OFF                           :{BLACK}Off
+STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP                   :{BLACK}Build the airport normally
+STR_STATION_BUILD_AIRPORT_MODULAR_ON                            :{BLACK}On
+STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP                    :{BLACK}Build the airport as a modular airport that can be edited tile-by-tile
 STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION                       :{WHITE}Modular Airport Builder (Prototype)
 STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP                       :{BLACK}Open modular airport builder (prototype)
 STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL                  :{BLACK}Pieces

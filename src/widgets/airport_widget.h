@@ -30,8 +30,9 @@ enum AirportPickerWidgets : WidgetID {
 	WID_AP_COVERAGE_LABEL,  ///< Label if you want to see the coverage.
 	WID_AP_BTN_DONTHILIGHT, ///< Don't show the coverage button.
 	WID_AP_BTN_DOHILIGHT,   ///< Show the coverage button.
-	WID_AP_ACCEPTANCE,      ///< Acceptance info.
-	WID_AP_BUILD_AS_MODULAR, ///< Checkbox: build as modular airport.
+	WID_AP_ACCEPTANCE,             ///< Acceptance info.
+	WID_AP_BTN_NOTMODULAR,         ///< Don't build as modular button.
+	WID_AP_BTN_MODULAR,            ///< Build as modular button.
 };
 
 /** Widgets of the #BuildModularAirportWindow class (prototype). */
@@ -74,9 +75,9 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_4,  ///< Low terminal button.
 	WID_MACP_PIECE_5,  ///< Tower button.
 	WID_MACP_PIECE_6,  ///< Radar button.
-	WID_MACP_PIECE_7,  ///< Radio tower button.
-	WID_MACP_PIECE_8,  ///< Flag on grass button.
-	WID_MACP_PIECE_9,  ///< Radar on grass button.
+	WID_MACP_PIECE_7,  ///< Radar on grass button.
+	WID_MACP_PIECE_8,  ///< Radio tower button.
+	WID_MACP_PIECE_9,  ///< Flag on grass button.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;

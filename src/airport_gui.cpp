@@ -317,7 +317,8 @@ public:
 
 		this->SetWidgetLoweredState(WID_AP_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_AP_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
-		this->SetWidgetLoweredState(WID_AP_BUILD_AS_MODULAR, _build_airport_as_modular);
+		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
+		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
 		this->OnInvalidateData();
 
 		/* Ensure airport class is valid (changing NewGRFs). */
@@ -581,9 +582,10 @@ public:
 				this->SetDirty();
 				break;
 
-			case WID_AP_BUILD_AS_MODULAR:
-				_build_airport_as_modular = !_build_airport_as_modular;
-				this->SetWidgetLoweredState(WID_AP_BUILD_AS_MODULAR, _build_airport_as_modular);
+			case WID_AP_BTN_NOTMODULAR: case WID_AP_BTN_MODULAR:
+				_build_airport_as_modular = (widget == WID_AP_BTN_MODULAR);
+				this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
+				this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
 				this->SetDirty();
 				SndClickBeep();
 				break;
@@ -675,8 +677,15 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_airport_widget
 					EndContainer(),
 				EndContainer(),
 			EndContainer(),
-			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BUILD_AS_MODULAR), SetMinimalSize(0, 12), SetFill(1, 0),
-								SetStringTip(STR_STATION_BUILD_AIRPORT_AS_MODULAR, STR_STATION_BUILD_AIRPORT_AS_MODULAR_TOOLTIP),
+			NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_LABEL), SetFill(1, 0),
+			NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_NOTMODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
+												SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_OFF, STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_MODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
+												SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_ON, STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP),
+				EndContainer(),
+			EndContainer(),
 			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_AP_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
 		EndContainer(),
 	EndContainer(),

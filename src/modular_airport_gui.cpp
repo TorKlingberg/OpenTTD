@@ -80,21 +80,22 @@ struct ModularAirportPiece {
 struct CosmeticPiece {
 	StringID name;
 	SpriteID icon;    ///< Small icon at Out2x zoom (for toolbar button)
+	SpriteID ground;  ///< Optional ground sprite drawn behind icon (0 = none)
 	uint8_t apt_gfx;  ///< AirportTiles value for placement and full-size picker preview
 	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
 };
 
 static constexpr CosmeticPiece _cosmetic_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         SPR_AIRPORT_TERMINAL_C,       APT_BUILDING_1,          3},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT,     SPR_AIRPORT_TERMINAL_A,       APT_BUILDING_2,          3},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER,   SPR_AIRPORT_TERMINAL_B,       APT_BUILDING_3,          3},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   SPR_AIRPORT_CONCOURSE,        APT_ROUND_TERMINAL,      3},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_LOW_TERMINAL,     SPR_AIRPORT_HELIDEPOT_OFFICE, APT_LOW_BUILDING,        0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            SPR_AIRPORT_TOWER,            APT_TOWER,               3},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          APT_RADAR_FENCE_NE,      0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      SPR_TRANSMITTER,              APT_RADIO_TOWER_FENCE_NE, 14},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,      SPR_AIRFIELD_WIND_1,          APT_GRASS_FENCE_NE_FLAG_2, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,     SPR_AIRPORT_RADAR_5,          APT_RADAR_GRASS_FENCE_SW, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         SPR_AIRPORT_TERMINAL_C,       0,                    APT_BUILDING_1,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT,     SPR_AIRPORT_TERMINAL_A,       0,                    APT_BUILDING_2,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER,   SPR_AIRPORT_TERMINAL_B,       0,                    APT_BUILDING_3,          3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ROUND,   SPR_AIRPORT_CONCOURSE,        0,                    APT_ROUND_TERMINAL,      3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_LOW_TERMINAL,     SPR_AIRPORT_HELIDEPOT_OFFICE, 0,                    APT_LOW_BUILDING,        0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            SPR_AIRPORT_TOWER,            0,                    APT_TOWER,               3},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      SPR_TRANSMITTER,              0,                    APT_RADIO_TOWER_FENCE_NE, 14},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 };
 
 static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
@@ -187,7 +188,11 @@ public:
 			ResetObjectToPlace();
 		}
 		CloseWindowByClass(WC_BUILD_DEPOT);
-		this->PickerWindowBase::Close();
+		/* Use Window::Close() instead of PickerWindowBase::Close() to avoid
+		 * an unconditional ResetObjectToPlace() — the guard above already
+		 * handles our own cursor, and we must not reset another window's cursor
+		 * (e.g. the stock airport builder toolbar). */
+		this->Window::Close();
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
@@ -860,6 +865,16 @@ public:
 		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
 		y += ScaleSpriteTrad(piece.preview_y_offset);
+		if (piece.ground != 0) {
+			/* Draw ground tile centred behind the icon. */
+			Point go;
+			Dimension gd = GetSpriteSize(piece.ground, &go, icon_zoom);
+			gd.width  -= go.x;
+			gd.height -= go.y;
+			int gx = (ir.Width()  - static_cast<int>(gd.width))  / 2;
+			int gy = (ir.Height() - static_cast<int>(gd.height)) / 2;
+			DrawSprite(piece.ground, PAL_NONE, gx - go.x, gy - go.y, nullptr, icon_zoom);
+		}
 		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
 	}
 
@@ -903,13 +918,13 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_6), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_7), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
 			EndContainer(),
 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_8), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_9), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

@@ -4253,10 +4253,15 @@ static void DrawTile_Station(TileInfo *ti)
 					gfx = APT_STAND_PIER_NE;
 				}
 			}
+
+			/* Modular windsock: draw without the built-in NE fence. */
+			if (md->piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
+				t = &_station_display_datas_airport_flag_grass[GetAnimationFrame(ti->tile)];
+			}
 		}
 	}
 
-		switch (gfx) {
+		if (t == nullptr) switch (gfx) {
 			case APT_RADAR_GRASS_FENCE_SW:
 				t = &_station_display_datas_airport_radar_grass_fence_sw[GetAnimationFrame(ti->tile)];
 				break;
@@ -4272,7 +4277,7 @@ static void DrawTile_Station(TileInfo *ti)
 			case APT_GRASS_FENCE_NE_FLAG_2:
 				t = &_station_display_datas_airport_flag_grass_fence_ne_2[GetAnimationFrame(ti->tile)];
 				break;
-		}
+			}
 	}
 
 	Owner owner = GetTileOwner(ti->tile);

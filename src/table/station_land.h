@@ -642,6 +642,23 @@ static const DrawTileSeqStruct _station_display_datas_waypoint_Y[] = {
 	TILE_SEQ_LINE(11,  0,  0,  5, 16, 16, SPR_WAYPOINT_Y_2 | (1U << PALETTE_MODIFIER_COLOUR))
 };
 
+/* Windsock on grass without fence (modular airports strip the built-in fence). */
+static const DrawTileSeqStruct _station_display_flag_1_no_fence[] = {
+	TILE_SEQ_LINE( 4, 11,  0,  1,  1, 20, SPR_AIRFIELD_WIND_1 | (1U << PALETTE_MODIFIER_COLOUR))
+};
+
+static const DrawTileSeqStruct _station_display_flag_2_no_fence[] = {
+	TILE_SEQ_LINE( 4, 11,  0,  1,  1, 20, SPR_AIRFIELD_WIND_2 | (1U << PALETTE_MODIFIER_COLOUR))
+};
+
+static const DrawTileSeqStruct _station_display_flag_3_no_fence[] = {
+	TILE_SEQ_LINE( 4, 11,  0,  1,  1, 20, SPR_AIRFIELD_WIND_3 | (1U << PALETTE_MODIFIER_COLOUR))
+};
+
+static const DrawTileSeqStruct _station_display_flag_4_no_fence[] = {
+	TILE_SEQ_LINE( 4, 11,  0,  1,  1, 20, SPR_AIRFIELD_WIND_4 | (1U << PALETTE_MODIFIER_COLOUR))
+};
+
 #undef TILE_SEQ_LINE
 #undef TILE_SEQ_LINE_PAL
 #undef TILE_SEQ_CHILD
@@ -825,6 +842,12 @@ static const DrawTileSpriteSpan _station_display_datas_airport_flag_grass_fence_
 	TILE_SPRITE_LINE(SPR_FLAT_GRASS_TILE,            _station_display_flag_4_fence_ne)
 };
 
+static const DrawTileSpriteSpan _station_display_datas_airport_flag_grass[] = {
+	TILE_SPRITE_LINE(SPR_FLAT_GRASS_TILE,            _station_display_flag_1_no_fence)
+	TILE_SPRITE_LINE(SPR_FLAT_GRASS_TILE,            _station_display_flag_2_no_fence)
+	TILE_SPRITE_LINE(SPR_FLAT_GRASS_TILE,            _station_display_flag_3_no_fence)
+	TILE_SPRITE_LINE(SPR_FLAT_GRASS_TILE,            _station_display_flag_4_no_fence)
+};
 
 static const DrawTileSpriteSpan _station_display_datas_truck[] = {
 	TILE_SPRITE_LINE(SPR_TRUCK_STOP_NE_GROUND | (1U << PALETTE_MODIFIER_COLOUR), _station_display_datas_67)
