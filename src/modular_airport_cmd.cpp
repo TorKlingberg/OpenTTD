@@ -1341,6 +1341,11 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 
 	int target_x, target_y;
 	int airport_z = GetTileMaxPixelZ(v->modular_landing_tile) + 1;
+	/* Match stock heliport behavior: rooftop touchdown uses +60 px (afc->delta_z). */
+	if (v->subtype == AIR_HELICOPTER) {
+		const ModularAirportTileData *landing_data = st->airport.GetModularTileData(v->modular_landing_tile);
+		if (landing_data != nullptr && landing_data->piece_type == APT_HELIPORT) airport_z += 60;
+	}
 	int target_z = airport_z;
 
 	if (v->modular_landing_stage == 0) {
