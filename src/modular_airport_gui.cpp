@@ -66,6 +66,7 @@ void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
 StationID _last_modular_airport_station = StationID::Invalid();
 static uint8_t _modular_hangar_rotation = 0;   ///< 0=SE, 1=NE, 2=NW, 3=SW
 static uint8_t _modular_cosmetic_piece = 0;    ///< Selected cosmetic piece in _cosmetic_pieces.
+static uint8_t _modular_helipad_piece = 0;     ///< Selected helipad look in _helipad_pieces.
 
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
 bool _show_holding_overlay = false;          ///< Show holding loop overlay in viewport
@@ -85,6 +86,13 @@ struct CosmeticPiece {
 	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
 };
 
+struct HelipadPiece {
+	StringID name;
+	SpriteID icon;
+	uint8_t apt_gfx;  ///< AirportTiles value for placement and picker preview.
+	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
+};
+
 static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL,         SPR_AIRPORT_TERMINAL_C,       0,                    APT_BUILDING_1,          3},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT,     SPR_AIRPORT_TERMINAL_A,       0,                    APT_BUILDING_2,          3},
@@ -98,7 +106,14 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 };
 
+static constexpr HelipadPiece _helipad_pieces[] = {
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD, SPR_AIRPORT_HELIPAD, APT_HELIPAD_2,          0},
+	{STR_AIRPORT_HELISTATION,                         SPR_NEWHELIPAD,       APT_HELIPAD_3_FENCE_NW, 0},
+	{STR_AIRPORT_HELIPORT,                            SPR_HELIPORT,         APT_HELIPORT,           10},
+};
+
 static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
+static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PIECE_FIRST + 1);
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY},    // 0
@@ -126,7 +141,7 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 		case 3:  return _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)].apt_gfx;
 		case 4:  return APT_DEPOT_SE;
 		case 5:  return APT_SMALL_DEPOT_SE;
-		case 6:  return APT_HELIPAD_2;
+		case 6:  return _helipad_pieces[std::min<uint8_t>(_modular_helipad_piece, lengthof(_helipad_pieces) - 1)].apt_gfx;
 		case 7:  return APT_STAND;
 		case 8:  return APT_APRON;
 		case 9:  return APT_GRASS_1;
@@ -157,6 +172,7 @@ static bool IsModularTaxiwayGfx(uint8_t gfx)
 
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
+static void ShowModularHelipadPicker(Window *parent);
 
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
@@ -207,6 +223,7 @@ public:
 	{
 		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
 		const auto &piece = _modular_airport_pieces[widget - WID_MA_PIECE_FIRST];
+		const bool is_helipad_piece = (widget == WID_MA_PIECE_6);
 		DrawPixelInfo tmp_dpi;
 		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
@@ -249,14 +266,18 @@ public:
 				}
 			}
 		} else {
+			SpriteID icon = piece.icon;
+			if (is_helipad_piece) {
+				icon = _helipad_pieces[std::min<uint8_t>(_modular_helipad_piece, lengthof(_helipad_pieces) - 1)].icon;
+			}
 			ZoomLevel icon_zoom = _gui_zoom;
 			if (widget != WID_MA_PIECE_6 && icon_zoom < ZoomLevel::Max) ++icon_zoom;
-			Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
+			Dimension d = GetSpriteSize(icon, &offset, icon_zoom);
 			d.width  -= offset.x;
 			d.height -= offset.y;
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			DrawSprite(icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
 		}
 	}
 
@@ -265,7 +286,7 @@ public:
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
 			bool already_selected = (new_piece == this->selected_piece);
-			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5);
+			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5 || new_piece == 6);
 
 			/* Raise the previously selected piece button. */
 			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
@@ -292,8 +313,10 @@ public:
 			if (wants_picker && !already_selected) {
 				if (new_piece == 4 || new_piece == 5) {
 					ShowModularHangarPicker(this, new_piece == 4);
-				} else {
+				} else if (new_piece == 3) {
 					ShowModularCosmeticPicker(this);
+				} else {
+					ShowModularHelipadPicker(this);
 				}
 			}
 			return;
@@ -941,6 +964,97 @@ static void ShowModularCosmeticPicker(Window *parent)
 {
 	CloseWindowByClass(WC_BUILD_DEPOT);
 	new BuildModularCosmeticPickerWindow(_build_modular_cosmetic_picker_desc, parent);
+}
+
+/** Helipad tile picker window (opened when clicking the Helipad piece button). */
+class BuildModularHelipadPickerWindow : public PickerWindowBase {
+public:
+	BuildModularHelipadPickerWindow(WindowDesc &desc, Window *parent)
+		: PickerWindowBase(desc, parent)
+	{
+		if (_modular_helipad_piece >= lengthof(_helipad_pieces)) _modular_helipad_piece = 0;
+		this->InitNested(0);
+		this->LowerWidget(WID_MAHPAD_PIECE_0 + _modular_helipad_piece);
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size,
+	                      [[maybe_unused]] const Dimension &padding,
+	                      [[maybe_unused]] Dimension &fill,
+	                      [[maybe_unused]] Dimension &resize) override
+	{
+		if (widget < WID_MAHPAD_PIECE_FIRST || widget > WID_MAHPAD_PIECE_LAST) return;
+		/* Fixed picker-style preview size to show each variant clearly. */
+		size.width  = ScaleGUITrad(64) + WidgetDimensions::scaled.fullbevel.Horizontal();
+		size.height = ScaleGUITrad(48) + WidgetDimensions::scaled.fullbevel.Vertical();
+	}
+
+	void DrawWidget(const Rect &r, WidgetID widget) const override
+	{
+		if (widget < WID_MAHPAD_PIECE_FIRST || widget > WID_MAHPAD_PIECE_LAST) return;
+		uint8_t piece_idx = static_cast<uint8_t>(widget - WID_MAHPAD_PIECE_FIRST);
+		const HelipadPiece &piece = _helipad_pieces[piece_idx];
+
+		DrawPixelInfo tmp_dpi;
+		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
+		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
+		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+
+		ZoomLevel icon_zoom = _gui_zoom;
+		Point offset;
+		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
+		d.width  -= offset.x;
+		d.height -= offset.y;
+		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+		y += ScaleSpriteTrad(piece.preview_y_offset);
+		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
+	}
+
+	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
+	             [[maybe_unused]] int click_count) override
+	{
+		if (widget < WID_MAHPAD_PIECE_FIRST || widget > WID_MAHPAD_PIECE_LAST) return;
+		this->RaiseWidget(WID_MAHPAD_PIECE_0 + _modular_helipad_piece);
+		_modular_helipad_piece = static_cast<uint8_t>(widget - WID_MAHPAD_PIECE_FIRST);
+		this->LowerWidget(WID_MAHPAD_PIECE_0 + _modular_helipad_piece);
+		SndClickBeep();
+		this->SetDirty();
+
+		/* Keep toolbar icon in sync with the selected variant. */
+		if (this->parent != nullptr) this->parent->SetDirty();
+	}
+};
+
+static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_helipad_picker_widgets = {
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
+		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN, WID_MAHPAD_CAPTION),
+			SetStringTip(STR_AIRPORT_CLASS_HELIPORTS, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+	EndContainer(),
+	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
+		NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
+		                              SetPIPRatio(1, 0, 1), SetPadding(WidgetDimensions::unscaled.picker),
+			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_0), SetFill(0, 0),
+				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD),
+			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_1), SetFill(0, 0),
+				SetToolTip(STR_AIRPORT_HELISTATION),
+			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_2), SetFill(0, 0),
+				SetToolTip(STR_AIRPORT_HELIPORT),
+		EndContainer(),
+	EndContainer(),
+};
+
+static WindowDesc _build_modular_helipad_picker_desc(
+	WDP_AUTO, {}, 0, 0,
+	WC_BUILD_DEPOT, WC_BUILD_STATION,
+	WindowDefaultFlag::Construction,
+	_nested_build_modular_helipad_picker_widgets
+);
+
+static void ShowModularHelipadPicker(Window *parent)
+{
+	CloseWindowByClass(WC_BUILD_DEPOT);
+	new BuildModularHelipadPickerWindow(_build_modular_helipad_picker_desc, parent);
 }
 
 static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airport_widgets = {

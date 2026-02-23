@@ -4389,6 +4389,11 @@ static void DrawTile_Station(TileInfo *ti)
 			if (md->piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
 				t = &_station_display_datas_airport_flag_grass[GetAnimationFrame(ti->tile)];
 			}
+
+			/* Helistation-style H pad: use no-fence variant in modular mode. */
+			if (md->piece_type == APT_HELIPAD_3_FENCE_NW) {
+				t = &_station_display_modular_newhelipad;
+			}
 		}
 	}
 

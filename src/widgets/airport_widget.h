@@ -83,4 +83,15 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;
 static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_9;
 
+/** Widgets of the #BuildModularHelipadPickerWindow class. */
+enum ModularAirportHelipadPickerWidgets : WidgetID {
+	WID_MAHPAD_CAPTION,
+	WID_MAHPAD_PIECE_0, ///< Blinky helipad (current default look).
+	WID_MAHPAD_PIECE_1, ///< Helistation-style helipad (simple H).
+	WID_MAHPAD_PIECE_2, ///< Heliport-style helipad (with building).
+};
+
+static constexpr WidgetID WID_MAHPAD_PIECE_FIRST = WID_MAHPAD_PIECE_0;
+static constexpr WidgetID WID_MAHPAD_PIECE_LAST  = WID_MAHPAD_PIECE_2;
+
 #endif /* WIDGETS_AIRPORT_WIDGET_H */

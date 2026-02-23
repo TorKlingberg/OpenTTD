@@ -580,6 +580,11 @@ static const DrawTileSeqStruct _station_display_newhelipad_fence_nw[] = {
 	TILE_SEQ_LINE( 0,  0,  0, 16,  1,  6, SPR_AIRPORT_FENCE_X | (1U << PALETTE_MODIFIER_COLOUR)) // fences north
 };
 
+/* helipad for helistation without built-in fences (used by modular picker). */
+static const DrawTileSeqStruct _station_display_newhelipad[] = {
+	TILE_SEQ_LINE( 0,  1,  2,  0,  0,  0, SPR_NEWHELIPAD)
+};
+
 /* helidepot office without fence */
 static const DrawTileSeqStruct _station_display_low_building[] = {
 	TILE_SEQ_LINE( 3,  3,  0, 10, 10, 60, SPR_AIRPORT_HELIDEPOT_OFFICE | (1U << PALETTE_MODIFIER_COLOUR))  // helidepot office
@@ -686,6 +691,9 @@ static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
 
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
+
+static const DrawTileSpriteSpan _station_display_modular_newhelipad(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_newhelipad);
 
 /* NS (NW-SE on screen) runway sprites for modular airports. */
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});

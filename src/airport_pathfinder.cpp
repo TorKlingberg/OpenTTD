@@ -161,6 +161,7 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		            /* Single-direction opening. Use inverse rotation mapping for hangars. */
 		            return (1 << ((2 + 4 - hangar_rot) % 4));
 		        }
+		        case APT_HELIPORT:
 		        case APT_HELIPAD_1:		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:
 		case APT_HELIPAD_2_FENCE_NE_SE:

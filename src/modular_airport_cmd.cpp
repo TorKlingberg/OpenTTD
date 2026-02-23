@@ -66,6 +66,7 @@ static constexpr uint16_t SPEED_LIMIT_NONE = UINT16_MAX; ///< No environmental s
 bool IsModularHelipadPiece(uint8_t gfx)
 {
 	switch (gfx) {
+		case APT_HELIPORT:
 		case APT_HELIPAD_1:
 		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:
@@ -1794,9 +1795,12 @@ TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v)
 	TileIndex best_tile = INVALID_TILE;
 	int best_score = INT_MAX;
 
-	/* If we are already on a helipad, stay there! */
-	if (v != nullptr && IsModularHelipadPiece(st->airport.GetModularTileData(v->tile)->piece_type)) {
-		return v->tile;
+	/* If we are already on a helipad, stay there.
+	 * Aircraft can call this while not on a modular airport tile (e.g. airborne),
+	 * so guard the tile lookup. */
+	if (v != nullptr) {
+		const ModularAirportTileData *cur = st->airport.GetModularTileData(v->tile);
+		if (cur != nullptr && IsModularHelipadPiece(cur->piece_type)) return v->tile;
 	}
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
