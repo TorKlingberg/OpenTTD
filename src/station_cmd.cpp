@@ -3256,9 +3256,9 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			{6, RUF_LANDING | RUF_DIR_LOW},
 		};
 		static const StockRunwayConfig intercontinental_runways[] = {
-			{0, RUF_TAKEOFF | RUF_DIR_HIGH},
+			{0, RUF_LANDING | RUF_DIR_HIGH},
 			{1, RUF_TAKEOFF | RUF_DIR_HIGH},
-			{9, RUF_LANDING | RUF_DIR_LOW},
+			{9, RUF_TAKEOFF | RUF_DIR_LOW},
 			{10, RUF_LANDING | RUF_DIR_LOW},
 		};
 
