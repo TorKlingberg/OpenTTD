@@ -93,6 +93,8 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TOWER,            SPR_AIRPORT_TOWER,            APT_TOWER,               3},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER,      SPR_TRANSMITTER,              APT_RADIO_TOWER_FENCE_NE, 14},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,      SPR_AIRFIELD_WIND_1,          APT_GRASS_FENCE_NE_FLAG_2, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,     SPR_AIRPORT_RADAR_5,          APT_RADAR_GRASS_FENCE_SW, 0},
 };
 
 static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
@@ -161,6 +163,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	uint8_t selected_piece = 0;
 	bool show_taxi_arrows = true;
 	bool show_holding_loop = false;
+	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
@@ -259,7 +262,15 @@ public:
 			bool already_selected = (new_piece == this->selected_piece);
 			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5);
 
+			/* Raise the previously selected piece button. */
 			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+
+			/* Close any open sub-picker and update the cursor. Both can trigger
+			 * OnPlaceObjectAbort on this window; the updating_cursor guard in
+			 * UpdatePlacementCursor prevents that from clearing our state. */
+			CloseWindowByClass(WC_BUILD_DEPOT);
+
+			/* Update selection state. */
 			if (already_selected) {
 				/* Toggle off: clicking the same piece deselects it. */
 				this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
@@ -267,12 +278,10 @@ public:
 				this->selected_piece = new_piece;
 				this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 			}
-			this->SetDirty();
 
-			/* Always close any open picker FIRST — PickerWindowBase::Close calls
-			 * ResetObjectToPlace, so the cursor must be re-set afterwards. */
-			CloseWindowByClass(WC_BUILD_DEPOT);
+			/* Update the placement cursor. */
 			this->UpdatePlacementCursor();
+			this->SetDirty();
 
 			/* Open picker for pieces that need one (unless we just toggled off). */
 			if (wants_picker && !already_selected) {
@@ -686,12 +695,20 @@ private:
 
 	void OnPlaceObjectAbort() override
 	{
-		ResetObjectToPlace();
+		if (this->updating_cursor) return; // We're re-setting our own cursor; ignore.
+
+		/* External window stole the cursor — deselect and raise all buttons. */
+		this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+		for (WidgetID w = WID_MA_PIECE_FIRST; w <= WID_MA_PIECE_LAST; w++) {
+			this->RaiseWidget(w);
+		}
+		this->SetDirty();
 	}
 
 private:
 	void UpdatePlacementCursor()
 	{
+		this->updating_cursor = true;
 		SetTileSelectSize(1, 1);
 		if (this->selected_piece >= PIECE_COUNT) {
 			ResetObjectToPlace();
@@ -700,6 +717,7 @@ private:
 		} else {
 			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
 		}
+		this->updating_cursor = false;
 	}
 };
 
@@ -887,6 +905,12 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_7), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADIO_TOWER),
 			EndContainer(),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_8), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_9), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
+			EndContainer(),
 		EndContainer(),
 	EndContainer(),
 };
@@ -926,7 +950,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_HOLDING), SetFill(0, 1), SetToolbarMinimalSize(1),
-			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
+			SetSpriteTip(SPR_BLOT, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
 	EndContainer(),
 };
 

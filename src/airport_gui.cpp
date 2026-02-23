@@ -173,7 +173,11 @@ struct BuildAirToolbarWindow : Window {
 				break;
 
 			case WID_AT_MODULAR:
-				this->last_user_action = INVALID_WIDGET;   // must come first
+				/* Reset any active toolbar placement first so buttons are raised. */
+				if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
+				ResetObjectToPlace();
+				this->RaiseButtons();
+				this->last_user_action = INVALID_WIDGET;
 				ShowBuildModularAirportWindow(this);
 				break;
 

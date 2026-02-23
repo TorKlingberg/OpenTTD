@@ -4468,7 +4468,7 @@ static void DrawTile_Station(TileInfo *ti)
 					if (open_mask & e.dir_bit) continue; // aircraft transit edge, skip
 					TileIndex nb = TileAddXY(ti->tile, e.dx, e.dy);
 					if (IsValidTile(nb) && fence_st->TileBelongsToAirport(nb)) continue; // interior edge
-					DrawGroundSpriteAt(e.spr | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE,
+					DrawGroundSpriteAt(e.spr | (1U << PALETTE_MODIFIER_COLOUR), palette,
 					                   e.fx, e.fy,
 					                   GetPartialPixelZ(e.fx, e.fy, ti->tileh));
 				}

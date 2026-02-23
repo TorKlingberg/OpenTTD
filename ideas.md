@@ -1,5 +1,3 @@
 ** Remote runway end button and let you build tile-by-tile with automatic ends. Need to handle connecting runways somehow.
-* Set of pre-created airports. Same as stock airports?
 * Broken down planes should follow same pattern as others.
 
-* A toggle button next to "show directions" that shows the holding pattern waypoints and lines between them.
