@@ -3122,13 +3122,11 @@ static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_RADIO_TOWER_FENCE_NE:
 			return APT_RADIO_TOWER_FENCE_NE;
 
-		/* Small buildings — available in cosmetic picker */
+		/* Small buildings → low building */
 		case APT_SMALL_BUILDING_1:
-			return APT_SMALL_BUILDING_1;
 		case APT_SMALL_BUILDING_2:
-			return APT_SMALL_BUILDING_2;
 		case APT_SMALL_BUILDING_3:
-			return APT_SMALL_BUILDING_3;
+			return APT_LOW_BUILDING;
 		case APT_PIER:
 		case APT_PIER_NW_NE:
 			return APT_BUILDING_1;
@@ -3264,6 +3262,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 		/* Per-airport tile overrides */
 		static const StockTileOverride country_overrides[] = {
+			{0, 0, APT_GRASS_1}, {2, 0, APT_GRASS_1},  /* flank low building with grass */
 			{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
 		};
 
