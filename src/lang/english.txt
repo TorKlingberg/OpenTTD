@@ -3015,8 +3015,8 @@ STR_STATION_BUILD_AIRPORT_MODULAR_OFF                           :{BLACK}Off
 STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP                   :{BLACK}Build the airport normally
 STR_STATION_BUILD_AIRPORT_MODULAR_ON                            :{BLACK}On
 STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP                    :{BLACK}Build the airport as a modular airport that can be edited tile-by-tile
-STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION                       :{WHITE}Modular Airport Builder (Prototype)
-STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP                       :{BLACK}Open modular airport builder (prototype)
+STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION                       :{WHITE}Modular Airport Builder
+STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP                       :{BLACK}Open modular airport builder
 STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL                  :{BLACK}Pieces
 STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP                :{BLACK}Select a modular airport piece
 STR_STATION_BUILD_MODULAR_AIRPORT_PREVIEW_LABEL                 :{BLACK}Preview
@@ -3029,7 +3029,7 @@ STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL                    :{BLACK}Toggle e
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP                   :{BLACK}Snap to grid
 STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE                      :{BLACK}Validate
 STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED                :{BLACK}Build (disabled)
-STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE                   :{BLACK}Prototype UI. Validation is basic.
+STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_IDLE                   :{BLACK}Ready to build.
 STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NOT_IMPLEMENTED        :{BLACK}Validation not implemented yet.
 STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_AIRPORT             :{BLACK}No modular airport built yet.
 STR_STATION_BUILD_MODULAR_AIRPORT_STATUS_NO_RUNWAY              :{BLACK}Validation failed: no runway tiles.

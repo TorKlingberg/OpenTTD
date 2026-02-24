@@ -119,7 +119,7 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY},    // 0
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       SPR_NSRUNWAY_END,           PC_DARK_GREY},    // 1
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, SPR_AIRFIELD_RUNWAY_MIDDLE, PC_DARK_GREY},    // 2  (smart-drag: auto-adds near/far ends)
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_TERMINAL_A,     PC_ORANGE},       // 3 (cosmetic picker)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_CONCOURSE,      PC_ORANGE},       // 3 (cosmetic picker)
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           SPR_AIRPORT_HANGAR_FRONT,   PC_DARK_RED},     // 4
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     SPR_AIRFIELD_HANGAR_FRONT,  PC_DARK_RED},     // 5
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          SPR_NEWHELIPAD,             PC_LIGHT_YELLOW}, // 6
@@ -217,6 +217,11 @@ public:
 			ResetObjectToPlace();
 		}
 		CloseWindowByClass(WC_BUILD_DEPOT);
+		/* Raise the modular button on the airport toolbar. */
+		if (this->parent != nullptr) {
+			this->parent->RaiseWidget(WID_AT_MODULAR);
+			this->parent->SetDirty();
+		}
 		/* Use Window::Close() instead of PickerWindowBase::Close() to avoid
 		 * an unconditional ResetObjectToPlace() — the guard above already
 		 * handles our own cursor, and we must not reset another window's cursor
@@ -840,6 +845,13 @@ public:
 		}
 	}
 
+	void Close([[maybe_unused]] int data = 0) override
+	{
+		/* Skip PickerWindowBase::Close() which calls ResetObjectToPlace() —
+		 * we're a child picker and must not steal the parent's cursor. */
+		this->Window::Close();
+	}
+
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
@@ -943,6 +955,11 @@ public:
 			}
 		}
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
+	}
+
+	void Close([[maybe_unused]] int data = 0) override
+	{
+		this->Window::Close();
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size,
@@ -1074,6 +1091,11 @@ public:
 			}
 		}
 		this->LowerWidget(WID_MAHPAD_PIECE_0 + _modular_helipad_piece);
+	}
+
+	void Close([[maybe_unused]] int data = 0) override
+	{
+		this->Window::Close();
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size,

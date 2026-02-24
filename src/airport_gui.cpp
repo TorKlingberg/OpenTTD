@@ -166,6 +166,17 @@ struct BuildAirToolbarWindow : Window {
 	{
 		switch (widget) {
 			case WID_AT_AIRPORT:
+				if (this->IsWidgetLowered(WID_AT_AIRPORT)) {
+					/* Toggle off: close stock picker. */
+					SetViewportCatchmentStation(nullptr, true);
+					ResetObjectToPlace();
+					return;
+				}
+				/* Close modular window if open. */
+				if (this->IsWidgetLowered(WID_AT_MODULAR)) {
+					CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
+					this->RaiseWidget(WID_AT_MODULAR);
+				}
 				if (HandlePlacePushButton(this, WID_AT_AIRPORT, SPR_CURSOR_AIRPORT, HT_RECT)) {
 					ShowBuildAirportPicker(this);
 					this->last_user_action = widget;
@@ -173,12 +184,23 @@ struct BuildAirToolbarWindow : Window {
 				break;
 
 			case WID_AT_MODULAR:
-				/* Reset any active toolbar placement first so buttons are raised. */
-				if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
-				ResetObjectToPlace();
-				this->RaiseButtons();
+				if (this->IsWidgetLowered(WID_AT_MODULAR)) {
+					/* Toggle off: close modular window. */
+					CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
+					this->RaiseWidget(WID_AT_MODULAR);
+					this->SetDirty();
+					return;
+				}
+				/* Close stock picker if open. */
+				if (this->IsWidgetLowered(WID_AT_AIRPORT)) {
+					SetViewportCatchmentStation(nullptr, true);
+					ResetObjectToPlace();
+					this->RaiseWidget(WID_AT_AIRPORT);
+				}
+				this->LowerWidget(WID_AT_MODULAR);
 				this->last_user_action = INVALID_WIDGET;
 				ShowBuildModularAirportWindow(this);
+				this->SetDirty();
 				break;
 
 			case WID_AT_DEMOLISH:
@@ -228,6 +250,7 @@ struct BuildAirToolbarWindow : Window {
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
 		this->RaiseButtons();
 		if (this->last_user_action == WID_AT_AIRPORT) CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
+		CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
 		CloseWindowById(WC_SELECT_STATION, 0);
 	}
 
