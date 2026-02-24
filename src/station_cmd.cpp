@@ -2946,7 +2946,6 @@ bool IsModernModularPiece(uint8_t piece_type)
 		case APT_GRASS_FENCE_NE_FLAG_2:
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
-		case APT_BUILDING_1:
 		case APT_LOW_BUILDING:
 		case APT_LOW_BUILDING_FENCE_N:
 		case APT_LOW_BUILDING_FENCE_NW:

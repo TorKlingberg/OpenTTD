@@ -907,6 +907,21 @@ public:
 	{
 		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces)) _modular_cosmetic_piece = 0;
 		this->InitNested(0);
+		/* Disable pieces gated behind a future year. */
+		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+			bool locked = IsModernModularPiece(_cosmetic_pieces[i].apt_gfx) &&
+				TimerGameCalendar::year < GetModularPieceMinYear(_cosmetic_pieces[i].apt_gfx);
+			this->SetWidgetDisabledState(WID_MACP_PIECE_0 + i, locked);
+		}
+		if (this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
+			/* Selected piece is locked; pick the first available one. */
+			for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+				if (!this->IsWidgetDisabled(WID_MACP_PIECE_0 + i)) {
+					_modular_cosmetic_piece = static_cast<uint8_t>(i);
+					break;
+				}
+			}
+		}
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
 	}
 
@@ -1024,6 +1039,20 @@ public:
 	{
 		if (_modular_helipad_piece >= lengthof(_helipad_pieces)) _modular_helipad_piece = 0;
 		this->InitNested(0);
+		/* Disable helipad pieces gated behind a future year. */
+		for (uint i = 0; i < lengthof(_helipad_pieces); i++) {
+			bool locked = IsModernModularPiece(_helipad_pieces[i].apt_gfx) &&
+				TimerGameCalendar::year < GetModularPieceMinYear(_helipad_pieces[i].apt_gfx);
+			this->SetWidgetDisabledState(WID_MAHPAD_PIECE_0 + i, locked);
+		}
+		if (this->IsWidgetDisabled(WID_MAHPAD_PIECE_0 + _modular_helipad_piece)) {
+			for (uint i = 0; i < lengthof(_helipad_pieces); i++) {
+				if (!this->IsWidgetDisabled(WID_MAHPAD_PIECE_0 + i)) {
+					_modular_helipad_piece = static_cast<uint8_t>(i);
+					break;
+				}
+			}
+		}
 		this->LowerWidget(WID_MAHPAD_PIECE_0 + _modular_helipad_piece);
 	}
 
