@@ -210,7 +210,7 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
 		tile.dy = ClampTo<uint16_t>(TileY(md.tile) - min_y);
 		tile.piece_type = md.piece_type;
 		tile.rotation = md.rotation;
-		tile.runway_flags = md.runway_flags;
+		tile.runway_flags = IsModularRunwayPiece(md.piece_type) ? md.runway_flags : 0;
 		tile.one_way_taxi = md.one_way_taxi;
 		tile.user_taxi_dir_mask = md.user_taxi_dir_mask;
 		tile.edge_block_mask = md.edge_block_mask;

@@ -3040,6 +3040,20 @@ static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_
 	}
 }
 
+static uint8_t NormalizeTemplateRunwayFlags(uint8_t flags)
+{
+	const uint8_t mode_bits = flags & (RUF_LANDING | RUF_TAKEOFF);
+	const uint8_t dir_bits = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+
+	uint8_t normalized = flags;
+	if (mode_bits == 0) normalized |= (RUF_LANDING | RUF_TAKEOFF);
+	if (dir_bits != RUF_DIR_LOW && dir_bits != RUF_DIR_HIGH) {
+		normalized &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
+		normalized |= RUF_DIR_LOW;
+	}
+	return normalized;
+}
+
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
@@ -3996,10 +4010,11 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 			TileIndex t = abs_tiles[i];
 
-			if ((rt.runway_flags & (RUF_LANDING | RUF_TAKEOFF)) != 0) {
-				CommandCost ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, rt.runway_flags);
+			if (IsModularRunwayPiece(rt.piece_type)) {
+				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
+				CommandCost ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
 				if (ret.Failed()) {
-					Debug(misc, 1, "[TplAp] pass2 runway failed idx={} tile={} flags={} err={}", i, t.base(), rt.runway_flags, ret.GetErrorMessage());
+					Debug(misc, 1, "[TplAp] pass2 runway failed idx={} tile={} flags={} err={}", i, t.base(), runway_flags, ret.GetErrorMessage());
 					return ret;
 				}
 			}

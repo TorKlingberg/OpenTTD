@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <optional>
 
 using json = nlohmann::json;
 
@@ -38,14 +39,14 @@ static std::string GetTemplatesDirectory()
 	return dir;
 }
 
-static bool ResolveAirportTileByGRF(uint32_t grfid, uint16_t local_id)
+static std::optional<uint8_t> ResolveAirportTileIndexByGRF(uint32_t grfid, uint16_t local_id)
 {
 	for (uint16_t gfx = NEW_AIRPORTTILE_OFFSET; gfx < NUM_AIRPORTTILES; gfx++) {
 		const AirportTileSpec *ats = AirportTileSpec::Get(static_cast<StationGfx>(gfx));
 		if (ats == nullptr) continue;
-		if (ats->grf_prop.grfid == grfid && ats->grf_prop.local_id == local_id) return true;
+		if (ats->grf_prop.grfid == grfid && ats->grf_prop.local_id == local_id) return static_cast<uint8_t>(gfx);
 	}
-	return false;
+	return std::nullopt;
 }
 
 void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t template_h)
@@ -120,10 +121,14 @@ void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t templa
 void AirportTemplate::CheckAvailability()
 {
 	this->is_available = true;
-	for (const auto &tile : this->tiles) {
-		if (tile.grfid != 0 && !ResolveAirportTileByGRF(tile.grfid, tile.local_id)) {
-			this->is_available = false;
-			return;
+	for (auto &tile : this->tiles) {
+		if (tile.grfid != 0) {
+			auto resolved = ResolveAirportTileIndexByGRF(tile.grfid, tile.local_id);
+			if (!resolved.has_value()) {
+				this->is_available = false;
+				return;
+			}
+			tile.piece_type = resolved.value();
 		}
 	}
 }
