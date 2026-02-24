@@ -35,6 +35,8 @@ Window *ShowBuildDocksScenToolbar();
 
 /* airport_gui.cpp */
 Window *ShowBuildAirToolbar();
+bool ShouldDrawSavedTemplatePreviewAtTile(TileIndex tile);
+bool IsSavedTemplatePlacementPreviewActive();
 
 /* tgp_gui.cpp */
 void ShowGenerateLandscape();

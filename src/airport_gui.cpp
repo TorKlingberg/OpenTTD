@@ -51,6 +51,7 @@
 #include "timer/timer_game_calendar.h"
 #include "palette_func.h"
 #include "modular_airport_gui.h"
+#include "airport_template.h"
 
 #include "widgets/airport_widget.h"
 
@@ -64,11 +65,45 @@ static AirportClassID _selected_airport_class; ///< the currently visible airpor
 static int _selected_airport_index;            ///< the index of the selected airport in the current class or -1
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 static bool _build_airport_as_modular = false; ///< whether to build stock airports as modular
+static int _selected_airport_template_index = -1; ///< index into AirportTemplateManager::GetTemplates()
+static uint8_t _selected_airport_template_rotation = 0; ///< 0..3 clockwise
+static std::vector<Point> _saved_template_preview_offsets; ///< Rotated footprint offsets for viewport highlighting.
+static bool _saved_template_preview_active = false;
+
+static constexpr AirportClassID APC_SAVED_CUSTOM = static_cast<AirportClassID>(APC_MAX);
 
 static void ShowBuildAirportPicker(Window *parent);
 
 SpriteID GetCustomAirportSprite(const AirportSpec *as, uint8_t layout);
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
+
+static bool IsSavedTemplateClassSelected()
+{
+	return _selected_airport_class == APC_SAVED_CUSTOM;
+}
+
+static const AirportTemplate *GetSelectedAirportTemplate()
+{
+	const auto &templates = AirportTemplateManager::GetTemplates();
+	if (_selected_airport_template_index < 0 || static_cast<size_t>(_selected_airport_template_index) >= templates.size()) return nullptr;
+	return templates[_selected_airport_template_index].get();
+}
+
+static void UpdateSavedTemplatePreviewCache()
+{
+	_saved_template_preview_offsets.clear();
+	_saved_template_preview_active = false;
+
+	const AirportTemplate *templ = GetSelectedAirportTemplate();
+	if (templ == nullptr || !templ->is_available) return;
+
+	for (const AirportTemplateTile &src : templ->tiles) {
+		AirportTemplateTile t = src;
+		t.Rotate(_selected_airport_template_rotation, templ->width, templ->height);
+		_saved_template_preview_offsets.push_back({static_cast<int>(t.dx), static_cast<int>(t.dy)});
+	}
+	_saved_template_preview_active = !_saved_template_preview_offsets.empty();
+}
 
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
@@ -93,11 +128,48 @@ void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
  */
 static void PlaceAirport(TileIndex tile)
 {
+	bool adjacent = _ctrl_pressed;
+
+	if (IsSavedTemplateClassSelected()) {
+		const AirportTemplate *templ = GetSelectedAirportTemplate();
+		if (templ == nullptr || !templ->is_available) {
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), {}, WL_INFO);
+			return;
+		}
+
+		ModularTemplatePlacementData data;
+		data.width = templ->width;
+		data.height = templ->height;
+		data.rotation = _selected_airport_template_rotation & 3;
+		data.tiles.reserve(templ->tiles.size());
+		for (const AirportTemplateTile &tt : templ->tiles) {
+			ModularTemplatePlacementTile ct;
+			ct.dx = tt.dx;
+			ct.dy = tt.dy;
+			ct.piece_type = tt.piece_type;
+			ct.rotation = tt.rotation;
+			ct.runway_flags = tt.runway_flags;
+			ct.one_way_taxi = tt.one_way_taxi;
+			ct.user_taxi_dir_mask = tt.user_taxi_dir_mask;
+			ct.edge_block_mask = tt.edge_block_mask;
+			data.tiles.push_back(ct);
+		}
+
+		auto proc = [=](bool test, StationID to_join) -> bool {
+			if (test) {
+				return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>()), tile, StationID::Invalid(), adjacent, data).Succeeded();
+			}
+			return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, to_join, adjacent, data);
+		};
+
+		ShowSelectStationIfNeeded(TileArea(tile, _thd.size.x / TILE_SIZE, _thd.size.y / TILE_SIZE), proc);
+		return;
+	}
+
 	if (_selected_airport_index == -1) return;
 
 	uint8_t airport_type = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index)->GetIndex();
 	uint8_t layout = _selected_airport_layout;
-	bool adjacent = _ctrl_pressed;
 
 	auto proc = [=](bool test, StationID to_join) -> bool {
 		if (_build_airport_as_modular) {
@@ -323,6 +395,7 @@ class BuildAirportWindow : public PickerWindowBase {
 		for (const auto &cls : AirportClass::Classes()) {
 			list.push_back(MakeDropDownListStringItem(cls.name, cls.Index()));
 		}
+		list.push_back(MakeDropDownListStringItem(STR_AIRPORT_CLASS_SAVED_CUSTOM, APC_SAVED_CUSTOM));
 
 		return list;
 	}
@@ -342,29 +415,37 @@ public:
 		this->SetWidgetLoweredState(WID_AP_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
 		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
+		AirportTemplateManager::Refresh();
 		this->OnInvalidateData();
 
 		/* Ensure airport class is valid (changing NewGRFs). */
-		_selected_airport_class = Clamp(_selected_airport_class, APC_BEGIN, (AirportClassID)(AirportClass::GetClassCount() - 1));
-		const AirportClass *ac = AirportClass::Get(_selected_airport_class);
-		this->vscroll->SetCount(ac->GetSpecCount());
+		if (_selected_airport_class != APC_SAVED_CUSTOM) {
+			_selected_airport_class = Clamp(_selected_airport_class, APC_BEGIN, static_cast<AirportClassID>(AirportClass::GetClassCount() - 1));
+			const AirportClass *ac = AirportClass::Get(_selected_airport_class);
+			this->vscroll->SetCount(ac->GetSpecCount());
 
-		/* Ensure the airport index is valid for this class (changing NewGRFs). */
-		_selected_airport_index = Clamp(_selected_airport_index, -1, ac->GetSpecCount() - 1);
+			/* Ensure the airport index is valid for this class (changing NewGRFs). */
+			_selected_airport_index = Clamp(_selected_airport_index, -1, ac->GetSpecCount() - 1);
 
-		/* Only when no valid airport was selected, we want to select the first airport. */
-		bool select_first_airport = true;
-		if (_selected_airport_index != -1) {
-			const AirportSpec *as = ac->GetSpec(_selected_airport_index);
-			if (as->IsAvailable()) {
-				/* Ensure the airport layout is valid. */
-				_selected_airport_layout = Clamp(_selected_airport_layout, 0, static_cast<uint8_t>(as->layouts.size() - 1));
-				select_first_airport = false;
-				this->UpdateSelectSize();
+			/* Only when no valid airport was selected, we want to select the first airport. */
+			bool select_first_airport = true;
+			if (_selected_airport_index != -1) {
+				const AirportSpec *as = ac->GetSpec(_selected_airport_index);
+				if (as->IsAvailable()) {
+					/* Ensure the airport layout is valid. */
+					_selected_airport_layout = Clamp(_selected_airport_layout, 0, static_cast<uint8_t>(as->layouts.size() - 1));
+					select_first_airport = false;
+					this->UpdateSelectSize();
+				}
 			}
-		}
 
-		if (select_first_airport) this->SelectFirstAvailableAirport(true);
+			if (select_first_airport) this->SelectFirstAvailableAirport(true);
+		} else {
+			const auto &templates = AirportTemplateManager::GetTemplates();
+			this->vscroll->SetCount(templates.size());
+			_selected_airport_template_index = Clamp(_selected_airport_template_index, -1, static_cast<int>(templates.size()) - 1);
+			this->UpdateSelectSize();
+		}
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
@@ -375,13 +456,17 @@ public:
 
 	std::string GetWidgetString(WidgetID widget, StringID stringid) const override
 	{
-		switch (widget) {
-			case WID_AP_CLASS_DROPDOWN:
-				return GetString(AirportClass::Get(_selected_airport_class)->name);
+			switch (widget) {
+				case WID_AP_CLASS_DROPDOWN:
+					if (IsSavedTemplateClassSelected()) return GetString(STR_AIRPORT_CLASS_SAVED_CUSTOM);
+					return GetString(AirportClass::Get(_selected_airport_class)->name);
 
-			case WID_AP_LAYOUT_NUM:
-				if (_selected_airport_index != -1) {
-					const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index);
+				case WID_AP_LAYOUT_NUM:
+					if (IsSavedTemplateClassSelected()) {
+						return GetString(STR_STATION_BUILD_AIRPORT_LAYOUT_NAME, _selected_airport_template_rotation + 1);
+					}
+					if (_selected_airport_index != -1) {
+						const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index);
 					StringID string = GetAirportTextCallback(as, _selected_airport_layout, CBID_AIRPORT_LAYOUT_NAME);
 					if (string != STR_UNDEFINED) {
 						return GetString(string);
@@ -404,6 +489,7 @@ public:
 				for (const auto &cls : AirportClass::Classes()) {
 					d = maxdim(d, GetStringBoundingBox(cls.name));
 				}
+				d = maxdim(d, GetStringBoundingBox(STR_AIRPORT_CLASS_SAVED_CUSTOM));
 				d.width += padding.width;
 				d.height += padding.height;
 				size = maxdim(size, d);
@@ -416,6 +502,12 @@ public:
 					if (!as->enabled) continue;
 
 					size.width = std::max(size.width, GetStringBoundingBox(as->name).width + padding.width);
+				}
+				for (const auto &templ : AirportTemplateManager::GetTemplates()) {
+					if (templ == nullptr) continue;
+					std::string label = templ->name;
+					if (!templ->is_available) label += " (NewGRF missing)";
+					size.width = std::max(size.width, GetStringBoundingBox(label).width + padding.width);
 				}
 
 				this->line_height = GetCharacterHeight(FS_NORMAL) + padding.height;
@@ -463,16 +555,35 @@ public:
 			case WID_AP_AIRPORT_LIST: {
 				Rect row = r.WithHeight(this->line_height).Shrink(WidgetDimensions::scaled.bevel);
 				Rect text = r.WithHeight(this->line_height).Shrink(WidgetDimensions::scaled.matrix);
-				const auto specs = AirportClass::Get(_selected_airport_class)->Specs();
-				auto [first, last] = this->vscroll->GetVisibleRangeIterators(specs);
-				for (auto it = first; it != last; ++it) {
-					const AirportSpec *as = *it;
-					if (!as->IsAvailable()) {
-						GfxFillRect(row, PC_BLACK, FILLRECT_CHECKER);
+				if (IsSavedTemplateClassSelected()) {
+					const auto &templates = AirportTemplateManager::GetTemplates();
+					auto [first, last] = this->vscroll->GetVisibleRangeIterators(templates);
+					for (auto it = first; it != last; ++it) {
+						const AirportTemplate *templ = it->get();
+						std::string label = templ->name;
+						TextColour tc = TC_BLACK;
+						if (!templ->is_available) {
+							label += " (NewGRF missing)";
+							GfxFillRect(row, PC_BLACK, FILLRECT_CHECKER);
+							tc = TC_RED;
+						}
+						if (static_cast<int>(std::distance(templates.begin(), it)) == _selected_airport_template_index) tc = TC_WHITE;
+						DrawString(text, label, tc);
+						row = row.Translate(0, this->line_height);
+						text = text.Translate(0, this->line_height);
 					}
-					DrawString(text, as->name, (static_cast<int>(as->index) == _selected_airport_index) ? TC_WHITE : TC_BLACK);
-					row = row.Translate(0, this->line_height);
-					text = text.Translate(0, this->line_height);
+				} else {
+					const auto specs = AirportClass::Get(_selected_airport_class)->Specs();
+					auto [first, last] = this->vscroll->GetVisibleRangeIterators(specs);
+					for (auto it = first; it != last; ++it) {
+						const AirportSpec *as = *it;
+						if (!as->IsAvailable()) {
+							GfxFillRect(row, PC_BLACK, FILLRECT_CHECKER);
+						}
+						DrawString(text, as->name, (static_cast<int>(as->index) == _selected_airport_index) ? TC_WHITE : TC_BLACK);
+						row = row.Translate(0, this->line_height);
+						text = text.Translate(0, this->line_height);
+					}
 				}
 				break;
 			}
@@ -485,7 +596,14 @@ public:
 				break;
 
 			case WID_AP_EXTRA_TEXT:
-				if (_selected_airport_index != -1) {
+				if (IsSavedTemplateClassSelected()) {
+					const AirportTemplate *templ = GetSelectedAirportTemplate();
+					if (templ != nullptr) {
+						uint16_t w, h;
+						templ->GetRotatedDimensions(_selected_airport_template_rotation, w, h);
+						DrawString(r, GetString(STR_OBJECT_BUILD_SIZE, w, h), TC_BLACK);
+					}
+				} else if (_selected_airport_index != -1) {
 					const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index);
 					StringID string = GetAirportTextCallback(as, _selected_airport_layout, CBID_AIRPORT_ADDITIONAL_TEXT);
 					if (string != STR_UNDEFINED) {
@@ -504,7 +622,7 @@ public:
 		const int bottom = r.bottom;
 		r.bottom = INT_MAX; // Allow overflow as we want to know the required height.
 
-		if (_selected_airport_index != -1) {
+		if (!IsSavedTemplateClassSelected() && _selected_airport_index != -1) {
 			const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index);
 			int rad = _settings_game.station.modified_catchment ? as->catchment : (uint)CA_UNMODIFIED;
 
@@ -546,6 +664,32 @@ public:
 
 	void UpdateSelectSize()
 	{
+		if (IsSavedTemplateClassSelected()) {
+			const AirportTemplate *templ = GetSelectedAirportTemplate();
+			if (templ == nullptr) {
+				SetTileSelectSize(1, 1);
+				this->DisableWidget(WID_AP_LAYOUT_DECREASE);
+				this->DisableWidget(WID_AP_LAYOUT_INCREASE);
+				this->preview_sprite = 0;
+				_saved_template_preview_active = false;
+				_saved_template_preview_offsets.clear();
+				return;
+			}
+
+			uint16_t w, h;
+			templ->GetRotatedDimensions(_selected_airport_template_rotation, w, h);
+			SetTileSelectSize(w, h);
+			this->preview_sprite = 0;
+
+			this->SetWidgetDisabledState(WID_AP_LAYOUT_DECREASE, _selected_airport_template_rotation == 0);
+			this->SetWidgetDisabledState(WID_AP_LAYOUT_INCREASE, _selected_airport_template_rotation >= 3);
+			UpdateSavedTemplatePreviewCache();
+			return;
+		}
+
+		_saved_template_preview_active = false;
+		_saved_template_preview_offsets.clear();
+
 		if (_selected_airport_index == -1) {
 			SetTileSelectSize(1, 1);
 			this->DisableWidget(WID_AP_LAYOUT_DECREASE);
@@ -578,8 +722,15 @@ public:
 			case WID_AP_AIRPORT_LIST: {
 				int32_t num_clicked = this->vscroll->GetScrolledRowFromWidget(pt.y, this, widget, 0, this->line_height);
 				if (num_clicked == INT32_MAX) break;
-				const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(num_clicked);
-				if (as->IsAvailable()) this->SelectOtherAirport(num_clicked);
+				if (IsSavedTemplateClassSelected()) {
+					if (num_clicked < 0 || static_cast<size_t>(num_clicked) >= AirportTemplateManager::GetTemplates().size()) break;
+					_selected_airport_template_index = num_clicked;
+					this->UpdateSelectSize();
+					this->SetDirty();
+				} else {
+					const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(num_clicked);
+					if (as->IsAvailable()) this->SelectOtherAirport(num_clicked);
+				}
 				break;
 			}
 
@@ -594,13 +745,21 @@ public:
 				break;
 
 			case WID_AP_LAYOUT_DECREASE:
-				_selected_airport_layout--;
+				if (IsSavedTemplateClassSelected()) {
+					if (_selected_airport_template_rotation > 0) _selected_airport_template_rotation--;
+				} else {
+					_selected_airport_layout--;
+				}
 				this->UpdateSelectSize();
 				this->SetDirty();
 				break;
 
 			case WID_AP_LAYOUT_INCREASE:
-				_selected_airport_layout++;
+				if (IsSavedTemplateClassSelected()) {
+					if (_selected_airport_template_rotation < 3) _selected_airport_template_rotation++;
+				} else {
+					_selected_airport_layout++;
+				}
 				this->UpdateSelectSize();
 				this->SetDirty();
 				break;
@@ -622,6 +781,19 @@ public:
 	 */
 	void SelectFirstAvailableAirport(bool change_class)
 	{
+		if (IsSavedTemplateClassSelected()) {
+			const auto &templates = AirportTemplateManager::GetTemplates();
+			if (!templates.empty()) {
+				_selected_airport_template_index = 0;
+				this->UpdateSelectSize();
+				this->SetDirty();
+				return;
+			}
+			_selected_airport_template_index = -1;
+			this->UpdateSelectSize();
+			return;
+		}
+
 		/* First try to select an airport in the selected class. */
 		AirportClass *sel_apclass = AirportClass::Get(_selected_airport_class);
 		for (const AirportSpec *as : sel_apclass->Specs()) {
@@ -630,10 +802,10 @@ public:
 				return;
 			}
 		}
-		if (change_class) {
-			/* If that fails, select the first available airport
-			 * from the first class where airports are available. */
-			for (const auto &cls : AirportClass::Classes()) {
+			if (change_class) {
+				/* If that fails, select the first available airport
+				 * from the first class where airports are available. */
+				for (const auto &cls : AirportClass::Classes()) {
 				for (const auto &as : cls.Specs()) {
 					if (as->IsAvailable()) {
 						_selected_airport_class = cls.Index();
@@ -651,9 +823,16 @@ public:
 	void OnDropdownSelect(WidgetID widget, int index, int) override
 	{
 		if (widget == WID_AP_CLASS_DROPDOWN) {
-			_selected_airport_class = (AirportClassID)index;
-			this->vscroll->SetCount(AirportClass::Get(_selected_airport_class)->GetSpecCount());
-			this->SelectFirstAvailableAirport(false);
+			_selected_airport_class = static_cast<AirportClassID>(index);
+			if (IsSavedTemplateClassSelected()) {
+				this->vscroll->SetCount(AirportTemplateManager::GetTemplates().size());
+				_selected_airport_template_index = AirportTemplateManager::GetTemplates().empty() ? -1 : 0;
+				this->UpdateSelectSize();
+				this->SetDirty();
+			} else {
+				this->vscroll->SetCount(AirportClass::Get(_selected_airport_class)->GetSpecCount());
+				this->SelectFirstAvailableAirport(false);
+			}
 		}
 	}
 
@@ -727,9 +906,34 @@ static void ShowBuildAirportPicker(Window *parent)
 	new BuildAirportWindow(_build_airport_desc, parent);
 }
 
+bool ShouldDrawSavedTemplatePreviewAtTile(TileIndex tile)
+{
+	if (!_saved_template_preview_active) return false;
+	if (!IsSavedTemplateClassSelected()) return false;
+	if ((_thd.drawstyle & HT_DRAG_MASK) == HT_NONE) return false;
+	if (_thd.window_class != WC_BUILD_TOOLBAR || _thd.window_number != TRANSPORT_AIR) return false;
+
+	TileIndex anchor = TileVirtXY(_thd.pos.x, _thd.pos.y);
+	int dx = TileX(tile) - TileX(anchor);
+	int dy = TileY(tile) - TileY(anchor);
+	for (const Point &p : _saved_template_preview_offsets) {
+		if (p.x == dx && p.y == dy) return true;
+	}
+	return false;
+}
+
+bool IsSavedTemplatePlacementPreviewActive()
+{
+	return _saved_template_preview_active;
+}
+
 
 void InitializeAirportGui()
 {
 	_selected_airport_class = APC_BEGIN;
 	_selected_airport_index = -1;
+	_selected_airport_template_index = -1;
+	_selected_airport_template_rotation = 0;
+	_saved_template_preview_active = false;
+	_saved_template_preview_offsets.clear();
 }

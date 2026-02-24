@@ -61,6 +61,8 @@ add_files(
     airport.h
     airport_cmd.h
     airport_gui.cpp
+    airport_template.cpp
+    airport_template.h
     modular_airport_gui.cpp
     modular_airport_gui.h
     airport_pathfinder.cpp

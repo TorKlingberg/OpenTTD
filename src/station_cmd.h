@@ -11,14 +11,34 @@
 #define STATION_CMD_H
 
 #include "command_type.h"
+#include "misc/endian_buffer.hpp"
 #include "rail_type.h"
 #include "road_type.h"
 #include "station_type.h"
+#include <vector>
 
 struct Town;
 
 enum StationClassID : uint16_t;
 enum RoadStopClassID : uint16_t;
+
+struct ModularTemplatePlacementTile {
+	uint16_t dx = 0;
+	uint16_t dy = 0;
+	uint8_t piece_type = 0;
+	uint8_t rotation = 0;
+	uint8_t runway_flags = 0;
+	bool one_way_taxi = false;
+	uint8_t user_taxi_dir_mask = 0x0F;
+	uint8_t edge_block_mask = 0;
+};
+
+struct ModularTemplatePlacementData {
+	uint16_t width = 0;
+	uint16_t height = 0;
+	uint8_t rotation = 0; // 0..3, clockwise
+	std::vector<ModularTemplatePlacementTile> tiles;
+};
 
 extern Town *AirportGetNearestTown(const struct AirportSpec *as, Direction rotation, TileIndex tile, TileIterator &&it, uint &mindist);
 extern uint8_t GetAirportNoiseLevelForDistance(const struct AirportSpec *as, uint distance);
@@ -29,6 +49,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi);
 CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile, uint8_t airport_type, uint8_t layout, StationID station_to_join, bool allow_adjacent);
 CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set);
+CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile, StationID station_to_join, bool allow_adjacent, const ModularTemplatePlacementData &data);
 CommandCost CmdBuildDock(DoCommandFlags flags, TileIndex tile, StationID station_to_join, bool adjacent);
 CommandCost CmdBuildRailStation(DoCommandFlags flags, TileIndex tile_org, RailType rt, Axis axis, uint8_t numtracks, uint8_t plat_len, StationClassID spec_class, uint16_t spec_index, StationID station_to_join, bool adjacent);
 CommandCost CmdRemoveFromRailStation(DoCommandFlags flags, TileIndex start, TileIndex end, bool keep_rail);
@@ -44,6 +65,7 @@ DEF_CMD_TRAIT(CMD_SET_RUNWAY_FLAGS,          CmdSetRunwayFlags,          {}, Com
 DEF_CMD_TRAIT(CMD_SET_TAXIWAY_FLAGS,         CmdSetTaxiwayFlags,         {}, CommandType::LandscapeConstruction)
 DEF_CMD_TRAIT(CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK, CmdBuildModularAirportFromStock, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
 DEF_CMD_TRAIT(CMD_SET_MODULAR_AIRPORT_EDGE_FENCE, CmdSetModularAirportEdgeFence, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(CMD_PLACE_MODULAR_AIRPORT_TEMPLATE, CmdPlaceModularAirportTemplate, CommandFlags({CommandFlag::Auto, CommandFlag::NoTest, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
 DEF_CMD_TRAIT(CMD_BUILD_DOCK,               CmdBuildDock,             CommandFlag::Auto,                CommandType::LandscapeConstruction)
 DEF_CMD_TRAIT(CMD_BUILD_RAIL_STATION,       CmdBuildRailStation,      CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
 DEF_CMD_TRAIT(CMD_REMOVE_FROM_RAIL_STATION, CmdRemoveFromRailStation, {},                       CommandType::LandscapeConstruction)
@@ -54,5 +76,38 @@ DEF_CMD_TRAIT(CMD_MOVE_STATION_NAME,        CmdMoveStationName,       {},       
 DEF_CMD_TRAIT(CMD_OPEN_CLOSE_AIRPORT,       CmdOpenCloseAirport,      {},                       CommandType::RouteManagement)
 
 void CcMoveStationName(Commands cmd, const CommandCost &result, StationID station_id);
+
+template <typename Tcont, typename Titer>
+inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, Titer> &buffer, const ModularTemplatePlacementTile &tile)
+{
+	return buffer << tile.dx << tile.dy << tile.piece_type << tile.rotation
+	              << tile.runway_flags << tile.one_way_taxi << tile.user_taxi_dir_mask << tile.edge_block_mask;
+}
+
+inline EndianBufferReader &operator >>(EndianBufferReader &buffer, ModularTemplatePlacementTile &tile)
+{
+	return buffer >> tile.dx >> tile.dy >> tile.piece_type >> tile.rotation
+	              >> tile.runway_flags >> tile.one_way_taxi >> tile.user_taxi_dir_mask >> tile.edge_block_mask;
+}
+
+template <typename Tcont, typename Titer>
+inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, Titer> &buffer, const ModularTemplatePlacementData &data)
+{
+	buffer << data.width << data.height << data.rotation;
+	uint16_t count = ClampTo<uint16_t>(data.tiles.size());
+	buffer << count;
+	for (uint16_t i = 0; i < count; i++) buffer << data.tiles[i];
+	return buffer;
+}
+
+inline EndianBufferReader &operator >>(EndianBufferReader &buffer, ModularTemplatePlacementData &data)
+{
+	buffer >> data.width >> data.height >> data.rotation;
+	uint16_t count = 0;
+	buffer >> count;
+	data.tiles.resize(count);
+	for (uint16_t i = 0; i < count; i++) buffer >> data.tiles[i];
+	return buffer;
+}
 
 #endif /* STATION_CMD_H */
