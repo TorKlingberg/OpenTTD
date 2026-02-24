@@ -196,8 +196,9 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	if (!from_ok) return false; // Direction not allowed from 'from'
 	if (!to_ok) return false; // Reverse direction not allowed
 
-	/* Reservation checking removed: the pathfinder now finds topology-only paths.
-	 * Reservations are handled by the segment-based reservation system. */
+	/* Explicit edge fences block movement in both directions. */
+	if (from_data->edge_block_mask & dir_bit) return false;
+	if (to_data->edge_block_mask & reverse_dir_bit) return false;
 
 	return true;
 }
@@ -350,7 +351,19 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v);
 
 		for (TileIndex neighbor : neighbors) {
-			int tentative_g = current.g_cost + 1; // Cost is 1 per tile
+			/* Grass tiles are taxiable but penalised so paved routes are preferred. */
+			int move_cost = 1;
+			const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
+			if (nb_data != nullptr) {
+				switch (nb_data->piece_type) {
+					case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
+					case APT_GRASS_FENCE_NE_FLAG: case APT_GRASS_FENCE_NE_FLAG_2:
+						move_cost = 4;
+						break;
+					default: break;
+				}
+			}
+			int tentative_g = current.g_cost + move_cost;
 
 			/* Check if this path to neighbor is better than previously known */
 			auto it = g_costs.find(neighbor);

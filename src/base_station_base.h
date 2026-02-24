@@ -48,6 +48,7 @@ struct ModularAirportTileData {
 	bool one_way_taxi = false;
 	uint8_t auto_taxi_dir_mask = 0;    ///< calculated from piece_type + rotation
 	uint8_t runway_flags = RUF_DEFAULT; ///< Runway usage flags (landing/takeoff/direction)
+	uint8_t edge_block_mask = 0;       ///< Explicit edge fences blocking taxi (N=0x01, E=0x02, S=0x04, W=0x08)
 };
 
 /** StationRect - used to track station spread out rectangle - cheaper than scanning whole map */

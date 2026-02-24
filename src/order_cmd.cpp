@@ -26,6 +26,7 @@
 #include "cheat_type.h"
 #include "order_cmd.h"
 #include "train_cmd.h"
+#include "modular_airport_cmd.h"
 
 #include "table/strings.h"
 
@@ -1716,6 +1717,13 @@ void CheckOrders(const Vehicle *v)
 							!_cheats.no_jetcrash.value &&
 							message == INVALID_STRING_ID) {
 					message = STR_NEWS_PLANE_USES_TOO_SHORT_RUNWAY;
+				} else if (v->type == VEH_AIRCRAFT &&
+							(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
+							st->airport.blocks.Test(AirportBlock::Modular) &&
+							!ModularAirportSupportsLargeAircraft(st) &&
+							!_cheats.no_jetcrash.value &&
+							message == INVALID_STRING_ID) {
+					message = STR_NEWS_PLANE_USES_UNSAFE_MODULAR_AIRPORT;
 				}
 			}
 		}

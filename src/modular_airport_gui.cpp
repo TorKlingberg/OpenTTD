@@ -181,6 +181,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	bool show_taxi_arrows = true;
 	bool show_holding_loop = false;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
+	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
@@ -189,10 +190,22 @@ public:
 		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
+		this->UpdateYearGating();
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
 		_show_holding_overlay = this->show_holding_loop;
 		MarkWholeScreenDirty();
+	}
+
+	/** Disable piece buttons whose GFX is gated behind a future year. */
+	void UpdateYearGating()
+	{
+		for (int i = 0; i < PIECE_COUNT; i++) {
+			if (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) continue;
+			uint8_t gfx = GetModularAirportPieceGfx(static_cast<uint8_t>(i));
+			bool locked = IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
+			this->SetWidgetDisabledState(WID_MA_PIECE_0 + i, locked);
+		}
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
@@ -337,6 +350,12 @@ public:
 				MarkWholeScreenDirty();
 				break;
 
+			case WID_MA_FENCE_TOOL:
+				this->fence_tool_active = !this->fence_tool_active;
+				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, this->fence_tool_active);
+				this->SetDirty();
+				break;
+
 			default: break;
 		}
 	}
@@ -441,6 +460,37 @@ public:
 	{
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
+			return;
+		}
+
+		/* Fence tool: determine closest edge from click position and toggle fence.
+		 * Uses _tile_fract_coords (0-15 sub-tile position in world X/Y) set by
+		 * the viewport system on each click — same mechanism as the autoroad tool. */
+		if (this->fence_tool_active) {
+			if (!IsTileType(tile, TileType::Station) || !IsAirport(tile)) return;
+			Station *st = Station::GetByTile(tile);
+			if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return;
+			const ModularAirportTileData *md = st->airport.GetModularTileData(tile);
+			if (md == nullptr) return;
+
+			int fx = _tile_fract_coords.x; /* 0..15, 0 = W edge, 15 = E edge */
+			int fy = _tile_fract_coords.y; /* 0..15, 0 = N edge, 15 = S edge */
+
+			/* Distance from each edge. */
+			int dist_n = fy;           /* N edge: neighbor dy=-1 */
+			int dist_s = 15 - fy;     /* S edge: neighbor dy=+1 */
+			int dist_e = 15 - fx;     /* E edge: neighbor dx=+1 */
+			int dist_w = fx;           /* W edge: neighbor dx=-1 */
+
+			uint8_t edge_bit;
+			int min_dist = dist_n;
+			edge_bit = 0x01; /* N */
+			if (dist_s < min_dist) { min_dist = dist_s; edge_bit = 0x04; } /* S */
+			if (dist_e < min_dist) { min_dist = dist_e; edge_bit = 0x02; } /* E */
+			if (dist_w < min_dist) { min_dist = dist_w; edge_bit = 0x08; } /* W */
+
+			bool currently_set = (md->edge_block_mask & edge_bit) != 0;
+			Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Post(tile, edge_bit, !currently_set);
 			return;
 		}
 
@@ -1080,6 +1130,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_HOLDING), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_BLOT, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_FENCE_TOOL), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_AIRPORT_FENCE_Y, STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL),
 	EndContainer(),
 };
 

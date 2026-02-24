@@ -927,6 +927,7 @@ STR_NEWS_VEHICLE_HAS_VOID_ORDER                                 :{WHITE}{VEHICLE
 STR_NEWS_VEHICLE_HAS_DUPLICATE_ENTRY                            :{WHITE}{VEHICLE} has duplicate orders
 STR_NEWS_VEHICLE_HAS_INVALID_ENTRY                              :{WHITE}{VEHICLE} has an invalid station in its orders
 STR_NEWS_PLANE_USES_TOO_SHORT_RUNWAY                            :{WHITE}{VEHICLE} has in its orders an airport whose runway is too short
+STR_NEWS_PLANE_USES_UNSAFE_MODULAR_AIRPORT                      :{WHITE}{VEHICLE} has in its orders a modular airport that lacks a suitable runway for large planes
 
 STR_NEWS_VEHICLE_IS_GETTING_OLD                                 :{WHITE}{VEHICLE} is getting old
 STR_NEWS_VEHICLE_IS_GETTING_VERY_OLD                            :{WHITE}{VEHICLE} is getting very old
@@ -3024,6 +3025,7 @@ STR_STATION_BUILD_MODULAR_AIRPORT_TAXI_DIR_LABEL                :{BLACK}Taxi dir
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY                 :{BLACK}One-way taxi
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS            :{BLACK}Show taxi arrows
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING           :{BLACK}Show holding loop
+STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL                    :{BLACK}Toggle edge fence: click on tile edge to block/unblock taxi movement
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP                   :{BLACK}Snap to grid
 STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE                      :{BLACK}Validate
 STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED                :{BLACK}Build (disabled)
@@ -5230,6 +5232,7 @@ STR_ERROR_TOO_MANY_BUS_STOPS                                    :{WHITE}Too many
 STR_ERROR_TOO_MANY_TRUCK_STOPS                                  :{WHITE}Too many lorry stations
 STR_ERROR_TOO_CLOSE_TO_ANOTHER_DOCK                             :{WHITE}Too close to another dock
 STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT                          :{WHITE}Too close to another airport
+STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE                       :{WHITE}This airport piece is not yet available
 STR_ERROR_CAN_T_RENAME_STATION                                  :{WHITE}Can't rename station...
 STR_ERROR_CAN_T_MOVE_STATION_NAME                               :{WHITE}Can't move station sign...
 STR_ERROR_DRIVE_THROUGH_ON_TOWN_ROAD                            :{WHITE}... road owned by a town

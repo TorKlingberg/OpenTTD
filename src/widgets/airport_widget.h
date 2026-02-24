@@ -51,6 +51,7 @@ enum ModularAirportBuilderWidgets : WidgetID {
 	WID_MA_PIECE_11,  ///< Erase piece button.
 	WID_MA_TOGGLE_SHOW_ARROWS,   ///< Show runway direction arrows toggle.
 	WID_MA_TOGGLE_SHOW_HOLDING,  ///< Show holding loop overlay toggle.
+	WID_MA_FENCE_TOOL,           ///< Edge fence toggle tool.
 };
 
 static constexpr WidgetID WID_MA_PIECE_FIRST = WID_MA_PIECE_0;

@@ -1944,6 +1944,13 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
 				v->modular_landing_tile = runway_tile;
 				v->modular_landing_stage = 0;
+				/* Helicopters landing on a helipad skip the FAF approach — they descend vertically. */
+				if (v->subtype == AIR_HELICOPTER) {
+					const ModularAirportTileData *land_md = st->airport.GetModularTileData(runway_tile);
+					if (land_md != nullptr && IsModularHelipadPiece(land_md->piece_type)) {
+						v->modular_landing_stage = 1;
+					}
+				}
 				v->modular_holding_wp_index = UINT32_MAX; // reset; next FLYING entry reinitialises from ghost phase
 				v->state = landingtype; // LANDING / HELILANDING
 				if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);

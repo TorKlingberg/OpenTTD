@@ -191,6 +191,67 @@ bool GetContiguousModularRunwayTiles(const Station *st, TileIndex start_tile, st
 	return !tiles.empty();
 }
 
+/**
+ * Check whether a contiguous runway segment starting from a given end tile
+ * is safe for large (AIR_FAST) aircraft.
+ * Requires all tiles to be large runway family and total length >= 6.
+ */
+bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end)
+{
+	std::vector<TileIndex> tiles;
+	if (!GetContiguousModularRunwayTiles(st, runway_end, tiles)) return false;
+	if (tiles.size() < 6) return false;
+	for (TileIndex t : tiles) {
+		const ModularAirportTileData *td = st->airport.GetModularTileData(t);
+		if (td == nullptr || !IsLargeRunwayFamily(td->piece_type)) return false;
+	}
+	return true;
+}
+
+static bool IsBigTerminalPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_ROUND_TERMINAL:
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Check whether a modular airport has the infrastructure to support large aircraft:
+ * a tower, a big terminal, and at least one safe (long, large-family) runway.
+ */
+bool ModularAirportSupportsLargeAircraft(const Station *st)
+{
+	if (st->airport.modular_tile_data == nullptr) return false;
+
+	bool has_tower = false;
+	bool has_big_terminal = false;
+	bool has_safe_runway = false;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (data.piece_type == APT_TOWER || data.piece_type == APT_TOWER_FENCE_SW) has_tower = true;
+		if (IsBigTerminalPiece(data.piece_type)) has_big_terminal = true;
+
+		/* Check runway ends for safety. */
+		if (IsModularRunwayPiece(data.piece_type) &&
+				(data.piece_type == APT_RUNWAY_END) &&
+				!has_safe_runway) {
+			has_safe_runway = IsRunwaySafeForLarge(st, data.tile);
+		}
+
+		if (has_tower && has_big_terminal && has_safe_runway) return true;
+	}
+
+	return has_tower && has_big_terminal && has_safe_runway;
+}
+
 void ClearModularRunwayReservation(Aircraft *v)
 {
 	for (TileIndex tile : v->modular_runway_reservation) {
@@ -649,6 +710,13 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 			/* Give priority to queued takeoffs to prevent landing starvation/deadlocks. */
 			if (v->subtype == AIR_AIRCRAFT && IsContiguousModularRunwayQueuedForTakeoffByOther(v, st, data.tile)) {
 				rejected_takeoff_queue++;
+				continue;
+			}
+
+			/* Large aircraft (AIR_FAST) require a long, large-family runway. */
+			if ((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
+					!_cheats.no_jetcrash.value &&
+					!IsRunwaySafeForLarge(st, data.tile)) {
 				continue;
 			}
 		}
@@ -1336,7 +1404,17 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			Debug(misc, 3, "[ModAp] no runway/helipad tile found for landing at station {}", st->index);
 			return false;
 		}
-		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to runway tile {}, pos=({},{},{})", v->index, v->modular_landing_tile.base(), v->x_pos, v->y_pos, v->z_pos);
+		/* Helicopters landing on a helipad skip the FAF approach stage —
+		 * they descend vertically, no runway-style approach needed. */
+		if (v->subtype == AIR_HELICOPTER) {
+			const ModularAirportTileData *land_data = st->airport.GetModularTileData(v->modular_landing_tile);
+			if (land_data != nullptr && IsModularHelipadPiece(land_data->piece_type)) {
+				v->modular_landing_stage = 1;
+			}
+		}
+		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to {} tile {}, stage={}, pos=({},{},{})",
+			v->index, v->modular_landing_stage == 1 ? "helipad" : "runway",
+			v->modular_landing_tile.base(), v->modular_landing_stage, v->x_pos, v->y_pos, v->z_pos);
 	}
 
 	int target_x, target_y;
@@ -2023,6 +2101,13 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		const bool is_low = IsRunwayEndLow(st, data.tile);
 		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
 		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
+
+		/* Large aircraft require a long, large-family runway for takeoff too. */
+		if (v != nullptr && (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
+				!_cheats.no_jetcrash.value &&
+				!IsRunwaySafeForLarge(st, data.tile)) {
+			continue;
+		}
 
 		/* Keep a distance-based fallback so we don't deadlock if path probing fails transiently. */
 		int fallback_score = 0;
@@ -2821,12 +2906,21 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 				v->index, nearest_wp, n_wp, v->x_pos, v->y_pos, target_x, target_y);
 		}
 	} else {
-		/* Keep helicopter behaviour as-is for now; loop tuning differs for rotors. */
+		/* Helicopter: fly directly towards helipad tile center (no runway-style
+		 * approach offset), or fall back to station center if no target found. */
 		TileIndex target = st->airport.tile;
 		if (target == INVALID_TILE) target = st->xy;
 		runway = FindModularLandingTarget(st, v);
 		if (runway != INVALID_TILE) {
-			GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
+			const ModularAirportTileData *land_data = st->airport.GetModularTileData(runway);
+			if (land_data != nullptr && IsModularHelipadPiece(land_data->piece_type)) {
+				/* Helipad: fly directly to tile center, no FAF offset. */
+				target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
+				target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
+			} else {
+				/* Runway landing: use standard approach point. */
+				GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
+			}
 		} else {
 			target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
 			target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;

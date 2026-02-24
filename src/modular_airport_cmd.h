@@ -111,4 +111,20 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st);
 
 bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute);
 
+bool IsModernModularPiece(uint8_t piece_type);
+TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type);
+
+inline bool IsLargeRunwayFamily(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
+		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
+			return true;
+		default: return false;
+	}
+}
+
+bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
+bool ModularAirportSupportsLargeAircraft(const Station *st);
+
 #endif /* MODULAR_AIRPORT_CMD_H */

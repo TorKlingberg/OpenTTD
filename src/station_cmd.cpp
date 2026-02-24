@@ -2796,6 +2796,181 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
  */
 static Money GetModularAirportPieceBuildCost(uint8_t piece_type);
 
+static bool IsSmallRunwayFamily(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default: return false;
+	}
+}
+
+/**
+ * Walk a contiguous runway segment from a starting tile in one direction,
+ * collecting tiles that belong to the same family (large or small).
+ * @param st Station.
+ * @param start Starting tile (included in output).
+ * @param diff Step direction.
+ * @param horizontal Whether runway is on the horizontal axis.
+ * @param family_large true = large family, false = small family.
+ * @param[out] tiles Collected tiles in walk order.
+ */
+static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDiff diff,
+	bool horizontal, bool family_large, std::vector<TileIndex> &tiles)
+{
+	TileIndex cur = start;
+	while (true) {
+		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
+		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
+		bool is_large = IsLargeRunwayFamily(data->piece_type);
+		bool is_small = IsSmallRunwayFamily(data->piece_type);
+		if (family_large && !is_large) break;
+		if (!family_large && !is_small) break;
+		tiles.push_back(cur);
+		cur = cur + diff;
+	}
+}
+
+/**
+ * Normalize the visual piece types of a contiguous runway segment after
+ * a tile has been added or removed. Updates end/middle pieces so that
+ * the first and last tiles display as end pieces and interior tiles as
+ * middle pieces.
+ * @param st Station owning the runway.
+ * @param changed_tile The tile that was just added or removed (used to find the axis).
+ * @param horizontal Whether the runway runs on the X axis (true) or Y axis (false).
+ */
+static void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal)
+{
+	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+
+	/* Walk to the low end of the entire contiguous runway (both families). */
+	TileIndex first = changed_tile;
+	while (true) {
+		TileIndex prev = first - diff;
+		ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
+		if (!IsRunwayPieceOnAxis(prev_data, horizontal)) break;
+		first = prev;
+	}
+
+	/* Walk from low end to high end, splitting into family sub-segments. */
+	TileIndex cur = first;
+	while (true) {
+		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
+		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
+
+		bool is_large = IsLargeRunwayFamily(data->piece_type);
+		std::vector<TileIndex> seg;
+		CollectRunwayFamilySegment(st, cur, diff, horizontal, is_large, seg);
+		if (seg.empty()) break;
+
+		/* Normalize this family sub-segment. */
+		for (size_t i = 0; i < seg.size(); i++) {
+			ModularAirportTileData *td = st->airport.GetModularTileData(seg[i]);
+			if (td == nullptr) continue;
+
+			uint8_t new_type;
+			if (is_large) {
+				if (seg.size() == 1) {
+					new_type = APT_RUNWAY_END;
+				} else if (i == 0 || i == seg.size() - 1) {
+					new_type = APT_RUNWAY_END;
+				} else {
+					new_type = APT_RUNWAY_5;
+				}
+			} else {
+				if (seg.size() == 1) {
+					new_type = APT_RUNWAY_SMALL_NEAR_END;
+				} else if (i == 0) {
+					new_type = APT_RUNWAY_SMALL_NEAR_END;
+				} else if (i == seg.size() - 1) {
+					new_type = APT_RUNWAY_SMALL_FAR_END;
+				} else {
+					new_type = APT_RUNWAY_SMALL_MIDDLE;
+				}
+			}
+
+			if (td->piece_type != new_type) {
+				td->piece_type = new_type;
+				SetStationGfx(Tile(seg[i]), new_type);
+				MarkTileDirtyByTile(seg[i]);
+			}
+		}
+
+		/* Advance past this sub-segment. */
+		cur = seg.back() + diff;
+	}
+}
+
+/**
+ * Check whether a modular airport piece is "modern" (city airport era or later).
+ * Modern pieces are gated behind the city airport's introduction year.
+ */
+bool IsModernModularPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		/* Legacy pieces — always available */
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_E:
+		case APT_ARPON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+		case APT_STAND:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+		case APT_GRASS_1:
+		case APT_GRASS_2:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_FENCE_NE_FLAG:
+		case APT_GRASS_FENCE_NE_FLAG_2:
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+		case APT_BUILDING_1:
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+		case APT_STAND_1:
+		case APT_RADIO_TOWER_FENCE_NE:
+			return false;
+		default:
+			return true;
+	}
+}
+
+/**
+ * Get the minimum calendar year at which a modular piece becomes available.
+ * Modern pieces use the city airport (AT_LARGE) introduction year.
+ */
+TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type)
+{
+	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
+	return AirportSpec::Get(AT_LARGE)->min_year;
+}
+
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
@@ -2805,6 +2980,12 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	if (distant_join && (!_settings_game.station.distant_join_stations || !Station::IsValidID(station_to_join))) return CMD_ERROR;
 
 	if (gfx >= NUM_AIRPORTTILES) return CMD_ERROR;
+
+	/* Modern pieces are unavailable before the city airport introduction year. */
+	if (IsModernModularPiece(static_cast<uint8_t>(gfx)) &&
+			TimerGameCalendar::year < GetModularPieceMinYear(static_cast<uint8_t>(gfx))) {
+		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
+	}
 
 	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
 	if (ret.Failed()) return ret;
@@ -2988,6 +3169,11 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.modular_holding_loop_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
+
+		/* Normalize runway end/middle visuals for the segment this tile belongs to. */
+		if (IsModularRunwayPiece(tile_data.piece_type)) {
+			NormalizeRunwaySegmentVisuals(st, tile, (tile_data.rotation % 2) == 0);
+		}
 
 		/* Mark tile and neighbors dirty to ensure tall building sprites
 		 * (terminals, towers, radar) that extend beyond tile bounds are fully redrawn. */
@@ -3620,6 +3806,64 @@ CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t tax
 	return CommandCost();
 }
 
+/**
+ * Toggle an explicit edge fence on a modular airport tile.
+ * Mirrors the fence to the neighboring tile's opposite edge.
+ * @param flags Operation to perform.
+ * @param tile Modular airport tile.
+ * @param edge_bit Single edge bit (N=0x01, E=0x02, S=0x04, W=0x08).
+ * @param set If true, set the fence; if false, clear it.
+ * @return The cost of this operation or an error.
+ */
+CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set)
+{
+	if (!IsValidTile(tile)) return CMD_ERROR;
+	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
+
+	Station *st = Station::GetByTile(tile);
+	if (st == nullptr) return CMD_ERROR;
+
+	CommandCost ret = CheckOwnership(st->owner);
+	if (ret.Failed()) return ret;
+
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
+
+	/* Validate: exactly one edge bit. */
+	if (edge_bit != 0x01 && edge_bit != 0x02 && edge_bit != 0x04 && edge_bit != 0x08) return CMD_ERROR;
+
+	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return CMD_ERROR;
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		if (set) {
+			data->edge_block_mask |= edge_bit;
+		} else {
+			data->edge_block_mask &= ~edge_bit;
+		}
+		MarkTileDirtyByTile(tile);
+
+		/* Mirror to the neighbor tile's opposite edge. */
+		static const int dx[] = { 0, 1, 0, -1}; /* N, E, S, W */
+		static const int dy[] = {-1, 0, 1,  0};
+		static const uint8_t opposite[] = {0x04, 0x08, 0x01, 0x02}; /* S, W, N, E */
+		int edge_idx = (edge_bit == 0x01) ? 0 : (edge_bit == 0x02) ? 1 : (edge_bit == 0x04) ? 2 : 3;
+		TileIndex nb = TileAddXY(tile, dx[edge_idx], dy[edge_idx]);
+		if (IsValidTile(nb)) {
+			ModularAirportTileData *nb_data = st->airport.GetModularTileData(nb);
+			if (nb_data != nullptr) {
+				if (set) {
+					nb_data->edge_block_mask |= opposite[edge_idx];
+				} else {
+					nb_data->edge_block_mask &= ~opposite[edge_idx];
+				}
+				MarkTileDirtyByTile(nb);
+			}
+		}
+	}
+
+	return CommandCost();
+}
+
 static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 {
 	Station *st = Station::GetByTile(tile);
@@ -3638,6 +3882,17 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 	CommandCost cost(EXPENSES_CONSTRUCTION, _price[Price::ClearStationAirport]);
 
 	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Capture removed tile's runway metadata before erasing for visual normalization. */
+		uint8_t removed_rotation = 0;
+		bool removed_was_runway = false;
+		if (st->airport.modular_tile_data != nullptr) {
+			const ModularAirportTileData *md = st->airport.GetModularTileData(tile);
+			if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
+				removed_was_runway = true;
+				removed_rotation = md->rotation;
+			}
+		}
+
 		DoClearSquare(tile);
 		DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, tile.base());
 
@@ -3652,6 +3907,20 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.modular_holding_loop_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
+
+			/* Normalize runway visuals for surviving neighbors of the removed tile. */
+			if (removed_was_runway) {
+				bool horizontal = (removed_rotation % 2) == 0;
+				TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+				TileIndex neighbor_lo = tile - diff;
+				TileIndex neighbor_hi = tile + diff;
+				if (st->airport.GetModularTileData(neighbor_lo) != nullptr) {
+					NormalizeRunwaySegmentVisuals(st, neighbor_lo, horizontal);
+				}
+				if (st->airport.GetModularTileData(neighbor_hi) != nullptr) {
+					NormalizeRunwaySegmentVisuals(st, neighbor_hi, horizontal);
+				}
+			}
 		}
 
 		st->rect.AfterRemoveTile(st, tile);
@@ -4607,8 +4876,10 @@ static void DrawTile_Station(TileInfo *ti)
 
 				for (const auto &e : kEdges) {
 					if (open_mask & e.dir_bit) continue; // aircraft transit edge, skip
+					bool explicit_fence = (fence_md->edge_block_mask & e.dir_bit) != 0;
 					TileIndex nb = TileAddXY(ti->tile, e.dx, e.dy);
-					if (IsValidTile(nb) && fence_st->TileBelongsToAirport(nb)) continue; // interior edge
+					bool perimeter = !(IsValidTile(nb) && fence_st->TileBelongsToAirport(nb));
+					if (!explicit_fence && !perimeter) continue;
 					DrawGroundSpriteAt(e.spr | (1U << PALETTE_MODIFIER_COLOUR), palette,
 					                   e.fx, e.fy,
 					                   GetPartialPixelZ(e.fx, e.fy, ti->tileh));
