@@ -52,6 +52,7 @@
 #include "palette_func.h"
 #include "modular_airport_gui.h"
 #include "airport_template.h"
+#include "airport_template_gui.h"
 
 #include "widgets/airport_widget.h"
 
@@ -65,12 +66,6 @@ static AirportClassID _selected_airport_class; ///< the currently visible airpor
 static int _selected_airport_index;            ///< the index of the selected airport in the current class or -1
 static uint8_t _selected_airport_layout;          ///< selected airport layout number.
 static bool _build_airport_as_modular = false; ///< whether to build stock airports as modular
-static int _selected_airport_template_index = -1; ///< index into AirportTemplateManager::GetTemplates()
-static uint8_t _selected_airport_template_rotation = 0; ///< 0..3 clockwise
-static std::vector<Point> _saved_template_preview_offsets; ///< Rotated footprint offsets for viewport highlighting.
-static bool _saved_template_preview_active = false;
-
-static constexpr AirportClassID APC_SAVED_CUSTOM = static_cast<AirportClassID>(APC_MAX);
 
 static void ShowBuildAirportPicker(Window *parent);
 
@@ -79,30 +74,12 @@ static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR}
 
 static bool IsSavedTemplateClassSelected()
 {
-	return _selected_airport_class == APC_SAVED_CUSTOM;
-}
-
-static const AirportTemplate *GetSelectedAirportTemplate()
-{
-	const auto &templates = AirportTemplateManager::GetTemplates();
-	if (_selected_airport_template_index < 0 || static_cast<size_t>(_selected_airport_template_index) >= templates.size()) return nullptr;
-	return templates[_selected_airport_template_index].get();
+	return ::IsSavedTemplateClassSelected(_selected_airport_class);
 }
 
 static void UpdateSavedTemplatePreviewCache()
 {
-	_saved_template_preview_offsets.clear();
-	_saved_template_preview_active = false;
-
-	const AirportTemplate *templ = GetSelectedAirportTemplate();
-	if (templ == nullptr || !templ->is_available) return;
-
-	for (const AirportTemplateTile &src : templ->tiles) {
-		AirportTemplateTile t = src;
-		t.Rotate(_selected_airport_template_rotation, templ->width, templ->height);
-		_saved_template_preview_offsets.push_back({static_cast<int>(t.dx), static_cast<int>(t.dy)});
-	}
-	_saved_template_preview_active = !_saved_template_preview_offsets.empty();
+	::UpdateSavedTemplatePreviewCache(_selected_airport_template_rotation);
 }
 
 
@@ -908,18 +885,7 @@ static void ShowBuildAirportPicker(Window *parent)
 
 bool ShouldDrawSavedTemplatePreviewAtTile(TileIndex tile)
 {
-	if (!_saved_template_preview_active) return false;
-	if (!IsSavedTemplateClassSelected()) return false;
-	if ((_thd.drawstyle & HT_DRAG_MASK) == HT_NONE) return false;
-	if (_thd.window_class != WC_BUILD_TOOLBAR || _thd.window_number != TRANSPORT_AIR) return false;
-
-	TileIndex anchor = TileVirtXY(_thd.pos.x, _thd.pos.y);
-	int dx = TileX(tile) - TileX(anchor);
-	int dy = TileY(tile) - TileY(anchor);
-	for (const Point &p : _saved_template_preview_offsets) {
-		if (p.x == dx && p.y == dy) return true;
-	}
-	return false;
+	return ShouldDrawSavedTemplatePreviewAtTileInternal(tile, _selected_airport_class);
 }
 
 bool IsSavedTemplatePlacementPreviewActive()
@@ -932,8 +898,5 @@ void InitializeAirportGui()
 {
 	_selected_airport_class = APC_BEGIN;
 	_selected_airport_index = -1;
-	_selected_airport_template_index = -1;
-	_selected_airport_template_rotation = 0;
-	_saved_template_preview_active = false;
-	_saved_template_preview_offsets.clear();
+	ResetSavedTemplateGuiState();
 }
