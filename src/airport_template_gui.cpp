@@ -351,7 +351,7 @@ public:
 				break;
 
 			case WID_TM_ROTATION:
-				size = maxdim(size, GetStringBoundingBox(STR_STATION_BUILD_AIRPORT_LAYOUT_NAME));
+				size = maxdim(size, GetStringBoundingBox(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LABEL, 270)));
 				size.width += padding.width + 20;
 				size.height += padding.height;
 				break;
@@ -369,7 +369,7 @@ public:
 	{
 		switch (widget) {
 			case WID_TM_ROTATION:
-				return GetString(STR_STATION_BUILD_AIRPORT_LAYOUT_NAME, this->selected_rotation + 1);
+				return GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LABEL, static_cast<uint>(this->selected_rotation) * 90);
 
 			default:
 				return this->Window::GetWidgetString(widget, stringid);
