@@ -1143,17 +1143,17 @@ static void DrawTileSelection(const TileInfo *ti)
 	if (IsInsideBS(ti->x, _thd.pos.x, _thd.size.x) &&
 			IsInsideBS(ti->y, _thd.pos.y, _thd.size.y)) {
 draw_inner:
-			if (_thd.drawstyle & HT_RECT) {
-				if (!is_redsq) {
-					if (IsSavedTemplatePlacementPreviewActive()) {
-						if (ShouldDrawSavedTemplatePreviewAtTile(ti->tile)) {
-							DrawTileSelectionRect(ti, PAL_NONE);
-						}
-					} else {
-						DrawTileSelectionRect(ti, _thd.make_square_red ? PALETTE_SEL_TILE_RED : PAL_NONE);
+		if (_thd.drawstyle & HT_RECT) {
+			if (!is_redsq) {
+				if (IsSavedTemplatePlacementPreviewActive()) {
+					if (ShouldDrawSavedTemplatePreviewAtTile(ti->tile)) {
+						DrawTileSelectionRect(ti, PAL_NONE);
 					}
+				} else {
+					DrawTileSelectionRect(ti, _thd.make_square_red ? PALETTE_SEL_TILE_RED : PAL_NONE);
 				}
-			} else if (_thd.drawstyle & HT_POINT) {
+			}
+		} else if (_thd.drawstyle & HT_POINT) {
 			/* Figure out the Z coordinate for the single dot. */
 			int z = 0;
 			FoundationPart foundation_part = FOUNDATION_PART_NORMAL;

@@ -38,7 +38,6 @@ static bool IsModularTaxiwayPiece(uint8_t piece_type)
 		case APT_APRON_VER_CROSSING_N:
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON_HOR_CROSSING_W:
 			return true;
 		default:
 			return false;

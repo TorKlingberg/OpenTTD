@@ -2970,7 +2970,6 @@ TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type)
 	return AirportSpec::Get(AT_LARGE)->min_year;
 }
 
-
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
@@ -3702,13 +3701,6 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 	return cost;
 }
 
-/**
- * Set runway usage flags on a modular airport tile and propagate to contiguous runway.
- * @param flags Operation to perform.
- * @param tile Tile to set flags on.
- * @param runway_flags New runway flags (RUF_LANDING, RUF_TAKEOFF, RUF_DIR_LOW, RUF_DIR_HIGH).
- * @return The cost of this operation or an error.
- */
 static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 {
 	Station *st = Station::GetByTile(tile);
