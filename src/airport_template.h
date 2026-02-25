@@ -41,6 +41,7 @@ struct AirportTemplateTile {
 /** A saved modular airport design. */
 struct AirportTemplate {
 	std::string name;
+	std::string file_stem; ///< File stem (without extension) used for deletion.
 	uint16_t width;
 	uint16_t height;
 	std::vector<AirportTemplateTile> tiles;
@@ -75,7 +76,8 @@ public:
 	static const std::vector<std::unique_ptr<AirportTemplate>>& GetTemplates();
 	static void Refresh();
 
-	static bool SaveTemplate(const AirportTemplate &template_to_save);
+	static bool SaveTemplate(const AirportTemplate &template_to_save, std::string *saved_file_stem = nullptr);
+	static bool DeleteTemplateByFileStem(const std::string &file_stem);
 };
 
 #endif /* AIRPORT_TEMPLATE_H */

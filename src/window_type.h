@@ -408,6 +408,12 @@ enum WindowClass : uint16_t {
 	WC_BUILD_STATION,
 
 	/**
+	 * Modular airport template manager; %Window numbers:
+	 *   - 0 = #ModularAirportTemplateManagerWidgets
+	 */
+	WC_AIRPORT_TEMPLATE_MANAGER,
+
+	/**
 	 * Build bus station; %Window numbers:
 	 *   - #TRANSPORT_ROAD = #BuildRoadStationWidgets
 	 */

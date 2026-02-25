@@ -52,11 +52,25 @@ enum ModularAirportBuilderWidgets : WidgetID {
 	WID_MA_TOGGLE_SHOW_ARROWS,   ///< Show runway direction arrows toggle.
 	WID_MA_TOGGLE_SHOW_HOLDING,  ///< Show holding loop overlay toggle.
 	WID_MA_FENCE_TOOL,           ///< Edge fence toggle tool.
-	WID_MA_SAVE_TEMPLATE,        ///< Save selected modular airport as a template.
+	WID_MA_TEMPLATE_MANAGER,     ///< Open the template manager window.
 };
 
 static constexpr WidgetID WID_MA_PIECE_FIRST = WID_MA_PIECE_0;
 static constexpr WidgetID WID_MA_PIECE_LAST  = WID_MA_PIECE_11;
+
+/** Widgets of the #BuildModularTemplateManagerWindow class. */
+enum ModularAirportTemplateManagerWidgets : WidgetID {
+	WID_TM_CAPTION,
+	WID_TM_TEMPLATE_LIST,
+	WID_TM_SCROLLBAR,
+	WID_TM_SAVE,
+	WID_TM_LOAD,
+	WID_TM_DELETE,
+	WID_TM_ROTATE_LEFT,
+	WID_TM_ROTATION,
+	WID_TM_ROTATE_RIGHT,
+	WID_TM_INFO,
+};
 
 /** Widgets of the #BuildModularHangarPickerWindow class. */
 enum ModularAirportHangarPickerWidgets : WidgetID {

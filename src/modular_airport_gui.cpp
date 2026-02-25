@@ -17,7 +17,6 @@
 #include "sound_func.h"
 #include "window_func.h"
 #include "strings_func.h"
-#include "textbuf_gui.h"
 #include "viewport_func.h"
 #include "company_func.h"
 #include "tilehighlight_func.h"
@@ -54,7 +53,7 @@
 #include "gfx_func.h"
 #include "modular_airport_cmd.h"
 #include "modular_airport_gui.h"
-#include "airport_template.h"
+#include "airport_template_gui.h"
 #include "newgrf_airporttiles.h"
 
 #include "widgets/airport_widget.h"
@@ -136,7 +135,6 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 };
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
-static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 
 static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 {
@@ -180,63 +178,6 @@ static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 static void ShowModularHelipadPicker(Window *parent);
 
-static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
-{
-	if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
-	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return false;
-
-	uint min_x = UINT_MAX;
-	uint min_y = UINT_MAX;
-	uint max_x = 0;
-	uint max_y = 0;
-
-	for (const ModularAirportTileData &md : *st->airport.modular_tile_data) {
-		min_x = std::min<uint>(min_x, TileX(md.tile));
-		min_y = std::min<uint>(min_y, TileY(md.tile));
-		max_x = std::max<uint>(max_x, TileX(md.tile));
-		max_y = std::max<uint>(max_y, TileY(md.tile));
-	}
-
-	templ.width = ClampTo<uint16_t>(max_x - min_x + 1);
-	templ.height = ClampTo<uint16_t>(max_y - min_y + 1);
-	templ.tiles.clear();
-	templ.tiles.reserve(std::min<size_t>(st->airport.modular_tile_data->size(), MAX_TEMPLATE_TILES));
-
-	for (const ModularAirportTileData &md : *st->airport.modular_tile_data) {
-		if (templ.tiles.size() >= MAX_TEMPLATE_TILES) return false;
-
-		AirportTemplateTile tile;
-		tile.dx = ClampTo<uint16_t>(TileX(md.tile) - min_x);
-		tile.dy = ClampTo<uint16_t>(TileY(md.tile) - min_y);
-		tile.piece_type = md.piece_type;
-		tile.rotation = md.rotation;
-		tile.runway_flags = IsModularRunwayPiece(md.piece_type) ? md.runway_flags : 0;
-		tile.one_way_taxi = md.one_way_taxi;
-		tile.user_taxi_dir_mask = md.user_taxi_dir_mask;
-		tile.edge_block_mask = md.edge_block_mask;
-		tile.grfid = 0;
-		tile.local_id = 0;
-
-		if (tile.piece_type >= NEW_AIRPORTTILE_OFFSET) {
-			const AirportTileSpec *ats = AirportTileSpec::Get(tile.piece_type);
-			if (ats != nullptr) {
-				tile.grfid = ats->grf_prop.grfid;
-				tile.local_id = ats->grf_prop.local_id;
-			}
-		}
-
-		templ.tiles.push_back(tile);
-	}
-
-	std::sort(templ.tiles.begin(), templ.tiles.end(), [](const AirportTemplateTile &a, const AirportTemplateTile &b) {
-		if (a.dy != b.dy) return a.dy < b.dy;
-		return a.dx < b.dx;
-	});
-
-	templ.CheckAvailability();
-	return true;
-}
-
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
 
@@ -245,9 +186,6 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	bool show_holding_loop = false;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
-	bool save_template_mode = false; ///< When true, clicks select an airport for template save.
-	AirportTemplate pending_template; ///< Pending template while query-string is open.
-	bool has_pending_template = false;
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
@@ -256,7 +194,7 @@ public:
 		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
-		this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, false);
+		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->UpdateYearGating();
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
@@ -277,14 +215,13 @@ public:
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
-		this->save_template_mode = false;
-		this->has_pending_template = false;
 		_show_runway_direction_overlay = false;
 		_show_holding_overlay = false;
 		MarkWholeScreenDirty();
 		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 			ResetObjectToPlace();
 		}
+		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
 		CloseWindowByClass(WC_BUILD_DEPOT);
 		/* Raise the modular button on the airport toolbar. */
 		if (this->parent != nullptr) {
@@ -376,11 +313,6 @@ public:
 				this->fence_tool_active = false;
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
 			}
-			if (this->save_template_mode) {
-				this->save_template_mode = false;
-				this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, false);
-			}
-
 			/* Raise the previously selected piece button. */
 			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
 
@@ -432,10 +364,6 @@ public:
 
 			case WID_MA_FENCE_TOOL:
 				this->fence_tool_active = !this->fence_tool_active;
-				if (this->fence_tool_active && this->save_template_mode) {
-					this->save_template_mode = false;
-					this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, false);
-				}
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, this->fence_tool_active);
 				if (this->fence_tool_active) {
 					/* Deselect any piece button so fence works standalone. */
@@ -456,21 +384,15 @@ public:
 				this->SetDirty();
 				break;
 
-			case WID_MA_SAVE_TEMPLATE:
-				this->save_template_mode = !this->save_template_mode;
-				this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, this->save_template_mode);
-				if (this->save_template_mode) {
-					/* Save mode is a standalone cursor mode. */
-					this->fence_tool_active = false;
-					this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
-					if (this->selected_piece < PIECE_COUNT) {
-						this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
-						this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
-					}
-					CloseWindowByClass(WC_BUILD_DEPOT);
+			case WID_MA_TEMPLATE_MANAGER:
+				this->fence_tool_active = false;
+				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+				if (this->selected_piece < PIECE_COUNT) {
+					this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+					this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 				}
 				this->UpdatePlacementCursor();
-				this->SetDirty();
+				ShowBuildAirportTemplateManagerWindow(this);
 				break;
 
 			default: break;
@@ -575,28 +497,6 @@ public:
 
 	void OnPlaceObject([[maybe_unused]] Point pt, TileIndex tile) override
 	{
-		if (this->save_template_mode) {
-			if (!IsTileType(tile, TileType::Station) || !IsAirport(tile)) {
-				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WL_INFO);
-				return;
-			}
-
-			Station *st = Station::GetByTile(tile);
-			if (st == nullptr || st->owner != _local_company || !st->airport.blocks.Test(AirportBlock::Modular)) {
-				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WL_INFO);
-				return;
-			}
-
-			this->pending_template = {};
-			if (!BuildTemplateFromStation(st, this->pending_template)) {
-				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WL_INFO);
-				return;
-			}
-			this->has_pending_template = true;
-			ShowQueryString({}, STR_QUERY_SAVE_AIRPORT_TEMPLATE_CAPTION, MAX_LENGTH_STATION_NAME_CHARS, this, CS_ALPHANUMERAL, {QueryStringFlag::EnableDefault, QueryStringFlag::LengthIsInChars});
-			return;
-		}
-
 		if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_DEMOLISH_AREA);
 			return;
@@ -921,39 +821,7 @@ private:
 		}
 		this->fence_tool_active = false;
 		this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
-		this->save_template_mode = false;
-		this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, false);
-		this->SetDirty();
-	}
-
-	void OnQueryTextFinished(std::optional<std::string> str) override
-	{
-		if (!this->has_pending_template) return;
-
-		if (!str.has_value()) {
-			this->has_pending_template = false;
-			return;
-		}
-
-		std::string name = *str;
-		bool all_ws = std::all_of(name.begin(), name.end(), [](char c) {
-			return std::isspace(static_cast<unsigned char>(c)) != 0;
-		});
-		if (name.empty() || all_ws) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY), {}, WL_INFO);
-			return;
-		}
-
-		this->pending_template.name = name;
-		if (!AirportTemplateManager::SaveTemplate(this->pending_template)) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WL_INFO);
-			return;
-		}
-
-		this->has_pending_template = false;
-		this->save_template_mode = false;
-		this->SetWidgetLoweredState(WID_MA_SAVE_TEMPLATE, false);
-		this->UpdatePlacementCursor();
+		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->SetDirty();
 	}
 
@@ -962,9 +830,7 @@ private:
 	{
 		this->updating_cursor = true;
 		SetTileSelectSize(1, 1);
-		if (this->save_template_mode) {
-			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
-		} else if (this->selected_piece >= PIECE_COUNT) {
+		if (this->selected_piece >= PIECE_COUNT) {
 			ResetObjectToPlace();
 		} else if (this->selected_piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) {
 			SetObjectToPlace(ANIMCURSOR_DEMOLISH, PAL_NONE, HT_RECT | HT_DIAGONAL, this->window_class, this->window_number);
@@ -1346,8 +1212,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_10), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_FENCE_TOOL), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_AIRPORT_FENCE_Y, STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL),
-		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_SAVE_TEMPLATE), SetFill(0, 1), SetToolbarMinimalSize(1),
-			SetSpriteTip(SPR_IMG_SAVE, STR_STATION_BUILD_MODULAR_AIRPORT_SAVE_TEMPLATE_TOOLTIP),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TEMPLATE_MANAGER), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_IMG_SAVE, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), EndContainer(),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetToolbarMinimalSize(1),

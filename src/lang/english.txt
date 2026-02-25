@@ -3026,7 +3026,12 @@ STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_ONEWAY                 :{BLACK}One-way 
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS            :{BLACK}Show taxi arrows
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING           :{BLACK}Show holding loop
 STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL                    :{BLACK}Toggle edge fence: click on tile edge to block/unblock taxi movement
-STR_STATION_BUILD_MODULAR_AIRPORT_SAVE_TEMPLATE_TOOLTIP          :{BLACK}Save modular airport design: click button, click airport, enter name
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP       :{BLACK}Open template manager (save/load/delete modular airport templates)
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_CAPTION       :{WHITE}Airport Template Manager
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP          :{BLACK}Saved modular airport templates
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_SAVE                  :{BLACK}Save
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LOAD                  :{BLACK}Load
+STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_DELETE                :{BLACK}Delete
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SNAP                   :{BLACK}Snap to grid
 STR_STATION_BUILD_MODULAR_AIRPORT_VALIDATE                      :{BLACK}Validate
 STR_STATION_BUILD_MODULAR_AIRPORT_BUILD_DISABLED                :{BLACK}Build (disabled)
@@ -3105,8 +3110,9 @@ STR_AIRPORT_CLASS_SMALL                                         :Small airports
 STR_AIRPORT_CLASS_LARGE                                         :Large airports
 STR_AIRPORT_CLASS_HUB                                           :Hub airports
 STR_AIRPORT_CLASS_HELIPORTS                                     :Helicopter airports
-STR_AIRPORT_CLASS_SAVED_CUSTOM                                  :Saved custom airports
 STR_QUERY_SAVE_AIRPORT_TEMPLATE_CAPTION                         :{WHITE}Save airport template
+STR_QUERY_DELETE_AIRPORT_TEMPLATE_CAPTION                       :{WHITE}Delete airport template
+STR_QUERY_DELETE_AIRPORT_TEMPLATE_TEXT                          :{WHITE}Delete template '{RAW_STRING}'?
 
 STR_STATION_BUILD_NOISE                                         :{BLACK}Noise generated: {GOLD}{COMMA}
 
@@ -5241,6 +5247,7 @@ STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY                           :{WHITE}Template
 STR_ERROR_AIRPORT_TEMPLATE_IO                                   :{WHITE}Failed to save or load airport template
 STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING                       :{WHITE}This template requires NewGRF airport tiles that are not available
 STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE                            :{WHITE}Airport template is too large
+STR_ERROR_AIRPORT_TEMPLATE_DELETE_FAILED                        :{WHITE}Failed to delete airport template
 STR_ERROR_CAN_T_RENAME_STATION                                  :{WHITE}Can't rename station...
 STR_ERROR_CAN_T_MOVE_STATION_NAME                               :{WHITE}Can't move station sign...
 STR_ERROR_DRIVE_THROUGH_ON_TOWN_ROAD                            :{WHITE}... road owned by a town

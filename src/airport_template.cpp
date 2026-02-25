@@ -160,6 +160,7 @@ void AirportTemplateManager::Refresh()
 			json j = json::parse(f);
 
 			auto t = std::make_unique<AirportTemplate>();
+			t->file_stem = FS2OTTD(entry.path().stem().string());
 			t->name = j.value("name", std::string{});
 			t->width = j.value("width", static_cast<uint16_t>(0));
 			t->height = j.value("height", static_cast<uint16_t>(0));
@@ -213,7 +214,7 @@ static std::string SanitizedSlug(std::string name)
 	return slug;
 }
 
-bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_save)
+bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_save, std::string *saved_file_stem)
 {
 	if (template_to_save.name.empty() || template_to_save.tiles.empty()) return false;
 	if (template_to_save.width == 0 || template_to_save.height == 0) return false;
@@ -223,10 +224,12 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 	std::string dir = GetTemplatesDirectory();
 	FioCreateDirectory(dir);
 
-	std::string filename = base_slug + ".json";
+	std::string file_stem = base_slug;
+	std::string filename = file_stem + ".json";
 	int i = 2;
 	while (FileExists(dir + filename)) {
-		filename = base_slug + "-" + std::to_string(i++) + ".json";
+		file_stem = base_slug + "-" + std::to_string(i++);
+		filename = file_stem + ".json";
 	}
 
 	json j;
@@ -264,6 +267,10 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 		std::ofstream f(OTTD2FS(dir + filename));
 		if (!f.is_open()) return false;
 		f << j.dump(4);
+		f.flush();
+		if (!f.good()) return false;
+		f.close();
+		if (saved_file_stem != nullptr) *saved_file_stem = file_stem;
 		_templates_dirty = true;
 		AirportTemplateManager::Refresh();
 		return true;
@@ -271,4 +278,22 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 		Debug(misc, 1, "Failed to save airport template {}: {}", filename, e.what());
 		return false;
 	}
+}
+
+bool AirportTemplateManager::DeleteTemplateByFileStem(const std::string &file_stem)
+{
+	if (file_stem.empty()) return false;
+
+	std::string dir = GetTemplatesDirectory();
+	std::filesystem::path path = std::filesystem::path(OTTD2FS(dir)) / std::filesystem::path(OTTD2FS(file_stem + ".json"));
+	std::error_code ec;
+	if (!std::filesystem::remove(path, ec)) {
+		if (!ec) return false;
+		Debug(misc, 1, "Failed to delete airport template {}: {}", path.string(), ec.message());
+		return false;
+	}
+
+	_templates_dirty = true;
+	AirportTemplateManager::Refresh();
+	return true;
 }

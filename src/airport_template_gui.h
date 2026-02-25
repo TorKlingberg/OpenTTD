@@ -14,20 +14,19 @@
 #include "core/geometry_type.hpp"
 #include "tile_type.h"
 #include "airport_template.h"
-#include "newgrf_airport.h"
 
 #include <vector>
 
-extern int _selected_airport_template_index;
-extern uint8_t _selected_airport_template_rotation;
+struct Window;
+
 extern std::vector<Point> _saved_template_preview_offsets;
 extern bool _saved_template_preview_active;
-extern const AirportClassID APC_SAVED_CUSTOM;
 
-bool IsSavedTemplateClassSelected(AirportClassID selected_airport_class);
-const AirportTemplate *GetSelectedAirportTemplate();
-void UpdateSavedTemplatePreviewCache(uint8_t rotation);
+const AirportTemplate *GetAirportTemplateByIndex(int index);
+void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotation);
 void ResetSavedTemplateGuiState();
-bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile, AirportClassID selected_airport_class);
+bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile);
+
+void ShowBuildAirportTemplateManagerWindow(Window *parent);
 
 #endif /* AIRPORT_TEMPLATE_GUI_H */
