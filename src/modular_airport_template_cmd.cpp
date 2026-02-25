@@ -290,6 +290,14 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		abs_tiles.push_back(t);
 	}
 
+	/* Preflight height consistency so placement is all-or-nothing on uneven terrain.
+	 * Without this, per-tile validation can pass in test mode but fail mid-execution
+	 * after earlier tiles have already created/joined a modular station. */
+	int required_z = GetTileMaxZ(abs_tiles.front());
+	for (TileIndex t : abs_tiles) {
+		if (GetTileMaxZ(t) != required_z) return CommandCost(STR_ERROR_FLAT_LAND_REQUIRED);
+	}
+
 	auto place_tiles_pass = [&](DoCommandFlags pass_flags) -> CommandCost {
 		CommandCost pass_cost(EXPENSES_CONSTRUCTION);
 		StationID join_for_tiles = distant_join ? station_to_join : NEW_STATION;
