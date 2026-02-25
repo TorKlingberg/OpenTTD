@@ -24,25 +24,6 @@
 
 static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 
-static bool IsModularTaxiwayPiece(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_APRON:
-		case APT_ARPON_N:
-		case APT_APRON_E:
-		case APT_APRON_S:
-		case APT_APRON_W:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-		case APT_APRON_HOR:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_VER_CROSSING_S:
-			return true;
-		default:
-			return false;
-	}
-}
 
 static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint16_t width, uint16_t height)
 {
@@ -196,7 +177,7 @@ CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t tax
 	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
 
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data == nullptr || !IsModularTaxiwayPiece(data->piece_type)) return CMD_ERROR;
+	if (data == nullptr || !IsTaxiwayPiece(data->piece_type)) return CMD_ERROR;
 
 	const uint8_t auto_dirs = CalculateAutoTaxiDirectionsForGfx(data->piece_type, data->rotation);
 	taxi_dir_mask &= 0x0F;
@@ -344,7 +325,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 				total.AddCost(ret.GetCost());
 			}
 
-			if (IsModularTaxiwayPiece(rt.piece_type)) {
+			if (IsTaxiwayPiece(rt.piece_type)) {
 				CommandCost ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
 				if (ret.Failed()) return ret;
 				total.AddCost(ret.GetCost());

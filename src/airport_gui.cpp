@@ -298,6 +298,7 @@ struct BuildAirToolbarWindow : Window {
 	{
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
 		this->RaiseButtons();
+		ResetSavedTemplateGuiState();
 		if (this->last_user_action == WID_AT_AIRPORT) CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
 		CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
 		CloseWindowById(WC_SELECT_STATION, 0);
@@ -427,6 +428,7 @@ public:
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		ResetSavedTemplateGuiState();
 		CloseWindowById(WC_SELECT_STATION, 0);
 		this->PickerWindowBase::Close();
 	}

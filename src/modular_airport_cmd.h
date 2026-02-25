@@ -52,6 +52,26 @@ inline bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+inline bool IsTaxiwayPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_APRON_HOR:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON:
+		case APT_ARPON_N:
+		case APT_APRON_E:
+		case APT_APRON_S:
+		case APT_APRON_W:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return true;
+		default:
+			return false;
+	}
+}
+
 inline bool IsRunwayPieceOnAxis(const ModularAirportTileData *data, bool horizontal)
 {
 	return data != nullptr && IsModularRunwayPiece(data->piece_type) && (((data->rotation % 2) == 0) == horizontal);

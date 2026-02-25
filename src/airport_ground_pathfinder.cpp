@@ -11,6 +11,7 @@
 #include "debug.h"
 #include "airport_ground_pathfinder.h"
 #include "airport_pathfinder.h"
+#include "modular_airport_cmd.h"
 #include "station_base.h"
 #include "aircraft.h"
 #include "station_map.h"
@@ -70,30 +71,6 @@ static bool IsNonTaxiableBuilding(uint8_t piece_type)
 	}
 }
 
-/**
- * Check if a piece type is an editable taxiway tile.
- * @param piece_type The airport piece type.
- * @return True if the tile is a taxiway tile.
- */
-static bool IsTaxiwayPiece(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_APRON_HOR:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON:
-		case APT_ARPON_N:
-		case APT_APRON_E:
-		case APT_APRON_S:
-		case APT_APRON_W:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-			return true;
-		default:
-			return false;
-	}
-}
 
 /**
  * Check if a piece type is an aircraft parking tile that should not be used as pass-through route.

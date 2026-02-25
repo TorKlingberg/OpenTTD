@@ -72,9 +72,6 @@ struct AirportTemplate {
 /** Manager for loading/saving airport templates. */
 class AirportTemplateManager {
 public:
-	static void Initialize();
-	static void Uninitialize();
-
 	static const std::vector<std::unique_ptr<AirportTemplate>>& GetTemplates();
 	static void Refresh();
 

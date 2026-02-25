@@ -28,6 +28,7 @@
 using json = nlohmann::json;
 
 static std::vector<std::unique_ptr<AirportTemplate>> _templates;
+static bool _templates_dirty = true;
 static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 
 static std::string GetTemplatesDirectory()
@@ -133,17 +134,6 @@ void AirportTemplate::CheckAvailability()
 	}
 }
 
-void AirportTemplateManager::Initialize()
-{
-	FioCreateDirectory(GetTemplatesDirectory());
-	AirportTemplateManager::Refresh();
-}
-
-void AirportTemplateManager::Uninitialize()
-{
-	_templates.clear();
-}
-
 const std::vector<std::unique_ptr<AirportTemplate>>& AirportTemplateManager::GetTemplates()
 {
 	return _templates;
@@ -151,10 +141,12 @@ const std::vector<std::unique_ptr<AirportTemplate>>& AirportTemplateManager::Get
 
 void AirportTemplateManager::Refresh()
 {
+	if (!_templates_dirty) return;
+	_templates_dirty = false;
+
 	_templates.clear();
 
 	std::string dir = GetTemplatesDirectory();
-	FioCreateDirectory(dir);
 	if (dir.empty()) return;
 
 	std::error_code ec;
@@ -272,6 +264,7 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 		std::ofstream f(OTTD2FS(dir + filename));
 		if (!f.is_open()) return false;
 		f << j.dump(4);
+		_templates_dirty = true;
 		AirportTemplateManager::Refresh();
 		return true;
 	} catch (const std::exception &e) {

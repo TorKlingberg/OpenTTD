@@ -87,25 +87,6 @@
 extern bool _show_runway_direction_overlay;
 extern bool _show_holding_overlay;
 
-static bool IsModularTaxiwayPiece(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_APRON_HOR:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON:
-		case APT_ARPON_N:
-		case APT_APRON_E:
-		case APT_APRON_S:
-		case APT_APRON_W:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-			return true;
-		default:
-			return false;
-	}
-}
 
 /**
  * Static instance of FlowStat::SharesMap.
@@ -3116,7 +3097,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		taxi_dir_mask &= 0x0F;
 
 		/* One-way taxi only applies to taxiway/apron surface tiles and requires exactly one valid direction. */
-		if (IsModularTaxiwayPiece(tile_data.piece_type) && one_way_taxi && HasExactlyOneBit(taxi_dir_mask) && (tile_data.auto_taxi_dir_mask & taxi_dir_mask) != 0) {
+		if (IsTaxiwayPiece(tile_data.piece_type) && one_way_taxi && HasExactlyOneBit(taxi_dir_mask) && (tile_data.auto_taxi_dir_mask & taxi_dir_mask) != 0) {
 			tile_data.one_way_taxi = true;
 			tile_data.user_taxi_dir_mask = taxi_dir_mask;
 		} else {
@@ -4805,7 +4786,7 @@ static void DrawTile_Station(TileInfo *ti)
 							DrawGroundSpriteAt(SPR_SELECT_TILE + SlopeToSpriteOffset(ti->tileh), pal_overlay, 0, 0, 7);
 						}
 					}
-				} else if (IsModularTaxiwayPiece(tile_data->piece_type) && tile_data->one_way_taxi && HasExactlyOneBit(tile_data->user_taxi_dir_mask)) {
+				} else if (IsTaxiwayPiece(tile_data->piece_type) && tile_data->one_way_taxi && HasExactlyOneBit(tile_data->user_taxi_dir_mask)) {
 					SpriteID sprite = 0;
 					SpriteID base = SPR_ONEWAY_BASE;
 					const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
