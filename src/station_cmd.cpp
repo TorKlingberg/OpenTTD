@@ -3992,17 +3992,27 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		abs_tiles.push_back(t);
 	}
 
-	/* Pass 1: place all tiles. */
-	StationID join_for_tiles = distant_join ? station_to_join : NEW_STATION;
-	for (size_t i = 0; i < rotated_tiles.size(); i++) {
-		const ModularTemplatePlacementTile &rt = rotated_tiles[i];
-		CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(flags, abs_tiles[i], rt.piece_type, join_for_tiles, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
-		if (ret.Failed()) {
-			Debug(misc, 1, "[TplAp] pass1 failed idx={} tile={} piece={} rot={} err={} exec={}", i, abs_tiles[i].base(), rt.piece_type, rt.rotation, ret.GetErrorMessage(), flags.Test(DoCommandFlag::Execute));
-			return ret;
+	auto place_tiles_pass = [&](DoCommandFlags pass_flags) -> CommandCost {
+		CommandCost pass_cost(EXPENSES_CONSTRUCTION);
+		StationID join_for_tiles = distant_join ? station_to_join : NEW_STATION;
+		for (size_t i = 0; i < rotated_tiles.size(); i++) {
+			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
+			CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(pass_flags, abs_tiles[i], rt.piece_type, join_for_tiles, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
+			if (ret.Failed()) return ret;
+			pass_cost.AddCost(ret.GetCost());
 		}
-		total.AddCost(ret.GetCost());
+		return pass_cost;
+	};
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Preflight all tile placements to avoid partial map mutations on mid-pass failure. */
+		CommandCost preflight = place_tiles_pass(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute));
+		if (preflight.Failed()) return preflight;
 	}
+
+	CommandCost place_cost = place_tiles_pass(flags);
+	if (place_cost.Failed()) return place_cost;
+	total.AddCost(place_cost.GetCost());
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		/* Pass 2: apply runway/taxi/fence metadata after tiles exist. */
@@ -4013,27 +4023,21 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
 				CommandCost ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
-				if (ret.Failed()) {
-					Debug(misc, 1, "[TplAp] pass2 runway failed idx={} tile={} flags={} err={}", i, t.base(), runway_flags, ret.GetErrorMessage());
-					return ret;
-				}
+				if (ret.Failed()) return ret;
+				total.AddCost(ret.GetCost());
 			}
 
 			if (IsModularTaxiwayPiece(rt.piece_type)) {
 				CommandCost ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
-				if (ret.Failed()) {
-					Debug(misc, 1, "[TplAp] pass2 taxi failed idx={} tile={} mask={} oneway={} err={}", i, t.base(), rt.user_taxi_dir_mask, rt.one_way_taxi, ret.GetErrorMessage());
-					return ret;
-				}
+				if (ret.Failed()) return ret;
+				total.AddCost(ret.GetCost());
 			}
 
 			for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
 				if ((rt.edge_block_mask & edge_bit) == 0) continue;
 				CommandCost ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
-				if (ret.Failed()) {
-					Debug(misc, 1, "[TplAp] pass2 fence failed idx={} tile={} edge={} err={}", i, t.base(), edge_bit, ret.GetErrorMessage());
-					return ret;
-				}
+				if (ret.Failed()) return ret;
+				total.AddCost(ret.GetCost());
 			}
 		}
 	}
