@@ -4428,6 +4428,13 @@ static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 		case APT_APRON_FENCE_NE: case APT_APRON_FENCE_SE:
 		case APT_APRON_FENCE_SW: case APT_APRON_FENCE_NW:
 			return 0x0F;
+		/* Terminal/building tiles: they visually serve as their own fence. */
+		case APT_BUILDING_1: case APT_BUILDING_2: case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+		case APT_LOW_BUILDING: case APT_LOW_BUILDING_FENCE_N: case APT_LOW_BUILDING_FENCE_NW:
+		case APT_SMALL_BUILDING_1: case APT_SMALL_BUILDING_2: case APT_SMALL_BUILDING_3:
+		case APT_TOWER: case APT_TOWER_FENCE_SW:
+			return 0x0F;
 		/* Everything else: no suppression, fence all perimeter edges. */
 		default:
 			return 0x00;

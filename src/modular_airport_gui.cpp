@@ -873,6 +873,13 @@ private:
 			SetObjectToPlace(ANIMCURSOR_DEMOLISH, PAL_NONE, HT_RECT | HT_DIAGONAL, this->window_class, this->window_number);
 		} else {
 			SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
+			/* Show multi-tile footprint for compound cosmetic pieces. */
+			if (this->selected_piece == 3) { // Cosmetic picker
+				const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
+				if (piece.is_multi_tile && piece.apt_gfx == APT_SMALL_BUILDING_2) {
+					SetTileSelectSize(3, 1);
+				}
+			}
 		}
 		this->updating_cursor = false;
 	}
@@ -1025,6 +1032,38 @@ public:
 		/* Fixed DPI-stable size matching the hangar picker (full tile view). */
 		size.width  = ScaleGUITrad(64) + WidgetDimensions::scaled.fullbevel.Horizontal();
 		size.height = ScaleGUITrad(48) + WidgetDimensions::scaled.fullbevel.Vertical();
+		/* 3-tile terminal: compute size from actual tile sprite bounding box. */
+		if (widget == WID_MACP_PIECE_10) {
+			ZoomLevel icon_zoom = _gui_zoom;
+			Point so;
+			Dimension sd = GetSpriteSize(SPR_AIRFIELD_TERM_A, &so, icon_zoom);
+			int tile_w = static_cast<int>(sd.width)  - so.x;
+			int tile_h = static_cast<int>(sd.height) - so.y;
+			int step_x = tile_w / 2;
+			int step_y = -(tile_h / 2);
+			int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
+			for (int i = 0; i < 3; i++) {
+				int tx = (i - 1) * step_x;
+				int ty = (i - 1) * step_y;
+				bb_left   = std::min(bb_left, tx + so.x);
+				bb_right  = std::max(bb_right, tx + so.x + tile_w);
+				bb_top    = std::min(bb_top, ty + so.y);
+				bb_bottom = std::max(bb_bottom, ty + so.y + tile_h);
+			}
+			/* Also account for TERM_C_BUILD overlay on tile 0. */
+			{
+				Point bo;
+				Dimension bd = GetSpriteSize(SPR_AIRFIELD_TERM_C_BUILD, &bo, icon_zoom);
+				int tx = (0 - 1) * step_x;
+				int ty = (0 - 1) * step_y;
+				bb_left   = std::min(bb_left, tx + bo.x);
+				bb_right  = std::max(bb_right, tx + bo.x + static_cast<int>(bd.width));
+				bb_top    = std::min(bb_top, ty + bo.y);
+				bb_bottom = std::max(bb_bottom, ty + bo.y + static_cast<int>(bd.height));
+			}
+			size.width  = std::max(size.width,  static_cast<uint>(bb_right - bb_left) + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
+			size.height = std::max(size.height, static_cast<uint>(bb_bottom - bb_top) + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
+		}
 	}
 
 	void DrawWidget(const Rect &r, WidgetID widget) const override
@@ -1037,6 +1076,65 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		ZoomLevel icon_zoom = _gui_zoom;
+
+		/* 3-tile terminal: draw all 3 tiles in isometric layout.
+		 * Tiles are: APT_SMALL_BUILDING_3 (TERM_A), APT_SMALL_BUILDING_2 (TERM_B),
+		 * APT_SMALL_BUILDING_1 (TERM_C_GROUND + TERM_C_BUILD overlay).
+		 * TERM_A and TERM_B are single full-tile sprites; TERM_C is ground + child building. */
+		if (piece_idx == 10) {
+			/* Derive isometric tile step from the ground sprite's full pixel extent.
+			 * GetSpriteSize returns d.width = max(0, x_offs + pixel_width), so the
+			 * full tile width = d.width - offset.x (e.g. 33 - (-31) = 64 at normal zoom). */
+			Point so;
+			Dimension sd = GetSpriteSize(SPR_AIRFIELD_TERM_A, &so, icon_zoom);
+			int tile_w = static_cast<int>(sd.width)  - so.x;  /* full tile pixel width  */
+			int tile_h = static_cast<int>(sd.height) - so.y;  /* full tile pixel height  */
+			int step_x = tile_w / 2;
+			int step_y = -(tile_h / 2);
+
+			/* Bounding box of all 3 ground tiles around origin. */
+			int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
+			for (int i = 0; i < 3; i++) {
+				int tx = (i - 1) * step_x;
+				int ty = (i - 1) * step_y;
+				bb_left   = std::min(bb_left, tx + so.x);
+				bb_right  = std::max(bb_right, tx + so.x + tile_w);
+				bb_top    = std::min(bb_top, ty + so.y);
+				bb_bottom = std::max(bb_bottom, ty + so.y + tile_h);
+			}
+			/* Also account for TERM_C_BUILD overlay on tile 0 (bottom-left). */
+			{
+				Point bo;
+				Dimension bd = GetSpriteSize(SPR_AIRFIELD_TERM_C_BUILD, &bo, icon_zoom);
+				int tx = (0 - 1) * step_x;
+				int ty = (0 - 1) * step_y;
+				bb_left   = std::min(bb_left, tx + bo.x);
+				bb_right  = std::max(bb_right, tx + bo.x + static_cast<int>(bd.width));
+				bb_top    = std::min(bb_top, ty + bo.y);
+				bb_bottom = std::max(bb_bottom, ty + bo.y + static_cast<int>(bd.height));
+			}
+
+			/* Offset to centre the bounding box within the widget. */
+			int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
+			int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
+
+			/* Draw back-to-front: tile 2 (top-right) first, tile 0 (bottom-left) last. */
+			for (int i = 2; i >= 0; i--) {
+				int tx = (i - 1) * step_x + off_x;
+				int ty = (i - 1) * step_y + off_y;
+				if (i == 2) {
+					/* APT_SMALL_BUILDING_1: ground + building overlay (the globe). */
+					DrawSprite(SPR_AIRFIELD_TERM_C_GROUND, PAL_NONE, tx, ty, nullptr, icon_zoom);
+					DrawSprite(SPR_AIRFIELD_TERM_C_BUILD, PAL_NONE, tx, ty, nullptr, icon_zoom);
+				} else if (i == 1) {
+					DrawSprite(SPR_AIRFIELD_TERM_B, PAL_NONE, tx, ty, nullptr, icon_zoom);
+				} else {
+					DrawSprite(SPR_AIRFIELD_TERM_A, PAL_NONE, tx, ty, nullptr, icon_zoom);
+				}
+			}
+			return;
+		}
+
 		Point offset;
 		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
 		d.width  -= offset.x;
@@ -1066,6 +1164,14 @@ public:
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
 		SndClickBeep();
 		this->SetDirty();
+
+		/* Update cursor footprint for multi-tile pieces. */
+		const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
+		if (piece.is_multi_tile && piece.apt_gfx == APT_SMALL_BUILDING_2) {
+			SetTileSelectSize(3, 1);
+		} else {
+			SetTileSelectSize(1, 1);
+		}
 	}
 };
 
@@ -1104,8 +1210,6 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_9), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
-			EndContainer(),
-			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(0, 0, 1),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_10), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
 			EndContainer(),
