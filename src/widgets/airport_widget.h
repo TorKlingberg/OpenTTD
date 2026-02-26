@@ -94,10 +94,11 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_7,  ///< Radar on grass button.
 	WID_MACP_PIECE_8,  ///< Radio tower button.
 	WID_MACP_PIECE_9,  ///< Flag on grass button.
+	WID_MACP_PIECE_10, ///< Small terminal (3-tile) button.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;
-static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_9;
+static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_10;
 
 /** Widgets of the #BuildModularHelipadPickerWindow class. */
 enum ModularAirportHelipadPickerWidgets : WidgetID {

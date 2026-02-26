@@ -79,6 +79,7 @@ static bool IsNonTaxiableBuilding(uint8_t piece_type)
  */
 static bool IsParkingOnlyTile(uint8_t piece_type)
 {
+	if (IsModularHelipadPiece(piece_type)) return true;
 	switch (piece_type) {
 		case APT_STAND:
 		case APT_STAND_1:

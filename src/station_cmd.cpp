@@ -159,6 +159,19 @@ CommandCost GetStationAround(TileArea ta, StationID closest_station, CompanyID c
 }
 
 /**
+ * Look for a modular station owned by the given company around the given tile area.
+ * @param ta the area to search over
+ * @param closest_station the closest owned station found so far
+ * @param company the company whose stations to look for
+ * @param st to 'return' the found station
+ * @return Succeeded command (if zero or one station found) or failed command (for two or more stations found).
+ */
+CommandCost GetStationAroundModular(TileArea ta, StationID closest_station, CompanyID company, Station **st)
+{
+	return GetStationAround<Station>(ta, closest_station, company, st, [](const Station *) { return true; });
+}
+
+/**
  * Function to check whether the given tile matches some criterion.
  * @param tile the tile to check
  * @return true if it matches, false otherwise

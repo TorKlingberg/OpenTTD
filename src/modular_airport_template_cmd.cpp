@@ -110,8 +110,18 @@ static uint8_t NormalizeTemplateRunwayFlags(uint8_t flags)
 CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runway_flags)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
-	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 
+	/* If we're just testing, we might be calling this for a tile that is about to be built.
+	 * In that case, we can't fully validate against the station/piece type yet, but we can validate the flags. */
+	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
+		/* Validate flags: at least one operation and exactly one direction must be set */
+		if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
+		uint8_t dir_flags = runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+		if (dir_flags != RUF_DIR_LOW && dir_flags != RUF_DIR_HIGH) return CMD_ERROR;
+		return CommandCost();
+	}
+
+	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 	Station *st = Station::GetByTile(tile);
 	if (st == nullptr) return CMD_ERROR;
 
@@ -166,6 +176,11 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
+
+	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
+		return CommandCost();
+	}
+
 	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 
 	Station *st = Station::GetByTile(tile);
@@ -199,6 +214,12 @@ CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t tax
 CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
+
+	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
+		if (edge_bit != 0x01 && edge_bit != 0x02 && edge_bit != 0x04 && edge_bit != 0x08) return CMD_ERROR;
+		return CommandCost();
+	}
+
 	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 
 	Station *st = Station::GetByTile(tile);
@@ -284,66 +305,97 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	CommandCost total(EXPENSES_CONSTRUCTION);
 	std::vector<TileIndex> abs_tiles;
 	abs_tiles.reserve(rotated_tiles.size());
+	int common_z = -1;
 	for (const ModularTemplatePlacementTile &rt : rotated_tiles) {
 		TileIndex t = TileAddXY(tile, rt.dx, rt.dy);
 		if (!IsValidTile(t)) return CMD_ERROR;
 		abs_tiles.push_back(t);
+
+		/* Enforce common height for all tiles in the template. */
+		int tile_z = GetTileMaxZ(t);
+		if (common_z == -1) {
+			common_z = tile_z;
+		} else if (common_z != tile_z) {
+			return CommandCost(STR_ERROR_FLAT_LAND_REQUIRED);
+		}
 	}
 
-	/* Preflight height consistency so placement is all-or-nothing on uneven terrain.
-	 * Without this, per-tile validation can pass in test mode but fail mid-execution
-	 * after earlier tiles have already created/joined a modular station. */
-	int required_z = GetTileMaxZ(abs_tiles.front());
-	for (TileIndex t : abs_tiles) {
-		if (GetTileMaxZ(t) != required_z) return CommandCost(STR_ERROR_FLAT_LAND_REQUIRED);
+	/* Pass 1: Test all tile placements and metadata.
+	 * Identify the station to join if not explicitly provided. */
+	StationID join_id = station_to_join;
+	for (size_t i = 0; i < rotated_tiles.size(); i++) {
+		const ModularTemplatePlacementTile &rt = rotated_tiles[i];
+		TileIndex t = abs_tiles[i];
+
+		/* If we don't have a station to join yet, see if this tile is adjacent to an existing one. */
+		if (join_id == StationID::Invalid()) {
+			TileArea ta(t, 1, 1);
+			Station *st = nullptr;
+			if (GetStationAroundModular(ta, StationID::Invalid(), _current_company, &st).Succeeded() && st != nullptr) {
+				join_id = st->index;
+			}
+		}
+
+		CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
+		if (ret.Failed()) return ret;
+		total.AddCost(ret.GetCost());
+
+		/* Test metadata. */
+		if (IsModularRunwayPiece(rt.piece_type)) {
+			uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
+			ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, runway_flags);
+			if (ret.Failed()) return ret;
+			total.AddCost(ret.GetCost());
+		}
+
+		if (IsTaxiwayPiece(rt.piece_type)) {
+			ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.user_taxi_dir_mask, rt.one_way_taxi);
+			if (ret.Failed()) return ret;
+			total.AddCost(ret.GetCost());
+		}
+
+		for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
+			if ((rt.edge_block_mask & edge_bit) == 0) continue;
+			ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, edge_bit, true);
+			if (ret.Failed()) return ret;
+			total.AddCost(ret.GetCost());
+		}
 	}
 
-	auto place_tiles_pass = [&](DoCommandFlags pass_flags) -> CommandCost {
-		CommandCost pass_cost(EXPENSES_CONSTRUCTION);
-		StationID join_for_tiles = distant_join ? station_to_join : NEW_STATION;
+	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Pass 2: Execute tile placements. */
+		StationID final_join_id = join_id;
 		for (size_t i = 0; i < rotated_tiles.size(); i++) {
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
-			CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(pass_flags, abs_tiles[i], rt.piece_type, join_for_tiles, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
-			if (ret.Failed()) return ret;
-			pass_cost.AddCost(ret.GetCost());
+			TileIndex t = abs_tiles[i];
+
+			CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(flags, t, rt.piece_type, final_join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
+			if (ret.Failed()) return ret; // Should not fail due to Pass 1.
+
+			/* If we started with no station and this was the first tile, it created one.
+			 * Use it for all subsequent tiles to ensure they join the same station. */
+			if (final_join_id == StationID::Invalid()) {
+				final_join_id = GetStationIndex(t);
+			}
 		}
-		return pass_cost;
-	};
 
-	if (flags.Test(DoCommandFlag::Execute)) {
-		/* Preflight all tile placements to avoid partial map mutations on mid-pass failure. */
-		CommandCost preflight = place_tiles_pass(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute));
-		if (preflight.Failed()) return preflight;
-	}
-
-	CommandCost place_cost = place_tiles_pass(flags);
-	if (place_cost.Failed()) return place_cost;
-	total.AddCost(place_cost.GetCost());
-
-	if (flags.Test(DoCommandFlag::Execute)) {
-		/* Pass 2: apply runway/taxi/fence metadata after tiles exist. */
+		/* Pass 3: Execute metadata. */
 		for (size_t i = 0; i < rotated_tiles.size(); i++) {
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 			TileIndex t = abs_tiles[i];
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
-				CommandCost ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
-				if (ret.Failed()) return ret;
-				total.AddCost(ret.GetCost());
+				Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
 			}
 
 			if (IsTaxiwayPiece(rt.piece_type)) {
-				CommandCost ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
-				if (ret.Failed()) return ret;
-				total.AddCost(ret.GetCost());
+				Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
 			}
 
 			for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
 				if ((rt.edge_block_mask & edge_bit) == 0) continue;
-				CommandCost ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
-				if (ret.Failed()) return ret;
-				total.AddCost(ret.GetCost());
+				Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
 			}
 		}
 	}

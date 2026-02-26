@@ -88,6 +88,7 @@ struct CosmeticPiece {
 	SpriteID ground;  ///< Optional ground sprite drawn behind icon (0 = none)
 	uint8_t apt_gfx;  ///< AirportTiles value for placement and full-size picker preview
 	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
+	bool is_multi_tile = false; ///< True if this piece places multiple tiles at once.
 };
 
 struct HelipadPiece {
@@ -108,6 +109,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, 2666,                         0,                    APT_SMALL_BUILDING_2,    15, true},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -695,7 +697,42 @@ private:
 	 */
 	void PlaceSingleTile(TileIndex tile)
 	{
+		if (this->selected_piece == 3) { // Cosmetic picker selected
+			const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
+			if (piece.is_multi_tile) {
+				this->PlaceMultiTileCosmetic(tile, piece);
+				return;
+			}
+		}
 		this->PlaceSingleTileWithDialog(tile);
+	}
+
+	/**
+	 * Place a multi-tile cosmetic piece (like the 3-tile terminal).
+	 */
+	void PlaceMultiTileCosmetic(TileIndex tile, const CosmeticPiece &piece)
+	{
+		if (piece.apt_gfx == APT_SMALL_BUILDING_2) { // 3-tile terminal
+			ModularTemplatePlacementData data;
+			data.width = 3;
+			data.height = 1;
+			data.rotation = 0;
+			data.tiles.push_back({0, 0, APT_SMALL_BUILDING_1, 0, 0, false, 0x0F, 0});
+			data.tiles.push_back({1, 0, APT_SMALL_BUILDING_2, 0, 0, false, 0x0F, 0});
+			data.tiles.push_back({2, 0, APT_SMALL_BUILDING_3, 0, 0, false, 0x0F, 0});
+
+			auto proc = [=](bool test, StationID to_join) -> bool {
+				if (test) {
+					return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>()),
+							tile, StationID::Invalid(), _ctrl_pressed, data).Succeeded();
+				} else {
+					return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
+							tile, to_join, _ctrl_pressed, data);
+				}
+			};
+
+			ShowSelectStationIfNeeded(TileArea(tile, 3, 1), proc);
+		}
 	}
 
 	/**
@@ -1067,6 +1104,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR),
 				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_9), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
+			EndContainer(),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(0, 0, 1),
+				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MACP_PIECE_10), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

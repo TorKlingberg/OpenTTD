@@ -1747,8 +1747,12 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 		}
 
 		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
-			v->state = HELITAKEOFF;
-			return;
+			const ModularAirportTileData *data = st->airport.GetModularTileData(v->tile);
+			if (data != nullptr && IsModularHelipadPiece(data->piece_type)) {
+				v->state = HELITAKEOFF;
+				return;
+			}
+			/* Not on helipad, fall through to runway takeoff flow. */
 		}
 
 		TileIndex goal = INVALID_TILE;

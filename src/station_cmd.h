@@ -19,6 +19,8 @@
 
 struct Town;
 
+CommandCost GetStationAroundModular(TileArea ta, StationID closest_station, CompanyID company, struct Station **st);
+
 enum StationClassID : uint16_t;
 enum RoadStopClassID : uint16_t;
 

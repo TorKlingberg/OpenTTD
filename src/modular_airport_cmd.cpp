@@ -1895,6 +1895,9 @@ TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v)
 				continue;
 			}
 
+			/* Check for physical occupancy. */
+			if (v != nullptr && IsModularTileOccupiedByOtherAircraft(st, data.tile, v->index)) continue;
+
 			int score = 0;
 			if (can_ground_route) {
 				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
@@ -2440,14 +2443,18 @@ void HandleModularGroundArrival(Aircraft *v)
 
 		case MGT_TERMINAL:
 		case MGT_HELIPAD:
-			if (v->modular_ground_target == MGT_TERMINAL &&
+			if ((v->modular_ground_target == MGT_TERMINAL || v->modular_ground_target == MGT_HELIPAD) &&
 					IsModularTileOccupiedByOtherAircraft(st, v->tile, v->index)) {
-				/* Reservation desync safety: if another aircraft is already on this stand,
-				 * re-target to a different stand instead of stacking aircraft on one tile. */
-				TileIndex goal = FindFreeModularTerminal(st, v);
+				/* Reservation desync safety: if another aircraft is already on this stand or pad,
+				 * re-target to a different one instead of stacking aircraft on one tile. */
+				TileIndex goal = (v->modular_ground_target == MGT_HELIPAD) ? FindFreeModularHelipad(st, v) : FindFreeModularTerminal(st, v);
+				if (goal == INVALID_TILE && v->modular_ground_target == MGT_HELIPAD) {
+					/* Helicopter couldn't find a helipad, try a stand as fallback. */
+					goal = FindFreeModularTerminal(st, v);
+					if (goal != INVALID_TILE) v->modular_ground_target = MGT_TERMINAL;
+				}
 				if (goal != INVALID_TILE && goal != v->tile) {
 					v->ground_path_goal = goal;
-					v->modular_ground_target = MGT_TERMINAL;
 					v->state = TERM1;
 					return;
 				}
