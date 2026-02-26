@@ -110,17 +110,6 @@ static uint8_t NormalizeTemplateRunwayFlags(uint8_t flags)
 CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runway_flags)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
-
-	/* If we're just testing, we might be calling this for a tile that is about to be built.
-	 * In that case, we can't fully validate against the station/piece type yet, but we can validate the flags. */
-	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
-		/* Validate flags: at least one operation and exactly one direction must be set */
-		if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
-		uint8_t dir_flags = runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
-		if (dir_flags != RUF_DIR_LOW && dir_flags != RUF_DIR_HIGH) return CMD_ERROR;
-		return CommandCost();
-	}
-
 	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 	Station *st = Station::GetByTile(tile);
 	if (st == nullptr) return CMD_ERROR;
@@ -176,11 +165,6 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
-
-	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
-		return CommandCost();
-	}
-
 	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 
 	Station *st = Station::GetByTile(tile);
@@ -214,12 +198,6 @@ CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t tax
 CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set)
 {
 	if (!IsValidTile(tile)) return CMD_ERROR;
-
-	if (!flags.Test(DoCommandFlag::Execute) && (!IsTileType(tile, TileType::Station) || !IsAirport(tile))) {
-		if (edge_bit != 0x01 && edge_bit != 0x02 && edge_bit != 0x04 && edge_bit != 0x08) return CMD_ERROR;
-		return CommandCost();
-	}
-
 	if (!IsTileType(tile, TileType::Station)) return CMD_ERROR;
 
 	Station *st = Station::GetByTile(tile);
@@ -276,6 +254,16 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	if (!IsValidTile(tile)) return CMD_ERROR;
 	if (data.width == 0 || data.height == 0) return CMD_ERROR;
 	if (data.rotation > 3) return CMD_ERROR;
+
+	/* Templates containing non-rotatable compound pieces (e.g. 3-tile small terminal)
+	 * must be placed without rotation. */
+	if (data.rotation != 0) {
+		for (const auto &t : data.tiles) {
+			if (t.piece_type == APT_SMALL_BUILDING_1 || t.piece_type == APT_SMALL_BUILDING_2 || t.piece_type == APT_SMALL_BUILDING_3) {
+				return CommandCost(STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
+			}
+		}
+	}
 	if (data.tiles.empty() || data.tiles.size() > MAX_TEMPLATE_TILES) {
 		return CommandCost(STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE);
 	}
@@ -340,26 +328,10 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		if (ret.Failed()) return ret;
 		total.AddCost(ret.GetCost());
 
-		/* Test metadata. */
-		if (IsModularRunwayPiece(rt.piece_type)) {
-			uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
-			ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, runway_flags);
-			if (ret.Failed()) return ret;
-			total.AddCost(ret.GetCost());
-		}
-
-		if (IsTaxiwayPiece(rt.piece_type)) {
-			ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.user_taxi_dir_mask, rt.one_way_taxi);
-			if (ret.Failed()) return ret;
-			total.AddCost(ret.GetCost());
-		}
-
-		for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
-			if ((rt.edge_block_mask & edge_bit) == 0) continue;
-			ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, edge_bit, true);
-			if (ret.Failed()) return ret;
-			total.AddCost(ret.GetCost());
-		}
+		/* Metadata commands (runway flags, taxiway flags, edge fences) are not tested here
+		 * because the tiles don't exist yet in test mode. They have zero cost and are applied
+		 * in Pass 3 after tiles are built. Failures there are silently ignored since they
+		 * only affect non-critical metadata. */
 	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {

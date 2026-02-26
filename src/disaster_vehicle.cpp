@@ -246,6 +246,9 @@ static bool DisasterTick_Zeppeliner(DisasterVehicle *v)
 				v->state = 1;
 				v->age = CalendarTime::MIN_DATE;
 
+				Station *st = Station::GetByTile(v->tile);
+				st->airport.blocks.Set({AirportBlock::Zeppeliner, AirportBlock::RunwayIn});
+
 				AddTileNewsItem(GetEncodedString(STR_NEWS_DISASTER_ZEPPELIN, GetStationIndex(v->tile)), NewsType::Accident, v->tile);
 				AI::NewEvent(GetTileOwner(v->tile), new ScriptEventDisasterZeppelinerCrashed(GetStationIndex(v->tile)));
 			}

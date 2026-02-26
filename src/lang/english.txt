@@ -5250,6 +5250,7 @@ STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY                           :{WHITE}Template
 STR_ERROR_AIRPORT_TEMPLATE_IO                                   :{WHITE}Failed to save or load airport template
 STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING                       :{WHITE}This template requires NewGRF airport tiles that are not available
 STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE                            :{WHITE}Airport template is too large
+STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE                       :{WHITE}Template contains pieces that cannot be rotated
 STR_ERROR_AIRPORT_TEMPLATE_DELETE_FAILED                        :{WHITE}Failed to delete airport template
 STR_ERROR_CAN_T_RENAME_STATION                                  :{WHITE}Can't rename station...
 STR_ERROR_CAN_T_MOVE_STATION_NAME                               :{WHITE}Can't move station sign...

@@ -1644,12 +1644,6 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			 * Do not fall back to legacy hangar logic for modular airports. */
 			return;
 		} else {
-			if (v->subtype == AIR_HELICOPTER) {
-				AircraftLeaveHangar(v, exit_dir);
-				v->state = HELITAKEOFF;
-				return;
-			}
-
 			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 			if (runway != INVALID_TILE) {
 				v->modular_takeoff_tile = runway;
@@ -1658,6 +1652,14 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={} queue={}", v->index, runway.base(), v->ground_path_goal.base());
 				return;
 			}
+
+			if (v->subtype == AIR_HELICOPTER) {
+				/* No runway available; helicopter can take off vertically as fallback. */
+				AircraftLeaveHangar(v, exit_dir);
+				v->state = HELITAKEOFF;
+				return;
+			}
+
 			LogModularTakeoffRunwayUnavailable(st, v);
 
 			/* No usable takeoff runway yet: keep waiting in hangar.
@@ -1786,6 +1788,13 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 				IsValidTile(v->modular_takeoff_tile) ? v->modular_takeoff_tile.base() : 0);
 			return;
 		}
+
+		if (v->subtype == AIR_HELICOPTER) {
+			/* No runway available; helicopter can take off vertically as fallback. */
+			v->state = HELITAKEOFF;
+			return;
+		}
+
 		LogModularTakeoffRunwayUnavailable(st, v);
 		return;
 	}

@@ -3183,6 +3183,66 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 }
 
 /**
+ * Get the edge_block_mask for a stock airport tile's fence edges.
+ * Stock fence tile names use screen compass directions (NW/NE/SE/SW).
+ * Edge bits: NW=0x01, SW=0x02, SE=0x04, NE=0x08.
+ * @param stock_gfx The stock airport tile GFX.
+ * @return Bitmask of fence edges, or 0 if no fences.
+ */
+static uint8_t GetStockFenceEdgeMask(uint8_t stock_gfx)
+{
+	switch (stock_gfx) {
+		/* Apron fence variants */
+		case APT_APRON_FENCE_NW:       return 0x01;
+		case APT_APRON_FENCE_SW:       return 0x02;
+		case APT_APRON_FENCE_SE:       return 0x04;
+		case APT_APRON_FENCE_NE:       return 0x08;
+		case APT_APRON_FENCE_NE_SW:    return 0x08 | 0x02;
+		case APT_APRON_FENCE_SE_SW:    return 0x04 | 0x02;
+		case APT_APRON_FENCE_NE_SE:    return 0x08 | 0x04;
+		case APT_APRON_N_FENCE_SW:     return 0x02;
+
+		/* Runway end fence variants */
+		case APT_RUNWAY_END_FENCE_SE:     return 0x04;
+		case APT_RUNWAY_END_FENCE_NW:     return 0x01;
+		case APT_RUNWAY_END_FENCE_NW_SW:  return 0x01 | 0x02;
+		case APT_RUNWAY_END_FENCE_SE_SW:  return 0x04 | 0x02;
+		case APT_RUNWAY_END_FENCE_NE_NW:  return 0x08 | 0x01;
+		case APT_RUNWAY_END_FENCE_NE_SE:  return 0x08 | 0x04;
+
+		/* Runway shoulder fence */
+		case APT_RUNWAY_FENCE_NW:      return 0x01;
+
+		/* Helipad fence variants */
+		case APT_HELIPAD_2_FENCE_NW:      return 0x01;
+		case APT_HELIPAD_2_FENCE_NE_SE:   return 0x08 | 0x04;
+		case APT_HELIPAD_3_FENCE_NW:      return 0x01;
+		case APT_HELIPAD_3_FENCE_NW_SW:   return 0x01 | 0x02;
+		case APT_HELIPAD_3_FENCE_SE_SW:   return 0x04 | 0x02;
+
+		/* Tower/building fence variants */
+		case APT_TOWER_FENCE_SW:       return 0x02;
+		case APT_LOW_BUILDING_FENCE_N: return 0x01;
+		case APT_LOW_BUILDING_FENCE_NW:return 0x01;
+
+		/* Radar/radio fence variants */
+		case APT_RADAR_FENCE_SW:       return 0x02;
+		case APT_RADAR_FENCE_NE:       return 0x08;
+		case APT_RADAR_GRASS_FENCE_SW: return 0x02;
+		case APT_RADIO_TOWER_FENCE_NE: return 0x08;
+
+		/* Grass fence variants */
+		case APT_GRASS_FENCE_SW:       return 0x02;
+		case APT_GRASS_FENCE_NE_FLAG:  return 0x08;
+
+		/* Empty fence variant */
+		case APT_EMPTY_FENCE_NE:       return 0x08;
+
+		default: return 0;
+	}
+}
+
+/**
  * Map a stock airport tile GFX to the equivalent modular piece type.
  * @param stock_gfx The stock airport tile GFX from the airport layout table.
  * @return The modular piece_type to use.
@@ -3654,6 +3714,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 			tile_data.one_way_taxi = false;
 			tile_data.user_taxi_dir_mask = 0x0F;
 			tile_data.runway_flags = 0;
+			tile_data.edge_block_mask = GetStockFenceEdgeMask(stock_gfx);
 
 			tile_data_vec.push_back(tile_data);
 		}
@@ -3666,6 +3727,28 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 				int td_dy = TileY(td.tile) - TileY(tile);
 				if (td_dy == rc.y_row) {
 					td.runway_flags = rc.runway_flags;
+				}
+			}
+		}
+
+		/* Fence edge mirroring post-pass: for each edge fence, set the opposite
+		 * edge on the neighbor tile so the pathfinder sees fences from both sides. */
+		static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } kFenceEdges[] = {
+			{  0, -1, 0x01, 0x04 }, // NW edge → neighbor's SE
+			{ +1,  0, 0x02, 0x08 }, // SW edge → neighbor's NE
+			{  0, +1, 0x04, 0x01 }, // SE edge → neighbor's NW
+			{ -1,  0, 0x08, 0x02 }, // NE edge → neighbor's SW
+		};
+		for (const auto &td : tile_data_vec) {
+			if (td.edge_block_mask == 0) continue;
+			for (const auto &e : kFenceEdges) {
+				if ((td.edge_block_mask & e.bit) == 0) continue;
+				TileIndex nb = TileAddXY(td.tile, e.dx, e.dy);
+				for (auto &nb_td : tile_data_vec) {
+					if (nb_td.tile == nb) {
+						nb_td.edge_block_mask |= e.opposite;
+						break;
+					}
 				}
 			}
 		}

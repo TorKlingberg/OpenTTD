@@ -261,6 +261,7 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		if (this->mode != TemplateManagerMode::LoadingPlace) return false;
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr || !templ->is_available) return false;
+		if (templ->HasNonRotatablePieces()) return false;
 
 		this->selected_rotation = (this->selected_rotation + delta + 4) & 3;
 		this->UpdateLoadingPlacementPreview();

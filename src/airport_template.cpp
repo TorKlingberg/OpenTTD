@@ -119,6 +119,18 @@ void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t templa
 	this->edge_block_mask = new_mask;
 }
 
+bool AirportTemplate::HasNonRotatablePieces() const
+{
+	for (const auto &tile : this->tiles) {
+		if (tile.piece_type == APT_SMALL_BUILDING_1 ||
+				tile.piece_type == APT_SMALL_BUILDING_2 ||
+				tile.piece_type == APT_SMALL_BUILDING_3) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void AirportTemplate::CheckAvailability()
 {
 	this->is_available = true;
