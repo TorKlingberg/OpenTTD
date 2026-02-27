@@ -61,6 +61,7 @@ static constexpr WidgetID WID_MA_PIECE_LAST  = WID_MA_PIECE_11;
 /** Widgets of the #BuildModularTemplateManagerWindow class. */
 enum ModularAirportTemplateManagerWidgets : WidgetID {
 	WID_TM_CAPTION,
+	WID_TM_PREVIEW,
 	WID_TM_TEMPLATE_LIST,
 	WID_TM_SCROLLBAR,
 	WID_TM_SAVE,

@@ -4184,6 +4184,19 @@ const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_h
 	}
 }
 
+const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_1:           return &_station_display_modular_ns_runway_1;
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_5:           return &_station_display_modular_ns_runway_2;
+		case APT_RUNWAY_3:           return &_station_display_modular_ns_runway_3;
+		case APT_RUNWAY_4:           return &_station_display_modular_ns_runway_4;
+		case APT_RUNWAY_END:         return &_station_display_modular_ns_runway_end;
+		default:                     return nullptr;
+	}
+}
+
 static int GetSlopePixelZ_Station(TileIndex tile, uint, uint, bool)
 {
 	return GetTileMaxPixelZ(tile);

@@ -37,6 +37,7 @@ void SetRailStationTileFlags(TileIndex tile, const StationSpec *statspec);
 const DrawTileSprites *GetStationTileLayout(StationType st, uint8_t gfx);
 void StationPickerDrawSprite(int x, int y, StationType st, RailType railtype, RoadType roadtype, int image);
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar);
+const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type);
 
 bool HasStationInUse(StationID station, bool include_company, CompanyID company);
 

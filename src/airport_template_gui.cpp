@@ -32,6 +32,11 @@
 #include "modular_airport_gui.h"
 #include "hotkeys.h"
 #include "core/geometry_func.hpp"
+#include "station_func.h"
+#include "sprite.h"
+#include "airport.h"
+#include "core/backup_type.hpp"
+#include "zoom_func.h"
 
 #include <cctype>
 
@@ -144,6 +149,29 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
 
 	templ.CheckAvailability();
 	return true;
+}
+
+/**
+ * Get the tile layout for a template tile, suitable for GUI drawing.
+ * Mirrors ApplyModularAirportTileLayoutOverridesLocal logic:
+ * - Hangars use directional layouts based on piece_type
+ * - Runways on the Y-axis (rotation%2==1) use NS runway sprites
+ * - NewGRF tiles fall back to plain apron
+ */
+static const DrawTileSprites *GetTileLayoutForTemplateTile(const AirportTemplateTile &t)
+{
+	if (IsModularHangarPiece(t.piece_type)) {
+		return GetModularHangarTileLayout(t.rotation, IsLegacySmallHangarPiece(t.piece_type));
+	}
+	if (t.piece_type >= NEW_AIRPORTTILE_OFFSET) {
+		return GetStationTileLayout(StationType::Airport, APT_APRON);
+	}
+	/* NS runway override: rotation%2==1 means Y-axis runway. */
+	if ((t.rotation % 2) == 1) {
+		const DrawTileSprites *ns = GetModularNSRunwayLayout(t.piece_type);
+		if (ns != nullptr) return ns;
+	}
+	return GetStationTileLayout(StationType::Airport, t.piece_type);
 }
 
 enum TemplateManagerHotkeys {
@@ -360,6 +388,11 @@ public:
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		switch (widget) {
+			case WID_TM_PREVIEW:
+				size.width  = std::max<uint>(size.width, ScaleGUITrad(150));
+				size.height = std::max<uint>(size.height, ScaleGUITrad(100));
+				break;
+
 			case WID_TM_TEMPLATE_LIST:
 				for (const auto &templ : AirportTemplateManager::GetTemplates()) {
 					if (templ == nullptr) continue;
@@ -406,6 +439,72 @@ public:
 	void DrawWidget(const Rect &r, WidgetID widget) const override
 	{
 		switch (widget) {
+			case WID_TM_PREVIEW: {
+				const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
+				if (templ == nullptr || templ->tiles.empty()) break;
+
+				/* Build rotated tile list. */
+				std::vector<AirportTemplateTile> tiles;
+				tiles.reserve(templ->tiles.size());
+				for (const AirportTemplateTile &src : templ->tiles) {
+					AirportTemplateTile t = src;
+					t.Rotate(this->selected_rotation, templ->width, templ->height);
+					tiles.push_back(t);
+				}
+
+				/* Get isometric tile dimensions from the ground sprite. */
+				Point so;
+				Dimension sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so);
+				int tile_w = static_cast<int>(sd.width)  - so.x;
+				int tile_h = static_cast<int>(sd.height) - so.y;
+				int half_w = tile_w / 2;
+				int half_h = tile_h / 2;
+
+				/* Compute isometric positions and bounding box. */
+				struct IsoTile { int iso_x; int iso_y; size_t idx; int depth; };
+				std::vector<IsoTile> iso_tiles;
+				iso_tiles.reserve(tiles.size());
+				int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
+				for (size_t i = 0; i < tiles.size(); i++) {
+					int dx = tiles[i].dx;
+					int dy = tiles[i].dy;
+					int iso_x = (dy - dx) * half_w;
+					int iso_y = (dx + dy) * half_h;
+					iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
+					bb_left   = std::min(bb_left,   iso_x + so.x);
+					bb_right  = std::max(bb_right,  iso_x + so.x + tile_w);
+					bb_top    = std::min(bb_top,    iso_y + so.y);
+					bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
+				}
+
+				/* Set up clipped draw area. */
+				DrawPixelInfo tmp_dpi;
+				Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
+				if (!FillDrawPixelInfo(&tmp_dpi, ir)) break;
+				AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+
+				/* Centre the bounding box in the widget. */
+				int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
+				int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
+
+				/* Sort back-to-front (painter's algorithm). */
+				std::sort(iso_tiles.begin(), iso_tiles.end(), [](const IsoTile &a, const IsoTile &b) {
+					return a.depth < b.depth;
+				});
+
+				/* Draw each tile. */
+				PaletteID pal = GetCompanyPalette(_local_company);
+				for (const IsoTile &it : iso_tiles) {
+					const AirportTemplateTile &t = tiles[it.idx];
+					const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
+					int x = it.iso_x + off_x;
+					int y = it.iso_y + off_y;
+					DrawSprite(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
+					DrawRailTileSeqInGUI(x, y, layout, 0, 0, pal);
+				}
+				break;
+			}
+
 			case WID_TM_TEMPLATE_LIST: {
 				Rect row = r.WithHeight(this->line_height).Shrink(WidgetDimensions::scaled.bevel);
 				Rect text = r.WithHeight(this->line_height).Shrink(WidgetDimensions::scaled.matrix);
@@ -647,6 +746,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_templa
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
 		NWidget(NWID_VERTICAL), SetPadding(WidgetDimensions::unscaled.picker), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_PREVIEW), SetFill(1, 0), SetMinimalSize(150, 100),
 			NWidget(NWID_HORIZONTAL),
 				NWidget(WWT_MATRIX, COLOUR_GREY, WID_TM_TEMPLATE_LIST), SetFill(1, 1), SetMatrixDataTip(1, 6, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP), SetScrollbar(WID_TM_SCROLLBAR),
 				NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WID_TM_SCROLLBAR),
