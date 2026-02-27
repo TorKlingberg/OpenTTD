@@ -3787,47 +3787,104 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 		if (ret.Failed()) return ret;
 	}
 
-	/* Teleport any ground aircraft to the nearest hangar instead of blocking removal.
-	 * If no hangar is available, the removal is blocked. */
-	if (!TeleportAircraftOnModularTile(tile, st, flags.Test(DoCommandFlag::Execute))) {
-		return CommandCost(STR_ERROR_AIRCRAFT_IN_THE_WAY);
-	}
+	auto is_small_terminal_piece = [](uint8_t piece_type) {
+		return piece_type == APT_SMALL_BUILDING_1 || piece_type == APT_SMALL_BUILDING_2 || piece_type == APT_SMALL_BUILDING_3;
+	};
 
-	CommandCost cost(EXPENSES_CONSTRUCTION, _price[Price::ClearStationAirport]);
+	auto find_small_terminal_demolition_tiles = [&](TileIndex seed) {
+		std::vector<TileIndex> tiles;
+		tiles.push_back(seed);
 
-	if (flags.Test(DoCommandFlag::Execute)) {
-		/* Capture removed tile's runway metadata before erasing for visual normalization. */
-		uint8_t removed_rotation = 0;
-		bool removed_was_runway = false;
-		if (st->airport.modular_tile_data != nullptr) {
-			const ModularAirportTileData *md = st->airport.GetModularTileData(tile);
-			if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
-				removed_was_runway = true;
-				removed_rotation = md->rotation;
+		const ModularAirportTileData *seed_md = st->airport.GetModularTileData(seed);
+		if (seed_md == nullptr || !is_small_terminal_piece(seed_md->piece_type)) return tiles;
+
+		auto get_terminal_piece = [&](TileIndex t) -> uint8_t {
+			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
+			return md != nullptr ? md->piece_type : 0xFF;
+		};
+
+		TileIndex middle = INVALID_TILE;
+		if (seed_md->piece_type == APT_SMALL_BUILDING_2) {
+			middle = seed;
+		} else {
+			const TileIndexDiff kN4[] = { TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1) };
+			for (TileIndexDiff d : kN4) {
+				TileIndex n = seed + d;
+				if (get_terminal_piece(n) == APT_SMALL_BUILDING_2) {
+					middle = n;
+					break;
+				}
+			}
+		}
+		if (middle == INVALID_TILE) return tiles;
+
+		const TileIndexDiff kAxis[] = { TileDiffXY(1, 0), TileDiffXY(0, 1) };
+		for (TileIndexDiff d : kAxis) {
+			TileIndex a = middle + d;
+			TileIndex b = middle - d;
+			uint8_t pa = get_terminal_piece(a);
+			uint8_t pb = get_terminal_piece(b);
+			if ((pa == APT_SMALL_BUILDING_1 && pb == APT_SMALL_BUILDING_3) ||
+					(pa == APT_SMALL_BUILDING_3 && pb == APT_SMALL_BUILDING_1)) {
+				tiles.clear();
+				tiles.push_back(middle);
+				tiles.push_back(a);
+				tiles.push_back(b);
+				break;
 			}
 		}
 
-		DoClearSquare(tile);
-		DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, tile.base());
+		return tiles;
+	};
+
+	std::vector<TileIndex> tiles_to_remove = find_small_terminal_demolition_tiles(tile);
+
+	/* Teleport any ground aircraft to the nearest hangar instead of blocking removal.
+	 * If no hangar is available, the removal is blocked. */
+	for (TileIndex t : tiles_to_remove) {
+		if (!TeleportAircraftOnModularTile(t, st, flags.Test(DoCommandFlag::Execute))) {
+			return CommandCost(STR_ERROR_AIRCRAFT_IN_THE_WAY);
+		}
+	}
+
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+	for (size_t i = 0; i < tiles_to_remove.size(); ++i) {
+		cost.AddCost(_price[Price::ClearStationAirport]);
+	}
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		std::vector<std::pair<TileIndex, uint8_t>> removed_runway_tiles;
+		if (st->airport.modular_tile_data != nullptr) {
+			for (TileIndex t : tiles_to_remove) {
+				const ModularAirportTileData *md = st->airport.GetModularTileData(t);
+				if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
+					removed_runway_tiles.push_back({t, md->rotation});
+				}
+			}
+		}
+
+		for (TileIndex t : tiles_to_remove) {
+			DoClearSquare(t);
+			DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, t.base());
+		}
 
 		/* Remove tile data from modular airport */
 		if (st->airport.modular_tile_data != nullptr) {
 			auto &tile_data_vec = *st->airport.modular_tile_data;
-			tile_data_vec.erase(
-				std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
-					[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
-				tile_data_vec.end()
-			);
+			tile_data_vec.erase(std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
+				[&](const ModularAirportTileData &data) {
+					return std::find(tiles_to_remove.begin(), tiles_to_remove.end(), data.tile) != tiles_to_remove.end();
+				}), tile_data_vec.end());
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.modular_holding_loop_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
 
 			/* Normalize runway visuals for surviving neighbors of the removed tile. */
-			if (removed_was_runway) {
+			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
 				bool horizontal = (removed_rotation % 2) == 0;
 				TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-				TileIndex neighbor_lo = tile - diff;
-				TileIndex neighbor_hi = tile + diff;
+				TileIndex neighbor_lo = removed_tile - diff;
+				TileIndex neighbor_hi = removed_tile + diff;
 				if (st->airport.GetModularTileData(neighbor_lo) != nullptr) {
 					NormalizeRunwaySegmentVisuals(st, neighbor_lo, horizontal);
 				}
@@ -3837,7 +3894,9 @@ static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags
 			}
 		}
 
-		st->rect.AfterRemoveTile(st, tile);
+		for (TileIndex t : tiles_to_remove) {
+			st->rect.AfterRemoveTile(st, t);
+		}
 
 		bool any_tiles = false;
 		OrthogonalTileArea new_area;
