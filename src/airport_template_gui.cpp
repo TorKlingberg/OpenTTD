@@ -200,6 +200,59 @@ static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout,
 	}
 }
 
+static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &tiles)
+{
+	auto is_small_runway_piece = [](uint8_t piece_type) {
+		return piece_type == APT_RUNWAY_SMALL_NEAR_END || piece_type == APT_RUNWAY_SMALL_MIDDLE || piece_type == APT_RUNWAY_SMALL_FAR_END;
+	};
+
+	std::vector<bool> visited(tiles.size(), false);
+	for (size_t i = 0; i < tiles.size(); i++) {
+		if (visited[i] || !is_small_runway_piece(tiles[i].piece_type)) continue;
+
+		const bool horizontal = (tiles[i].rotation % 2) == 0;
+		std::vector<size_t> segment;
+		segment.reserve(8);
+		segment.push_back(i);
+		visited[i] = true;
+
+		for (size_t j = 0; j < tiles.size(); j++) {
+			if (visited[j] || !is_small_runway_piece(tiles[j].piece_type)) continue;
+			if (((tiles[j].rotation % 2) == 0) != horizontal) continue;
+
+			bool adjacent = false;
+			for (size_t k : segment) {
+				const int dx = static_cast<int>(tiles[j].dx) - static_cast<int>(tiles[k].dx);
+				const int dy = static_cast<int>(tiles[j].dy) - static_cast<int>(tiles[k].dy);
+				if ((horizontal && std::abs(dx) == 1 && dy == 0) || (!horizontal && std::abs(dy) == 1 && dx == 0)) {
+					adjacent = true;
+					break;
+				}
+			}
+			if (adjacent) {
+				segment.push_back(j);
+				visited[j] = true;
+				j = static_cast<size_t>(-1);
+			}
+		}
+
+		std::sort(segment.begin(), segment.end(), [&](size_t a, size_t b) {
+			if (horizontal) return tiles[a].dx < tiles[b].dx;
+			return tiles[a].dy < tiles[b].dy;
+		});
+
+		if (segment.size() == 1) {
+			tiles[segment[0]].piece_type = APT_RUNWAY_SMALL_NEAR_END;
+		} else {
+			tiles[segment.front()].piece_type = APT_RUNWAY_SMALL_FAR_END;
+			tiles[segment.back()].piece_type = APT_RUNWAY_SMALL_NEAR_END;
+			for (size_t s = 1; s + 1 < segment.size(); s++) {
+				tiles[segment[s]].piece_type = APT_RUNWAY_SMALL_MIDDLE;
+			}
+		}
+	}
+}
+
 enum TemplateManagerHotkeys {
 	TMHK_ROTATE_LEFT = 1,
 	TMHK_ROTATE_RIGHT,
@@ -477,6 +530,7 @@ public:
 					t.Rotate(this->selected_rotation, templ->width, templ->height);
 					tiles.push_back(t);
 				}
+				NormalizePreviewSmallRunwayEnds(tiles);
 
 				struct IsoTile { int iso_x; int iso_y; size_t idx; int depth; };
 
@@ -521,8 +575,11 @@ public:
 					}
 				};
 
+				constexpr int PREVIEW_OVERSIZE_TOLERANCE = 16;
 				BuildIsoTilesForZoom(preview_zoom);
-				while (preview_zoom < ZoomLevel::Max && ((bb_right - bb_left) > ir.Width() || (bb_bottom - bb_top) > ir.Height())) {
+				while (preview_zoom < ZoomLevel::Max &&
+						((bb_right - bb_left) > (ir.Width() + PREVIEW_OVERSIZE_TOLERANCE) ||
+						 (bb_bottom - bb_top) > (ir.Height() + PREVIEW_OVERSIZE_TOLERANCE))) {
 					++preview_zoom;
 					BuildIsoTilesForZoom(preview_zoom);
 				}
