@@ -109,7 +109,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, 2666,                         0,                    APT_SMALL_BUILDING_2,    15, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, 2666,                         0,                    APT_SMALL_BUILDING_2,    10, true},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -254,6 +254,7 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		Point offset;
+		PaletteID pal = GetCompanyPalette(_current_company);
 		if (widget == WID_MA_PIECE_LAST) {
 			/* Demolish: draw at full scale to match other toolbar demolish buttons. */
 			Dimension d = GetSpriteSize(piece.icon, &offset);
@@ -261,7 +262,7 @@ public:
 			d.height -= offset.y;
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y);
+			DrawSprite(piece.icon, pal, x - offset.x, y - offset.y);
 		} else if (widget == WID_MA_PIECE_4 || widget == WID_MA_PIECE_5) {
 			/* Match the richer hangar preview style from the direction picker (ground + wall),
 			 * but draw one zoom step smaller so it fits the toolbar button. */
@@ -299,7 +300,7 @@ public:
 			d.height -= offset.y;
 			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
 			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			DrawSprite(icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
 		}
 	}
 
@@ -1076,6 +1077,7 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		ZoomLevel icon_zoom = _gui_zoom;
+		PaletteID pal = GetCompanyPalette(_current_company);
 
 		/* 3-tile terminal: draw all 3 tiles in isometric layout.
 		 * Tiles are: APT_SMALL_BUILDING_3 (TERM_A), APT_SMALL_BUILDING_2 (TERM_B),
@@ -1117,6 +1119,7 @@ public:
 			/* Offset to centre the bounding box within the widget. */
 			int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
 			int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
+			off_y += ScaleSpriteTrad(piece.preview_y_offset);
 
 			/* Draw back-to-front: tile 2 (top-right) first, tile 0 (bottom-left) last. */
 			for (int i = 2; i >= 0; i--) {
@@ -1124,12 +1127,12 @@ public:
 				int ty = (i - 1) * step_y + off_y;
 				if (i == 2) {
 					/* APT_SMALL_BUILDING_1: ground + building overlay (the globe). */
-					DrawSprite(SPR_AIRFIELD_TERM_C_GROUND, PAL_NONE, tx, ty, nullptr, icon_zoom);
-					DrawSprite(SPR_AIRFIELD_TERM_C_BUILD, PAL_NONE, tx, ty, nullptr, icon_zoom);
+					DrawSprite(SPR_AIRFIELD_TERM_C_GROUND, pal, tx, ty, nullptr, icon_zoom);
+					DrawSprite(SPR_AIRFIELD_TERM_C_BUILD, pal, tx, ty, nullptr, icon_zoom);
 				} else if (i == 1) {
-					DrawSprite(SPR_AIRFIELD_TERM_B, PAL_NONE, tx, ty, nullptr, icon_zoom);
+					DrawSprite(SPR_AIRFIELD_TERM_B, pal, tx, ty, nullptr, icon_zoom);
 				} else {
-					DrawSprite(SPR_AIRFIELD_TERM_A, PAL_NONE, tx, ty, nullptr, icon_zoom);
+					DrawSprite(SPR_AIRFIELD_TERM_A, pal, tx, ty, nullptr, icon_zoom);
 				}
 			}
 			return;
@@ -1150,9 +1153,9 @@ public:
 			gd.height -= go.y;
 			int gx = (ir.Width()  - static_cast<int>(gd.width))  / 2;
 			int gy = (ir.Height() - static_cast<int>(gd.height)) / 2;
-			DrawSprite(piece.ground, PAL_NONE, gx - go.x, gy - go.y, nullptr, icon_zoom);
+			DrawSprite(piece.ground, pal, gx - go.x, gy - go.y, nullptr, icon_zoom);
 		}
-		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
+		DrawSprite(piece.icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
@@ -1280,18 +1283,19 @@ public:
 		DrawPixelInfo tmp_dpi;
 		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
-		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
-
-		ZoomLevel icon_zoom = _gui_zoom;
-		Point offset;
-		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
-		d.width  -= offset.x;
-		d.height -= offset.y;
-		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
-		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-		y += ScaleSpriteTrad(piece.preview_y_offset);
-		DrawSprite(piece.icon, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
-	}
+				AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+				ZoomLevel icon_zoom = _gui_zoom;
+				PaletteID pal = GetCompanyPalette(_current_company);
+		
+				Point offset;
+				Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
+				d.width  -= offset.x;
+				d.height -= offset.y;
+				int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+				int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+				y += ScaleSpriteTrad(piece.preview_y_offset);
+				DrawSprite(piece.icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
 	             [[maybe_unused]] int click_count) override
