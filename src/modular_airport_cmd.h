@@ -88,6 +88,12 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 	if (rotation == 0) return;
 
 	/* Rotate directional hangar piece encodings with template/build rotations. */
+	/* Rotation convention used throughout modular airport code:
+	 * 0=SE, 1=NE, 2=NW, 3=SW (clockwise in world space).
+	 * Keep this in sync with:
+	 * - GetModularHangarTileLayoutByPiece() (station_cmd.cpp)
+	 * - CalculateValidTaxiDirectionsForPiece() hangar handling (airport_pathfinder.cpp)
+	 */
 	auto rotate_directional_hangar = [&piece_type, rotation](uint8_t se, uint8_t ne, uint8_t nw, uint8_t sw) {
 		uint8_t idx;
 		if (piece_type == se) {

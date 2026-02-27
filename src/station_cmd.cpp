@@ -3789,6 +3789,9 @@ const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uin
 	uint8_t visual_rot = rotation % 4;
 
 	/* Compatibility for saves written when directional hangars were encoded in piece_type. */
+	/* Important: piece_type directional variants use 0=SE,1=NE,2=NW,3=SW.
+	 * So SW maps to rot=3 and NE maps to rot=1. This is easy to invert by mistake.
+	 * Keep in sync with SwapBuildingPieceForRotation() and airport_pathfinder.cpp. */
 	switch (piece_type) {
 		case APT_DEPOT_SW:
 		case APT_SMALL_DEPOT_SW: visual_rot = 3; break;

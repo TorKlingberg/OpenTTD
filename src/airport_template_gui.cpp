@@ -202,6 +202,10 @@ static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout,
 
 static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &tiles)
 {
+	/* Preview must match build-time runway end normalization:
+	 * low end of a small-runway segment = FAR, high end = NEAR.
+	 * Rotate() swaps near/far for odd quarter-turns, then we normalize by segment
+	 * so 0-degree and 180-degree previews stay consistent with placed tiles. */
 	auto is_small_runway_piece = [](uint8_t piece_type) {
 		return piece_type == APT_RUNWAY_SMALL_NEAR_END || piece_type == APT_RUNWAY_SMALL_MIDDLE || piece_type == APT_RUNWAY_SMALL_FAR_END;
 	};
@@ -565,6 +569,8 @@ public:
 					for (size_t i = 0; i < tiles.size(); i++) {
 						int dx = tiles[i].dx;
 						int dy = tiles[i].dy;
+						/* Match in-game isometric projection handedness.
+						 * Using (dx - dy) here mirrors the whole preview. */
 						int iso_x = (dy - dx) * half_w;
 						int iso_y = (dx + dy) * half_h;
 						iso_tiles.push_back({iso_x, iso_y, i, dx + dy});

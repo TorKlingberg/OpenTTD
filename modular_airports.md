@@ -1,119 +1,221 @@
-# Modular Airports - Investigation and Plan (draft)
+# Modular Airports - Current Implementation Guide
 
-Goal: let players build airports tile-by-tile (runways, taxiways, terminals, hangars, helipads) instead of choosing a fixed AirportSpec layout.
+This document describes the **implemented** modular-airport system in this branch. It replaces the old design draft.
 
-## Current Airport Architecture (what exists today)
+## Scope
 
-- Airports are fixed-size layouts defined in `src/table/airport_defaults.h` using `AirportTileLayout` and `AirportTileTable` (tile gfx only).
-- Aircraft movement on the ground is not tile-based. It is a hard-coded finite state machine (FTA) defined by:
-  - Movement points in `src/table/airport_movement.h` (`AirportMovingData` with x/y coords, flags, direction).
-  - A per-airport state graph in `AirportFTAbuildup` arrays, assembled into `AirportFTAClass` in `src/airport.cpp`.
-- The FTA is indexed by a position number (0..nofelements-1) with optional branches for different headings.
-- Block reservation uses a 64-bit `AirportBlocks` bitmask stored per station (`Station::airport.blocks` in `src/station_base.h`), not per tile.
-- Terminals/helipads are managed by terminal groups derived from the FTA tables, limited by constants:
-  - `MAX_TERMINALS = 8`, `MAX_HELIPADS = 3`, `MAX_ELEMENTS = 255` in `src/airport.h`.
-- Build flow is strictly: choose airport type/layout -> `CmdBuildAirport` -> place pre-defined tiles and set airport type/layout (`src/station_cmd.cpp`, `src/airport_gui.cpp`).
-- Airport tile graphics are identified by `StationGfx` and `AirportTileSpec`, but tiles do not encode functional meaning (runway/taxiway/etc). Only the FTA defines behavior.
+Modular airports are now a first-class airport mode built on top of station airport tiles plus modular metadata.
 
-Implication: a modular airport cannot just place tiles and use the existing FTA; we need a new movement model or a way to generate an FTA from a custom tile layout.
+- Players place airport pieces tile-by-tile.
+- Ground movement uses modular routing/reservation logic.
+- The classic airport FTA is still present for non-modular airports.
+- Saved templates (JSON) can be created, previewed, rotated, and placed atomically.
 
-## Core Design Options
+## Key Files
 
-### Option A: Generate an FTA per custom airport
-- Build a graph of movement points based on the player-placed tiles and their connectivity rules.
-- Compile that graph into a per-airport `AirportFTAClass` at build time (or on demand), preserving existing aircraft movement code.
-- Pros: reuse most aircraft movement state machine logic and block handling.
-- Cons: complex to generate; MAX_ELEMENTS (255) and 64-bit blocks are tight; FTA expects specific headings like TAKEOFF/LANDING/TERM1.
+- `src/station_cmd.cpp`
+- `src/modular_airport_cmd.cpp`
+- `src/modular_airport_cmd.h`
+- `src/modular_airport_build.cpp`
+- `src/modular_airport_draw.cpp`
+- `src/modular_airport_gui.cpp`
+- `src/airport_ground_pathfinder.cpp`
+- `src/airport_pathfinder.cpp`
+- `src/airport_template.cpp`
+- `src/airport_template_gui.cpp`
+- `src/modular_airport_template_cmd.cpp`
+- `src/base_station_base.h`
+- `src/aircraft.h`
+- `src/saveload/station_sl.cpp`
+- `src/saveload/vehicle_sl.cpp`
 
-### Option B: Replace ground movement with tile pathfinding
-- Treat taxiways/runways like a small road/rail network and use a pathfinder (NPF/YAPF style) for ground routing.
-- Keep existing airborne states (approach, landing, takeoff) but switch to pathfinding once on the ground.
-- Pros: natural for modular layouts, less reliance on fixed FTA elements.
-- Cons: larger code change; must integrate with reservation/anti-collision; need new state transitions.
+## Data Model
 
-### Option C: Hybrid (recommended for early steps)
-- Keep FTA for airborne approach/landing/takeoff states.
-- Replace only ground taxiing with a tile-graph pathfinder (low-speed, reserved edges).
-- Keep terminal allocation logic but drive movement via tile graph instead of FTA sequences.
+### Per-tile modular metadata
 
-## Design Choices We Need to Make (explicit decisions)
+`ModularAirportTileData` (`src/base_station_base.h`) stores:
 
-1. **Ground routing model**
-   - FTA generation vs tile pathfinding vs hybrid.
-   - If FTA generation: how to cap node count and compile directional transitions.
-   - If pathfinding: choose reservation granularity (per tile? per edge? per block group?).
+- `tile`
+- `piece_type`
+- `rotation` (`0..3`)
+- `user_taxi_dir_mask`
+- `one_way_taxi`
+- `auto_taxi_dir_mask`
+- `runway_flags` (`RUF_*`)
+- `edge_block_mask`
 
-2. **Tile metadata for function and connectivity**
-   - How to mark a placed tile as runway/taxiway/terminal/hangar/helipad/stand.
-   - Whether to allow per-tile directional arrows (player-configured taxi directions).
-   - Data storage: embed in tile bits (station tile extra data) or per-airport data structure.
+This metadata is authoritative for modular logic; map tile gfx remains canonical airport gfx.
 
-3. **Runway logic**
-   - Define runway start/end, takeoff direction(s), and landing direction(s).
-   - Decide whether to allow one-way runways or bidirectional.
-   - Tie runway endpoints to approach/entry points (currently 4 entry points from `AirportFTAClass`).
+### Per-airport modular state
 
-4. **Terminal allocation model**
-   - Keep max terminals (8) or expand.
-   - How to map terminals/stands in the layout to terminal indices or groups.
+In `Airport` (`src/base_station_base.h`):
 
-5. **Blocking / reservation system**
-   - Keep current 64-bit `AirportBlocks` or move to dynamic reservation sets.
-   - Determine collision model: block segments, tiles, or edge reservations.
+- `modular_tile_data`
+- `modular_tile_index` + dirty bit
+- cached `modular_holding_loop` + dirty bit
 
-6. **User interface**
-   - New build UI for assembling modular airports (palette of pieces + orientation).
-   - A mode for editing taxi directions (optional but expected by your requirement).
-   - Validation feedback (no runway, no terminal, unreachable taxi paths).
+### Per-aircraft modular runtime state
 
-7. **Save/load and compatibility**
-   - Save custom layout and metadata per airport (new savegame chunk).
-   - Backward compatibility: existing airports remain as static AirportSpec.
-   - NewGRF airports: leave as-is or allow them to use modular pieces.
+In `Aircraft` (`src/aircraft.h`):
 
-8. **Limits and performance**
-   - Decide max airport footprint or node count for custom airports.
-   - Decide if ground pathfinding is precomputed or computed per aircraft.
+- taxi path and segment progress
+- non-runway reserved tiles
+- runway reservation vector
+- modular landing/takeoff targets and stages
+- holding waypoint index
 
-## Suggested Implementation Direction (initial recommendation)
+Important: runtime path/reservation state is mostly recomputed, not fully persisted.
 
-Start with **Option C (Hybrid)**:
-- Keep existing airborne logic and approach/entry points.
-- Build a tile graph for ground movement and reserve tiles/edges for taxiing.
-- This allows early playable modular airports without rewriting the entire flight FSM.
+## Commands and Editing Flow
 
-## Plan (phased)
+Defined in `src/station_cmd.h`:
 
-Phase 0 - Research/constraints (done)
-- Understand current FTA, airport specs, build flow, and limits.
+- `CMD_BUILD_MODULAR_AIRPORT_TILE`
+- `CMD_SET_RUNWAY_FLAGS`
+- `CMD_SET_TAXIWAY_FLAGS`
+- `CMD_SET_MODULAR_AIRPORT_EDGE_FENCE`
+- `CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK`
+- `CMD_PLACE_MODULAR_AIRPORT_TEMPLATE`
 
-Phase 1 - Data model and savegame
-- Define a new `ModularAirport` data structure owned by `Station::airport`.
-- Store: tile list, tile type, allowed taxi directions, runways, terminals, hangars, helipads, entry points.
-- Add save/load chunk for modular airports; migration path for existing fixed airports (none, keep as legacy).
+### Build tile
 
-Phase 2 - Construction + validation
-- Add a new build mode in `airport_gui.cpp` to place modular tiles.
-- Reuse existing `MakeAirport` tiles but assign tile roles in the new data model.
-- Validate: at least one runway, one terminal/helipad, and a connected taxi path between them.
+`CmdBuildModularAirportTile` (`src/station_cmd.cpp`):
 
-Phase 3 - Ground routing MVP
-- Implement a taxiway graph + simple pathfinder for ground movement.
-- Add reservation (tile or edge) to avoid collisions; integrate with existing `AirportBlocks` or new reservation map.
-- Bind aircraft ground states to path steps; keep FTA for takeoff/landing/airborne.
+- checks piece availability by year (`IsModernModularPiece` / `GetModularPieceMinYear`)
+- enforces flat-level consistency within an existing modular airport
+- allows safe replacement of modular grass/empty tiles
+- stores directional hangar metadata in `piece_type`
+- validates one-way taxi settings against auto directions
+- inherits runway flags from contiguous runway if present; otherwise defaults
+- normalizes runway segment visuals after placement
 
-Phase 4 - Refinement and features
-- Directional taxi arrows per tile in the UI (user-specified constraints).
-- Support multiple runways, hold-short points, and runway queueing.
-- Expand terminal grouping and capacity rules.
+### Build from stock airport
 
-Phase 5 - NewGRF + balancing
-- Decide how custom tiles map to NewGRF graphics.
-- Add cost/maintenance/noise scaling based on built tiles.
+`CmdBuildModularAirportFromStock` converts stock layouts to modular metadata, applies stock overrides, sets runway flags per airport type, and mirrors fence edges.
 
-## Known Constraints to Track
+### Edit runway/taxi/fence
 
-- `MAX_ELEMENTS` (255) and `AirportBlocks` 64-bit mask if we try to synthesize FTAs.
-- `MAX_TERMINALS` 8 and `MAX_HELIPADS` 3 if keeping the current terminal allocation API.
-- Many systems assume a fixed `AirportSpec` with size and layout; modular airports will need a parallel path.
+`src/modular_airport_gui.cpp` posts:
 
+- runway flag changes (`CMD_SET_RUNWAY_FLAGS`)
+- one-way taxi direction changes (`CMD_SET_TAXIWAY_FLAGS`)
+- edge fence toggles (`CMD_SET_MODULAR_AIRPORT_EDGE_FENCE`)
+
+### Remove tile
+
+`RemoveModularAirportTile` (`src/modular_airport_build.cpp`):
+
+- handles multi-tile small terminal demolition coherently
+- clears and rebuilds affected runway visuals around removed segments
+- updates modular indices and holding loop cache
+- tears down airport facility if no modular tiles remain
+
+## Ground Routing and Reservation Model
+
+### Pathfinding
+
+`FindAirportGroundPath` in `src/airport_ground_pathfinder.cpp` uses A* across modular airport tiles.
+
+Connectivity is based on:
+
+- auto taxi directions (`CalculateAutoTaxiDirectionsForGfx`)
+- optional user one-way restriction mask
+- runway axis checks
+- runway operation restrictions
+- explicit edge fences (`edge_block_mask`)
+
+### Segment classes
+
+`TaxiSegmentType` (`src/airport_ground_pathfinder.h`):
+
+- `FREE_MOVE`
+- `ONE_WAY`
+- `RUNWAY`
+
+Path segments drive reservation behavior:
+
+- runways reserve contiguous runway tiles atomically
+- one-way sections allow queueing behavior
+- free-move sections use segment-level reservation behavior
+
+### Runway flags
+
+`RUF_*` flags (`src/base_station_base.h`):
+
+- `RUF_LANDING`
+- `RUF_TAKEOFF`
+- `RUF_DIR_LOW`
+- `RUF_DIR_HIGH`
+
+`CmdSetRunwayFlags` applies flags across the entire contiguous same-axis runway.
+
+## Rendering and UI
+
+### Shared modular airport tile layout overrides
+
+`GetAirportTileLayoutWithModularOverrides` (`src/station_cmd.cpp`) centralizes modular sprite decisions for:
+
+- directional hangars
+- NS runway override sprites
+- modular windsock/helipad variants
+- radar/flag animated airport tile layouts
+
+This helper is used by normal tile drawing and template preview paths to reduce divergence.
+
+### Builder UI
+
+`src/modular_airport_gui.cpp` includes:
+
+- piece toolbar and sub-pickers (hangar/cosmetic/helipad)
+- smart runway drag placement (auto end pieces)
+- taxi/runway overlay editing mode
+- edge-fence tool mode
+- holding overlay toggle
+- template manager launch
+
+### Template manager and preview
+
+`src/airport_template_gui.cpp` provides:
+
+- save template from selected modular airport
+- load/place rotated template
+- in-window isometric preview with zoom-down for large templates
+- preview runway-end normalization for legacy small runway segments
+
+Template storage is JSON in personal dir `airport_templates/` (`src/airport_template.cpp`).
+
+## Rotation Invariants (Critical)
+
+These are the most common source of bugs.
+
+- Hangar directional convention: `0=SE, 1=NE, 2=NW, 3=SW`.
+- Keep mappings aligned across:
+  - `SwapBuildingPieceForRotation` (`src/modular_airport_cmd.h`)
+  - `GetModularHangarTileLayoutByPiece` (`src/station_cmd.cpp`)
+  - hangar taxi-direction handling in `CalculateAutoTaxiDirectionsForGfx` (`src/airport_pathfinder.cpp`)
+- Preview isometric handedness uses `iso_x = (dy - dx) * half_w`; flipping this mirrors preview.
+- Legacy small runway `NEAR/FAR` ends swap on odd rotations and must be normalized by contiguous segment in preview/build visual passes.
+
+## Save/Load
+
+- Modular tile metadata is saved in station save data (`SlModularAirportTileData`, `src/saveload/station_sl.cpp`).
+- Aircraft modular runtime path/reservation internals are not fully serialized; they are re-established by runtime logic (`src/saveload/vehicle_sl.cpp`).
+
+## Large-Aircraft Capability
+
+`ModularAirportSupportsLargeAircraft` (`src/modular_airport_cmd.cpp`) currently requires:
+
+- tower
+- big terminal piece
+- at least one safe large runway (length/family constraints)
+
+## Debugging Notes
+
+Useful debug areas:
+
+- `src/modular_airport_cmd.cpp` has dense `[ModAp]` logging around reservation and movement.
+- `src/airport_ground_pathfinder.cpp` has additional detailed neighbor/connectivity traces at higher debug levels.
+
+## What Changed vs Old Draft
+
+The old draft discussed options (FTA generation vs hybrid). The current codebase already implements a modular ground-routing/reservation system, modular editing commands, stock-to-modular conversion, and template workflows. Use this file as the current behavior reference, not a future plan.
