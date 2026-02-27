@@ -3,7 +3,4 @@
 * Helicopters take off from stands when there's no pad. They should go to runway, like the landing.
 * I saw Multiple helicopters on the same pad at the same time. Should be exlusive.
 
-* Cosmetic buildings window:
-** Move 3-tile terminal preview down a little
-** All the previews should follow the company color scheme, like everything else does. For example train station build previews.
 
