@@ -34,9 +34,11 @@
 #include "core/geometry_func.hpp"
 #include "station_func.h"
 #include "sprite.h"
+#include "spritecache.h"
 #include "airport.h"
 #include "core/backup_type.hpp"
 #include "zoom_func.h"
+#include "landscape.h"
 
 #include <cctype>
 
@@ -153,25 +155,49 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
 
 /**
  * Get the tile layout for a template tile, suitable for GUI drawing.
- * Mirrors ApplyModularAirportTileLayoutOverridesLocal logic:
- * - Hangars use directional layouts based on piece_type
- * - Runways on the Y-axis (rotation%2==1) use NS runway sprites
- * - NewGRF tiles fall back to plain apron
+ * Reuses airport/modular layout override logic from station drawing.
+ * NewGRF tiles fall back to plain apron in preview.
  */
 static const DrawTileSprites *GetTileLayoutForTemplateTile(const AirportTemplateTile &t)
 {
-	if (IsModularHangarPiece(t.piece_type)) {
-		return GetModularHangarTileLayout(t.rotation, IsLegacySmallHangarPiece(t.piece_type));
+	uint8_t gfx = t.piece_type >= NEW_AIRPORTTILE_OFFSET ? APT_APRON : t.piece_type;
+	return GetAirportTileLayoutWithModularOverrides(gfx, t.piece_type, t.rotation, 0);
+}
+
+static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom)
+{
+	Point child_offset = {0, 0};
+	bool skip_childs = false;
+
+	DrawSprite(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, zoom);
+	for (const DrawTileSeqStruct &dtss : layout->GetSequence()) {
+		SpriteID image = dtss.image.sprite;
+		PaletteID seq_pal = dtss.image.pal;
+
+		if (skip_childs) {
+			if (!dtss.IsParentSprite()) continue;
+			skip_childs = false;
+		}
+
+		if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) {
+			skip_childs = dtss.IsParentSprite();
+			continue;
+		}
+
+		seq_pal = SpriteLayoutPaletteTransform(image, seq_pal, pal);
+		if (dtss.IsParentSprite()) {
+			Point pt = RemapCoords(dtss.origin.x, dtss.origin.y, dtss.origin.z);
+			DrawSprite(image, seq_pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom), nullptr, zoom);
+			const Sprite *spr = GetSprite(image & SPRITE_MASK, SpriteType::Normal);
+			child_offset.x = UnScaleByZoom(pt.x + spr->x_offs, zoom);
+			child_offset.y = UnScaleByZoom(pt.y + spr->y_offs, zoom);
+		} else {
+			DrawSprite(image, seq_pal,
+					x + child_offset.x + UnScaleByZoom(dtss.origin.x * ZOOM_BASE, zoom),
+					y + child_offset.y + UnScaleByZoom(dtss.origin.y * ZOOM_BASE, zoom),
+					nullptr, zoom);
+		}
 	}
-	if (t.piece_type >= NEW_AIRPORTTILE_OFFSET) {
-		return GetStationTileLayout(StationType::Airport, APT_APRON);
-	}
-	/* NS runway override: rotation%2==1 means Y-axis runway. */
-	if ((t.rotation % 2) == 1) {
-		const DrawTileSprites *ns = GetModularNSRunwayLayout(t.piece_type);
-		if (ns != nullptr) return ns;
-	}
-	return GetStationTileLayout(StationType::Airport, t.piece_type);
 }
 
 enum TemplateManagerHotkeys {
@@ -452,36 +478,54 @@ public:
 					tiles.push_back(t);
 				}
 
-				/* Get isometric tile dimensions from the ground sprite. */
-				Point so;
-				Dimension sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so);
-				int tile_w = static_cast<int>(sd.width)  - so.x;
-				int tile_h = static_cast<int>(sd.height) - so.y;
-				int half_w = tile_w / 2;
-				int half_h = tile_h / 2;
-
-				/* Compute isometric positions and bounding box. */
 				struct IsoTile { int iso_x; int iso_y; size_t idx; int depth; };
-				std::vector<IsoTile> iso_tiles;
-				iso_tiles.reserve(tiles.size());
-				int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
-				for (size_t i = 0; i < tiles.size(); i++) {
-					int dx = tiles[i].dx;
-					int dy = tiles[i].dy;
-					int iso_x = (dy - dx) * half_w;
-					int iso_y = (dx + dy) * half_h;
-					iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
-					bb_left   = std::min(bb_left,   iso_x + so.x);
-					bb_right  = std::max(bb_right,  iso_x + so.x + tile_w);
-					bb_top    = std::min(bb_top,    iso_y + so.y);
-					bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
-				}
 
 				/* Set up clipped draw area. */
 				DrawPixelInfo tmp_dpi;
 				Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 				if (!FillDrawPixelInfo(&tmp_dpi, ir)) break;
 				AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+
+				/* Pick a zoom level that fits larger templates into the preview area. */
+				ZoomLevel preview_zoom = _gui_zoom;
+				Point so;
+				Dimension sd;
+				int tile_w = 0, tile_h = 0, half_w = 0, half_h = 0;
+				std::vector<IsoTile> iso_tiles;
+				int bb_left = 0, bb_right = 0, bb_top = 0, bb_bottom = 0;
+
+				auto BuildIsoTilesForZoom = [&](ZoomLevel zoom) {
+					so = {};
+					sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so, zoom);
+					tile_w = static_cast<int>(sd.width) - so.x;
+					tile_h = static_cast<int>(sd.height) - so.y;
+					half_w = tile_w / 2;
+					half_h = tile_h / 2;
+
+					iso_tiles.clear();
+					iso_tiles.reserve(tiles.size());
+					bb_left = INT_MAX;
+					bb_right = INT_MIN;
+					bb_top = INT_MAX;
+					bb_bottom = INT_MIN;
+					for (size_t i = 0; i < tiles.size(); i++) {
+						int dx = tiles[i].dx;
+						int dy = tiles[i].dy;
+						int iso_x = (dy - dx) * half_w;
+						int iso_y = (dx + dy) * half_h;
+						iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
+						bb_left = std::min(bb_left, iso_x + so.x);
+						bb_right = std::max(bb_right, iso_x + so.x + tile_w);
+						bb_top = std::min(bb_top, iso_y + so.y);
+						bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
+					}
+				};
+
+				BuildIsoTilesForZoom(preview_zoom);
+				while (preview_zoom < ZoomLevel::Max && ((bb_right - bb_left) > ir.Width() || (bb_bottom - bb_top) > ir.Height())) {
+					++preview_zoom;
+					BuildIsoTilesForZoom(preview_zoom);
+				}
 
 				/* Centre the bounding box in the widget. */
 				int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
@@ -499,8 +543,7 @@ public:
 					const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
 					int x = it.iso_x + off_x;
 					int y = it.iso_y + off_y;
-					DrawSprite(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
-					DrawRailTileSeqInGUI(x, y, layout, 0, 0, pal);
+					DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom);
 				}
 				break;
 			}

@@ -3775,6 +3775,78 @@ static bool DrawCustomStationFoundations(const StationSpec *statspec, BaseStatio
 	return true;
 }
 
+const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation)
+{
+	const bool is_large_hangar =
+			piece_type == APT_DEPOT_SE || piece_type == APT_DEPOT_SW ||
+			piece_type == APT_DEPOT_NW || piece_type == APT_DEPOT_NE;
+	const bool is_small_hangar =
+			piece_type == APT_SMALL_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SW ||
+			piece_type == APT_SMALL_DEPOT_NW || piece_type == APT_SMALL_DEPOT_NE;
+
+	if (!is_large_hangar && !is_small_hangar) return nullptr;
+
+	uint8_t visual_rot = rotation % 4;
+
+	/* Compatibility for saves written when directional hangars were encoded in piece_type. */
+	switch (piece_type) {
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW: visual_rot = 3; break;
+		case APT_DEPOT_NW:
+		case APT_SMALL_DEPOT_NW: visual_rot = 2; break;
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE: visual_rot = 1; break;
+		default: break;
+	}
+
+	return GetModularHangarTileLayout(visual_rot, is_small_hangar);
+}
+
+const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame)
+{
+	const DrawTileSprites *t = nullptr;
+
+	if (const DrawTileSprites *hangar_layout = GetModularHangarTileLayoutByPiece(modular_piece_type, modular_rotation); hangar_layout != nullptr) {
+		t = hangar_layout;
+	}
+
+	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
+	if ((modular_rotation % 2) == 1 && t == nullptr) {
+		t = GetModularNSRunwayLayout(modular_piece_type);
+	}
+
+	/* Modular windsock: draw without the built-in NE fence. */
+	if (modular_piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
+		t = &_station_display_datas_airport_flag_grass[animation_frame % lengthof(_station_display_datas_airport_flag_grass)];
+	}
+
+	/* Helistation-style H pad: use no-fence variant in modular mode. */
+	if (modular_piece_type == APT_HELIPAD_3_FENCE_NW) {
+		t = &_station_display_modular_newhelipad;
+	}
+
+	if (t == nullptr) switch (gfx) {
+		case APT_RADAR_GRASS_FENCE_SW:
+			t = &_station_display_datas_airport_radar_grass_fence_sw[animation_frame % lengthof(_station_display_datas_airport_radar_grass_fence_sw)];
+			break;
+		case APT_GRASS_FENCE_NE_FLAG:
+			t = &_station_display_datas_airport_flag_grass_fence_ne[animation_frame % lengthof(_station_display_datas_airport_flag_grass_fence_ne)];
+			break;
+		case APT_RADAR_FENCE_SW:
+			t = &_station_display_datas_airport_radar_fence_sw[animation_frame % lengthof(_station_display_datas_airport_radar_fence_sw)];
+			break;
+		case APT_RADAR_FENCE_NE:
+			t = &_station_display_datas_airport_radar_fence_ne[animation_frame % lengthof(_station_display_datas_airport_radar_fence_ne)];
+			break;
+		case APT_GRASS_FENCE_NE_FLAG_2:
+			t = &_station_display_datas_airport_flag_grass_fence_ne_2[animation_frame % lengthof(_station_display_datas_airport_flag_grass_fence_ne_2)];
+			break;
+	}
+
+	if (t == nullptr) t = GetStationTileLayout(StationType::Airport, gfx);
+	return t;
+}
+
 static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, StationGfx &gfx, const DrawTileSprites *&t)
 {
 	if (!IsAirport(ti->tile)) return;
@@ -3785,62 +3857,14 @@ static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, Stat
 	const ModularAirportTileData *md = airport_st->airport.GetModularTileData(ti->tile);
 	if (md == nullptr) return;
 
-	const bool is_large_hangar =
-			md->piece_type == APT_DEPOT_SE || md->piece_type == APT_DEPOT_SW ||
-			md->piece_type == APT_DEPOT_NW || md->piece_type == APT_DEPOT_NE;
-	const bool is_small_hangar =
-			md->piece_type == APT_SMALL_DEPOT_SE || md->piece_type == APT_SMALL_DEPOT_SW ||
-			md->piece_type == APT_SMALL_DEPOT_NW || md->piece_type == APT_SMALL_DEPOT_NE;
+	t = GetAirportTileLayoutWithModularOverrides(gfx, md->piece_type, md->rotation, GetAnimationFrame(ti->tile));
 
-	if (is_large_hangar || is_small_hangar) {
-		uint8_t visual_rot = md->rotation % 4;
-
-		/* Compatibility for saves written when directional hangars were encoded in piece_type. */
-		switch (md->piece_type) {
-			case APT_DEPOT_SW:
-			case APT_SMALL_DEPOT_SW: visual_rot = 1; break;
-			case APT_DEPOT_NW:
-			case APT_SMALL_DEPOT_NW: visual_rot = 2; break;
-			case APT_DEPOT_NE:
-			case APT_SMALL_DEPOT_NE: visual_rot = 3; break;
-			default: break;
-		}
-
-		if (is_small_hangar) {
-			/* Only one small hangar sprite exists (SE-facing); use it for all rotations. */
-			t = &_station_display_modular_small_hangar_se;
-		} else {
-			switch (visual_rot) {
-				case 0: t = &_station_display_modular_hangar_se; break;
-				case 1: t = &_station_display_modular_hangar_sw; break;
-				case 2: t = &_station_display_modular_hangar_nw; break;
-				default: t = &_station_display_modular_hangar_ne; break;
-			}
-		}
-	}
-
-	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
-	if ((md->rotation % 2) == 1) {
-		switch (md->piece_type) {
-			case APT_RUNWAY_1:
-				t = &_station_display_modular_ns_runway_1; break;
-			case APT_RUNWAY_2:
-			case APT_RUNWAY_5:
-				t = &_station_display_modular_ns_runway_2; break;
-			case APT_RUNWAY_3:
-				t = &_station_display_modular_ns_runway_3; break;
-			case APT_RUNWAY_4:
-				t = &_station_display_modular_ns_runway_4; break;
-			case APT_RUNWAY_END:
-				t = &_station_display_modular_ns_runway_end; break;
-			default: break;
-		}
-	}
+	const StationGfx original_gfx = gfx;
 
 	/* Auto-jetway: a plain stand adjacent to a round terminal gets a jetway sprite.
 	 * jetway_1 (APT_STAND_1)      -- terminal is one tile to the south (dy=+1)
 	 * jetway_2 (APT_STAND_PIER_NE) -- terminal is one tile to the west  (dx=-1) */
-	if (md->piece_type == APT_STAND && t == nullptr) {
+	if (md->piece_type == APT_STAND) {
 		auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
 			TileIndex nb = TileAddXY(ti->tile, dx, dy);
 			if (!IsValidTile(nb)) return 0xFF;
@@ -3854,14 +3878,9 @@ static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, Stat
 		}
 	}
 
-	/* Modular windsock: draw without the built-in NE fence. */
-	if (md->piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
-		t = &_station_display_datas_airport_flag_grass[GetAnimationFrame(ti->tile)];
-	}
-
-	/* Helistation-style H pad: use no-fence variant in modular mode. */
-	if (md->piece_type == APT_HELIPAD_3_FENCE_NW) {
-		t = &_station_display_modular_newhelipad;
+	/* Auto-jetway substitutions are station layouts (not modular overrides). */
+	if (gfx != original_gfx) {
+		t = GetStationTileLayout(StationType::Airport, gfx);
 	}
 }
 

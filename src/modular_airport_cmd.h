@@ -78,16 +78,49 @@ inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
 }
 
 /**
- * Swap APT_BUILDING_1 and APT_BUILDING_2 on odd rotations.
- * These two terminal sprites are quarter-turn variants of each other.
+ * Swap piece variants when rotating by an odd number of quarter-turns.
+ * - APT_BUILDING_1 and APT_BUILDING_2 are quarter-turn variants.
+ * - Legacy small-runway near/far end sprites swap when axis flips.
  */
 inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 {
+	rotation &= 3;
+	if (rotation == 0) return;
+
+	/* Rotate directional hangar piece encodings with template/build rotations. */
+	auto rotate_directional_hangar = [&piece_type, rotation](uint8_t se, uint8_t ne, uint8_t nw, uint8_t sw) {
+		uint8_t idx;
+		if (piece_type == se) {
+			idx = 0;
+		} else if (piece_type == ne) {
+			idx = 1;
+		} else if (piece_type == nw) {
+			idx = 2;
+		} else if (piece_type == sw) {
+			idx = 3;
+		} else {
+			return;
+		}
+		switch ((idx + rotation) & 3) {
+			case 0: piece_type = se; break;
+			case 1: piece_type = ne; break;
+			case 2: piece_type = nw; break;
+			default: piece_type = sw; break;
+		}
+	};
+
+	rotate_directional_hangar(APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW);
+	rotate_directional_hangar(APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_NE, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_SW);
+
 	if ((rotation & 1) != 0) {
 		if (piece_type == APT_BUILDING_1) {
 			piece_type = APT_BUILDING_2;
 		} else if (piece_type == APT_BUILDING_2) {
 			piece_type = APT_BUILDING_1;
+		} else if (piece_type == APT_RUNWAY_SMALL_NEAR_END) {
+			piece_type = APT_RUNWAY_SMALL_FAR_END;
+		} else if (piece_type == APT_RUNWAY_SMALL_FAR_END) {
+			piece_type = APT_RUNWAY_SMALL_NEAR_END;
 		}
 	}
 }

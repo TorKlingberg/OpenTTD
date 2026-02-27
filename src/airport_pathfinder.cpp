@@ -151,11 +151,11 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		            uint8_t hangar_rot = rotation % 4;
 		            switch (gfx) {
 		                case APT_DEPOT_SW:
-		                case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
+		                case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
 		                case APT_DEPOT_NW:
 		                case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
 		                case APT_DEPOT_NE:
-		                case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
+		                case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
 		                default: break;
 		            }
 		            /* Single-direction opening. Use inverse rotation mapping for hangars. */
