@@ -156,26 +156,6 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 	}
 }
 
-static bool IsModularTaxiwayGfx(uint8_t gfx)
-{
-	switch (gfx) {
-		case APT_APRON_HOR:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON:
-		case APT_ARPON_N:
-		case APT_APRON_E:
-		case APT_APRON_S:
-		case APT_APRON_W:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-			return true;
-		default:
-			return false;
-	}
-}
-
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 static void ShowModularHelipadPicker(Window *parent);
@@ -418,21 +398,7 @@ public:
 		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 		if (data == nullptr) return false;
 
-		/* Check if it's a runway piece */
-		switch (data->piece_type) {
-			case APT_RUNWAY_1:
-			case APT_RUNWAY_2:
-			case APT_RUNWAY_3:
-			case APT_RUNWAY_4:
-			case APT_RUNWAY_5:
-			case APT_RUNWAY_END:
-			case APT_RUNWAY_SMALL_NEAR_END:
-			case APT_RUNWAY_SMALL_MIDDLE:
-			case APT_RUNWAY_SMALL_FAR_END:
-				break;
-			default:
-				return false;
-		}
+		if (!IsModularRunwayPiece(data->piece_type)) return false;
 
 		uint8_t flags = data->runway_flags;
 		/* Runway direction is one-way only. Normalize invalid/legacy masks. */
@@ -475,7 +441,7 @@ public:
 		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
 
 		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-		if (data == nullptr || !IsModularTaxiwayGfx(data->piece_type)) return false;
+		if (data == nullptr || !IsTaxiwayPiece(data->piece_type)) return false;
 
 		bool next_one_way = true;
 		uint8_t next_mask = 0x01; // North
@@ -542,7 +508,7 @@ public:
 		if (this->TryEditTaxiwayFlags(tile)) return;
 
 		/* Determine if this piece type supports drag-building */
-		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 2);  // Pieces 0-2: Runways
+		bool is_runway = (this->selected_piece <= 2);  // Pieces 0-2: Runways
 		bool is_apron  = (this->selected_piece == 8);                                // Piece 8: Apron
 		bool is_grass  = (this->selected_piece == 9);                                // Piece 9: Grass
 		bool is_empty  = (this->selected_piece == 10);                               // Piece 10: Empty
@@ -801,7 +767,7 @@ private:
 	 */
 	bool ValidateDragBuild(const TileArea &ta)
 	{
-		bool is_runway = (this->selected_piece >= 0 && this->selected_piece <= 2);
+		bool is_runway = (this->selected_piece <= 2);
 
 		/* For runways, validate linear alignment */
 		if (is_runway) {

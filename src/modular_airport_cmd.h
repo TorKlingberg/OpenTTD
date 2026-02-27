@@ -19,6 +19,7 @@
 #include <span>
 #include <string_view>
 #include <cstdint>
+#include <cstddef>
 
 inline constexpr uint8_t MGT_NONE = 0;
 inline constexpr uint8_t MGT_TERMINAL = 1;
@@ -221,6 +222,19 @@ inline bool IsLargeRunwayFamily(uint8_t piece_type)
 			return true;
 		default: return false;
 	}
+}
+
+inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_length, size_t index_in_segment)
+{
+	if (large_family) {
+		if (segment_length == 1 || index_in_segment == 0 || index_in_segment + 1 == segment_length) return APT_RUNWAY_END;
+		return APT_RUNWAY_5;
+	}
+
+	if (segment_length == 1) return APT_RUNWAY_SMALL_NEAR_END;
+	if (index_in_segment == 0) return APT_RUNWAY_SMALL_FAR_END;
+	if (index_in_segment + 1 == segment_length) return APT_RUNWAY_SMALL_NEAR_END;
+	return APT_RUNWAY_SMALL_MIDDLE;
 }
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);

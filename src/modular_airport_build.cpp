@@ -81,24 +81,7 @@ void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool hor
 			ModularAirportTileData *td = st->airport.GetModularTileData(seg[i]);
 			if (td == nullptr) continue;
 
-			uint8_t new_type;
-			if (is_large) {
-				if (seg.size() == 1 || i == 0 || i == seg.size() - 1) {
-					new_type = APT_RUNWAY_END;
-				} else {
-					new_type = APT_RUNWAY_5;
-				}
-			} else {
-				if (seg.size() == 1) {
-					new_type = APT_RUNWAY_SMALL_NEAR_END;
-				} else if (i == 0) {
-					new_type = APT_RUNWAY_SMALL_FAR_END;
-				} else if (i == seg.size() - 1) {
-					new_type = APT_RUNWAY_SMALL_NEAR_END;
-				} else {
-					new_type = APT_RUNWAY_SMALL_MIDDLE;
-				}
-			}
+			uint8_t new_type = GetCanonicalRunwaySegmentPiece(is_large, seg.size(), i);
 
 			if (td->piece_type != new_type) {
 				td->piece_type = new_type;

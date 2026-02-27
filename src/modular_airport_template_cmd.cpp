@@ -22,7 +22,10 @@
 
 #include "table/strings.h"
 
+#include <array>
+
 static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
+static constexpr std::array<uint8_t, 4> kFenceEdgeBits = {0x01, 0x02, 0x04, 0x08};
 
 
 static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint16_t width, uint16_t height)
@@ -378,7 +381,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			total.AddCost(ret.GetCost());
 		}
 
-		for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
+		for (uint8_t edge_bit : kFenceEdgeBits) {
 			if ((rt.edge_block_mask & edge_bit) == 0) continue;
 			ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, edge_bit, true);
 			if (ret.Failed()) return ret;
@@ -419,7 +422,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 				if (ret.Failed()) return ret;
 			}
 
-			for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
+			for (uint8_t edge_bit : kFenceEdgeBits) {
 				if ((rt.edge_block_mask & edge_bit) == 0) continue;
 				CommandCost ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
 				if (ret.Failed()) return ret;

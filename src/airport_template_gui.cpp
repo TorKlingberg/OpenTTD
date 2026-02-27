@@ -245,14 +245,8 @@ static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &ti
 			return tiles[a].dy < tiles[b].dy;
 		});
 
-		if (segment.size() == 1) {
-			tiles[segment[0]].piece_type = APT_RUNWAY_SMALL_NEAR_END;
-		} else {
-			tiles[segment.front()].piece_type = APT_RUNWAY_SMALL_FAR_END;
-			tiles[segment.back()].piece_type = APT_RUNWAY_SMALL_NEAR_END;
-			for (size_t s = 1; s + 1 < segment.size(); s++) {
-				tiles[segment[s]].piece_type = APT_RUNWAY_SMALL_MIDDLE;
-			}
+		for (size_t s = 0; s < segment.size(); s++) {
+			tiles[segment[s]].piece_type = GetCanonicalRunwaySegmentPiece(false, segment.size(), s);
 		}
 	}
 }
