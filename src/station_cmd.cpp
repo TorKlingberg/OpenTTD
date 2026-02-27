@@ -73,6 +73,8 @@
 #include "road_func.h"
 #include "station_layout_type.h"
 #include "modular_airport_cmd.h"
+#include "modular_airport_build.h"
+#include "modular_airport_draw.h"
 
 #include "widgets/station_widget.h"
 #include "widgets/misc_widget.h"
@@ -84,7 +86,6 @@
 
 #include "safeguards.h"
 
-extern bool _show_runway_direction_overlay;
 extern bool _show_holding_overlay;
 
 
@@ -2776,194 +2777,6 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
 	return cost;
 }
 
-/**
- * Place a modular airport tile (prototype).
- * @param flags operation to perform
- * @param tile tile where airport tile will be built
- * @param gfx airport station gfx id
- * @param station_to_join station ID to join (NEW_STATION if build new one)
- * @param allow_adjacent allow airports directly adjacent to other airports.
- * @param rotation rotation of the piece (0-3)
- * @param taxi_dir_mask user-specified taxi direction mask
- * @param one_way_taxi whether taxi is one-way only
- * @return the cost of this operation or an error
- */
-static Money GetModularAirportPieceBuildCost(uint8_t piece_type);
-
-static bool IsSmallRunwayFamily(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default: return false;
-	}
-}
-
-/**
- * Walk a contiguous runway segment from a starting tile in one direction,
- * collecting tiles that belong to the same family (large or small).
- * @param st Station.
- * @param start Starting tile (included in output).
- * @param diff Step direction.
- * @param horizontal Whether runway is on the horizontal axis.
- * @param family_large true = large family, false = small family.
- * @param[out] tiles Collected tiles in walk order.
- */
-static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDiff diff,
-	bool horizontal, bool family_large, std::vector<TileIndex> &tiles)
-{
-	TileIndex cur = start;
-	while (true) {
-		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
-		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
-		bool is_large = IsLargeRunwayFamily(data->piece_type);
-		bool is_small = IsSmallRunwayFamily(data->piece_type);
-		if (family_large && !is_large) break;
-		if (!family_large && !is_small) break;
-		tiles.push_back(cur);
-		cur = cur + diff;
-	}
-}
-
-/**
- * Normalize the visual piece types of a contiguous runway segment after
- * a tile has been added or removed. Updates end/middle pieces so that
- * the first and last tiles display as end pieces and interior tiles as
- * middle pieces.
- * @param st Station owning the runway.
- * @param changed_tile The tile that was just added or removed (used to find the axis).
- * @param horizontal Whether the runway runs on the X axis (true) or Y axis (false).
- */
-static void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal)
-{
-	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-
-	/* Walk to the low end of the entire contiguous runway (both families). */
-	TileIndex first = changed_tile;
-	while (true) {
-		TileIndex prev = first - diff;
-		ModularAirportTileData *prev_data = st->airport.GetModularTileData(prev);
-		if (!IsRunwayPieceOnAxis(prev_data, horizontal)) break;
-		first = prev;
-	}
-
-	/* Walk from low end to high end, splitting into family sub-segments. */
-	TileIndex cur = first;
-	while (true) {
-		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
-		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
-
-		bool is_large = IsLargeRunwayFamily(data->piece_type);
-		std::vector<TileIndex> seg;
-		CollectRunwayFamilySegment(st, cur, diff, horizontal, is_large, seg);
-		if (seg.empty()) break;
-
-		/* Normalize this family sub-segment. */
-		for (size_t i = 0; i < seg.size(); i++) {
-			ModularAirportTileData *td = st->airport.GetModularTileData(seg[i]);
-			if (td == nullptr) continue;
-
-			uint8_t new_type;
-			if (is_large) {
-				if (seg.size() == 1) {
-					new_type = APT_RUNWAY_END;
-				} else if (i == 0 || i == seg.size() - 1) {
-					new_type = APT_RUNWAY_END;
-				} else {
-					new_type = APT_RUNWAY_5;
-				}
-				} else {
-					if (seg.size() == 1) {
-						new_type = APT_RUNWAY_SMALL_NEAR_END;
-					} else if (i == 0) {
-						new_type = APT_RUNWAY_SMALL_FAR_END;
-					} else if (i == seg.size() - 1) {
-						new_type = APT_RUNWAY_SMALL_NEAR_END;
-					} else {
-						new_type = APT_RUNWAY_SMALL_MIDDLE;
-					}
-				}
-
-			if (td->piece_type != new_type) {
-				td->piece_type = new_type;
-				SetStationGfx(Tile(seg[i]), new_type);
-				MarkTileDirtyByTile(seg[i]);
-			}
-		}
-
-		/* Advance past this sub-segment. */
-		cur = seg.back() + diff;
-	}
-}
-
-/**
- * Check whether a modular airport piece is "modern" (city airport era or later).
- * Modern pieces are gated behind the city airport's introduction year.
- */
-bool IsModernModularPiece(uint8_t piece_type)
-{
-	switch (piece_type) {
-		/* Legacy pieces — always available */
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-		case APT_APRON:
-		case APT_APRON_FENCE_NW:
-		case APT_APRON_FENCE_SW:
-		case APT_APRON_FENCE_NE:
-		case APT_APRON_FENCE_NE_SW:
-		case APT_APRON_FENCE_SE_SW:
-		case APT_APRON_FENCE_SE:
-		case APT_APRON_FENCE_NE_SE:
-		case APT_APRON_W:
-		case APT_APRON_S:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON_HOR_CROSSING_W:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_E:
-		case APT_ARPON_N:
-		case APT_APRON_HOR:
-		case APT_APRON_N_FENCE_SW:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-		case APT_STAND:
-		case APT_SMALL_DEPOT_SE:
-		case APT_SMALL_DEPOT_SW:
-		case APT_SMALL_DEPOT_NW:
-		case APT_SMALL_DEPOT_NE:
-		case APT_GRASS_1:
-		case APT_GRASS_2:
-		case APT_GRASS_FENCE_SW:
-		case APT_GRASS_FENCE_NE_FLAG:
-		case APT_GRASS_FENCE_NE_FLAG_2:
-		case APT_EMPTY:
-		case APT_EMPTY_FENCE_NE:
-		case APT_LOW_BUILDING:
-		case APT_LOW_BUILDING_FENCE_N:
-		case APT_LOW_BUILDING_FENCE_NW:
-		case APT_SMALL_BUILDING_1:
-		case APT_SMALL_BUILDING_2:
-		case APT_SMALL_BUILDING_3:
-		case APT_STAND_1:
-		case APT_RADIO_TOWER_FENCE_NE:
-			return false;
-		default:
-			return true;
-	}
-}
-
-/**
- * Get the minimum calendar year at which a modular piece becomes available.
- * Modern pieces use the city airport (AT_LARGE) introduction year.
- */
-TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type)
-{
-	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
-	return AirportSpec::Get(AT_LARGE)->min_year;
-}
-
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
 {
 	bool reuse = (station_to_join != NEW_STATION);
@@ -3182,353 +2995,11 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	return cost;
 }
 
-/**
- * Get the edge_block_mask for a stock airport tile's fence edges.
- * Stock fence tile names use screen compass directions (NW/NE/SE/SW).
- * Edge bits: NW=0x01, SW=0x02, SE=0x04, NE=0x08.
- * @param stock_gfx The stock airport tile GFX.
- * @return Bitmask of fence edges, or 0 if no fences.
- */
-static uint8_t GetStockFenceEdgeMask(uint8_t stock_gfx)
-{
-	switch (stock_gfx) {
-		/* Apron fence variants */
-		case APT_APRON_FENCE_NW:       return 0x01;
-		case APT_APRON_FENCE_SW:       return 0x02;
-		case APT_APRON_FENCE_SE:       return 0x04;
-		case APT_APRON_FENCE_NE:       return 0x08;
-		case APT_APRON_FENCE_NE_SW:    return 0x08 | 0x02;
-		case APT_APRON_FENCE_SE_SW:    return 0x04 | 0x02;
-		case APT_APRON_FENCE_NE_SE:    return 0x08 | 0x04;
-		case APT_APRON_N_FENCE_SW:     return 0x02;
-
-		/* Runway end fence variants */
-		case APT_RUNWAY_END_FENCE_SE:     return 0x04;
-		case APT_RUNWAY_END_FENCE_NW:     return 0x01;
-		case APT_RUNWAY_END_FENCE_NW_SW:  return 0x01 | 0x02;
-		case APT_RUNWAY_END_FENCE_SE_SW:  return 0x04 | 0x02;
-		case APT_RUNWAY_END_FENCE_NE_NW:  return 0x08 | 0x01;
-		case APT_RUNWAY_END_FENCE_NE_SE:  return 0x08 | 0x04;
-
-		/* Runway shoulder fence */
-		case APT_RUNWAY_FENCE_NW:      return 0x01;
-
-		/* Helipad fence variants */
-		case APT_HELIPAD_2_FENCE_NW:      return 0x01;
-		case APT_HELIPAD_2_FENCE_NE_SE:   return 0x08 | 0x04;
-		case APT_HELIPAD_3_FENCE_NW:      return 0x01;
-		case APT_HELIPAD_3_FENCE_NW_SW:   return 0x01 | 0x02;
-		case APT_HELIPAD_3_FENCE_SE_SW:   return 0x04 | 0x02;
-
-		/* Tower/building fence variants */
-		case APT_TOWER_FENCE_SW:       return 0x02;
-		case APT_LOW_BUILDING_FENCE_N: return 0x01;
-		case APT_LOW_BUILDING_FENCE_NW:return 0x01;
-
-		/* Radar/radio fence variants */
-		case APT_RADAR_FENCE_SW:       return 0x02;
-		case APT_RADAR_FENCE_NE:       return 0x08;
-		case APT_RADAR_GRASS_FENCE_SW: return 0x02;
-		case APT_RADIO_TOWER_FENCE_NE: return 0x08;
-
-		/* Grass fence variants */
-		case APT_GRASS_FENCE_SW:       return 0x02;
-		case APT_GRASS_FENCE_NE_FLAG:  return 0x08;
-
-		/* Empty fence variant */
-		case APT_EMPTY_FENCE_NE:       return 0x08;
-
-		default: return 0;
-	}
-}
-
-/**
- * Map a stock airport tile GFX to the equivalent modular piece type.
- * @param stock_gfx The stock airport tile GFX from the airport layout table.
- * @return The modular piece_type to use.
- */
-static uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
-{
-	switch (stock_gfx) {
-		/* Runway tiles — keep as-is */
-		case APT_RUNWAY_1:
-		case APT_RUNWAY_2:
-		case APT_RUNWAY_3:
-		case APT_RUNWAY_4:
-		case APT_RUNWAY_5:
-		case APT_RUNWAY_END:
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return stock_gfx;
-
-		/* Runway end fence variants → functional runway end */
-		case APT_RUNWAY_END_FENCE_SE:
-		case APT_RUNWAY_END_FENCE_NW:
-		case APT_RUNWAY_END_FENCE_NW_SW:
-		case APT_RUNWAY_END_FENCE_SE_SW:
-		case APT_RUNWAY_END_FENCE_NE_NW:
-		case APT_RUNWAY_END_FENCE_NE_SE:
-			return APT_RUNWAY_END;
-
-		/* Runway fence (decorative shoulder) → runway middle */
-		case APT_RUNWAY_FENCE_NW:
-			return APT_RUNWAY_5;
-
-		/* Apron variants → plain apron */
-		case APT_APRON:
-		case APT_APRON_FENCE_NW:
-		case APT_APRON_FENCE_SW:
-		case APT_APRON_FENCE_NE:
-		case APT_APRON_FENCE_SE:
-		case APT_APRON_FENCE_NE_SW:
-		case APT_APRON_FENCE_SE_SW:
-		case APT_APRON_FENCE_NE_SE:
-		case APT_APRON_W:
-		case APT_APRON_S:
-		case APT_APRON_E:
-		case APT_ARPON_N:
-		case APT_APRON_HOR:
-		case APT_APRON_N_FENCE_SW:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON_HOR_CROSSING_W:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-			return APT_APRON;
-
-		/* Stands */
-		case APT_STAND:
-		case APT_STAND_1:
-		case APT_STAND_PIER_NE:
-			return APT_STAND;
-
-		/* Hangars — keep directional piece as-is */
-		case APT_DEPOT_SE:
-		case APT_DEPOT_SW:
-		case APT_DEPOT_NW:
-		case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_SE:
-		case APT_SMALL_DEPOT_SW:
-		case APT_SMALL_DEPOT_NW:
-		case APT_SMALL_DEPOT_NE:
-			return stock_gfx;
-
-		/* Helipads → helipad_2 */
-		case APT_HELIPORT:
-		case APT_HELIPAD_1:
-		case APT_HELIPAD_2_FENCE_NW:
-		case APT_HELIPAD_2:
-		case APT_HELIPAD_2_FENCE_NE_SE:
-		case APT_HELIPAD_3_FENCE_SE_SW:
-		case APT_HELIPAD_3_FENCE_NW_SW:
-		case APT_HELIPAD_3_FENCE_NW:
-			return APT_HELIPAD_2;
-
-		/* Tower */
-		case APT_TOWER:
-		case APT_TOWER_FENCE_SW:
-			return APT_TOWER;
-
-		/* Grass/empty */
-		case APT_GRASS_1:
-		case APT_GRASS_2:
-		case APT_GRASS_FENCE_SW:
-		case APT_GRASS_FENCE_NE_FLAG:
-			return APT_GRASS_1;
-		case APT_GRASS_FENCE_NE_FLAG_2:
-			return APT_GRASS_FENCE_NE_FLAG_2; // Preserve modular windsock.
-
-		case APT_EMPTY:
-		case APT_EMPTY_FENCE_NE:
-			return APT_EMPTY;
-
-		/* Buildings — preserve variety using cosmetic picker pieces */
-		case APT_BUILDING_1:
-			return APT_BUILDING_1;
-		case APT_BUILDING_2:
-			return APT_BUILDING_2;
-		case APT_BUILDING_3:
-			return APT_BUILDING_3;
-		case APT_ROUND_TERMINAL:
-			return APT_ROUND_TERMINAL;
-		case APT_LOW_BUILDING:
-		case APT_LOW_BUILDING_FENCE_N:
-		case APT_LOW_BUILDING_FENCE_NW:
-			return APT_LOW_BUILDING;
-		case APT_RADAR_FENCE_SW:
-		case APT_RADAR_FENCE_NE:
-		case APT_RADAR_GRASS_FENCE_SW:
-			return APT_RADAR_FENCE_NE;
-		case APT_RADIO_TOWER_FENCE_NE:
-			return APT_RADIO_TOWER_FENCE_NE;
-
-		/* Small buildings → low building */
-		case APT_SMALL_BUILDING_1:
-		case APT_SMALL_BUILDING_2:
-		case APT_SMALL_BUILDING_3:
-			return APT_LOW_BUILDING;
-		case APT_PIER:
-		case APT_PIER_NW_NE:
-			return APT_APRON;
-
-		default:
-			return APT_BUILDING_1;
-	}
-}
-
 /** Per-airport runway configuration: which Y-row gets which flags. */
 struct StockRunwayConfig {
 	int y_row;
 	uint8_t runway_flags;
 };
-
-/** Per-airport tile override: force a specific modular piece at a given offset. */
-struct StockTileOverride {
-	int x;
-	int y;
-	uint8_t piece_type;
-};
-
-static constexpr StockTileOverride _country_stock_to_modular_overrides[] = {
-	{0, 0, APT_GRASS_1}, {2, 0, APT_GRASS_1},  /* flank low building with grass */
-	{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
-};
-
-static uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type)
-{
-	std::span<const StockTileOverride> tile_overrides;
-	switch (airport_type) {
-		case AT_SMALL:
-			tile_overrides = _country_stock_to_modular_overrides;
-			break;
-		default:
-			break;
-	}
-
-	for (const auto &ovr : tile_overrides) {
-		if (ovr.x == dx && ovr.y == dy) return ovr.piece_type;
-	}
-	return piece_type;
-}
-
-static Money ScaleModularAirportCost(Money base, uint16_t percent)
-{
-	/* Keep costs integral while preserving intended ratios. */
-	return static_cast<Money>((static_cast<int64_t>(base) * percent + 50) / 100);
-}
-
-static Money GetModularAirportPieceBuildCost(uint8_t piece_type)
-{
-	const Money base = _price[Price::BuildStationAirport];
-
-	switch (piece_type) {
-		/* New runway pieces */
-		case APT_RUNWAY_1:
-		case APT_RUNWAY_2:
-		case APT_RUNWAY_3:
-		case APT_RUNWAY_4:
-		case APT_RUNWAY_5:
-		case APT_RUNWAY_END:
-			return ScaleModularAirportCost(base, 155);
-
-		/* Old/small runway pieces */
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return ScaleModularAirportCost(base, 125);
-
-		/* Stands */
-		case APT_STAND:
-		case APT_STAND_1:
-		case APT_STAND_PIER_NE:
-			return ScaleModularAirportCost(base, 135);
-
-		/* Apron / taxiway surfaces */
-		case APT_APRON:
-		case APT_APRON_FENCE_NW:
-		case APT_APRON_FENCE_SW:
-		case APT_APRON_W:
-		case APT_APRON_S:
-		case APT_APRON_VER_CROSSING_S:
-		case APT_APRON_HOR_CROSSING_W:
-		case APT_APRON_VER_CROSSING_N:
-		case APT_APRON_HOR_CROSSING_E:
-		case APT_APRON_E:
-		case APT_ARPON_N:
-		case APT_APRON_HOR:
-		case APT_APRON_N_FENCE_SW:
-		case APT_PIER_NW_NE:
-		case APT_PIER:
-		case APT_APRON_FENCE_NE:
-		case APT_APRON_FENCE_NE_SW:
-		case APT_APRON_FENCE_SE_SW:
-		case APT_APRON_FENCE_SE:
-		case APT_APRON_FENCE_NE_SE:
-		case APT_APRON_HALF_EAST:
-		case APT_APRON_HALF_WEST:
-			return ScaleModularAirportCost(base, 90);
-
-		/* Hangars */
-		case APT_DEPOT_SE:
-		case APT_DEPOT_SW:
-		case APT_DEPOT_NW:
-		case APT_DEPOT_NE:
-			return ScaleModularAirportCost(base, 170);
-		case APT_SMALL_DEPOT_SE:
-		case APT_SMALL_DEPOT_SW:
-		case APT_SMALL_DEPOT_NW:
-		case APT_SMALL_DEPOT_NE:
-			return ScaleModularAirportCost(base, 145);
-
-		/* Helipad / heliport */
-		case APT_HELIPORT:
-		case APT_HELIPAD_1:
-		case APT_HELIPAD_2_FENCE_NW:
-		case APT_HELIPAD_2:
-		case APT_HELIPAD_2_FENCE_NE_SE:
-		case APT_HELIPAD_3_FENCE_SE_SW:
-		case APT_HELIPAD_3_FENCE_NW_SW:
-		case APT_HELIPAD_3_FENCE_NW:
-			return ScaleModularAirportCost(base, 145);
-
-		/* Big terminals */
-		case APT_BUILDING_1:
-		case APT_BUILDING_2:
-		case APT_BUILDING_3:
-		case APT_ROUND_TERMINAL:
-			return ScaleModularAirportCost(base, 30);
-
-		/* Low terminal */
-		case APT_LOW_BUILDING:
-		case APT_LOW_BUILDING_FENCE_N:
-		case APT_LOW_BUILDING_FENCE_NW:
-			return ScaleModularAirportCost(base, 18);
-
-		/* Ops/cosmetic structures */
-		case APT_TOWER:
-		case APT_TOWER_FENCE_SW:
-		case APT_RADAR_GRASS_FENCE_SW:
-		case APT_RADAR_FENCE_SW:
-		case APT_RADAR_FENCE_NE:
-		case APT_RADIO_TOWER_FENCE_NE:
-		case APT_GRASS_FENCE_NE_FLAG_2:
-			return ScaleModularAirportCost(base, 24);
-
-		/* Grass/empty/filler */
-		case APT_EMPTY:
-		case APT_EMPTY_FENCE_NE:
-		case APT_GRASS_FENCE_SW:
-		case APT_GRASS_2:
-		case APT_GRASS_1:
-		case APT_GRASS_FENCE_NE_FLAG:
-			return ScaleModularAirportCost(base, 8);
-
-		default:
-			return base;
-	}
-}
 
 /**
  * Build a stock airport layout as a modular airport.
@@ -3773,164 +3244,6 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 		}
 
 		if (_show_holding_overlay) MarkWholeScreenDirty();
-	}
-
-	return cost;
-}
-
-static CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
-{
-	Station *st = Station::GetByTile(tile);
-
-	if (_current_company != OWNER_WATER) {
-		CommandCost ret = CheckOwnership(st->owner);
-		if (ret.Failed()) return ret;
-	}
-
-	auto is_small_terminal_piece = [](uint8_t piece_type) {
-		return piece_type == APT_SMALL_BUILDING_1 || piece_type == APT_SMALL_BUILDING_2 || piece_type == APT_SMALL_BUILDING_3;
-	};
-
-	auto find_small_terminal_demolition_tiles = [&](TileIndex seed) {
-		std::vector<TileIndex> tiles;
-		tiles.push_back(seed);
-
-		const ModularAirportTileData *seed_md = st->airport.GetModularTileData(seed);
-		if (seed_md == nullptr || !is_small_terminal_piece(seed_md->piece_type)) return tiles;
-
-		auto get_terminal_piece = [&](TileIndex t) -> uint8_t {
-			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-			return md != nullptr ? md->piece_type : 0xFF;
-		};
-
-		TileIndex middle = INVALID_TILE;
-		if (seed_md->piece_type == APT_SMALL_BUILDING_2) {
-			middle = seed;
-		} else {
-			const TileIndexDiff kN4[] = { TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1) };
-			for (TileIndexDiff d : kN4) {
-				TileIndex n = seed + d;
-				if (get_terminal_piece(n) == APT_SMALL_BUILDING_2) {
-					middle = n;
-					break;
-				}
-			}
-		}
-		if (middle == INVALID_TILE) return tiles;
-
-		const TileIndexDiff kAxis[] = { TileDiffXY(1, 0), TileDiffXY(0, 1) };
-		for (TileIndexDiff d : kAxis) {
-			TileIndex a = middle + d;
-			TileIndex b = middle - d;
-			uint8_t pa = get_terminal_piece(a);
-			uint8_t pb = get_terminal_piece(b);
-			if ((pa == APT_SMALL_BUILDING_1 && pb == APT_SMALL_BUILDING_3) ||
-					(pa == APT_SMALL_BUILDING_3 && pb == APT_SMALL_BUILDING_1)) {
-				tiles.clear();
-				tiles.push_back(middle);
-				tiles.push_back(a);
-				tiles.push_back(b);
-				break;
-			}
-		}
-
-		return tiles;
-	};
-
-	std::vector<TileIndex> tiles_to_remove = find_small_terminal_demolition_tiles(tile);
-
-	/* Teleport any ground aircraft to the nearest hangar instead of blocking removal.
-	 * If no hangar is available, the removal is blocked. */
-	for (TileIndex t : tiles_to_remove) {
-		if (!TeleportAircraftOnModularTile(t, st, flags.Test(DoCommandFlag::Execute))) {
-			return CommandCost(STR_ERROR_AIRCRAFT_IN_THE_WAY);
-		}
-	}
-
-	CommandCost cost(EXPENSES_CONSTRUCTION);
-	for (size_t i = 0; i < tiles_to_remove.size(); ++i) {
-		cost.AddCost(_price[Price::ClearStationAirport]);
-	}
-
-	if (flags.Test(DoCommandFlag::Execute)) {
-		std::vector<std::pair<TileIndex, uint8_t>> removed_runway_tiles;
-		if (st->airport.modular_tile_data != nullptr) {
-			for (TileIndex t : tiles_to_remove) {
-				const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-				if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
-					removed_runway_tiles.push_back({t, md->rotation});
-				}
-			}
-		}
-
-		for (TileIndex t : tiles_to_remove) {
-			DoClearSquare(t);
-			DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, t.base());
-		}
-
-		/* Remove tile data from modular airport */
-		if (st->airport.modular_tile_data != nullptr) {
-			auto &tile_data_vec = *st->airport.modular_tile_data;
-			tile_data_vec.erase(std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
-				[&](const ModularAirportTileData &data) {
-					return std::find(tiles_to_remove.begin(), tiles_to_remove.end(), data.tile) != tiles_to_remove.end();
-				}), tile_data_vec.end());
-			st->airport.modular_tile_index_dirty = true;
-			st->airport.modular_holding_loop_dirty = true;
-		if (_show_holding_overlay) MarkWholeScreenDirty();
-
-			/* Normalize runway visuals for surviving neighbors of the removed tile. */
-			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
-				bool horizontal = (removed_rotation % 2) == 0;
-				TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-				TileIndex neighbor_lo = removed_tile - diff;
-				TileIndex neighbor_hi = removed_tile + diff;
-				if (st->airport.GetModularTileData(neighbor_lo) != nullptr) {
-					NormalizeRunwaySegmentVisuals(st, neighbor_lo, horizontal);
-				}
-				if (st->airport.GetModularTileData(neighbor_hi) != nullptr) {
-					NormalizeRunwaySegmentVisuals(st, neighbor_hi, horizontal);
-				}
-			}
-		}
-
-		for (TileIndex t : tiles_to_remove) {
-			st->rect.AfterRemoveTile(st, t);
-		}
-
-		bool any_tiles = false;
-		OrthogonalTileArea new_area;
-		new_area.Clear();
-		for (TileIndex cur_tile : st->airport) {
-			if (!st->TileBelongsToAirport(cur_tile)) continue;
-			any_tiles = true;
-			new_area.Add(cur_tile);
-		}
-
-		if (any_tiles) {
-			st->airport.tile = new_area.tile;
-			st->airport.w = new_area.w;
-			st->airport.h = new_area.h;
-			st->AfterStationTileSetChange(false, StationType::Airport);
-		} else {
-			delete st->airport.psa;
-			delete st->airport.modular_tile_data;
-			st->airport.modular_tile_data = nullptr;
-			delete st->airport.modular_tile_index;
-			st->airport.modular_tile_index = nullptr;
-			delete st->airport.modular_holding_loop;
-			st->airport.modular_holding_loop = nullptr;
-			st->airport.modular_holding_loop_dirty = true;
-		if (_show_holding_overlay) MarkWholeScreenDirty();
-			st->airport.Clear();
-			st->facilities.Reset(StationFacility::Airport);
-			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
-			Company::Get(st->owner)->infrastructure.airport--;
-			st->AfterStationTileSetChange(false, StationType::Airport);
-			DeleteNewGRFInspectWindow(GSF_AIRPORTS, st->index);
-		}
-
-		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
 	}
 
 	return cost;
@@ -4462,41 +3775,93 @@ static bool DrawCustomStationFoundations(const StationSpec *statspec, BaseStatio
 	return true;
 }
 
-/**
- * Return a 4-bit mask (N=0x01, E=0x02, S=0x04, W=0x08) of edges where perimeter
- * fences should be suppressed for a modular airport tile, because aircraft
- * physically transit that edge (runway flight axis, hangar exit, explicit fence tiles).
- */
-static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
+static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, StationGfx &gfx, const DrawTileSprites *&t)
 {
-	/* Runway pieces: open on the two ends along the flight axis. */
-	switch (piece_type) {
-		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
-		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
-		case APT_RUNWAY_SMALL_NEAR_END: case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			/* EW (rotation%2==0): open E+W ends (bits 0x02+0x08 = 0x0A)
-			 * NS (rotation%2==1): open N+S ends (bits 0x01+0x04 = 0x05) */
-			return (rotation % 2 == 0) ? 0x0A : 0x05;
-		/* Hangar pieces: open only on the single exit edge. */
-		case APT_DEPOT_SE: case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_SE: case APT_SMALL_DEPOT_SW:
-		case APT_SMALL_DEPOT_NW: case APT_SMALL_DEPOT_NE:
-			return CalculateAutoTaxiDirectionsForGfx(piece_type, rotation);
-		/* Player-placed fence tiles: skip auto-fencing entirely. */
-		case APT_APRON_FENCE_NE: case APT_APRON_FENCE_SE:
-		case APT_APRON_FENCE_SW: case APT_APRON_FENCE_NW:
-			return 0x0F;
-		/* Terminal/building tiles: they visually serve as their own fence. */
-		case APT_BUILDING_1: case APT_BUILDING_2: case APT_BUILDING_3:
-		case APT_ROUND_TERMINAL:
-		case APT_LOW_BUILDING: case APT_LOW_BUILDING_FENCE_N: case APT_LOW_BUILDING_FENCE_NW:
-		case APT_SMALL_BUILDING_1: case APT_SMALL_BUILDING_2: case APT_SMALL_BUILDING_3:
-		case APT_TOWER: case APT_TOWER_FENCE_SW:
-			return 0x0F;
-		/* Everything else: no suppression, fence all perimeter edges. */
-		default:
-			return 0x00;
+	if (!IsAirport(ti->tile)) return;
+
+	const Station *airport_st = Station::GetByTile(ti->tile);
+	if (airport_st == nullptr || !airport_st->airport.blocks.Test(AirportBlock::Modular)) return;
+
+	const ModularAirportTileData *md = airport_st->airport.GetModularTileData(ti->tile);
+	if (md == nullptr) return;
+
+	const bool is_large_hangar =
+			md->piece_type == APT_DEPOT_SE || md->piece_type == APT_DEPOT_SW ||
+			md->piece_type == APT_DEPOT_NW || md->piece_type == APT_DEPOT_NE;
+	const bool is_small_hangar =
+			md->piece_type == APT_SMALL_DEPOT_SE || md->piece_type == APT_SMALL_DEPOT_SW ||
+			md->piece_type == APT_SMALL_DEPOT_NW || md->piece_type == APT_SMALL_DEPOT_NE;
+
+	if (is_large_hangar || is_small_hangar) {
+		uint8_t visual_rot = md->rotation % 4;
+
+		/* Compatibility for saves written when directional hangars were encoded in piece_type. */
+		switch (md->piece_type) {
+			case APT_DEPOT_SW:
+			case APT_SMALL_DEPOT_SW: visual_rot = 1; break;
+			case APT_DEPOT_NW:
+			case APT_SMALL_DEPOT_NW: visual_rot = 2; break;
+			case APT_DEPOT_NE:
+			case APT_SMALL_DEPOT_NE: visual_rot = 3; break;
+			default: break;
+		}
+
+		if (is_small_hangar) {
+			/* Only one small hangar sprite exists (SE-facing); use it for all rotations. */
+			t = &_station_display_modular_small_hangar_se;
+		} else {
+			switch (visual_rot) {
+				case 0: t = &_station_display_modular_hangar_se; break;
+				case 1: t = &_station_display_modular_hangar_sw; break;
+				case 2: t = &_station_display_modular_hangar_nw; break;
+				default: t = &_station_display_modular_hangar_ne; break;
+			}
+		}
+	}
+
+	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
+	if ((md->rotation % 2) == 1) {
+		switch (md->piece_type) {
+			case APT_RUNWAY_1:
+				t = &_station_display_modular_ns_runway_1; break;
+			case APT_RUNWAY_2:
+			case APT_RUNWAY_5:
+				t = &_station_display_modular_ns_runway_2; break;
+			case APT_RUNWAY_3:
+				t = &_station_display_modular_ns_runway_3; break;
+			case APT_RUNWAY_4:
+				t = &_station_display_modular_ns_runway_4; break;
+			case APT_RUNWAY_END:
+				t = &_station_display_modular_ns_runway_end; break;
+			default: break;
+		}
+	}
+
+	/* Auto-jetway: a plain stand adjacent to a round terminal gets a jetway sprite.
+	 * jetway_1 (APT_STAND_1)      -- terminal is one tile to the south (dy=+1)
+	 * jetway_2 (APT_STAND_PIER_NE) -- terminal is one tile to the west  (dx=-1) */
+	if (md->piece_type == APT_STAND && t == nullptr) {
+		auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
+			TileIndex nb = TileAddXY(ti->tile, dx, dy);
+			if (!IsValidTile(nb)) return 0xFF;
+			const ModularAirportTileData *nb_md = airport_st->airport.GetModularTileData(nb);
+			return nb_md != nullptr ? nb_md->piece_type : 0xFF;
+		};
+		if (NeighborPiece(0, +1) == APT_ROUND_TERMINAL) {
+			gfx = APT_STAND_1;
+		} else if (NeighborPiece(-1, 0) == APT_ROUND_TERMINAL) {
+			gfx = APT_STAND_PIER_NE;
+		}
+	}
+
+	/* Modular windsock: draw without the built-in NE fence. */
+	if (md->piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
+		t = &_station_display_datas_airport_flag_grass[GetAnimationFrame(ti->tile)];
+	}
+
+	/* Helistation-style H pad: use no-fence variant in modular mode. */
+	if (md->piece_type == APT_HELIPAD_3_FENCE_NW) {
+		t = &_station_display_modular_newhelipad;
 	}
 }
 
@@ -4561,90 +3926,7 @@ static void DrawTile_Station(TileInfo *ti)
 			gfx = ats->grf_prop.subst_id;
 		}
 
-		const Station *airport_st = Station::GetByTile(ti->tile);
-		if (airport_st != nullptr && airport_st->airport.blocks.Test(AirportBlock::Modular)) {
-			const ModularAirportTileData *md = airport_st->airport.GetModularTileData(ti->tile);
-			if (md != nullptr) {
-				const bool is_large_hangar =
-						md->piece_type == APT_DEPOT_SE || md->piece_type == APT_DEPOT_SW ||
-						md->piece_type == APT_DEPOT_NW || md->piece_type == APT_DEPOT_NE;
-				const bool is_small_hangar =
-						md->piece_type == APT_SMALL_DEPOT_SE || md->piece_type == APT_SMALL_DEPOT_SW ||
-						md->piece_type == APT_SMALL_DEPOT_NW || md->piece_type == APT_SMALL_DEPOT_NE;
-
-				if (is_large_hangar || is_small_hangar) {
-					uint8_t visual_rot = md->rotation % 4;
-
-					/* Compatibility for saves written when directional hangars were encoded in piece_type. */
-					switch (md->piece_type) {
-						case APT_DEPOT_SW:
-						case APT_SMALL_DEPOT_SW: visual_rot = 1; break;
-						case APT_DEPOT_NW:
-						case APT_SMALL_DEPOT_NW: visual_rot = 2; break;
-						case APT_DEPOT_NE:
-						case APT_SMALL_DEPOT_NE: visual_rot = 3; break;
-						default: break;
-					}
-
-					if (is_small_hangar) {
-						/* Only one small hangar sprite exists (SE-facing); use it for all rotations. */
-						t = &_station_display_modular_small_hangar_se;
-					} else {
-						switch (visual_rot) {
-							case 0: t = &_station_display_modular_hangar_se; break;
-							case 1: t = &_station_display_modular_hangar_sw; break;
-							case 2: t = &_station_display_modular_hangar_nw; break;
-							default: t = &_station_display_modular_hangar_ne; break;
-						}
-					}
-				}
-
-			/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
-			if ((md->rotation % 2) == 1) {
-				switch (md->piece_type) {
-					case APT_RUNWAY_1:
-						t = &_station_display_modular_ns_runway_1; break;
-					case APT_RUNWAY_2:
-					case APT_RUNWAY_5:
-						t = &_station_display_modular_ns_runway_2; break;
-					case APT_RUNWAY_3:
-						t = &_station_display_modular_ns_runway_3; break;
-					case APT_RUNWAY_4:
-						t = &_station_display_modular_ns_runway_4; break;
-					case APT_RUNWAY_END:
-						t = &_station_display_modular_ns_runway_end; break;
-					default: break;
-				}
-			}
-
-			/* Auto-jetway: a plain stand adjacent to a round terminal gets a jetway sprite.
-			 * jetway_1 (APT_STAND_1)      -- terminal is one tile to the south (dy=+1)
-			 * jetway_2 (APT_STAND_PIER_NE) -- terminal is one tile to the west  (dx=-1) */
-			if (md->piece_type == APT_STAND && t == nullptr) {
-				auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
-					TileIndex nb = TileAddXY(ti->tile, dx, dy);
-					if (!IsValidTile(nb)) return 0xFF;
-					const ModularAirportTileData *nb_md = airport_st->airport.GetModularTileData(nb);
-					return nb_md != nullptr ? nb_md->piece_type : 0xFF;
-				};
-				if (NeighborPiece(0, +1) == APT_ROUND_TERMINAL) {
-					gfx = APT_STAND_1;
-				} else if (NeighborPiece(-1, 0) == APT_ROUND_TERMINAL) {
-					gfx = APT_STAND_PIER_NE;
-				}
-			}
-
-			/* Modular windsock: draw without the built-in NE fence. */
-			if (md->piece_type == APT_GRASS_FENCE_NE_FLAG_2) {
-				t = &_station_display_datas_airport_flag_grass[GetAnimationFrame(ti->tile)];
-			}
-
-			/* Helistation-style H pad: use no-fence variant in modular mode. */
-			if (md->piece_type == APT_HELIPAD_3_FENCE_NW) {
-				t = &_station_display_modular_newhelipad;
-			}
-		}
-	}
+		ApplyModularAirportTileLayoutOverridesLocal(ti, gfx, t);
 
 		if (t == nullptr) switch (gfx) {
 			case APT_RADAR_GRASS_FENCE_SW:
@@ -4834,146 +4116,8 @@ static void DrawTile_Station(TileInfo *ti)
 
 	DrawRailTileSeq(ti, t, TO_BUILDINGS, total_offset, relocation, palette);
 
-	/* Auto-draw perimeter fences for modular airport tiles. */
-	if (IsAirport(ti->tile)) {
-		const Station *fence_st = Station::GetByTile(ti->tile);
-		if (fence_st != nullptr && fence_st->airport.blocks.Test(AirportBlock::Modular)) {
-			const ModularAirportTileData *fence_md = fence_st->airport.GetModularTileData(ti->tile);
-			if (fence_md != nullptr) {
-				const uint8_t open_mask = GetModularTileFenceOpenMask(fence_md->piece_type, fence_md->rotation);
-
-				static constexpr struct {
-					int8_t dx, dy;
-					uint8_t dir_bit;
-					SpriteID spr;
-					int8_t fx, fy;
-				} kEdges[] = {
-					{  0, -1, 0x01, SPR_AIRPORT_FENCE_X,  0,  0 }, // dy=-1 → NW on screen → NW fence
-					{ +1,  0, 0x02, SPR_AIRPORT_FENCE_Y, 15,  0 }, // dx=+1 → SW on screen → SW fence
-					{  0, +1, 0x04, SPR_AIRPORT_FENCE_X,  0, 15 }, // dy=+1 → SE on screen → SE fence
-					{ -1,  0, 0x08, SPR_AIRPORT_FENCE_Y,  0,  0 }, // dx=-1 → NE on screen → NE fence
-				};
-
-				for (const auto &e : kEdges) {
-					if (open_mask & e.dir_bit) continue; // aircraft transit edge, skip
-					bool explicit_fence = (fence_md->edge_block_mask & e.dir_bit) != 0;
-					TileIndex nb = TileAddXY(ti->tile, e.dx, e.dy);
-					bool perimeter = !(IsValidTile(nb) && fence_st->TileBelongsToAirport(nb));
-					if (!explicit_fence && !perimeter) continue;
-					DrawGroundSpriteAt(e.spr | (1U << PALETTE_MODIFIER_COLOUR), palette,
-					                   e.fx, e.fy,
-					                   GetPartialPixelZ(e.fx, e.fy, ti->tileh));
-				}
-			}
-		}
-	}
-
-	/* Draw modular airport direction overlay arrows */
-	if (_show_runway_direction_overlay && IsAirport(ti->tile)) {
-		Station *station = Station::GetByTile(ti->tile);
-		if (station != nullptr && station->airport.blocks.Test(AirportBlock::Modular)) {
-			const ModularAirportTileData *tile_data = station->airport.GetModularTileData(ti->tile);
-			if (tile_data != nullptr) {
-				bool is_runway = false;
-				switch (tile_data->piece_type) {
-					case APT_RUNWAY_1:
-					case APT_RUNWAY_2:
-					case APT_RUNWAY_3:
-					case APT_RUNWAY_4:
-					case APT_RUNWAY_5:
-					case APT_RUNWAY_END:
-					case APT_RUNWAY_SMALL_NEAR_END:
-					case APT_RUNWAY_SMALL_MIDDLE:
-					case APT_RUNWAY_SMALL_FAR_END:
-						is_runway = true;
-						break;
-				}
-
-				if (is_runway) {
-					uint8_t flags = tile_data->runway_flags;
-					bool horizontal = (tile_data->rotation % 2) == 0;
-
-					/* Use one-way road arrow sprites - they're isometric and tile-sized.
-					 * Layout: SPR_ONEWAY_BASE + offset
-					 *   +0..+2: X-axis (flat) - 0=SW, 1=NE, 2=both
-					 *   +3..+5: Y-axis (flat) - 3=SE, 4=NW, 5=both
-					 *
-					 * IMPORTANT: Keep the mapping below aligned to observed aircraft movement
-					 * for runway flags. Do not swap low/high purely from coordinate intuition. */
-					SpriteID base = SPR_ONEWAY_BASE;
-
-					/* Determine which arrows to draw based on flags */
-					bool dir_low = (flags & RUF_DIR_LOW) != 0;
-					bool dir_high = (flags & RUF_DIR_HIGH) != 0;
-					bool can_land = (flags & RUF_LANDING) != 0;
-					bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
-
-					if (can_land || can_takeoff) {
-						/* Visual mapping for runway flags (verified against oneway.png):
-						 * rotation=0 (NE-SW): dir_low (low coord) is NE (1), dir_high (high coord) is SW (0)
-						 * rotation=1 (NW-SE): dir_low (low coord) is NW (3), dir_high (high coord) is SE (4)
-						 *
-						 * Note: SPR_ONEWAY_BASE +0..2 are SW/NE (road Axis 0), +3..5 are NW/SE (road Axis 1).
-						 * Modular rotation 0/2 is Axis 0, 1/3 is Axis 1. */
-						SpriteID sprite;
-						PaletteID pal_overlay;
-
-						if (dir_low && dir_high) {
-							/* Both directions - use "both" sprite (index 2 or 5) */
-							sprite = base + (horizontal ? 2 : 5);
-						} else if (dir_low) {
-							/* Low-direction only (toward decreasing coordinates). */
-							sprite = base + (horizontal ? 1 : 3);
-						} else {
-							/* High-direction only (toward increasing coordinates). */
-							sprite = base + (horizontal ? 0 : 4);
-						}
-
-						/* Keep arrow sprite default-coloured; state colour is shown via tile overlay.
-						 * The one-way arrow base sprite uses fixed colour indices, so palette remaps
-						 * do not reliably tint it red/blue. */
-						if (can_land && can_takeoff) {
-							pal_overlay = PAL_NONE;
-						} else if (can_land) {
-							pal_overlay = PALETTE_SEL_TILE_BLUE;
-						} else {
-							pal_overlay = PALETTE_SEL_TILE_RED;
-						}
-
-						/* Draw directional arrow. */
-						DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
-
-						/* Draw a coloured selection outline to show usage mode. */
-						if (pal_overlay != PAL_NONE) {
-							DrawGroundSpriteAt(SPR_SELECT_TILE + SlopeToSpriteOffset(ti->tileh), pal_overlay, 0, 0, 7);
-						}
-					}
-				} else if (IsTaxiwayPiece(tile_data->piece_type) && tile_data->one_way_taxi && HasExactlyOneBit(tile_data->user_taxi_dir_mask)) {
-					SpriteID sprite = 0;
-					SpriteID base = SPR_ONEWAY_BASE;
-					const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
-
-					/* Map taxi direction bits to arrow sprites.
-					 * N/E/S/W bits match coordinate movement:
-					 * dir 0x01 (dy=-1) -> up-right (NE) -> sprite 1
-					 * dir 0x02 (dx=+1) -> down-right (SE) -> sprite 4
-					 * dir 0x04 (dy=+1) -> down-left (SW) -> sprite 0
-					 * dir 0x08 (dx=-1) -> up-left (NW) -> sprite 3 */
-					if (dir == 0x01) {
-						sprite = base + 3; // dy=-1 -> NW
-					} else if (dir == 0x02) {
-						sprite = base + 0; // dx=+1 -> SW
-					} else if (dir == 0x04) {
-						sprite = base + 4; // dy=+1 -> SE
-					} else if (dir == 0x08) {
-						sprite = base + 1; // dx=-1 -> NE
-					}
-
-					if (sprite != 0) DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
-				}
-			}
-		}
-	}
+	DrawModularAirportPerimeterFences(ti, palette);
+	DrawModularAirportDirectionOverlays(ti);
 
 	DrawBridgeMiddle(ti, GetStationBlockedPillars(bridgeable_info, GetStationGfx(ti->tile)));
 }
@@ -5029,20 +4173,13 @@ void StationPickerDrawSprite(int x, int y, StationType st, RailType railtype, Ro
 	DrawRailTileSeqInGUI(x, y, t, (st == StationType::RailWaypoint || st == StationType::RoadWaypoint) ? 0 : total_offset, 0, pal);
 }
 
-/**
- * Get the DrawTileSprites layout for a modular airport hangar.
- * Used by the hangar direction picker in the airport GUI.
- * @param rotation Hangar rotation (0=SE, 1=NE, 2=NW, 3=SW).
- * @param small_hangar True for small hangar, false for large.
- * @return Pointer to the tile layout.
- */
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar)
 {
 	if (small_hangar) return &_station_display_modular_small_hangar_se;
 	switch (rotation) {
-		case 1:  return &_station_display_modular_hangar_ne;
-		case 2:  return &_station_display_modular_hangar_nw;
-		case 3:  return &_station_display_modular_hangar_sw;
+		case 1: return &_station_display_modular_hangar_ne;
+		case 2: return &_station_display_modular_hangar_nw;
+		case 3: return &_station_display_modular_hangar_sw;
 		default: return &_station_display_modular_hangar_se;
 	}
 }

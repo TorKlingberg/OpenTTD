@@ -80,6 +80,65 @@ bool IsModularHelipadPiece(uint8_t gfx)
 	}
 }
 
+bool IsModernModularPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		/* Legacy pieces — always available */
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_E:
+		case APT_ARPON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+		case APT_STAND:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+		case APT_GRASS_1:
+		case APT_GRASS_2:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_FENCE_NE_FLAG:
+		case APT_GRASS_FENCE_NE_FLAG_2:
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+		case APT_STAND_1:
+		case APT_RADIO_TOWER_FENCE_NE:
+			return false;
+		default:
+			return true;
+	}
+}
+
+TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type)
+{
+	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
+	return AirportSpec::Get(AT_LARGE)->min_year;
+}
+
 /**
  * Determine whether a runway end tile is at the "low" end of its contiguous runway.
  * "Low" means the end with lower X (horizontal) or lower Y (vertical).
