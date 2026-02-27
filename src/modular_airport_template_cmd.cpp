@@ -52,14 +52,7 @@ static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, ui
 
 	tile.rotation = (old_rotation + r) & 3;
 
-	/* Terminal + terminal-alt are quarter-turn variants of each other. */
-	if ((r & 1) != 0) {
-		if (tile.piece_type == APT_BUILDING_1) {
-			tile.piece_type = APT_BUILDING_2;
-		} else if (tile.piece_type == APT_BUILDING_2) {
-			tile.piece_type = APT_BUILDING_1;
-		}
-	}
+	SwapBuildingPieceForRotation(tile.piece_type, r);
 
 	auto rotate_mask = [r](uint8_t mask) -> uint8_t {
 		uint8_t out = 0;

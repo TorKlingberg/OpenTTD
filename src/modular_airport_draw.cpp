@@ -15,14 +15,13 @@
 #include "airport_pathfinder.h"
 #include "landscape.h"
 #include "modular_airport_cmd.h"
+#include "modular_airport_gui.h"
 #include "newgrf_airporttiles.h"
 #include "station_base.h"
 #include "station_map.h"
 #include "viewport_func.h"
 
 #include "table/airporttile_ids.h"
-
-extern bool _show_runway_direction_overlay;
 
 static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 {

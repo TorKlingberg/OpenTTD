@@ -254,7 +254,7 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		Point offset;
-		PaletteID pal = GetCompanyPalette(_current_company);
+		PaletteID pal = GetCompanyPalette(_local_company);
 		if (widget == WID_MA_PIECE_LAST) {
 			/* Demolish: draw at full scale to match other toolbar demolish buttons. */
 			Dimension d = GetSpriteSize(piece.icon, &offset);
@@ -277,7 +277,6 @@ public:
 
 			uint8_t rot = (widget == WID_MA_PIECE_5) ? 0 : _modular_hangar_rotation;
 			const DrawTileSprites *t = GetModularHangarTileLayout(rot, widget == WID_MA_PIECE_5);
-			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
 			for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
 				SpriteID image = dtss.image.sprite;
@@ -1082,7 +1081,7 @@ public:
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 		ZoomLevel icon_zoom = _gui_zoom;
-		PaletteID pal = GetCompanyPalette(_current_company);
+		PaletteID pal = GetCompanyPalette(_local_company);
 
 		/* 3-tile terminal: draw all 3 tiles in isometric layout.
 		 * Tiles are: APT_SMALL_BUILDING_3 (TERM_A), APT_SMALL_BUILDING_2 (TERM_B),
@@ -1288,19 +1287,19 @@ public:
 		DrawPixelInfo tmp_dpi;
 		Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
 		if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
-				AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
-				ZoomLevel icon_zoom = _gui_zoom;
-				PaletteID pal = GetCompanyPalette(_current_company);
-		
-				Point offset;
-				Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
-				d.width  -= offset.x;
-				d.height -= offset.y;
-				int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
-				int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-				y += ScaleSpriteTrad(piece.preview_y_offset);
-				DrawSprite(piece.icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
-			}
+		AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+		ZoomLevel icon_zoom = _gui_zoom;
+		PaletteID pal = GetCompanyPalette(_local_company);
+
+		Point offset;
+		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
+		d.width  -= offset.x;
+		d.height -= offset.y;
+		int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+		int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+		y += ScaleSpriteTrad(piece.preview_y_offset);
+		DrawSprite(piece.icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
+	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget,
 	             [[maybe_unused]] int click_count) override

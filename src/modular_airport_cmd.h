@@ -77,6 +77,21 @@ inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
 	}
 }
 
+/**
+ * Swap APT_BUILDING_1 and APT_BUILDING_2 on odd rotations.
+ * These two terminal sprites are quarter-turn variants of each other.
+ */
+inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
+{
+	if ((rotation & 1) != 0) {
+		if (piece_type == APT_BUILDING_1) {
+			piece_type = APT_BUILDING_2;
+		} else if (piece_type == APT_BUILDING_2) {
+			piece_type = APT_BUILDING_1;
+		}
+	}
+}
+
 inline bool IsTaxiwayPiece(uint8_t piece_type)
 {
 	switch (piece_type) {
