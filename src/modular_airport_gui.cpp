@@ -1373,7 +1373,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 };
 
 static WindowDesc _build_modular_airport_desc(
-	WDP_AUTO, {}, 0, 0,
+	WDP_AUTO, "build_modular_airport", 0, 0,
 	WC_BUILD_STATION, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_airport_widgets

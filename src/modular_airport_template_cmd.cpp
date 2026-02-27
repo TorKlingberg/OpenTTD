@@ -356,6 +356,13 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 
 		if (IsTaxiwayPiece(rt.piece_type)) {
+			uint8_t taxi_dir_mask = rt.user_taxi_dir_mask & 0x0F;
+			if (rt.one_way_taxi) {
+				if (!HasExactlyOneBit(taxi_dir_mask)) return CMD_ERROR;
+				const uint8_t auto_dirs = CalculateAutoTaxiDirectionsForGfx(rt.piece_type, rt.rotation);
+				if ((auto_dirs & taxi_dir_mask) == 0) return CMD_ERROR;
+			}
+
 			ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.user_taxi_dir_mask, rt.one_way_taxi);
 			if (ret.Failed()) return ret;
 			total.AddCost(ret.GetCost());
@@ -393,16 +400,19 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
-				Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
+				CommandCost ret = Command<CMD_SET_RUNWAY_FLAGS>::Do(flags, t, runway_flags);
+				if (ret.Failed()) return ret;
 			}
 
 			if (IsTaxiwayPiece(rt.piece_type)) {
-				Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
+				CommandCost ret = Command<CMD_SET_TAXIWAY_FLAGS>::Do(flags, t, rt.user_taxi_dir_mask, rt.one_way_taxi);
+				if (ret.Failed()) return ret;
 			}
 
 			for (uint8_t edge_bit : {static_cast<uint8_t>(0x01), static_cast<uint8_t>(0x02), static_cast<uint8_t>(0x04), static_cast<uint8_t>(0x08)}) {
 				if ((rt.edge_block_mask & edge_bit) == 0) continue;
-				Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
+				CommandCost ret = Command<CMD_SET_MODULAR_AIRPORT_EDGE_FENCE>::Do(flags, t, edge_bit, true);
+				if (ret.Failed()) return ret;
 			}
 		}
 	}
