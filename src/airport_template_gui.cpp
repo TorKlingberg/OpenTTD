@@ -220,25 +220,29 @@ static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &ti
 		segment.push_back(i);
 		visited[i] = true;
 
-		for (size_t j = 0; j < tiles.size(); j++) {
-			if (visited[j] || !is_small_runway_piece(tiles[j].piece_type)) continue;
-			if (((tiles[j].rotation % 2) == 0) != horizontal) continue;
+		bool changed;
+		do {
+			changed = false;
+			for (size_t j = 0; j < tiles.size(); j++) {
+				if (visited[j] || !is_small_runway_piece(tiles[j].piece_type)) continue;
+				if (((tiles[j].rotation % 2) == 0) != horizontal) continue;
 
-			bool adjacent = false;
-			for (size_t k : segment) {
-				const int dx = static_cast<int>(tiles[j].dx) - static_cast<int>(tiles[k].dx);
-				const int dy = static_cast<int>(tiles[j].dy) - static_cast<int>(tiles[k].dy);
-				if ((horizontal && std::abs(dx) == 1 && dy == 0) || (!horizontal && std::abs(dy) == 1 && dx == 0)) {
-					adjacent = true;
-					break;
+				bool adjacent = false;
+				for (size_t k : segment) {
+					const int dx = static_cast<int>(tiles[j].dx) - static_cast<int>(tiles[k].dx);
+					const int dy = static_cast<int>(tiles[j].dy) - static_cast<int>(tiles[k].dy);
+					if ((horizontal && std::abs(dx) == 1 && dy == 0) || (!horizontal && std::abs(dy) == 1 && dx == 0)) {
+						adjacent = true;
+						break;
+					}
+				}
+				if (adjacent) {
+					segment.push_back(j);
+					visited[j] = true;
+					changed = true;
 				}
 			}
-			if (adjacent) {
-				segment.push_back(j);
-				visited[j] = true;
-				j = static_cast<size_t>(-1);
-			}
-		}
+		} while (changed);
 
 		std::sort(segment.begin(), segment.end(), [&](size_t a, size_t b) {
 			if (horizontal) return tiles[a].dx < tiles[b].dx;

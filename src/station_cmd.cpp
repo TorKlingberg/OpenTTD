@@ -2890,34 +2890,23 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		);
 		st->airport.modular_tile_index_dirty = true;
 
-		auto canonical_hangar_piece_to_directional = [](uint8_t piece_type, uint8_t rot) -> uint8_t {
-			const uint8_t r = rot % 4;
-			switch (piece_type) {
-				case APT_DEPOT_SE:
-					switch (r) {
-						case 0: return APT_DEPOT_SE;
-						case 1: return APT_DEPOT_NE;
-						case 2: return APT_DEPOT_NW;
-						default: return APT_DEPOT_SW;
-					}
-				case APT_SMALL_DEPOT_SE:
-					switch (r) {
-						case 0: return APT_SMALL_DEPOT_SE;
-						case 1: return APT_SMALL_DEPOT_NE;
-						case 2: return APT_SMALL_DEPOT_NW;
-						default: return APT_SMALL_DEPOT_SW;
-					}
-				default:
-					return piece_type;
-			}
-		};
-
 		/* Create and store new tile data */
 		ModularAirportTileData tile_data;
 		tile_data.tile = tile;
-		/* Keep station map gfx canonical (< NEW_AIRPORTTILE_OFFSET), but store directional
-		 * hangar orientation in modular metadata for robust logic/pathfinding. */
-		tile_data.piece_type = canonical_hangar_piece_to_directional(static_cast<uint8_t>(gfx), rotation);
+		/* Convert canonical SE hangars to directional variants based on rotation.
+		 * Only canonical forms (APT_DEPOT_SE / APT_SMALL_DEPOT_SE) are rotated here;
+		 * template tiles arrive pre-rotated via RotateTemplateTile and pass through unchanged.
+		 * Do NOT use SwapBuildingPieceForRotation here — it would double-rotate template tiles
+		 * (which also apply it) and double-swap APT_BUILDING_1/2 and runway near/far ends. */
+		uint8_t directional_piece = static_cast<uint8_t>(gfx);
+		if (directional_piece == APT_DEPOT_SE) {
+			static constexpr uint8_t kLargeByRot[] = {APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW};
+			directional_piece = kLargeByRot[rotation % 4];
+		} else if (directional_piece == APT_SMALL_DEPOT_SE) {
+			static constexpr uint8_t kSmallByRot[] = {APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_NE, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_SW};
+			directional_piece = kSmallByRot[rotation % 4];
+		}
+		tile_data.piece_type = directional_piece;
 		tile_data.rotation = rotation;
 		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
 		taxi_dir_mask &= 0x0F;
@@ -3881,7 +3870,8 @@ static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, Stat
 		}
 	}
 
-	/* Auto-jetway substitutions are station layouts (not modular overrides). */
+	/* Auto-jetway intentionally overrides the default stand layout returned by
+	 * GetAirportTileLayoutWithModularOverrides when a round terminal is adjacent. */
 	if (gfx != original_gfx) {
 		t = GetStationTileLayout(StationType::Airport, gfx);
 	}

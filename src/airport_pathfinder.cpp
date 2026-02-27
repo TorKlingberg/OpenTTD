@@ -134,35 +134,38 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_VER_CROSSING_S:
 			return 0x0F;
-		        case APT_BUILDING_1:
-		        case APT_ROUND_TERMINAL:
-		        case APT_STAND:
-		        case APT_STAND_1:
-		        case APT_STAND_PIER_NE:
-		            return 0x0F;
-		        case APT_DEPOT_SE:
-		        case APT_SMALL_DEPOT_SE:
-		        case APT_DEPOT_SW:
-		        case APT_SMALL_DEPOT_SW:
-		        case APT_DEPOT_NW:
-		        case APT_SMALL_DEPOT_NW:
-		        case APT_DEPOT_NE:
-		        case APT_SMALL_DEPOT_NE: {
-		            uint8_t hangar_rot = rotation % 4;
-		            switch (gfx) {
-		                case APT_DEPOT_SW:
-		                case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
-		                case APT_DEPOT_NW:
-		                case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-		                case APT_DEPOT_NE:
-		                case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
-		                default: break;
-		            }
-		            /* Single-direction opening. Use inverse rotation mapping for hangars. */
-		            return (1 << ((2 + 4 - hangar_rot) % 4));
-		        }
-		        case APT_HELIPORT:
-		        case APT_HELIPAD_1:		case APT_HELIPAD_2:
+		case APT_BUILDING_1:
+		case APT_ROUND_TERMINAL:
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return 0x0F;
+		case APT_DEPOT_SE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE: {
+			/* Convention: 0=SE, 1=NE, 2=NW, 3=SW (clockwise in world space).
+			 * Keep in sync with SwapBuildingPieceForRotation() and GetModularHangarTileLayoutByPiece(). */
+			uint8_t hangar_rot = rotation % 4;
+			switch (gfx) {
+				case APT_DEPOT_SW:
+				case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
+				case APT_DEPOT_NW:
+				case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
+				case APT_DEPOT_NE:
+				case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
+				default: break;
+			}
+			/* Single-direction opening. Use inverse rotation mapping for hangars. */
+			return (1 << ((2 + 4 - hangar_rot) % 4));
+		}
+		case APT_HELIPORT:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NW:
 		case APT_HELIPAD_2_FENCE_NE_SE:
 		case APT_HELIPAD_3_FENCE_SE_SW:
