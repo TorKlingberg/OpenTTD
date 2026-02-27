@@ -52,6 +52,31 @@ inline bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+inline bool IsLegacySmallRunwayPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return true;
+		default:
+			return false;
+	}
+}
+
 inline bool IsTaxiwayPiece(uint8_t piece_type)
 {
 	switch (piece_type) {

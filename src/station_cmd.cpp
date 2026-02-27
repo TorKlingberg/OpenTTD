@@ -2873,17 +2873,17 @@ static void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, b
 				} else {
 					new_type = APT_RUNWAY_5;
 				}
-			} else {
-				if (seg.size() == 1) {
-					new_type = APT_RUNWAY_SMALL_NEAR_END;
-				} else if (i == 0) {
-					new_type = APT_RUNWAY_SMALL_NEAR_END;
-				} else if (i == seg.size() - 1) {
-					new_type = APT_RUNWAY_SMALL_FAR_END;
 				} else {
-					new_type = APT_RUNWAY_SMALL_MIDDLE;
+					if (seg.size() == 1) {
+						new_type = APT_RUNWAY_SMALL_NEAR_END;
+					} else if (i == 0) {
+						new_type = APT_RUNWAY_SMALL_FAR_END;
+					} else if (i == seg.size() - 1) {
+						new_type = APT_RUNWAY_SMALL_NEAR_END;
+					} else {
+						new_type = APT_RUNWAY_SMALL_MIDDLE;
+					}
 				}
-			}
 
 			if (td->piece_type != new_type) {
 				td->piece_type = new_type;

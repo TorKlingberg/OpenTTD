@@ -52,6 +52,15 @@ static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, ui
 
 	tile.rotation = (old_rotation + r) & 3;
 
+	/* Terminal + terminal-alt are quarter-turn variants of each other. */
+	if ((r & 1) != 0) {
+		if (tile.piece_type == APT_BUILDING_1) {
+			tile.piece_type = APT_BUILDING_2;
+		} else if (tile.piece_type == APT_BUILDING_2) {
+			tile.piece_type = APT_BUILDING_1;
+		}
+	}
+
 	auto rotate_mask = [r](uint8_t mask) -> uint8_t {
 		uint8_t out = 0;
 		for (uint8_t i = 0; i < 4; i++) {
@@ -278,9 +287,17 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	 * must be placed without rotation. */
 	if (data.rotation != 0) {
 		for (const auto &t : data.tiles) {
-			if (t.piece_type == APT_SMALL_BUILDING_1 || t.piece_type == APT_SMALL_BUILDING_2 || t.piece_type == APT_SMALL_BUILDING_3) {
+			if (t.piece_type == APT_SMALL_BUILDING_1 || t.piece_type == APT_SMALL_BUILDING_2 || t.piece_type == APT_SMALL_BUILDING_3 ||
+					IsLegacySmallHangarPiece(t.piece_type)) {
 				return CommandCost(STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
 			}
+		}
+	}
+
+	/* Legacy (small) runway pieces are axis-locked and only support 0/180 rotation. */
+	if ((data.rotation & 1) != 0) {
+		for (const auto &t : data.tiles) {
+			if (IsLegacySmallRunwayPiece(t.piece_type)) return CMD_ERROR;
 		}
 	}
 	if (data.tiles.empty() || data.tiles.size() > MAX_TEMPLATE_TILES) {

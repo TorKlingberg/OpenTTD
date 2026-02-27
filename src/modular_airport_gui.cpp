@@ -275,7 +275,8 @@ public:
 			int x = (ir.Width()  - tile_w) / 2 + anchor;
 			int y = (ir.Height() + tile_h) / 2 - anchor;
 
-			const DrawTileSprites *t = GetModularHangarTileLayout(_modular_hangar_rotation, widget == WID_MA_PIECE_5);
+			uint8_t rot = (widget == WID_MA_PIECE_5) ? 0 : _modular_hangar_rotation;
+			const DrawTileSprites *t = GetModularHangarTileLayout(rot, widget == WID_MA_PIECE_5);
 			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
 			for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
@@ -309,7 +310,7 @@ public:
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
 			bool already_selected = (new_piece == this->selected_piece);
-			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5 || new_piece == 6);
+			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 6);
 
 			/* Deactivate fence tool when selecting a piece. */
 			if (this->fence_tool_active) {
@@ -339,7 +340,7 @@ public:
 
 			/* Open picker for pieces that need one (unless we just toggled off). */
 			if (wants_picker && !already_selected) {
-				if (new_piece == 4 || new_piece == 5) {
+				if (new_piece == 4) {
 					ShowModularHangarPicker(this, new_piece == 4);
 				} else if (new_piece == 3) {
 					ShowModularCosmeticPicker(this);
@@ -552,8 +553,13 @@ public:
 		if (supports_drag) {
 			/* Enable drag-building */
 			if (is_runway) {
-				/* Linear pieces: allow drag in X or Y direction only */
-				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
+				/* Legacy (small) runway can only drag on the stock axis. */
+				if (this->selected_piece == 2) {
+					VpStartPlaceSizing(tile, VPM_FIX_Y, DDSP_BUILD_STATION);
+				} else {
+					/* Linear pieces: allow drag in X or Y direction only */
+					VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
+				}
 			} else {
 				/* Rectangular pieces: allow drag in both X and Y */
 				VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUILD_STATION);
@@ -649,12 +655,12 @@ public:
 			} else {
 				/* Small runway: place contiguously front→middles→back so each tile is adjacent
 				 * to the last, allowing GetStationAround to find the growing station. */
-				this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
+				this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
 					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTileRawGfx(ordered_tiles.back(), APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
+					this->PlaceDragTileRawGfx(ordered_tiles.back(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
 				}
 			}
 		} else {
@@ -774,8 +780,7 @@ private:
 		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece);
 		bool adjacent = _ctrl_pressed;
 		/* Use hangar rotation for hangar pieces; rotation 0 for everything else. */
-		uint8_t rot = (this->selected_piece == 4 || this->selected_piece == 5)
-		              ? _modular_hangar_rotation : 0;
+		uint8_t rot = (this->selected_piece == 4) ? _modular_hangar_rotation : 0;
 
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {

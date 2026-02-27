@@ -79,6 +79,15 @@ void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t templa
 	/* Tile rotation. */
 	this->rotation = (old_rotation + r) & 3;
 
+	/* Terminal + terminal-alt are quarter-turn variants of each other. */
+	if ((r & 1) != 0) {
+		if (this->piece_type == APT_BUILDING_1) {
+			this->piece_type = APT_BUILDING_2;
+		} else if (this->piece_type == APT_BUILDING_2) {
+			this->piece_type = APT_BUILDING_1;
+		}
+	}
+
 	/* Taxi mask rotation (NESW bitmask). */
 	uint8_t old_mask = this->user_taxi_dir_mask;
 	uint8_t new_mask = 0;
@@ -124,9 +133,18 @@ bool AirportTemplate::HasNonRotatablePieces() const
 	for (const auto &tile : this->tiles) {
 		if (tile.piece_type == APT_SMALL_BUILDING_1 ||
 				tile.piece_type == APT_SMALL_BUILDING_2 ||
-				tile.piece_type == APT_SMALL_BUILDING_3) {
+				tile.piece_type == APT_SMALL_BUILDING_3 ||
+				IsLegacySmallHangarPiece(tile.piece_type)) {
 			return true;
 		}
+	}
+	return false;
+}
+
+bool AirportTemplate::HasLegacySmallRunwayPieces() const
+{
+	for (const auto &tile : this->tiles) {
+		if (IsLegacySmallRunwayPiece(tile.piece_type)) return true;
 	}
 	return false;
 }
