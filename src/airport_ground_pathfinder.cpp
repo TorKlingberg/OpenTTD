@@ -131,12 +131,15 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	const bool to_is_runway = IsModularRunwayPieceLocal(to_data->piece_type);
 
 	/* Runway tiles may only connect along the same runway axis.
-	 * This prevents crossovers between adjacent/parallel runways. */
+	 * In crossing fallback mode, allow perpendicular hops between adjacent
+	 * parallel runways so layouts like Metropolitan can cross two runways. */
 	if (from_is_runway && to_is_runway) {
 		const bool from_horizontal = (from_data->rotation % 2) == 0;
 		const bool to_horizontal = (to_data->rotation % 2) == 0;
 		if (from_horizontal != to_horizontal) return false;
-		if ((from_horizontal && dy != 0) || (!from_horizontal && dx != 0)) return false;
+		if ((from_horizontal && dy != 0) || (!from_horizontal && dx != 0)) {
+			if (!allow_runway_crossing) return false;
+		}
 	}
 
 	/* Prefer to avoid entering runways from apron/taxiway tiles unless the runway
