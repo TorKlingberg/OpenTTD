@@ -191,13 +191,13 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		if (goal != INVALID_TILE && IsSameContiguousRunway(st, to, goal)) {
 			/* allowed */
 		} else {
-		if (!allow_runway_crossing) return false;
+			if (!allow_runway_crossing) return false;
 
-		/* Crossing fallback: only allow perpendicular entry so aircraft do not
-		 * route along active runways as a shortcut under heavy traffic. */
-		const bool to_horizontal = (to_data->rotation % 2) == 0;
-		const bool entering_along_runway_axis = (to_horizontal && dy == 0) || (!to_horizontal && dx == 0);
-		if (entering_along_runway_axis) return false;
+			/* Crossing fallback: only allow perpendicular entry so aircraft do not
+			 * route along active runways as a shortcut under heavy traffic. */
+			const bool to_horizontal = (to_data->rotation % 2) == 0;
+			const bool entering_along_runway_axis = (to_horizontal && dy == 0) || (!to_horizontal && dx == 0);
+			if (entering_along_runway_axis) return false;
 		}
 	}
 

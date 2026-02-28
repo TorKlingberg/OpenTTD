@@ -323,15 +323,19 @@ void ClearModularRunwayReservation(Aircraft *v)
 	}
 	v->modular_runway_reservation.clear();
 
-	/* Robustness: scan the current station for any orphaned runway reservations for this vehicle. */
-	Station *st = Station::GetIfValid(v->targetairport);
-	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (!IsModularRunwayPiece(data.piece_type)) continue;
-			Tile t(data.tile);
-			if (!IsAirportTile(t)) continue;
-			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-				SetAirportTileReservation(t, false);
+	/* Robustness: periodically scan for orphaned runway reservations (every 16th call per vehicle).
+	 * The vector-based cleanup above handles the common case; this catches desync edge cases. */
+	static uint8_t scan_counter = 0;
+	if ((++scan_counter & 0x0F) == 0) {
+		Station *st = Station::GetIfValid(v->targetairport);
+		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
+			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+				if (!IsModularRunwayPiece(data.piece_type)) continue;
+				Tile t(data.tile);
+				if (!IsAirportTile(t)) continue;
+				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
+					SetAirportTileReservation(t, false);
+				}
 			}
 		}
 	}
@@ -2305,16 +2309,20 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile)
 	}
 	v->taxi_reserved_tiles.clear();
 
-	/* Robustness: scan the current station for any orphaned non-runway reservations for this vehicle. */
-	Station *st = Station::GetIfValid(v->targetairport);
-	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (data.tile == keep_tile) continue;
-			if (IsModularRunwayPiece(data.piece_type)) continue;
-			Tile t(data.tile);
-			if (!IsAirportTile(t)) continue;
-			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-				SetAirportTileReservation(t, false);
+	/* Robustness: periodically scan for orphaned non-runway reservations (every 16th call per vehicle).
+	 * The vector-based cleanup above handles the common case; this catches desync edge cases. */
+	static uint8_t taxi_scan_counter = 0;
+	if ((++taxi_scan_counter & 0x0F) == 0) {
+		Station *st = Station::GetIfValid(v->targetairport);
+		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
+			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+				if (data.tile == keep_tile) continue;
+				if (IsModularRunwayPiece(data.piece_type)) continue;
+				Tile t(data.tile);
+				if (!IsAirportTile(t)) continue;
+				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
+					SetAirportTileReservation(t, false);
+				}
 			}
 		}
 	}
@@ -2379,8 +2387,19 @@ static uint64_t BuildModularCrossingQueueKey(const Station *st, std::span<const 
 
 static bool CanGrantRunwayCrossingNow(const Station *st, uint64_t queue_key, VehicleID vid)
 {
-	ModularCrossingQueueState &queue = _modular_crossing_queues[queue_key];
+	/* Periodically sweep all queues to purge empty/stale entries (every 256 ticks). */
 	const uint64_t now = TimerGameTick::counter;
+	if ((now & 0xFF) == 0) {
+		for (auto it = _modular_crossing_queues.begin(); it != _modular_crossing_queues.end(); ) {
+			if (it->second.waiting_since.empty()) {
+				it = _modular_crossing_queues.erase(it);
+			} else {
+				++it;
+			}
+		}
+	}
+
+	ModularCrossingQueueState &queue = _modular_crossing_queues[queue_key];
 
 	/* Drop stale waiters first. */
 	for (auto it = queue.waiting_since.begin(); it != queue.waiting_since.end(); ) {
