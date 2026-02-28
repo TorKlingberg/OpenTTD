@@ -2358,6 +2358,125 @@ bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid)
 	return HasAirportTileReservation(t) && GetAirportTileReserver(t) != vid;
 }
 
+struct ModularCrossingQueueState {
+	std::map<VehicleID, uint64_t> waiting_since;
+};
+
+static std::map<uint64_t, ModularCrossingQueueState> _modular_crossing_queues;
+
+static uint64_t BuildModularCrossingQueueKey(const Station *st, std::span<const TileIndex> runway_resource_keys, TileIndex exit_tile)
+{
+	uint64_t key = 1469598103934665603ULL;
+	const auto mix = [&](uint64_t value) {
+		key ^= value + 0x9e3779b97f4a7c15ULL + (key << 6) + (key >> 2);
+	};
+
+	mix(static_cast<uint64_t>(st->index.base()));
+	mix(static_cast<uint64_t>(exit_tile.base()));
+	for (TileIndex tile : runway_resource_keys) mix(static_cast<uint64_t>(tile.base()));
+	return key;
+}
+
+static bool CanGrantRunwayCrossingNow(const Station *st, uint64_t queue_key, VehicleID vid)
+{
+	ModularCrossingQueueState &queue = _modular_crossing_queues[queue_key];
+	const uint64_t now = TimerGameTick::counter;
+
+	/* Drop stale waiters first. */
+	for (auto it = queue.waiting_since.begin(); it != queue.waiting_since.end(); ) {
+		const Aircraft *a = Aircraft::GetIfValid(it->first);
+		if (a == nullptr || !a->IsNormalAircraft() || (a->targetairport != st->index && a->last_station_visited != st->index)) {
+			it = queue.waiting_since.erase(it);
+		} else {
+			++it;
+		}
+	}
+
+	if (!queue.waiting_since.contains(vid)) queue.waiting_since[vid] = now;
+
+	VehicleID best_vid = vid;
+	uint64_t best_wait = UINT64_MAX;
+	for (const auto &[wait_vid, wait_since] : queue.waiting_since) {
+		if (wait_since < best_wait || (wait_since == best_wait && wait_vid < best_vid)) {
+			best_wait = wait_since;
+			best_vid = wait_vid;
+		}
+	}
+	return best_vid == vid;
+}
+
+static void MarkRunwayCrossingGranted(uint64_t queue_key, VehicleID vid)
+{
+	auto it = _modular_crossing_queues.find(queue_key);
+	if (it == _modular_crossing_queues.end()) return;
+	it->second.waiting_since.erase(vid);
+	if (it->second.waiting_since.empty()) _modular_crossing_queues.erase(it);
+}
+
+static bool IsPathTileRunwayPiece(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	return data != nullptr && IsModularRunwayPiece(data->piece_type);
+}
+
+static bool TryReserveRunwayResourcesAtomic(Aircraft *v, const Station *st, const std::vector<std::vector<TileIndex>> &resources, bool log_success)
+{
+	if (resources.empty()) return false;
+
+	/* Validate all runway resources before mutating any reservation state. */
+	for (const std::vector<TileIndex> &resource : resources) {
+		VehicleID state_blocker = VehicleID::Invalid();
+		if (IsContiguousModularRunwayReservedInStateByOther(v, st, resource, &state_blocker)) {
+			if (ShouldLogModularRateLimited(v->index, 1, 128)) {
+				Debug(misc, 2, "[ModAp] V{} runway-reserve denied: runway held in state by V{}", v->index, state_blocker.base());
+			}
+			return false;
+		}
+
+		for (TileIndex tile : resource) {
+			if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) {
+				if (ShouldLogModularRateLimited(v->index, 1, 128)) {
+					Debug(misc, 2, "[ModAp] V{} runway-reserve denied: runway tile {} occupied by other aircraft", v->index, tile.base());
+				}
+				return false;
+			}
+
+			Tile t(tile);
+			if (!IsAirportTile(t)) continue;
+			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) {
+				if (ShouldLogModularRateLimited(v->index, 1, 128)) {
+					Debug(misc, 2, "[ModAp] V{} runway-reserve denied: runway tile {} reserved by V{}", v->index, tile.base(), GetAirportTileReserver(t).base());
+				}
+				return false;
+			}
+		}
+	}
+
+	std::vector<TileIndex> combined;
+	for (const std::vector<TileIndex> &resource : resources) {
+		for (TileIndex tile : resource) {
+			if (std::find(combined.begin(), combined.end(), tile) == combined.end()) combined.push_back(tile);
+		}
+	}
+	std::sort(combined.begin(), combined.end(), [](TileIndex a, TileIndex b) { return a.base() < b.base(); });
+
+	const bool reservation_changed = (v->modular_runway_reservation != combined);
+	if (reservation_changed) ClearModularRunwayReservation(v);
+
+	for (TileIndex tile : combined) {
+		Tile t(tile);
+		if (!IsAirportTile(t)) continue;
+		SetAirportTileReservation(t, true);
+		SetAirportTileReserver(t, v->index);
+	}
+	v->modular_runway_reservation = std::move(combined);
+
+	if (reservation_changed && log_success && ShouldLogModularRateLimited(v->index, 32, 16)) {
+		LogModularVehicleReservationState(st, v, "reserve granted");
+	}
+	return true;
+}
+
 void SetTaxiReservation(Aircraft *v, TileIndex tile)
 {
 	Tile t(tile);
@@ -2376,8 +2495,55 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 	const auto &tiles = v->taxi_path->tiles;
 
 	if (seg.type == TaxiSegmentType::RUNWAY) {
-		TileIndex entry = tiles[seg.start_index];
-		return TryReserveContiguousModularRunway(v, st, entry);
+		/* Crossing path between two non-runway areas must reserve atomically:
+		 * hold position + all touched runway resources + first exit tile. */
+		const bool crossing_request =
+				seg.start_index > 0 &&
+				(seg.end_index + 1) < tiles.size() &&
+				!IsPathTileRunwayPiece(st, tiles[seg.start_index - 1]) &&
+				!IsPathTileRunwayPiece(st, tiles[seg.end_index + 1]);
+
+		std::map<TileIndex, std::vector<TileIndex>> runway_resources;
+		for (uint16_t i = seg.start_index; i <= seg.end_index; ++i) {
+			const TileIndex runway_tile = tiles[i];
+			if (!IsPathTileRunwayPiece(st, runway_tile)) continue;
+
+			std::vector<TileIndex> resource_tiles;
+			if (!GetContiguousModularRunwayTiles(st, runway_tile, resource_tiles) || resource_tiles.empty()) return false;
+			const TileIndex resource_key = resource_tiles.front();
+			runway_resources.emplace(resource_key, std::move(resource_tiles));
+		}
+		if (runway_resources.empty()) return false;
+
+		std::vector<TileIndex> resource_keys;
+		std::vector<std::vector<TileIndex>> ordered_resources;
+		resource_keys.reserve(runway_resources.size());
+		ordered_resources.reserve(runway_resources.size());
+		for (auto &[resource_key, resource_tiles] : runway_resources) {
+			resource_keys.push_back(resource_key);
+			ordered_resources.push_back(resource_tiles);
+		}
+
+		TileIndex exit_tile = INVALID_TILE;
+		if (crossing_request) {
+			exit_tile = tiles[seg.end_index + 1];
+			if (!IsModularHangarTile(st, exit_tile)) {
+				if (IsTaxiTileReservedByOther(st, exit_tile, v->index)) return false;
+				if (exit_tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) return false;
+			}
+
+			const uint64_t queue_key = BuildModularCrossingQueueKey(st, resource_keys, exit_tile);
+			if (!CanGrantRunwayCrossingNow(st, queue_key, v->index)) return false;
+			if (!TryReserveRunwayResourcesAtomic(v, st, ordered_resources, true)) return false;
+
+			/* Keep hold and exit non-runway tiles reserved while crossing runway resources. */
+			SetTaxiReservation(v, v->tile);
+			SetTaxiReservation(v, exit_tile);
+			MarkRunwayCrossingGranted(queue_key, v->index);
+			return true;
+		}
+
+		return TryReserveRunwayResourcesAtomic(v, st, ordered_resources, true);
 	}
 
 	if (seg.type == TaxiSegmentType::ONE_WAY) {
@@ -2971,7 +3137,10 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		Tile t(old_tile);
 		if (IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) SetAirportTileReservation(t, false);
 	}
-	if (old_segment != next_segment && old_type == TaxiSegmentType::FREE_MOVE) {
+	if (old_segment != next_segment && old_type == TaxiSegmentType::FREE_MOVE && next_type != TaxiSegmentType::RUNWAY) {
+		ClearTaxiPathReservation(v, v->tile);
+	}
+	if (old_segment != next_segment && old_type == TaxiSegmentType::RUNWAY && next_type != TaxiSegmentType::RUNWAY) {
 		ClearTaxiPathReservation(v, v->tile);
 	}
 	SetTaxiReservation(v, v->tile);
