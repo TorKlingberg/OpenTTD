@@ -1,3 +1,5 @@
+Change "Aircraft last month" to last year instead.
+
 * Diagonal taxi
 
 * New plane holding pattern logic: Rectangle around the whole airport. Imaginary line from each runway. Where it intersects the rectangle, planes can turn off to land. Will it look good?
