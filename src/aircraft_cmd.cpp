@@ -1863,6 +1863,11 @@ static void AircraftEventHandler_StartTakeOff(Aircraft *v, const AirportFTAClass
 
 static void AircraftEventHandler_EndTakeOff(Aircraft *v, const AirportFTAClass *)
 {
+	/* Modular airports account departures in AirportMoveModularTakeoff. */
+	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
+		Station::Get(v->targetairport)->airport_departures_this_month++;
+	}
+
 	v->state = FLYING;
 	/* get the next position to go to, differs per airport */
 	AircraftNextAirportPos_and_Order(v);
@@ -1870,6 +1875,11 @@ static void AircraftEventHandler_EndTakeOff(Aircraft *v, const AirportFTAClass *
 
 static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass *)
 {
+	/* Modular airports account departures in AirportMoveModularTakeoff/HeliTakeoff. */
+	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
+		Station::Get(v->targetairport)->airport_departures_this_month++;
+	}
+
 	v->state = FLYING;
 	v->UpdateDeltaXY();
 
@@ -2030,6 +2040,11 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 
 void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *)
 {
+	/* Modular airports account arrivals in AirportMoveModularLanding. */
+	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
+		Station::Get(v->targetairport)->airport_arrivals_this_month++;
+	}
+
 	v->state = ENDLANDING;
 	AircraftLandAirplane(v);  // maybe crash airplane
 
