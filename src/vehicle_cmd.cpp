@@ -597,7 +597,7 @@ CommandCost CmdStartStopVehicle(DoCommandFlags flags, VehicleID veh_id, bool eva
 		case VEH_AIRCRAFT: {
 			Aircraft *a = Aircraft::From(v);
 			/* cannot stop airplane when in flight, or when taking off / landing */
-			if (a->state >= STARTTAKEOFF && a->state < TERM7) return CommandCost(STR_ERROR_AIRCRAFT_IS_IN_FLIGHT);
+			if (a->state >= TAKEOFF && a->state < TERM7) return CommandCost(STR_ERROR_AIRCRAFT_IS_IN_FLIGHT);
 			if (a->flags.Test(VehicleAirFlag::HelicopterDirectDescent)) return CommandCost(STR_ERROR_AIRCRAFT_IS_IN_FLIGHT);
 			break;
 		}
