@@ -26,6 +26,7 @@
 /** Maximum number of iterations for pathfinding (prevent infinite loops) */
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
 static bool IsModularRunwayPieceLocal(uint8_t gfx);
+static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
 
 /** Node in the A* search */
 struct PathNode {
@@ -91,6 +92,45 @@ static bool IsParkingOnlyTile(uint8_t piece_type)
 }
 
 /**
+ * Check if two runway tiles belong to the same contiguous runway strip.
+ */
+static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
+{
+	const ModularAirportTileData *a_data = st->airport.GetModularTileData(a);
+	const ModularAirportTileData *b_data = st->airport.GetModularTileData(b);
+	if (a_data == nullptr || b_data == nullptr) return false;
+	if (!IsModularRunwayPieceLocal(a_data->piece_type) || !IsModularRunwayPieceLocal(b_data->piece_type)) return false;
+
+	const bool horizontal_a = (a_data->rotation % 2) == 0;
+	const bool horizontal_b = (b_data->rotation % 2) == 0;
+	if (horizontal_a != horizontal_b) return false;
+
+	if (horizontal_a) {
+		if (TileY(a) != TileY(b)) return false;
+		const int y = TileY(a);
+		int x0 = std::min(TileX(a), TileX(b));
+		int x1 = std::max(TileX(a), TileX(b));
+		for (int x = x0; x <= x1; ++x) {
+			TileIndex t = TileXY(x, y);
+			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
+			if (td == nullptr || !IsModularRunwayPieceLocal(td->piece_type) || (td->rotation % 2) != 0) return false;
+		}
+		return true;
+	}
+
+	if (TileX(a) != TileX(b)) return false;
+	const int x = TileX(a);
+	int y0 = std::min(TileY(a), TileY(b));
+	int y1 = std::max(TileY(a), TileY(b));
+	for (int y = y0; y <= y1; ++y) {
+		TileIndex t = TileXY(x, y);
+		const ModularAirportTileData *td = st->airport.GetModularTileData(t);
+		if (td == nullptr || !IsModularRunwayPieceLocal(td->piece_type) || (td->rotation % 2) == 0) return false;
+	}
+	return true;
+}
+
+/**
  * Check if two tiles can be connected based on taxi directions.
  * @param st The station.
  * @param from Source tile.
@@ -146,6 +186,11 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	 * tile is the explicit pathfinder goal (e.g. routing to a takeoff runway end).
 	 * A fallback pass may enable constrained crossing when no strict route exists. */
 	if (!from_is_runway && to_is_runway && to != goal) {
+		/* If routing to a runway goal, allow stepping onto any tile of that same
+		 * contiguous runway strip so aircraft can back-taxi to the correct end. */
+		if (goal != INVALID_TILE && IsSameContiguousRunway(st, to, goal)) {
+			/* allowed */
+		} else {
 		if (!allow_runway_crossing) return false;
 
 		/* Crossing fallback: only allow perpendicular entry so aircraft do not
@@ -153,6 +198,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		const bool to_horizontal = (to_data->rotation % 2) == 0;
 		const bool entering_along_runway_axis = (to_horizontal && dy == 0) || (!to_horizontal && dx == 0);
 		if (entering_along_runway_axis) return false;
+		}
 	}
 
 	/* Don't allow taxiing through buildings */
