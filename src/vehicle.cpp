@@ -18,6 +18,7 @@
 #include "command_func.h"
 #include "company_func.h"
 #include "train.h"
+#include "modular_airport_cmd.h"
 #include "aircraft.h"
 #include "newgrf_debug.h"
 #include "newgrf_sound.h"
@@ -825,6 +826,18 @@ void Vehicle::PreDestructor()
 		if (st != nullptr) {
 			const auto &layout = st->airport.GetFTA()->layout;
 			st->airport.blocks.Reset(layout[a->previous_pos].blocks | layout[a->pos].blocks);
+
+			if (st->airport.blocks.Test(AirportBlock::Modular)) {
+				ClearModularAirportReservationsByVehicle(st, a->index);
+			}
+		}
+
+		/* Also clear reservations at the last station visited, in case targetairport had already changed. */
+		if (Station::IsValidID(a->last_station_visited) && a->last_station_visited != a->targetairport) {
+			Station *last_st = Station::Get(a->last_station_visited);
+			if (last_st->airport.blocks.Test(AirportBlock::Modular)) {
+				ClearModularAirportReservationsByVehicle(last_st, a->index);
+			}
 		}
 	}
 

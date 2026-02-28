@@ -97,7 +97,7 @@ static bool IsParkingOnlyTile(uint8_t piece_type)
  * @param to Destination tile.
  * @return True if connection is allowed.
  */
-static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const Aircraft *v)
+static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	/* Must be orthogonally adjacent */
 	int dx = TileX(to) - TileX(from);
@@ -139,9 +139,18 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		if ((from_horizontal && dy != 0) || (!from_horizontal && dx != 0)) return false;
 	}
 
-	/* Do not enter landing-only runways from apron/taxiway tiles.
-	 * This prevents aircraft from wandering onto active landing strips. */
-	if (!from_is_runway && to_is_runway && (to_data->runway_flags & RUF_TAKEOFF) == 0) return false;
+	/* Prefer to avoid entering runways from apron/taxiway tiles unless the runway
+	 * tile is the explicit pathfinder goal (e.g. routing to a takeoff runway end).
+	 * A fallback pass may enable constrained crossing when no strict route exists. */
+	if (!from_is_runway && to_is_runway && to != goal) {
+		if (!allow_runway_crossing) return false;
+
+		/* Crossing fallback: only allow perpendicular entry so aircraft do not
+		 * route along active runways as a shortcut under heavy traffic. */
+		const bool to_horizontal = (to_data->rotation % 2) == 0;
+		const bool entering_along_runway_axis = (to_horizontal && dy == 0) || (!to_horizontal && dx == 0);
+		if (entering_along_runway_axis) return false;
+	}
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
@@ -187,7 +196,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
  * @param tile Current tile.
  * @return Vector of reachable neighbor tiles.
  */
-static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v)
+static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	std::vector<TileIndex> neighbors;
 
@@ -228,7 +237,7 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 			continue;
 		}
 
-		if (CanTilesConnect(st, tile, neighbor, v)) {
+		if (CanTilesConnect(st, tile, neighbor, v, goal, allow_runway_crossing)) {
 			neighbors.push_back(neighbor);
 			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CONNECTED!");
 		} else {
@@ -272,93 +281,101 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex
  * @param v The aircraft (optional, for reservation checking).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, [[maybe_unused]] const Aircraft *v)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v)
 {
-	AirportGroundPath result;
-
 	/* Validate inputs */
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) {
-		return result;
+		return AirportGroundPath{};
 	}
 
 	if (!st->TileBelongsToAirport(start) || !st->TileBelongsToAirport(goal)) {
-		return result;
+		return AirportGroundPath{};
 	}
 
 	/* Check if modular airport */
 	if (!st->airport.blocks.Test(AirportBlock::Modular)) {
-		return result;
+		return AirportGroundPath{};
 	}
 
 	/* If start == goal, return immediate success */
 	if (start == goal) {
+		AirportGroundPath result;
 		result.tiles.push_back(start);
 		result.cost = 0;
 		result.found = true;
 		return result;
 	}
 
-	/* A* algorithm */
-	std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> open_set;
-	std::unordered_map<TileIndex, int> g_costs; // Best known g_cost to reach each tile
-	std::unordered_map<TileIndex, TileIndex> parents; // Parent tile in optimal path
+	auto run_pathfind = [&](bool allow_runway_crossing) {
+		AirportGroundPath result;
 
-	/* Initialize start node */
-	int h_start = CalculateHeuristic(start, goal);
-	open_set.emplace(start, 0, h_start, INVALID_TILE);
-	g_costs[start] = 0;
+		std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> open_set;
+		std::unordered_map<TileIndex, int> g_costs;
+		std::unordered_map<TileIndex, TileIndex> parents;
 
-	int iterations = 0;
+		int h_start = CalculateHeuristic(start, goal);
+		open_set.emplace(start, 0, h_start, INVALID_TILE);
+		g_costs[start] = 0;
 
-	while (!open_set.empty() && iterations < MAX_PATHFINDER_ITERATIONS) {
-		iterations++;
+		int iterations = 0;
+		while (!open_set.empty() && iterations < MAX_PATHFINDER_ITERATIONS) {
+			iterations++;
 
-		/* Get node with lowest f_cost */
-		PathNode current = open_set.top();
-		open_set.pop();
+			PathNode current = open_set.top();
+			open_set.pop();
 
-		/* Check if we reached the goal */
-		if (current.tile == goal) {
-			result.tiles = ReconstructPath(parents, start, goal);
-			result.cost = current.g_cost;
-			result.found = true;
-			return result;
-		}
+			if (current.tile == goal) {
+				result.tiles = ReconstructPath(parents, start, goal);
+				result.cost = current.g_cost;
+				result.found = true;
+				return result;
+			}
 
-		/* Explore neighbors */
-		std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v);
+			std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v, goal, allow_runway_crossing);
+			for (TileIndex neighbor : neighbors) {
+				int move_cost = 1;
+				const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
+				if (nb_data != nullptr) {
+					switch (nb_data->piece_type) {
+						case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
+						case APT_GRASS_FENCE_NE_FLAG: case APT_GRASS_FENCE_NE_FLAG_2:
+							move_cost = 4;
+							break;
+						default: break;
+					}
 
-		for (TileIndex neighbor : neighbors) {
-			/* Grass tiles are taxiable but penalised so paved routes are preferred. */
-			int move_cost = 1;
-			const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
-			if (nb_data != nullptr) {
-				switch (nb_data->piece_type) {
-					case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
-					case APT_GRASS_FENCE_NE_FLAG: case APT_GRASS_FENCE_NE_FLAG_2:
-						move_cost = 4;
-						break;
-					default: break;
+					/* In crossing fallback mode, strongly prefer non-runway alternatives. */
+					if (allow_runway_crossing && neighbor != goal && IsModularRunwayPieceLocal(nb_data->piece_type)) {
+						move_cost += 8;
+					}
+				}
+
+				int tentative_g = current.g_cost + move_cost;
+				auto it = g_costs.find(neighbor);
+				if (it == g_costs.end() || tentative_g < it->second) {
+					g_costs[neighbor] = tentative_g;
+					parents[neighbor] = current.tile;
+
+					int h = CalculateHeuristic(neighbor, goal);
+					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile);
 				}
 			}
-			int tentative_g = current.g_cost + move_cost;
-
-			/* Check if this path to neighbor is better than previously known */
-			auto it = g_costs.find(neighbor);
-			if (it == g_costs.end() || tentative_g < it->second) {
-				/* This is a better path */
-				g_costs[neighbor] = tentative_g;
-				parents[neighbor] = current.tile;
-
-				int h = CalculateHeuristic(neighbor, goal);
-				int f = tentative_g + h;
-				open_set.emplace(neighbor, tentative_g, f, current.tile);
-			}
 		}
-	}
 
-	/* No path found */
-	return result;
+		return result;
+	};
+
+	/* First pass: strict mode blocks non-goal runway entry from taxi/apron tiles. */
+	AirportGroundPath strict = run_pathfind(false);
+	if (strict.found) return strict;
+
+	/* If a runway goal itself is unreachable, crossing fallback cannot help. */
+	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
+	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPieceLocal(goal_data->piece_type));
+	if (goal_is_runway) return strict;
+
+	/* Fallback: allow constrained perpendicular runway crossing. */
+	return run_pathfind(true);
 }
 
 /**

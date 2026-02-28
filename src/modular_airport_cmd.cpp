@@ -322,6 +322,19 @@ void ClearModularRunwayReservation(Aircraft *v)
 		}
 	}
 	v->modular_runway_reservation.clear();
+
+	/* Robustness: scan the current station for any orphaned runway reservations for this vehicle. */
+	Station *st = Station::GetIfValid(v->targetairport);
+	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (!IsModularRunwayPiece(data.piece_type)) continue;
+			Tile t(data.tile);
+			if (!IsAirportTile(t)) continue;
+			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
+				SetAirportTileReservation(t, false);
+			}
+		}
+	}
 }
 
 void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, TileIndex keep_tile)
@@ -1726,6 +1739,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		if (v->modular_takeoff_progress > TILE_SIZE * 12 && v->z_pos >= target_z) {
 			Debug(misc, 3, "[ModAp] Vehicle {} takeoff complete, transitioning to FLYING", v->index);
 			ClearModularRunwayReservation(v);
+			ClearTaxiPathReservation(v);
 			v->state = FLYING;
 			Station::Get(v->targetairport)->airport_departures_this_month++;
 			v->modular_takeoff_tile = INVALID_TILE;
@@ -1933,6 +1947,7 @@ TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Airc
 TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+	if (v != nullptr && v->subtype != AIR_HELICOPTER) return INVALID_TILE;
 	const bool can_ground_route = CanUseModularGroundRouting(st, v);
 	TileIndex best_tile = INVALID_TILE;
 	int best_score = INT_MAX;
@@ -2289,6 +2304,21 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile)
 		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) SetAirportTileReservation(t, false);
 	}
 	v->taxi_reserved_tiles.clear();
+
+	/* Robustness: scan the current station for any orphaned non-runway reservations for this vehicle. */
+	Station *st = Station::GetIfValid(v->targetairport);
+	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (data.tile == keep_tile) continue;
+			if (IsModularRunwayPiece(data.piece_type)) continue;
+			Tile t(data.tile);
+			if (!IsAirportTile(t)) continue;
+			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
+				SetAirportTileReservation(t, false);
+			}
+		}
+	}
+
 	if (keep_tile != INVALID_TILE) {
 		Tile keep(keep_tile);
 		if (IsAirportTile(keep) && HasAirportTileReservation(keep) && GetAirportTileReserver(keep) == v->index) {
