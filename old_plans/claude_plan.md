@@ -1,344 +1,203 @@
-# Modular Airport Ground Pathfinding - Implementation Plan
+# Plan: Button Size Fix + Ideas from ideas.md
 
-## Current Status (2026-01-24)
+## Context
 
-**Progress**: 4 of 7 phases completed (57%)
+The modular airport toolbar was recently updated to use `ScaleGUITrad(64)×ScaleGUITrad(48)` for button sizing. This is too large for the actual icon sprites (small preview sprites ~32px wide) — icons are right-sized but surrounded by excessive empty space. The fix is to measure actual icon sizes.
 
-- ✅ **Phase 1**: Store Tile Metadata - DONE
-- ✅ **Phase 2**: SaveLoad Integration - DONE
-- ✅ **Phase 3**: Ground Pathfinder (A*) - DONE
-- ✅ **Phase 4**: Aircraft Integration - DONE
-- ⏳ **Phase 5**: Tile Reservation - TODO
-- ⏳ **Phase 6**: Terminal Types & Takeoff - TODO
-- ⏳ **Phase 7**: Polish & Optimizations - TODO
-
-**Current Capabilities**:
-- Tile metadata (piece type, rotation, taxi directions) is stored and persisted
-- A* pathfinding algorithm finds optimal ground paths respecting taxi directions
-- Aircraft detect modular airports and use pathfinding instead of FTA
-- Landing aircraft find free terminals and path to them
-- SaveLoad support for all new data structures
-
-**Next Steps**: Implement tile reservations for multi-aircraft collision avoidance (Phase 5)
+`ideas.md` lists 7 ideas for the modular airport system. 4 are reasonably implementable now.
 
 ---
 
-## Overview
+## ideas.md Feasibility
 
-Implement aircraft ground pathfinding for custom-built modular airports using **Option D (Hybrid)** from routing_options.md: auto-calculate taxi directions from piece geometry, allow user overrides via UI direction controls.
-
-**Current State**: UI fully implemented (26 piece types, rotation, taxi direction toggles) but doesn't pass/store metadata. Aircraft can't taxi on modular airports.
-
-**Goal**: Aircraft automatically pathfind from runway to terminal/hangar and back on player-built airports.
-
----
-
-## Implementation Phases
-
-### Phase 1: Store Tile Metadata ✅ COMPLETED
-
-**Objective**: Fix the gap where UI collects but doesn't store taxi direction data.
-
-**Files to Modify**:
-1. **`src/base_station_base.h`** - Add after line 32:
-```cpp
-struct ModularAirportTileData {
-    TileIndex tile;
-    uint8_t piece_type;           // 0-25 (26 piece types from UI)
-    uint8_t rotation;              // 0-3
-    uint8_t user_taxi_dir_mask;    // bit: 0=N, 1=E, 2=S, 3=W
-    bool one_way_taxi;
-    uint8_t auto_taxi_dir_mask;    // calculated from piece_type + rotation
-};
-```
-
-2. **`src/station_base.h`** (line 379+) - Add to Airport struct:
-```cpp
-std::vector<ModularAirportTileData> *modular_tile_data = nullptr;
-const ModularAirportTileData* GetModularTileData(TileIndex tile) const;
-void EnsureModularDataExists();
-```
-
-3. **`src/station_cmd.h`** (line 27) - Extend command signature:
-```cpp
-CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile,
-    uint16_t gfx, StationID station_to_join, bool allow_adjacent,
-    uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi);  // ADD THESE 3
-```
-
-4. **`src/station_cmd.cpp`** (line 2758+) - Implement storage:
-   - Accept new parameters
-   - Create/store ModularAirportTileData in vector
-   - Call `CalculateAutoTaxiDirections(piece_type, rotation)` to compute auto_taxi_dir_mask
-
-5. **`src/airport_gui.cpp`** (line 879) - Pass data to command:
-```cpp
-// Change line 884-888 to pass rotation, taxi_dir_mask, one_way_taxi
-Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(/* ... */,
-    this->rotation, this->taxi_dir_mask, this->one_way_taxi);
-```
-
-**New Files**:
-- **`src/airport_pathfinder.h`** - Declare `CalculateAutoTaxiDirections()` and `GetEffectiveTaxiDirections()`
-- **`src/airport_pathfinder.cpp`** - Implement direction calculation with lookup table:
-```cpp
-static const uint8_t _piece_taxi_directions[26][4] = {
-    { 0x05, 0x0A, 0x05, 0x0A },  // RUNWAY: N+S or E+W by rotation
-    // ... 25 more entries
-};
-```
-
-**Test**: Place tiles with different rotations, verify metadata stored correctly.
+| Idea | Verdict |
+|------|---------|
+| 1. Runway dropdown (big/small) | Defer — less important once #2 removes the end button |
+| **2. Auto runway ends / remove end button** | **Yes — medium effort** |
+| 3. Air bridge stand adjacent to round terminal | Out of scope — no suitable art assets identified |
+| 4. Pre-built airport templates | Out of scope — too complex |
+| **5. Nicer holding patterns** | **Yes — low effort** |
+| 6. Broken planes follow same pattern | Already works (same code path as #5) |
+| **7. Throughput display (planes/month)** | **Yes — low-moderate effort** |
 
 ---
 
-### Phase 2: SaveLoad Integration ✅ COMPLETED
+## Part 1 — Button Size Fix
 
-**Objective**: Persist tile data to savegames.
+**File**: `src/airport_gui.cpp`
 
-**Files to Modify**:
-1. **`src/saveload/station_sl.cpp`** (after line 545) - Add handler:
+Replace `UpdateWidgetSize` in `BuildModularAirportWindow`. Instead of `ScaleGUITrad(64)×ScaleGUITrad(48)` (oversized fixed value), measure actual icon sizes and take the max across all pieces so all buttons are uniform:
+
 ```cpp
-class SlModularAirportTileData : public VectorSaveLoadHandler<...> {
-    static inline const SaveLoad description[] = {
-        SLE_VAR(ModularAirportTileData, tile, SLE_UINT32),
-        SLE_VAR(ModularAirportTileData, piece_type, SLE_UINT8),
-        // ... all fields
-    };
-};
-```
-
-2. **`src/saveload/saveload.h`** - Add version constant:
-```cpp
-SLV_MODULAR_AIRPORT_PATHFINDING, ///< Modular airport pathfinding data
-```
-
-3. Register in `_station_desc` with `SLEG_CONDSTRUCTLIST`
-
-**Test**: Save/load game with modular airport, verify tiles restored.
-
----
-
-### Phase 3: Ground Pathfinder ✅ COMPLETED
-
-**Objective**: Implement A* pathfinder for ground movement.
-
-**New Files**:
-- **`src/airport_ground_pathfinder.h`** - Declare `FindAirportGroundPath()`
-- **`src/airport_ground_pathfinder.cpp`** - Implement A* algorithm:
-  - Node structure with tile, g_cost, f_cost, parent
-  - `GetReachableNeighbors()` - checks CanTilesConnect() based on taxi_dir_mask
-  - `CalculateHeuristic()` - Manhattan distance to goal
-  - Priority queue based A* search
-  - Returns path as `std::vector<TileIndex>`
-
-**Key Functions**:
-```cpp
-struct AirportGroundPath {
-    std::vector<TileIndex> tiles;
-    int cost;
-    bool found;
-};
-
-AirportGroundPath FindAirportGroundPath(
-    const Station *st, TileIndex start, TileIndex goal, const Aircraft *v);
-```
-
-**Algorithm**:
-1. Open set = priority queue ordered by f_cost
-2. For each node: expand neighbors that are taxi-connected
-3. Use effective taxi directions (auto & user) from GetEffectiveTaxiDirections()
-4. Terminate when goal reached or MAX_ITERATIONS (1000)
-5. Reconstruct path from parent pointers
-
-**Test**: Build simple L-shaped path, verify pathfinder finds route.
-
----
-
-### Phase 4: Aircraft Integration ✅ COMPLETED
-
-**Objective**: Replace FTA logic with pathfinding for modular airports.
-
-**Files to Modify**:
-1. **`src/aircraft.h`** (line 72+) - Add to Aircraft struct:
-```cpp
-std::vector<TileIndex> *ground_path = nullptr;
-uint16_t ground_path_index = 0;
-TileIndex ground_path_goal = INVALID_TILE;
-```
-
-2. **`src/aircraft_cmd.cpp`**:
-   - **Line 1821** `AirportMove()` - Add modular airport detection:
-```cpp
-if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular)) {
-    return AirportMoveModular(v, st);  // NEW
+void UpdateWidgetSize(WidgetID widget, Dimension &size, ...) override
+{
+    if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
+    Dimension max_d = {};
+    for (int i = 0; i < PIECE_COUNT; ++i) {
+        const auto &p = _modular_airport_pieces[i];
+        Dimension d = (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX)
+            ? GetSpriteSize(p.icon)                    // matches DrawWidget (no zoom arg)
+            : GetSpriteSize(p.icon, nullptr, ICON_ZOOM);
+        max_d.width  = std::max(max_d.width,  d.width);
+        max_d.height = std::max(max_d.height, d.height);
+    }
+    size.width  = std::max(size.width,  max_d.width  + WidgetDimensions::scaled.bevel.Horizontal() + ScaleGUITrad(4));
+    size.height = std::max(size.height, max_d.height + WidgetDimensions::scaled.bevel.Vertical()   + ScaleGUITrad(4));
 }
-// ... existing FTA code unchanged
 ```
 
-   - **NEW** `AirportMoveModular()` function:
-     - Check if `ground_path` exists, else call `FindAirportGroundPath()`
-     - Follow path tile-by-tile, update aircraft position
-     - Return true when path complete
+`ScaleGUITrad(4)` = 2 px margin each side, DPI-stable. This is the standard OpenTTD approach for toolbar button sizing and ensures buttons exactly fit their icons.
 
-   - **Line 1728** `AircraftEventHandler_EndLanding()` - Set ground_path_goal:
+---
+
+## Part 2 — Auto Runway Ends (Remove Runway End Button)
+
+**Goal**: Large runway drags automatically place `APT_RUNWAY_END` tiles at both endpoints. The manual runway-end button (piece 1) is removed from the toolbar.
+
+**Why**: Small runway already auto-places ends (`APT_RUNWAY_SMALL_NEAR_END`/`FAR_END`) in the smart-drag loop. Large runway should do the same.
+
+**Files**: `src/airport_gui.cpp`, `src/widgets/airport_widget.h`, `src/lang/english.txt`
+
+### Piece re-numbering after removing piece 1
+
+| New index | Piece | Old index |
+|-----------|-------|-----------|
+| 0 | Runway (large) | 0 |
+| 1 | Small runway | 2 |
+| 2 | Cosmetic (picker) | 3 |
+| 3 | Hangar large | 4 |
+| 4 | Small hangar | 5 |
+| 5 | Helipad | 6 |
+| 6 | Stand | 7 |
+| 7 | Apron | 8 |
+| 8 | Grass | 9 |
+| 9 | Empty | 10 |
+| 10 | Erase | 11 |
+
+→ 11 buttons total (was 12). Update `WID_MA_PIECE_LAST = WID_MA_PIECE_10` in `airport_widget.h`.
+
+### Auto-end placement logic
+
+After the large runway drag places `APT_RUNWAY_5` tiles in `OnPlaceMouseUp`, call a new helper `PlaceLargeRunwayEnds(start_tile, end_tile, rotation)`:
+
+1. Determine runway axis from `rotation` (0/2 = X-axis, 1/3 = Y-axis)
+2. Walk from `start_tile` backward along the axis until no more runway tiles — that's the near endpoint
+3. Walk from `end_tile` forward along the axis until no more runway tiles — that's the far endpoint
+4. Place `APT_RUNWAY_END` at near endpoint via `CmdBuildModularAirportTile` (with `rotation`)
+5. Place `APT_RUNWAY_END` at far endpoint (with `rotation ^ 2` to flip direction)
+
+The contiguous runway walking logic mirrors what `CmdSetRunwayFlags` in `station_cmd.cpp` already does — examine that function (around line 3027) for the exact `IsRunwayPieceOnAxis` helper to reuse.
+
+### Other changes
+
+- Remove `_modular_airport_pieces[1]` (runway end entry)
+- Remove `case 1: return APT_RUNWAY_END;` from `GetModularAirportPieceGfx`
+- Remove `STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END` string if unreferenced
+- Update all `selected_piece` comparisons in `OnClick`, `PlaceSingleTileWithDialog`, `OnPlaceObject` for new indices
+- `wants_picker` check: was `new_piece == 3 || 4 || 5`, now `new_piece == 2 || 3 || 4`
+- `is_apron/grass/empty` checks: shift down by 1
+- Hangar rotation check: `selected_piece == 3 || selected_piece == 4`
+
+---
+
+## Part 3 — Throughput Display (Planes/Month)
+
+**Goal**: Show aircraft arrivals and departures per month in the airport station window.
+
+**Files**: `src/base_station_base.h`, `src/aircraft_cmd.cpp`, `src/station_cmd.cpp` (monthly tick), `src/station_gui.cpp`, `src/saveload/station_sl.cpp`, `src/lang/english.txt`
+
+### Step 1: Counters in Station
+
+In `src/base_station_base.h` or `Station` struct, add four `uint16_t` fields:
+
+```cpp
+uint16_t airport_arrivals_this_month   = 0;
+uint16_t airport_arrivals_last_month   = 0;
+uint16_t airport_departures_this_month = 0;
+uint16_t airport_departures_last_month = 0;
+```
+
+### Step 2: Increment in aircraft_cmd.cpp
+
+- **Arrivals**: Find the `ENDLANDING`/`HELIENDLANDING` handler where the aircraft transitions from runway to ground taxi. Increment `st->airport_arrivals_this_month++`.
+- **Departures**: Find the `ENDTAKEOFF` handler where state transitions to `FLYING`. Increment `st->airport_departures_this_month++`.
+
+(Both should only count modular airports: guard with `st->airport.blocks.Test(AirportBlock::Modular)`.)
+
+### Step 3: Monthly reset
+
+Search `src/station_cmd.cpp` for the monthly station callback (look for `StationMonthlyLoop` or `OnNewMonth`):
+
+```cpp
+st->airport_arrivals_last_month   = st->airport_arrivals_this_month;
+st->airport_departures_last_month = st->airport_departures_this_month;
+st->airport_arrivals_this_month   = 0;
+st->airport_departures_this_month = 0;
+```
+
+### Step 4: Display in station window (src/station_gui.cpp)
+
+Add a line to the station window for modular airports, near where cargo or rating info is shown:
+
 ```cpp
 if (st->airport.blocks.Test(AirportBlock::Modular)) {
-    v->ground_path_goal = FindFreeModularTerminal(st, v);
-    v->state = TERM1;
-    return;
+    SetDParam(0, st->airport_arrivals_last_month);
+    SetDParam(1, st->airport_departures_last_month);
+    DrawString(r, STR_STATION_AIRPORT_THROUGHPUT);
 }
 ```
 
-   - **NEW** `FindFreeModularTerminal()` - Search for piece_type 7 or 8 (terminals) that's unoccupied
+String: `STR_STATION_AIRPORT_THROUGHPUT  :{BLACK}Airport: {NUM} arr / {NUM} dep last month`
 
-**Test**: Land aircraft, verify it paths to terminal. Test with 2 aircraft simultaneously.
+### Step 5: Saveload
+
+Add the four counters to `station_sl.cpp`'s station chunk descriptor. Non-critical — default to 0 if missing on load.
 
 ---
 
-### Phase 5: Tile Reservation ⏳ TODO
+## Part 4 — Nicer Holding Patterns
 
-**Objective**: Prevent collisions between multiple aircraft.
+**File**: `src/aircraft_cmd.cpp` (search for `hold_radius` or `hold_dx`)
 
-**Files to Modify**:
-1. **`src/station_map.h`** - Add reservation bit accessors (like rail PBS):
+### Changes
+
+**1. More phases (smoother circle)**:
+Replace 8-entry orbit table with 16-entry version covering 22.5° steps instead of 45°:
+
 ```cpp
-inline bool HasAirportTileReservation(Tile t);
-inline void SetAirportTileReservation(Tile t, bool reserved);
-inline VehicleID GetAirportTileReserver(Tile t);
-inline void SetAirportTileReserver(Tile t, VehicleID vid);
+static const int8_t hold_dx[16] = { 2, 2, 1, 1, 0,-1,-1,-2,-2,-2,-1,-1, 0, 1, 1, 2};
+static const int8_t hold_dy[16] = { 0, 1, 1, 2, 2, 2, 1, 1, 0,-1,-1,-2,-2,-2,-1,-1};
+uint8_t phase = ((v->tick_counter / 8) + v->index.base()) & 15;
+// (halve tick_counter divisor from 16→8 to keep same orbital period)
 ```
 
-2. **`src/aircraft_cmd.cpp`** - Implement reservation:
-   - `TryReserveGroundPath()` - Reserve all tiles in path or fail
-   - `ClearGroundPathReservation()` - Clear on path completion
-   - Modify `AirportMoveModular()` to check reservations before moving
-   - Clear reservations in Aircraft destructor
+**2. Vary radius per aircraft** (prevents visual overlap):
 
-**Storage**: Use tile.m6() bit 0 for reservation flag, tile.m7() for vehicle ID (like rail PBS)
-
-**Test**: Two aircraft on same airport, verify collision avoidance via reservations.
-
----
-
-### Phase 6: Terminal Types & Takeoff ⏳ TODO
-
-**Objective**: Support hangars, helipads, and takeoff routing.
-
-**Enhancements**:
-1. **Terminal finding**: Distinguish terminals (7,8), hangars (9,10), helipads (11)
-   - Helicopters prefer helipads
-   - Depot orders route to hangar
-   - Fallback: helicopters can use terminals
-
-2. **Runway finding**: `FindModularRunway()` - locate pieces 0-4 (runways)
-
-3. **Takeoff sequence**: Set ground_path_goal to runway, then switch to existing FTA for airborne
-
-**Test**: Send aircraft to depot (routes to hangar). Land helicopter (uses helipad).
-
----
-
-### Phase 7: Polish ⏳ TODO
-
-**Features**:
-- Visual taxi direction arrows (overlay when show_taxi_arrows enabled)
-- Connectivity validator (warn if terminals unreachable from runways)
-- Performance: spatial index using `std::unordered_map<TileIndex, ModularAirportTileData*>`
-- Stuck detection: recalculate path if no progress after 50 ticks
-
-**Test**: Large airport (50+ tiles), 10+ aircraft, verify smooth operation.
-
----
-
-## Critical Integration Points
-
-### Aircraft Movement Flow:
-```
-Aircraft::Tick() [2131]
-  → AircraftEventHandler() [2095]
-    → AirportGoToNextPosition() [1809]
-      → AirportMove() [1821] ← PRIMARY INTEGRATION POINT
-        → if modular: AirportMoveModular() [NEW]
-        → else: existing FTA logic [unchanged]
+```cpp
+int hold_r = (6 + (v->index.base() & 3)) * TILE_SIZE;
+// = 6, 7, 8, or 9 tiles depending on aircraft ID
 ```
 
-### Landing Sequence (Modular):
-```
-FLYING → LANDING → ENDLANDING [1728]
-  → FindFreeModularTerminal() [NEW]
-  → Set ground_path_goal
-  → AirportMoveModular() finds path
-  → Follow path tile-by-tile → TERMINAL
-```
+Scale `hold_dx[phase] * hold_r / (2 * TILE_SIZE)` to get actual pixel offset.
 
-### Backward Compatibility:
-- All existing airports use FTA (detection: `!blocks.Test(AirportBlock::Modular)`)
-- No changes to FTA code paths
-- Saveload version guard: old saves load fine (modular_tile_data = nullptr)
+**3. Increase base radius** from 5 to 6 tiles minimum (less cramped visual).
+
+**Note**: Broken-down planes already use the same code path — no separate fix needed.
 
 ---
 
-## Critical Files Summary
+## Implementation Order
 
-1. **`src/station_cmd.cpp`** (2758+) - Tile placement command, metadata storage
-2. **`src/station_base.h`** (379+) - Airport struct with modular_tile_data vector
-3. **`src/aircraft_cmd.cpp`** (1821+) - AirportMove(), AirportMoveModular(), terminal finding
-4. **`src/airport_pathfinder.cpp`** (NEW) - Direction calculation, connectivity checks
-5. **`src/airport_ground_pathfinder.cpp`** (NEW) - A* pathfinder implementation
-6. **`src/saveload/station_sl.cpp`** (545+) - SaveLoad handler for tile data
+1. **Button size fix** — trivial, do first (15 min)
+2. **Auto runway ends** — independent, medium effort
+3. **Throughput display** — independent, touches more files
+4. **Holding pattern** — cosmetic, easy to verify visually
 
----
+## Verification
 
-## Testing Strategy
+After each step, build with `/Users/tor/ttd/OpenTTD/scripts/build_and_sign.sh`:
 
-### Phase-by-Phase Tests:
-1. **Phase 1**: Place tiles, inspect with debugger, verify metadata stored
-2. **Phase 2**: Save/load game, verify persistence
-3. **Phase 3**: Console command to test pathfinder with start/goal tiles
-4. **Phase 4**: Land single aircraft, follow with debugger, verify movement
-5. **Phase 5**: Land two aircraft, verify second waits for first to clear
-6. **Phase 6**: Test depot order, helicopter landing, takeoff sequence
-7. **Phase 7**: Stress test with 20 aircraft on 100-tile airport
-
-### End-to-End Verification:
-1. Build modular airport: runway + 3 taxiways + 2 terminals + 1 hangar
-2. Land 3 aircraft - verify all find different terminals
-3. Send 1 to depot - verify routes to hangar
-4. All takeoff simultaneously - verify queueing
-5. Save/load game - verify everything works after load
-
----
-
-## Timeline
-
-- **Week 1**: Phase 1-2 (data model + saveload) - 3-5 days
-- **Week 2-3**: Phase 3-4 (pathfinder + integration) - 7-9 days
-- **Week 4**: Phase 5 (reservations) - 2-3 days
-- **Week 5-6**: Phase 6-7 (terminals + polish) - 4-6 days
-
-**Total**: 5-6 weeks for complete feature
-
----
-
-## Risk Mitigation
-
-**High Risk**: Phase 4 (aircraft integration) - complex state machine
-- **Mitigation**: Extensive logging, step-through debugging, test with single aircraft first
-
-**Medium Risk**: Phase 5 (collision avoidance) - deadlock potential
-- **Mitigation**: Timeout detection, forced reroute after stuck
-
-**Low Risk**: Phases 1-3 - isolated from existing systems
-- Can be tested independently before aircraft integration
-
----
-
-## Success Criteria
-
-✅ Aircraft land and taxi to terminals on modular airports
-✅ Multiple aircraft don't collide (reservation system works)
-✅ Airports saved/loaded correctly
-✅ Existing preset airports still work (backward compatible)
-✅ Performance: pathfinding <10ms even on large airports
-✅ Visual feedback: taxi arrows show allowed directions
+1. **Button fix**: Toolbar buttons are snug around icons (no excessive padding), all same width
+2. **Runway ends**: Drag large runway → both ends auto-place; no manual end button in toolbar
+3. **Throughput**: Open station window after aircraft operate → shows arrival/departure counts
+4. **Holding pattern**: Multiple aircraft in holding pattern circle smoothly in wider, slightly offset orbits
