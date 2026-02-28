@@ -1662,6 +1662,7 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 
 		bool at_target = v->current_order.GetDestination() == v->targetairport;
 		Direction exit_dir = GetModularHangarExitDirection(st, v->tile);
+		const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
 
 		if (at_target) {
 			TileIndex goal = INVALID_TILE;
@@ -1685,6 +1686,11 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 			 * Do not fall back to legacy hangar logic for modular airports. */
 			return;
 		} else {
+			if (zeppeliner_blocked) {
+				/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
+				return;
+			}
+
 			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 			if (runway != INVALID_TILE) {
 				v->modular_takeoff_tile = runway;
@@ -1788,6 +1794,11 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 				v->current_order.Free();
 				go_to_hangar = true;
 		}
+		const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
+		if (!go_to_hangar && zeppeliner_blocked) {
+			/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
+			return;
+		}
 
 		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
 			const ModularAirportTileData *data = st->airport.GetModularTileData(v->tile);
@@ -1832,7 +1843,7 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 
 		if (v->subtype == AIR_HELICOPTER) {
 			/* No runway available; helicopter can take off vertically as fallback. */
-			v->state = HELITAKEOFF;
+			if (!zeppeliner_blocked) v->state = HELITAKEOFF;
 			return;
 		}
 

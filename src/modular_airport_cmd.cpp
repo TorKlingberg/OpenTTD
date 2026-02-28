@@ -718,6 +718,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+	if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) return INVALID_TILE;
 
 	TileIndex best_tile = INVALID_TILE;
 	int best_score = INT_MAX;
@@ -1473,6 +1474,17 @@ void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target
 
 bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
+	if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
+		/* Match stock behavior: abort modular landing while zeppeliner wreck blocks the airport. */
+		ClearTaxiPathReservation(v);
+		ClearModularRunwayReservation(v);
+		v->modular_landing_goal = INVALID_TILE;
+		v->modular_landing_tile = INVALID_TILE;
+		v->modular_landing_stage = 0;
+		v->state = FLYING;
+		return false;
+	}
+
 	if (v->modular_landing_tile == INVALID_TILE) {
 		v->modular_landing_tile = FindModularLandingTarget(st, v);
 		v->modular_landing_stage = 0;
@@ -2132,6 +2144,7 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+	if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) return INVALID_TILE;
 	const bool can_ground_route = CanUseModularGroundRouting(st, v);
 	const auto tile_blocked = [&](TileIndex tile) -> bool {
 		Tile t(tile);
@@ -2778,6 +2791,18 @@ void HandleModularGroundArrival(Aircraft *v)
 			break;
 
 			case MGT_RUNWAY_TAKEOFF:
+				if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
+					/* Airport-wide zeppeliner block: hold departures until the wreck is cleared. */
+					ClearTaxiPathReservation(v);
+					ClearModularRunwayReservation(v);
+					v->modular_takeoff_tile = INVALID_TILE;
+					v->modular_takeoff_progress = 0;
+					v->ground_path_goal = v->tile;
+					v->modular_ground_target = MGT_NONE;
+					v->state = TERM1;
+					return;
+				}
+
 				/* Keep progressing through one-way queue tiles toward runway entry.
 				 * Runway reservation is enforced only when actually entering runway tiles. */
 				{
