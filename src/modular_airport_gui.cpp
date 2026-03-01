@@ -65,6 +65,7 @@
 #include "safeguards.h"
 
 #include <cctype>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -78,6 +79,74 @@ static uint8_t _modular_helipad_piece = 0;     ///< Selected helipad look in _he
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
 bool _show_holding_overlay = false;          ///< Show holding loop overlay in viewport
 bool _show_taxi_reservation_overlay = false; ///< Show per-aircraft modular reservation chains in viewport
+
+struct ReservationOverlayBounds {
+	int left;
+	int top;
+	int right;
+	int bottom;
+};
+
+static void MarkReservationOverlayBoundsDirty(const ReservationOverlayBounds &bounds)
+{
+	MarkAllViewportsDirty(bounds.left, bounds.top, bounds.right, bounds.bottom);
+}
+
+static bool IsTileReservedBy(TileIndex tile, VehicleID vid)
+{
+	if (!IsValidTile(tile)) return false;
+	Tile t(tile);
+	return IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == vid;
+}
+
+static bool GetReservationOverlayBoundsForAircraft(const Aircraft *v, ReservationOverlayBounds *out_bounds)
+{
+	if (v == nullptr || out_bounds == nullptr || !v->IsNormalAircraft()) return false;
+
+	bool has_reserved = false;
+	bool has_point = false;
+	int left = 0, top = 0, right = 0, bottom = 0;
+	const auto include_world = [&](int wx, int wy, int wz) {
+		Point p = RemapCoords(wx, wy, wz);
+		if (!has_point) {
+			has_point = true;
+			left = right = p.x;
+			top = bottom = p.y;
+			return;
+		}
+		left = std::min(left, p.x);
+		top = std::min(top, p.y);
+		right = std::max(right, p.x);
+		bottom = std::max(bottom, p.y);
+	};
+	const auto include_tile_if_reserved = [&](TileIndex tile) {
+		if (!IsTileReservedBy(tile, v->index)) return;
+		has_reserved = true;
+		const int wx = TileX(tile) * TILE_SIZE + TILE_SIZE / 2;
+		const int wy = TileY(tile) * TILE_SIZE + TILE_SIZE / 2;
+		include_world(wx, wy, GetSlopePixelZ(wx, wy) + 4);
+	};
+
+	/* Match draw ordering: landing anchor first, then path/taxi/runway chain tiles. */
+	const bool landing_phase = v->state == LANDING || v->state == ENDLANDING || v->state == HELILANDING || v->state == HELIENDLANDING;
+	if (landing_phase && IsValidTile(v->modular_landing_tile)) include_tile_if_reserved(v->modular_landing_tile);
+	if (v->taxi_path != nullptr) {
+		for (TileIndex tile : v->taxi_path->tiles) include_tile_if_reserved(tile);
+	}
+	for (TileIndex tile : v->taxi_reserved_tiles) include_tile_if_reserved(tile);
+	for (TileIndex tile : v->modular_runway_reservation) include_tile_if_reserved(tile);
+	if (!has_reserved) return false;
+
+	/* Include the aircraft origin because every chain is drawn from current position. */
+	include_world(v->x_pos, v->y_pos, v->z_pos + 4);
+
+	static constexpr int OVERLAY_MARGIN = 10;
+	out_bounds->left = left - OVERLAY_MARGIN;
+	out_bounds->top = top - OVERLAY_MARGIN;
+	out_bounds->right = right + OVERLAY_MARGIN;
+	out_bounds->bottom = bottom + OVERLAY_MARGIN;
+	return true;
+}
 
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
 struct ModularAirportPiece {
@@ -171,6 +240,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	bool show_taxi_arrows = true;
 	bool show_holding_loop = false;
 	bool show_taxi_reservations = false;
+	std::map<VehicleID, ReservationOverlayBounds> reservation_overlay_bounds;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
 
@@ -207,6 +277,7 @@ public:
 		_show_runway_direction_overlay = false;
 		_show_holding_overlay = false;
 		_show_taxi_reservation_overlay = false;
+		this->reservation_overlay_bounds.clear();
 		MarkWholeScreenDirty();
 		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 			ResetObjectToPlace();
@@ -356,6 +427,7 @@ public:
 			case WID_MA_TOGGLE_SHOW_RESERVATIONS:
 				this->show_taxi_reservations = !this->show_taxi_reservations;
 				_show_taxi_reservation_overlay = this->show_taxi_reservations;
+				if (!this->show_taxi_reservations) this->reservation_overlay_bounds.clear();
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
 				MarkWholeScreenDirty();
 				break;
@@ -848,11 +920,30 @@ private:
 		this->SetDirty();
 	}
 
-	void OnRealtimeTick([[maybe_unused]] uint delta_ms) override
+	void OnGameTick() override
 	{
-		/* Reservation chains are highly dynamic; continuously refresh while visible
-		 * so released/replanned segments don't leave stale lines behind. */
-		if (this->show_taxi_reservations) MarkWholeScreenDirty();
+		if (!this->show_taxi_reservations) return;
+
+		/* Refresh at a modest cadence; aircraft movement updates in game ticks, and this
+		 * keeps the overlay smooth without forcing full-screen redraw every realtime frame. */
+		if ((TimerGameTick::counter & 0x03) != 0) return;
+
+		std::map<VehicleID, ReservationOverlayBounds> current_bounds;
+		for (const Aircraft *v : Aircraft::Iterate()) {
+			ReservationOverlayBounds bounds;
+			if (!GetReservationOverlayBoundsForAircraft(v, &bounds)) continue;
+			current_bounds.emplace(v->index, bounds);
+			MarkReservationOverlayBoundsDirty(bounds);
+		}
+
+		/* Clean up stale lines where a chain moved or disappeared. */
+		for (const auto &[vid, old_bounds] : this->reservation_overlay_bounds) {
+			if (!current_bounds.contains(vid)) {
+				MarkReservationOverlayBoundsDirty(old_bounds);
+			}
+		}
+
+		this->reservation_overlay_bounds = std::move(current_bounds);
 	}
 
 private:
@@ -1450,13 +1541,6 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
 		}
 	}
-}
-
-static inline bool IsTileReservedBy(TileIndex tile, VehicleID vid)
-{
-	if (!IsValidTile(tile)) return false;
-	Tile t(tile);
-	return IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == vid;
 }
 
 static void DrawReservationChain(const Viewport &vp, DrawPixelInfo *dpi, const Point &origin, const std::vector<TileIndex> &chain, PixelColour colour)
