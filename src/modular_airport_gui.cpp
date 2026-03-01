@@ -236,24 +236,28 @@ static void ShowModularHelipadPicker(Window *parent);
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
 
-	uint8_t selected_piece = 0;
+	uint8_t selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 	bool show_taxi_arrows = true;
 	bool show_holding_loop = false;
 	bool show_taxi_reservations = false;
 	std::map<VehicleID, ReservationOverlayBounds> reservation_overlay_bounds;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
+	TimerGameCalendar::Year cached_year = CalendarTime::MIN_YEAR;
+	const IntervalTimer<TimerGameCalendar> yearly_interval = {{TimerGameCalendar::YEAR, TimerGameCalendar::Priority::NONE}, [this](auto) {
+		this->RefreshYearGating();
+	}};
 
 public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
 	{
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
-		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->UpdateYearGating();
+		this->cached_year = TimerGameCalendar::year;
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
 		_show_holding_overlay = this->show_holding_loop;
@@ -261,15 +265,83 @@ public:
 		MarkWholeScreenDirty();
 	}
 
+	void StopPlacementFromClosedPicker(uint8_t picker_piece)
+	{
+		if (this->selected_piece != picker_piece) return;
+		this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+		this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+		this->UpdatePlacementCursor();
+		this->SetDirty();
+	}
+
+	static bool IsGfxLockedByYear(uint8_t gfx)
+	{
+		return IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
+	}
+
+	static uint8_t FirstAvailableCosmeticPiece()
+	{
+		for (uint8_t i = 0; i < lengthof(_cosmetic_pieces); i++) {
+			if (!IsGfxLockedByYear(_cosmetic_pieces[i].apt_gfx)) return i;
+		}
+		return 0;
+	}
+
+	static uint8_t FirstAvailableHelipadPiece()
+	{
+		for (uint8_t i = 0; i < lengthof(_helipad_pieces); i++) {
+			if (!IsGfxLockedByYear(_helipad_pieces[i].apt_gfx)) return i;
+		}
+		return 0;
+	}
+
+	void NormalizePickerSelectionsForYear()
+	{
+		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces) || IsGfxLockedByYear(_cosmetic_pieces[_modular_cosmetic_piece].apt_gfx)) {
+			_modular_cosmetic_piece = FirstAvailableCosmeticPiece();
+		}
+		if (_modular_helipad_piece >= lengthof(_helipad_pieces) || IsGfxLockedByYear(_helipad_pieces[_modular_helipad_piece].apt_gfx)) {
+			_modular_helipad_piece = FirstAvailableHelipadPiece();
+		}
+	}
+
+	bool IsPieceButtonLocked(uint8_t piece) const
+	{
+		if (piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) return false;
+		if (piece == 3) {
+			for (const CosmeticPiece &cp : _cosmetic_pieces) {
+				if (!IsGfxLockedByYear(cp.apt_gfx)) return false;
+			}
+			return true;
+		}
+		if (piece == 6) {
+			for (const HelipadPiece &hp : _helipad_pieces) {
+				if (!IsGfxLockedByYear(hp.apt_gfx)) return false;
+			}
+			return true;
+		}
+		return IsGfxLockedByYear(GetModularAirportPieceGfx(piece));
+	}
+
 	/** Disable piece buttons whose GFX is gated behind a future year. */
 	void UpdateYearGating()
 	{
+		this->NormalizePickerSelectionsForYear();
 		for (int i = 0; i < PIECE_COUNT; i++) {
-			if (i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) continue;
-			uint8_t gfx = GetModularAirportPieceGfx(static_cast<uint8_t>(i));
-			bool locked = IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
-			this->SetWidgetDisabledState(WID_MA_PIECE_0 + i, locked);
+			this->SetWidgetDisabledState(WID_MA_PIECE_0 + i, this->IsPieceButtonLocked(static_cast<uint8_t>(i)));
 		}
+		if (this->selected_piece < PIECE_COUNT && this->IsWidgetDisabled(WID_MA_PIECE_0 + this->selected_piece)) {
+			this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+			this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+			this->UpdatePlacementCursor();
+		}
+	}
+
+	void RefreshYearGating()
+	{
+		this->UpdateYearGating();
+		InvalidateWindowClassesData(WC_BUILD_DEPOT, 0);
+		this->SetDirty();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
@@ -334,8 +406,7 @@ public:
 			int x = (ir.Width()  - tile_w) / 2 + anchor;
 			int y = (ir.Height() + tile_h) / 2 - anchor;
 
-			uint8_t rot = (widget == WID_MA_PIECE_5) ? 0 : _modular_hangar_rotation;
-			const DrawTileSprites *t = GetModularHangarTileLayout(rot, widget == WID_MA_PIECE_5);
+			const DrawTileSprites *t = GetModularHangarTileLayout(0, widget == WID_MA_PIECE_5);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
 			for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
 				SpriteID image = dtss.image.sprite;
@@ -922,6 +993,11 @@ private:
 
 	void OnGameTick() override
 	{
+		if (this->cached_year != TimerGameCalendar::year) {
+			this->cached_year = TimerGameCalendar::year;
+			this->RefreshYearGating();
+		}
+
 		if (!this->show_taxi_reservations) return;
 
 		/* Refresh at a modest cadence; aircraft movement updates in game ticks, and this
@@ -944,6 +1020,13 @@ private:
 		}
 
 		this->reservation_overlay_bounds = std::move(current_bounds);
+	}
+
+	void OnRealtimeTick([[maybe_unused]] uint delta_ms) override
+	{
+		if (this->cached_year == TimerGameCalendar::year) return;
+		this->cached_year = TimerGameCalendar::year;
+		this->RefreshYearGating();
 	}
 
 private:
@@ -992,6 +1075,11 @@ public:
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		if (this->parent != nullptr &&
+				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
+			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(4);
+		}
 		/* Skip PickerWindowBase::Close() which calls ResetObjectToPlace() —
 		 * we're a child picker and must not steal the parent's cursor. */
 		this->Window::Close();
@@ -1079,11 +1167,8 @@ static void ShowModularHangarPicker(Window *parent, bool is_large)
 /** Cosmetic tile picker window (opened when clicking the Cosmetic piece button). */
 class BuildModularCosmeticPickerWindow : public PickerWindowBase {
 public:
-	BuildModularCosmeticPickerWindow(WindowDesc &desc, Window *parent)
-		: PickerWindowBase(desc, parent)
+	void RefreshAvailability()
 	{
-		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces)) _modular_cosmetic_piece = 0;
-		this->InitNested(0);
 		/* Disable pieces gated behind a future year. */
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
 			bool locked = IsModernModularPiece(_cosmetic_pieces[i].apt_gfx) &&
@@ -1099,12 +1184,34 @@ public:
 				}
 			}
 		}
+		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+			this->RaiseWidget(WID_MACP_PIECE_0 + i);
+		}
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
+	}
+
+	BuildModularCosmeticPickerWindow(WindowDesc &desc, Window *parent)
+		: PickerWindowBase(desc, parent)
+	{
+		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces)) _modular_cosmetic_piece = 0;
+		this->InitNested(0);
+		this->RefreshAvailability();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		if (this->parent != nullptr &&
+				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
+			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(3);
+		}
 		this->Window::Close();
+	}
+
+	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
+	{
+		this->RefreshAvailability();
+		this->SetDirty();
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size,
@@ -1343,6 +1450,11 @@ public:
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
+		if (this->parent != nullptr &&
+				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
+			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(6);
+		}
 		this->Window::Close();
 	}
 

@@ -27,6 +27,7 @@
 /** Maximum number of iterations for pathfinding (prevent infinite loops) */
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
 static const size_t MAX_CROSSING_CACHE_SIZE = 4096;
+static const int PASS_THROUGH_STAND_PENALTY = 5;
 static bool IsModularRunwayPieceLocal(uint8_t gfx);
 static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
 static std::unordered_set<uint64_t> _crossing_required_path_cache;
@@ -399,6 +400,12 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 							move_cost = 4;
 							break;
 						default: break;
+					}
+
+					/* Stands are valid transit nodes, but prefer not routing through
+					 * unrelated stands when alternatives exist. */
+					if (neighbor != goal && IsParkingOnlyTile(nb_data->piece_type)) {
+						move_cost += PASS_THROUGH_STAND_PENALTY;
 					}
 
 					/* In crossing fallback mode, strongly prefer non-runway alternatives. */

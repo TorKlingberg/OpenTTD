@@ -230,7 +230,7 @@ uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_SMALL_BUILDING_1:
 		case APT_SMALL_BUILDING_2:
 		case APT_SMALL_BUILDING_3:
-			return APT_LOW_BUILDING;
+			return stock_gfx;
 		case APT_PIER:
 		case APT_PIER_NW_NE:
 			return APT_APRON;
@@ -246,7 +246,6 @@ struct StockTileOverride {
 };
 
 static constexpr StockTileOverride _country_stock_to_modular_overrides[] = {
-	{0, 0, APT_GRASS_1}, {2, 0, APT_GRASS_1},
 	{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
 };
 

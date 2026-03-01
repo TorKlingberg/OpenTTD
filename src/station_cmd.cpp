@@ -2799,17 +2799,29 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	CommandCost cost(EXPENSES_CONSTRUCTION);
 	int allowed_z = -1;
 
-	/* Check if we're replacing a grass or empty modular airport tile.
+	/* Check if we're replacing an allowed modular airport tile.
 	 * In that case, skip the landscape clear (which would fail with Auto flag or
 	 * destroy station state) and just check for vehicles on the tile. */
-	auto IsReplaceableTile = [](TileIndex t) {
+	auto IsHangarPiece = [](uint8_t piece_type) {
+		return piece_type == APT_DEPOT_SE || piece_type == APT_DEPOT_SW ||
+				piece_type == APT_DEPOT_NW || piece_type == APT_DEPOT_NE ||
+				piece_type == APT_SMALL_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SW ||
+				piece_type == APT_SMALL_DEPOT_NW || piece_type == APT_SMALL_DEPOT_NE;
+	};
+	auto IsReplaceableTile = [&](TileIndex t, uint8_t new_piece_type) {
 		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) return false;
 		const Station *st = Station::GetByTile(t);
 		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
 		const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-		return md != nullptr && (md->piece_type == APT_GRASS_1 || md->piece_type == APT_EMPTY);
+		if (md == nullptr) return false;
+
+		if (md->piece_type == APT_GRASS_1 || md->piece_type == APT_EMPTY) return true;
+
+		const bool existing_hangar = IsHangarPiece(md->piece_type);
+		const bool new_hangar = IsHangarPiece(new_piece_type);
+		return existing_hangar && new_hangar;
 	};
-	bool is_modular_replace = IsReplaceableTile(tile);
+	bool is_modular_replace = IsReplaceableTile(tile, static_cast<uint8_t>(gfx));
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
 
 	if (is_modular_replace) {
@@ -3794,6 +3806,10 @@ const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uin
 	return GetModularHangarTileLayout(visual_rot, is_small_hangar);
 }
 
+static const DrawTileSpriteSpan _station_display_modular_old_runway_near_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_NEAR_END, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_old_runway_middle(PalSpriteID{SPR_AIRFIELD_RUNWAY_MIDDLE, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_FAR_END, PAL_NONE});
+
 const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame)
 {
 	const DrawTileSprites *t = nullptr;
@@ -3805,6 +3821,15 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
 	if ((modular_rotation % 2) == 1 && t == nullptr) {
 		t = GetModularNSRunwayLayout(modular_piece_type);
+	}
+
+	/* Legacy small runway sprites include a baked SE fence in stock layouts.
+	 * In modular mode fence rendering should come from edge fences only. */
+	switch (modular_piece_type) {
+		case APT_RUNWAY_SMALL_NEAR_END: t = &_station_display_modular_old_runway_near_end; break;
+		case APT_RUNWAY_SMALL_MIDDLE:   t = &_station_display_modular_old_runway_middle; break;
+		case APT_RUNWAY_SMALL_FAR_END:  t = &_station_display_modular_old_runway_far_end; break;
+		default: break;
 	}
 
 	/* Modular windsock: draw without the built-in NE fence. */
