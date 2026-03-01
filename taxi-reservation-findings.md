@@ -39,20 +39,6 @@ Findings from code review of `src/modular_airport_cmd.cpp` and related files.
 
 ## Known Issues
 
-### CRITICAL: Landing chain reservations dropped on touchdown
-
-`TryReserveLandingChain` reserves runway + first non-runway exit segment. On touchdown, `AirportMoveModular`'s path rebuild calls `ClearTaxiPathState` → `ClearTaxiPathReservation`, which releases the non-runway tiles. Another aircraft can grab them, potentially blocking the landing aircraft on the runway. On a single-runway airport this can lock up everything.
-
-**Status:** Fix planned — preserve reservations for tiles not on the current taxi_path during `ClearTaxiPathReservation`.
-
-### CRITICAL: Stand selection during landing uses aircraft position, not rollout end
-
-`FindModularLandingGroundGoal` → `FindFreeModularTerminal` can't use ground routing because the aircraft is in the air (`CanUseModularGroundRouting` returns false). Falls back to Manhattan distance from `v->x_pos/y_pos`. Picks a random-ish stand rather than the one closest to the rollout end.
-
-Same issue in `FindModularLandingTarget` (line 747): picks one terminal via `FindFreeModularTerminal` and scores ALL runway candidates against that single terminal.
-
-**Status:** Fix planned — add `from_tile` parameter to `FindFreeModular*` functions, pass rollout point from landing call sites.
-
 ### Heuristic stale reservation clearing
 
 `TryClearStaleModularReservation` (line 2089) is called every time `IsTaxiTileReservedByOther` checks a tile. If the reserving vehicle doesn't appear to "need" the tile (not on it, not pathing through it, not in any tracking vector), the reservation is forcibly cleared.
