@@ -847,6 +847,13 @@ private:
 		this->SetDirty();
 	}
 
+	void OnRealtimeTick([[maybe_unused]] uint delta_ms) override
+	{
+		/* Reservation chains are highly dynamic; continuously refresh while visible
+		 * so released/replanned segments don't leave stale lines behind. */
+		if (this->show_taxi_reservations) MarkWholeScreenDirty();
+	}
+
 private:
 	void UpdatePlacementCursor()
 	{
@@ -1457,6 +1464,30 @@ static void AppendReservedTileOrdered(std::vector<TileIndex> &out, std::unordere
 	out.push_back(tile);
 }
 
+static PixelColour GetReservationOverlayColour(VehicleID vid)
+{
+	static constexpr PixelColour kColours[] = {
+		PC_RED,
+		PC_ORANGE,
+		PC_YELLOW,
+		PC_LIGHT_YELLOW,
+		PC_GREEN,
+		PC_LIGHT_BLUE,
+		PC_DARK_BLUE,
+		PC_DARK_RED,
+		PC_GREY,
+		PC_WHITE,
+	};
+
+	uint32_t x = vid.base();
+	x ^= x >> 16;
+	x *= 0x7feb352dU;
+	x ^= x >> 15;
+	x *= 0x846ca68bU;
+	x ^= x >> 16;
+	return kColours[x % lengthof(kColours)];
+}
+
 void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 {
 	for (const Aircraft *v : Aircraft::Iterate()) {
@@ -1477,12 +1508,13 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		for (TileIndex tile : v->modular_runway_reservation) AppendReservedTileOrdered(ordered_reserved, seen, tile, v->index);
 
 		if (ordered_reserved.empty()) continue;
+		const PixelColour colour = GetReservationOverlayColour(v->index);
 
 		Point prev = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
 		for (TileIndex tile : ordered_reserved) {
 			Point curr = TileCenterToScreen(vp, tile);
-			if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, PC_LIGHT_BLUE, 1);
-			GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, PC_LIGHT_BLUE);
+			if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, colour, 1);
+			GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, colour);
 			prev = curr;
 		}
 	}
