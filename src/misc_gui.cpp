@@ -20,7 +20,9 @@
 #include "string_func.h"
 #include "company_base.h"
 #include "station_base.h"
+#include "station_map.h"
 #include "waypoint_base.h"
+#include "vehicle_base.h"
 #include "texteff.hpp"
 #include "strings_func.h"
 #include "window_func.h"
@@ -226,6 +228,28 @@ public:
 		/* Airport tile name */
 		if (td.airport_tile_name != STR_NULL) {
 			this->landinfo_data.push_back(GetString(STR_LAND_AREA_INFORMATION_AIRPORTTILE_NAME, td.airport_tile_name));
+		}
+
+		/* Modular airport tile reservation owner (if any). */
+		if (IsAirport(tile)) {
+			const Station *st = Station::GetByTile(tile);
+			const bool is_modular_tile =
+					st != nullptr &&
+					st->airport.blocks.Test(AirportBlock::Modular) &&
+					st->airport.GetModularTileData(tile) != nullptr;
+			if (is_modular_tile) {
+				StringID reserved_by = STR_LAND_AREA_INFORMATION_AIRPORT_TILE_RESERVED_BY_NONE;
+				VehicleID reserver = VehicleID::Invalid();
+				Tile t_tile(tile);
+				if (HasAirportTileReservation(t_tile)) {
+					reserver = GetAirportTileReserver(t_tile);
+					const Vehicle *v = Vehicle::GetIfValid(reserver);
+					if (v != nullptr && v->type == VEH_AIRCRAFT) {
+						reserved_by = STR_VEHICLE_NAME;
+					}
+				}
+				this->landinfo_data.push_back(GetString(STR_LAND_AREA_INFORMATION_AIRPORT_TILE_RESERVED_BY, reserved_by, reserver));
+			}
 		}
 
 		/* Rail type name */

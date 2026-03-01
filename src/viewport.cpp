@@ -1883,6 +1883,12 @@ void ViewportDoDraw(const Viewport &vp, int left, int top, int right, int bottom
 		DrawModularHoldingOverlay(vp, &dp);
 	}
 
+	if (_show_taxi_reservation_overlay) {
+		dp.left = x;
+		dp.top  = y;
+		DrawModularTaxiReservationOverlay(vp, &dp);
+	}
+
 	if (!_vd.string_sprites_to_draw.empty()) {
 		/* translate to world coordinates */
 		dp.left = UnScaleByZoom(_vd.dpi.left, zoom);

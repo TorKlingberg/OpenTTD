@@ -21,7 +21,9 @@ void ShowBuildModularAirportWindow(Window *parent);
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;
 extern bool _show_holding_overlay;
+extern bool _show_taxi_reservation_overlay;
 
 void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi);
+void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi);
 
 #endif /* MODULAR_AIRPORT_GUI_H */

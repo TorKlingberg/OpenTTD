@@ -32,6 +32,7 @@
 #include "core/geometry_func.hpp"
 #include "hotkeys.h"
 #include "vehicle_func.h"
+#include "aircraft.h"
 #include "gui.h"
 #include "command_func.h"
 #include "airport_cmd.h"
@@ -64,6 +65,7 @@
 #include "safeguards.h"
 
 #include <cctype>
+#include <unordered_set>
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
 
@@ -74,6 +76,7 @@ static uint8_t _modular_helipad_piece = 0;     ///< Selected helipad look in _he
 
 bool _show_runway_direction_overlay = false; ///< Show runway direction/usage arrows in viewport
 bool _show_holding_overlay = false;          ///< Show holding loop overlay in viewport
+bool _show_taxi_reservation_overlay = false; ///< Show per-aircraft modular reservation chains in viewport
 
 static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
 struct ModularAirportPiece {
@@ -166,6 +169,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	uint8_t selected_piece = 0;
 	bool show_taxi_arrows = true;
 	bool show_holding_loop = false;
+	bool show_taxi_reservations = false;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
 
@@ -176,11 +180,13 @@ public:
 		this->LowerWidget(WID_MA_PIECE_0 + this->selected_piece);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
 		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
+		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->UpdateYearGating();
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
 		_show_holding_overlay = this->show_holding_loop;
+		_show_taxi_reservation_overlay = this->show_taxi_reservations;
 		MarkWholeScreenDirty();
 	}
 
@@ -199,6 +205,7 @@ public:
 	{
 		_show_runway_direction_overlay = false;
 		_show_holding_overlay = false;
+		_show_taxi_reservation_overlay = false;
 		MarkWholeScreenDirty();
 		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 			ResetObjectToPlace();
@@ -342,6 +349,13 @@ public:
 				this->show_holding_loop = !this->show_holding_loop;
 				_show_holding_overlay = this->show_holding_loop;
 				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
+				MarkWholeScreenDirty();
+				break;
+
+			case WID_MA_TOGGLE_SHOW_RESERVATIONS:
+				this->show_taxi_reservations = !this->show_taxi_reservations;
+				_show_taxi_reservation_overlay = this->show_taxi_reservations;
+				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
 				MarkWholeScreenDirty();
 				break;
 
@@ -1339,6 +1353,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_HOLDING), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_BLOT, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_RESERVATIONS), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_SQUARE, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_RESERVATIONS),
 	EndContainer(),
 };
 
@@ -1362,6 +1378,21 @@ static Point HoldingWorldToScreen(const Viewport &vp, int wx, int wy, int altitu
 	p.x = UnScaleByZoom(p.x - vp.virtual_left, vp.zoom) + vp.left;
 	p.y = UnScaleByZoom(p.y - vp.virtual_top,  vp.zoom) + vp.top;
 	return p;
+}
+
+static Point WorldToScreen(const Viewport &vp, int wx, int wy, int wz)
+{
+	Point p = RemapCoords(wx, wy, wz);
+	p.x = UnScaleByZoom(p.x - vp.virtual_left, vp.zoom) + vp.left;
+	p.y = UnScaleByZoom(p.y - vp.virtual_top,  vp.zoom) + vp.top;
+	return p;
+}
+
+static Point TileCenterToScreen(const Viewport &vp, TileIndex tile, int z_offset = 4)
+{
+	const int wx = TileX(tile) * TILE_SIZE + TILE_SIZE / 2;
+	const int wy = TileY(tile) * TILE_SIZE + TILE_SIZE / 2;
+	return WorldToScreen(vp, wx, wy, GetSlopePixelZ(wx, wy) + z_offset);
 }
 
 /** Conservative AABB visibility check — GfxDrawLine clips anyway; this skips obviously off-screen segments. */
@@ -1408,6 +1439,51 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 
 			/* Red threshold marker at ground level. */
 			GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
+		}
+	}
+}
+
+static inline bool IsTileReservedBy(TileIndex tile, VehicleID vid)
+{
+	if (!IsValidTile(tile)) return false;
+	Tile t(tile);
+	return IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == vid;
+}
+
+static void AppendReservedTileOrdered(std::vector<TileIndex> &out, std::unordered_set<uint32_t> &seen, TileIndex tile, VehicleID vid)
+{
+	if (!IsTileReservedBy(tile, vid)) return;
+	if (!seen.insert(tile.base()).second) return;
+	out.push_back(tile);
+}
+
+void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
+{
+	for (const Aircraft *v : Aircraft::Iterate()) {
+		if (!v->IsNormalAircraft()) continue;
+		if (v->taxi_path == nullptr && v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty()) continue;
+
+		std::vector<TileIndex> ordered_reserved;
+		std::unordered_set<uint32_t> seen;
+
+		if (v->taxi_path != nullptr) {
+			const auto &path = v->taxi_path->tiles;
+			const size_t start_idx = std::min<size_t>(v->taxi_path_index, path.size());
+			for (size_t i = start_idx; i < path.size(); ++i) {
+				AppendReservedTileOrdered(ordered_reserved, seen, path[i], v->index);
+			}
+		}
+		for (TileIndex tile : v->taxi_reserved_tiles) AppendReservedTileOrdered(ordered_reserved, seen, tile, v->index);
+		for (TileIndex tile : v->modular_runway_reservation) AppendReservedTileOrdered(ordered_reserved, seen, tile, v->index);
+
+		if (ordered_reserved.empty()) continue;
+
+		Point prev = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
+		for (TileIndex tile : ordered_reserved) {
+			Point curr = TileCenterToScreen(vp, tile);
+			if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, PC_LIGHT_BLUE, 1);
+			GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, PC_LIGHT_BLUE);
+			prev = curr;
 		}
 	}
 }
