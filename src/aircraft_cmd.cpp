@@ -1725,17 +1725,11 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 
 			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 			if (runway != INVALID_TILE) {
-				TileIndex queue = FindModularTakeoffQueueTile(st, v, runway);
-				if (queue != INVALID_TILE) {
-					v->modular_takeoff_tile = runway;
-					v->ground_path_goal = queue;
-					v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-					Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={} queue={}", v->index, runway.base(), queue.base());
-					return;
-				}
-				if (ShouldLogModularRateLimited(v->index, 40, 128)) {
-					Debug(misc, 2, "[ModAp] V{} hangar takeoff: runway={} but queue=INVALID vtile={}", v->index, runway.base(), v->tile.base());
-				}
+				v->modular_takeoff_tile = runway;
+				v->ground_path_goal = FindModularTakeoffQueueTile(st, v, runway);
+				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+				Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={} queue={}", v->index, runway.base(), v->ground_path_goal.base());
+				return;
 			}
 
 			if (v->subtype == AIR_HELICOPTER) {
@@ -1849,21 +1843,20 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 
 		TileIndex goal = INVALID_TILE;
 		uint8_t target = MGT_NONE;
-			if (go_to_hangar) {
-				goal = FindFreeModularHangar(st, v);
-				if (goal != INVALID_TILE) {
-					target = MGT_HANGAR;
-				} else {
-					/* For modular airports, keep waiting and retry hangar selection.
-					 * Falling back to takeoff here can strand service aircraft in loops when
-					 * hangar reachability is temporarily constrained by traffic/reservations. */
-					if (ShouldLogModularRateLimited(v->index, 24, 128)) {
-						Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, waiting for hangar route", v->index, st->index);
-					}
-					LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
-					return;
+		if (go_to_hangar) {
+			goal = FindFreeModularHangar(st, v);
+			if (goal != INVALID_TILE) {
+				target = MGT_HANGAR;
+			} else {
+				LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
+				/* Match stock airports: if depot order targets this airport but no hangar
+				 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
+				go_to_hangar = false;
+				if (ShouldLogModularRateLimited(v->index, 24, 128)) {
+					Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
 				}
 			}
+		}
 		if (!go_to_hangar) {
 			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 			if (runway != INVALID_TILE) {
@@ -1998,73 +1991,42 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			v->modular_landing_goal = INVALID_TILE;
 			TileIndex runway_tile = INVALID_TILE;
 
-				if (v->subtype == AIR_HELICOPTER) {
-					/* Keep helicopter behaviour unchanged until a dedicated heli holding loop exists. */
-					runway_tile = FindModularLandingTarget(st, v);
-				} else {
-					const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
-					const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
-					/* Position-based nearest waypoint — consistent with movement targeting,
-					 * so the gate fires when the aircraft is physically near the gate waypoint. */
-					const uint32_t aircraft_wp = GetNearestModularHoldingWaypoint(v, loop);
-					uint32_t reject_inactive = 0;
-					uint32_t reject_direction = 0;
-					uint32_t reject_not_in_front = 0;
-					uint32_t reject_distance = 0;
-					uint32_t reject_reserved = 0;
-					uint32_t reject_takeoff_queue = 0;
+			if (v->subtype == AIR_HELICOPTER) {
+				/* Keep helicopter behaviour unchanged until a dedicated heli holding loop exists. */
+				runway_tile = FindModularLandingTarget(st, v);
+			} else {
+				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
+				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
+				/* Position-based nearest waypoint — consistent with movement targeting,
+				 * so the gate fires when the aircraft is physically near the gate waypoint. */
+				const uint32_t aircraft_wp = GetNearestModularHoldingWaypoint(v, loop);
 
-					for (const ModularHoldingLoop::Gate &gate : loop.gates) {
-						if (!IsHoldingGateActive(aircraft_wp, gate.wp_index, n_wp)) {
-							reject_inactive++;
-							continue;
-						}
-						if (!DirectionsWithin45(v->direction, gate.approach_dir)) {
-							reject_direction++;
-							continue;
-						}
+				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
+					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index, n_wp)) continue;
+					if (!DirectionsWithin45(v->direction, gate.approach_dir)) continue;
 
-						const int64_t dx_axis = static_cast<int64_t>(gate.approach_x) - gate.threshold_x;
-						const int64_t dy_axis = static_cast<int64_t>(gate.approach_y) - gate.threshold_y;
-						const int64_t vx_axis = static_cast<int64_t>(v->x_pos) - gate.threshold_x;
-						const int64_t vy_axis = static_cast<int64_t>(v->y_pos) - gate.threshold_y;
+					const int64_t dx_axis = static_cast<int64_t>(gate.approach_x) - gate.threshold_x;
+					const int64_t dy_axis = static_cast<int64_t>(gate.approach_y) - gate.threshold_y;
+					const int64_t vx_axis = static_cast<int64_t>(v->x_pos) - gate.threshold_x;
+					const int64_t vy_axis = static_cast<int64_t>(v->y_pos) - gate.threshold_y;
 
-						const bool in_front =
-								(dx_axis == 0 || vx_axis * dx_axis > 0) &&
-								(dy_axis == 0 || vy_axis * dy_axis > 0);
-						if (!in_front) {
-							reject_not_in_front++;
-							continue;
-						}
+					const bool in_front =
+							(dx_axis == 0 || vx_axis * dx_axis > 0) &&
+							(dy_axis == 0 || vy_axis * dy_axis > 0);
+					if (!in_front) continue;
 
-						const int dist_tiles = (abs(v->x_pos - gate.threshold_x) + abs(v->y_pos - gate.threshold_y)) / TILE_SIZE;
-						if (dist_tiles > MODULAR_LANDING_GATE_MAX_DIST_TILES) {
-							reject_distance++;
-							continue;
-						}
+					const int dist_tiles = (abs(v->x_pos - gate.threshold_x) + abs(v->y_pos - gate.threshold_y)) / TILE_SIZE;
+					if (dist_tiles > MODULAR_LANDING_GATE_MAX_DIST_TILES) continue;
 
-						if (IsContiguousModularRunwayReservedByOther(v, st, gate.runway_tile)) {
-							reject_reserved++;
-							continue;
-						}
-						if (IsContiguousModularRunwayQueuedForTakeoffByOther(v, st, gate.runway_tile)) {
-							reject_takeoff_queue++;
-							continue;
-						}
+					if (IsContiguousModularRunwayReservedByOther(v, st, gate.runway_tile)) continue;
+					if (IsContiguousModularRunwayQueuedForTakeoffByOther(v, st, gate.runway_tile)) continue;
 
-						runway_tile = gate.runway_tile;
-						break;
-					}
-
-					if (runway_tile == INVALID_TILE && ShouldLogModularRateLimited(v->index, 41, 128)) {
-						Debug(misc, 2,
-							"[ModAp] V{} no active landing gate: gates={} wp={}/{} rej_inactive={} rej_dir={} rej_front={} rej_dist={} rej_reserved={} rej_takeoff_queue={} dir={}",
-							v->index, loop.gates.size(), aircraft_wp, n_wp, reject_inactive, reject_direction,
-							reject_not_in_front, reject_distance, reject_reserved, reject_takeoff_queue, v->direction);
-					}
+					runway_tile = gate.runway_tile;
+					break;
 				}
+			}
 
-				if (runway_tile != INVALID_TILE) {
+			if (runway_tile != INVALID_TILE) {
 				if (v->subtype == AIR_HELICOPTER) {
 					const int target_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
 					const int target_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
@@ -2075,47 +2037,25 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					}
 				}
 
-					TileIndex landing_goal = FindModularLandingGroundGoal(st, v);
-					v->modular_landing_goal = landing_goal;
+				TileIndex landing_goal = FindModularLandingGroundGoal(st, v);
+				v->modular_landing_goal = landing_goal;
 
-						if (v->subtype == AIR_AIRCRAFT) {
-							bool chain_reserved = TryReserveLandingChain(v, st, runway_tile, landing_goal);
-							if (!chain_reserved && landing_goal != INVALID_TILE) {
-								const ModularAirportTileData *goal_data = st->airport.GetModularTileData(landing_goal);
-								const bool goal_is_hangar = goal_data != nullptr && IsModularHangarPiece(goal_data->piece_type);
-								if (goal_is_hangar) {
-									/* Service-preferring aircraft may pick a hangar that is not reachable
-									 * from this runway rollout. Fall back to any free terminal for landing,
-									 * then service can be attempted from ground state. */
-									TileIndex term_goal = FindFreeModularTerminal(st, v);
-									if (term_goal != INVALID_TILE && term_goal != landing_goal) {
-										if (ShouldLogModularRateLimited(v->index, 45, 128)) {
-											Debug(misc, 2, "[ModAp] V{} landing-chain fallback: hangar goal {} rejected on runway {}, trying terminal {}",
-												v->index, landing_goal.base(), runway_tile.base(), term_goal.base());
-										}
-										chain_reserved = TryReserveLandingChain(v, st, runway_tile, term_goal);
-										if (chain_reserved) {
-											landing_goal = term_goal;
-											v->modular_landing_goal = term_goal;
-										}
-									}
-								}
-							}
-							if (!chain_reserved) {
-								/* Never commit landing without a reserved post-touchdown chain. */
-								if (ShouldLogModularRateLimited(v->index, 42, 128)) {
-									const TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
-								Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
-									v->index, runway_tile.base(),
-									landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
-									rollout == INVALID_TILE ? 0 : rollout.base(),
-									IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
-							}
-							v->modular_landing_goal = INVALID_TILE;
-							v->state = FLYING;
-							return;
+				if (v->subtype == AIR_AIRCRAFT) {
+					if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
+						/* Never commit landing without a reserved post-touchdown chain. */
+						if (ShouldLogModularRateLimited(v->index, 42, 128)) {
+							const TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+							Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
+								v->index, runway_tile.base(),
+								landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
+								rollout == INVALID_TILE ? 0 : rollout.base(),
+								IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
 						}
-					} else {
+						v->modular_landing_goal = INVALID_TILE;
+						v->state = FLYING;
+						return;
+					}
+				} else {
 					/* Helicopters: don't land without an exit plan either. */
 					if (landing_goal == INVALID_TILE) {
 						v->state = FLYING;
@@ -2359,31 +2299,14 @@ static void AirportGoToNextPosition(Aircraft *v)
 			return;
 		}
 
-			/* For flying state, use modular movement */
-			if (v->state == FLYING) {
-				/* FLYING aircraft must not hold modular ground reservations. */
-				if (!v->taxi_reserved_tiles.empty() || !v->modular_runway_reservation.empty() ||
-						v->ground_path_goal != INVALID_TILE || v->modular_ground_target != MGT_NONE) {
-					if (ShouldLogModularRateLimited(v->index, 44, 128)) {
-						Debug(misc, 2, "[ModAp] V{} cleanup while flying: goal={} tgt={} taxi_res={} runway_res={}",
-							v->index,
-							IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-							v->modular_ground_target,
-							v->taxi_reserved_tiles.size(),
-							v->modular_runway_reservation.size());
-					}
-					ClearTaxiPathState(v);
-					ClearModularRunwayReservation(v);
-					ClearModularAirportReservationsByVehicle(active_st, v->index);
-					v->ground_path_goal = INVALID_TILE;
-					v->modular_ground_target = MGT_NONE;
-				}
-				AirportMoveModularFlying(v, active_st);
-				/* Call handler to check for landing conditions */
-				const AirportFTAClass *apc = active_st->airport.GetFTA();
-				_aircraft_state_handlers[v->state](v, apc);
-				return;
-			}
+		/* For flying state, use modular movement */
+		if (v->state == FLYING) {
+			AirportMoveModularFlying(v, active_st);
+			/* Call handler to check for landing conditions */
+			const AirportFTAClass *apc = active_st->airport.GetFTA();
+			_aircraft_state_handlers[v->state](v, apc);
+			return;
+		}
 
 		/* For ground movement with active pathfinding goal */
 		if (v->taxi_path != nullptr || v->ground_path_goal != INVALID_TILE) {
