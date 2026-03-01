@@ -171,7 +171,7 @@ bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *
 bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker = nullptr);
 bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
-void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile = INVALID_TILE, bool force_clear_all = false);
+void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile = INVALID_TILE, bool force_clear_all = false, bool as_fallback = true);
 void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile = INVALID_TILE);
 void SetTaxiReservation(Aircraft *v, TileIndex tile);
 bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid);

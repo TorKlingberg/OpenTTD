@@ -19,14 +19,22 @@
 #include "table/airporttile_ids.h"
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 
 #include "safeguards.h"
 
 /** Maximum number of iterations for pathfinding (prevent infinite loops) */
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
+static const size_t MAX_CROSSING_CACHE_SIZE = 4096;
 static bool IsModularRunwayPieceLocal(uint8_t gfx);
 static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
+static std::unordered_set<uint64_t> _crossing_required_path_cache;
+
+static uint64_t BuildCrossingCacheKey(TileIndex start, TileIndex goal)
+{
+	return (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
+}
 
 /** Node in the A* search */
 struct PathNode {
@@ -414,20 +422,37 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		return result;
 	};
 
-	/* First pass: strict mode blocks non-goal runway entry from taxi/apron tiles. */
-	AirportGroundPath strict = run_pathfind(false);
-	if (strict.found) return strict;
-
-	/* If a runway goal itself is unreachable, crossing fallback cannot help. */
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
 	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPieceLocal(goal_data->piece_type));
+	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal);
+	const bool prefer_crossing = !goal_is_runway && _crossing_required_path_cache.contains(crossing_key);
+
+	/* Learned crossing-required pair: go straight to crossing-capable pass. */
+	if (prefer_crossing) {
+		AirportGroundPath cached_crossing = run_pathfind(true);
+		if (cached_crossing.found) return cached_crossing;
+		_crossing_required_path_cache.erase(crossing_key);
+	}
+
+	/* First pass: strict mode blocks non-goal runway entry from taxi/apron tiles. */
+	AirportGroundPath strict = run_pathfind(false);
+	if (strict.found) {
+		_crossing_required_path_cache.erase(crossing_key);
+		return strict;
+	}
+
+	/* If a runway goal itself is unreachable, crossing fallback cannot help. */
 	if (goal_is_runway) return strict;
 
 	/* Fallback: allow constrained perpendicular runway crossing. */
 	AirportGroundPath crossing = run_pathfind(true);
 	if (crossing.found) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] pathfind-crossing-fallback: from={} to={} cost={} strict_failed",
-			start.base(), goal.base(), crossing.cost);
+		const bool is_new_pair = _crossing_required_path_cache.insert(crossing_key).second;
+		if (_crossing_required_path_cache.size() > MAX_CROSSING_CACHE_SIZE) _crossing_required_path_cache.clear();
+		if (is_new_pair) {
+			Debug(misc, 2, "[ModAp] pathfind-crossing-required: from={} to={} cost={} strict_failed",
+				start.base(), goal.base(), crossing.cost);
+		}
 	}
 	return crossing;
 }

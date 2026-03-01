@@ -63,6 +63,8 @@ static constexpr uint16_t SPEED_LIMIT_APPROACH = 230; ///< Maximum speed of an a
 static constexpr uint16_t SPEED_LIMIT_HOLD = 425; ///< Maximum speed of an aircraft that flies the holding pattern
 static constexpr uint16_t SPEED_LIMIT_NONE = UINT16_MAX; ///< No environmental speed limit. Speed limit is type dependent
 
+static std::string_view GetModularAirportDebugName(const Station *st);
+
 bool IsModularHelipadPiece(uint8_t gfx)
 {
 	switch (gfx) {
@@ -334,8 +336,8 @@ void ClearModularRunwayReservation(Aircraft *v)
 				Tile t(data.tile);
 				if (!IsAirportTile(t)) continue;
 				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-runway-clear: V{} unit#{} tile={} state={} vtile={}",
-						v->index, v->unitnumber, data.tile.base(), v->state,
+					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-runway-clear: st={} name='{}' V{} unit#{} tile={} state={} vtile={}",
+						st->index, GetModularAirportDebugName(st), v->index, v->unitnumber, data.tile.base(), v->state,
 						IsValidTile(v->tile) ? v->tile.base() : 0);
 					SetAirportTileReservation(t, false);
 				}
@@ -432,6 +434,13 @@ bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interv
 	if (it != last_tick_by_key.end() && now - it->second < interval_ticks) return false;
 	last_tick_by_key[key] = now;
 	return true;
+}
+
+static std::string_view GetModularAirportDebugName(const Station *st)
+{
+	static const std::string unknown_name = "(unknown)";
+	if (st == nullptr) return unknown_name;
+	return st->GetCachedName();
 }
 
 bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile)
@@ -862,7 +871,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 	/* Large aircraft with no safe runway: fall back to the best small runway. */
 	if (best_tile == INVALID_TILE && !is_heli && best_small_runway != INVALID_TILE) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] V{} landing-small-runway: no safe large runway, using small runway {}", v->index, best_small_runway.base());
+		Debug(misc, 2, "[ModAp] V{} landing-small-runway: no safe large runway, using small runway {}", v->index, best_small_runway.base());
 		best_tile = best_small_runway;
 	}
 
@@ -1690,7 +1699,7 @@ bool AirportMoveModularHeliTakeoff(Aircraft *v, [[maybe_unused]] const Station *
 
 	/* Reached altitude, transition to flying — force-clear all reservations. */
 	ClearModularRunwayReservation(v);
-	ClearTaxiPathReservation(v, INVALID_TILE, true);
+	ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 	v->state = FLYING;
 	v->tile = TileIndex{};
 	AircraftNextAirportPos_and_Order(v);
@@ -1795,7 +1804,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		if (v->modular_takeoff_progress > TILE_SIZE * 12 && v->z_pos >= target_z) {
 			Debug(misc, 3, "[ModAp] Vehicle {} takeoff complete, transitioning to FLYING", v->index);
 			ClearModularRunwayReservation(v);
-			ClearTaxiPathReservation(v, INVALID_TILE, true);
+			ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 			v->state = FLYING;
 			RecordAirportMovement(v->targetairport, false);
 			v->modular_takeoff_tile = INVALID_TILE;
@@ -2143,14 +2152,16 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 
 	Vehicle *veh = Vehicle::GetIfValid(reserver);
 	if (veh == nullptr || veh->type != VEH_AIRCRAFT) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: tile={} reserver={} reason=invalid_vehicle", tile.base(), reserver.base());
+		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} reserver={} reason=invalid_vehicle",
+			st->index, GetModularAirportDebugName(st), tile.base(), reserver.base());
 		SetAirportTileReservation(t, false);
 		return true;
 	}
 
 	Aircraft *a = Aircraft::From(veh);
 	if (!a->IsNormalAircraft()) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: tile={} reserver={} reason=not_normal_aircraft", tile.base(), reserver.base());
+		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} reserver={} reason=not_normal_aircraft",
+			st->index, GetModularAirportDebugName(st), tile.base(), reserver.base());
 		SetAirportTileReservation(t, false);
 		return true;
 	}
@@ -2191,16 +2202,16 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	/* Reservations must belong to aircraft still tied to this station and physically on its ground. */
 	const bool owner_on_ground_here = IsValidTile(a->tile) && st->TileBelongsToAirport(a->tile) && a->state != FLYING;
 	if (!tied_to_station || !owner_on_ground_here) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: tile={} V{} unit#{} reason=not_on_ground state={} vtile={} tied={}",
-			tile.base(), a->index, a->unitnumber, a->state,
+		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=not_on_ground state={} vtile={} tied={}",
+			st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
 			IsValidTile(a->tile) ? a->tile.base() : 0, tied_to_station);
 		SetAirportTileReservation(t, false);
 		return true;
 	}
 
 	/* Aircraft is active on this station ground, but this tile is not part of any tracked intent. */
-	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: tile={} V{} unit#{} reason=untracked_intent state={} vtile={} goal={} tgt={}",
-		tile.base(), a->index, a->unitnumber, a->state,
+	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=untracked_intent state={} vtile={} goal={} tgt={}",
+		st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
 		IsValidTile(a->tile) ? a->tile.base() : 0,
 		IsValidTile(a->ground_path_goal) ? a->ground_path_goal.base() : 0,
 		a->modular_ground_target);
@@ -2382,7 +2393,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	 * for traffic to clear rather than getting stuck with an impossible goal. */
 	if (best_blocked_tile != INVALID_TILE) return best_blocked_tile;
 	if (best_compatible_fallback_tile != INVALID_TILE && v != nullptr) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_compatible_fallback_tile.base());
+		Debug(misc, 2, "[ModAp] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_compatible_fallback_tile.base());
 	}
 	return best_compatible_fallback_tile;
 }
@@ -2455,8 +2466,10 @@ bool CanUseModularGroundRouting(const Station *st, const Aircraft *v)
 	return v != nullptr && IsValidTile(v->tile) && st->TileBelongsToAirport(v->tile);
 }
 
-void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear_all)
+void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear_all, bool as_fallback)
 {
+	Station *st = Station::GetIfValid(v->targetairport);
+
 	/* Only clear reservations for tiles that are on the current taxi_path.
 	 * Tiles reserved by external logic (e.g. landing chain) that aren't on the
 	 * current path should be preserved so they survive path rebuilds on touchdown.
@@ -2493,12 +2506,18 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear
 	v->taxi_reserved_tiles.clear();
 
 	if (force_clear_all && force_cleared_count > 0) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] force-clear-all: V{} unit#{} cleared={} keep={} state={} vtile={} goal={} tgt={}",
-			v->index, v->unitnumber, force_cleared_count,
-			keep_tile != INVALID_TILE ? keep_tile.base() : 0,
-			v->state, IsValidTile(v->tile) ? v->tile.base() : 0,
-			IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-			v->modular_ground_target);
+		if (as_fallback) {
+			Debug(misc, 2, "[ModAp] [FALLBACK] force-clear-all: st={} name='{}' V{} unit#{} cleared={} keep={} state={} vtile={} goal={} tgt={}",
+				st != nullptr ? st->index.base() : 0, GetModularAirportDebugName(st), v->index, v->unitnumber, force_cleared_count,
+				keep_tile != INVALID_TILE ? keep_tile.base() : 0,
+				v->state, IsValidTile(v->tile) ? v->tile.base() : 0,
+				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
+				v->modular_ground_target);
+		} else {
+			Debug(misc, 3, "[ModAp] force-clear-transition: st={} name='{}' V{} unit#{} cleared={} state={} vtile={}",
+				st != nullptr ? st->index.base() : 0, GetModularAirportDebugName(st), v->index, v->unitnumber, force_cleared_count,
+				v->state, IsValidTile(v->tile) ? v->tile.base() : 0);
+		}
 	}
 
 	/* Re-add preserved tiles. */
@@ -2508,7 +2527,6 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear
 	 * The vector-based cleanup above handles the common case; this catches desync edge cases. */
 	static uint8_t taxi_scan_counter = 0;
 	if ((++taxi_scan_counter & 0x0F) == 0) {
-		Station *st = Station::GetIfValid(v->targetairport);
 		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
 			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 				if (data.tile == keep_tile) continue;
@@ -2518,8 +2536,8 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear
 				Tile t(data.tile);
 				if (!IsAirportTile(t)) continue;
 				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-taxi-clear: V{} unit#{} tile={} state={} vtile={} goal={} tgt={}",
-						v->index, v->unitnumber, data.tile.base(), v->state,
+					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-taxi-clear: st={} name='{}' V{} unit#{} tile={} state={} vtile={} goal={} tgt={}",
+						st->index, GetModularAirportDebugName(st), v->index, v->unitnumber, data.tile.base(), v->state,
 						IsValidTile(v->tile) ? v->tile.base() : 0,
 						IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 						v->modular_ground_target);
@@ -2965,9 +2983,7 @@ void HandleModularGroundArrival(Aircraft *v)
 				}
 			}
 			if (IsAirportTile(v->tile)) {
-				Tile t(v->tile);
-				SetAirportTileReservation(t, true);
-				SetAirportTileReserver(t, v->index);
+				SetTaxiReservation(v, v->tile);
 			}
 			AircraftEntersTerminal(v);
 			v->state = (v->subtype == AIR_HELICOPTER) ? HELIPAD1 : TERM1;
@@ -2998,9 +3014,7 @@ void HandleModularGroundArrival(Aircraft *v)
 				}
 			}
 			if (IsAirportTile(v->tile)) {
-				Tile t(v->tile);
-				SetAirportTileReservation(t, true);
-				SetAirportTileReserver(t, v->index);
+				SetTaxiReservation(v, v->tile);
 			}
 			Debug(misc, 3, "[ModAp] Vehicle {} entering hangar at tile {}", v->index, v->tile.base());
 			VehicleEnterDepot(v);
@@ -3034,9 +3048,7 @@ void HandleModularGroundArrival(Aircraft *v)
 							ClearModularAirportReservationsByVehicle(st, v->index, v->tile);
 						}
 						if (IsAirportTile(v->tile)) {
-							Tile t(v->tile);
-							SetAirportTileReservation(t, true);
-							SetAirportTileReserver(t, v->index);
+							SetTaxiReservation(v, v->tile);
 						}
 
 						if (v->modular_takeoff_tile == INVALID_TILE) {
@@ -3068,9 +3080,7 @@ void HandleModularGroundArrival(Aircraft *v)
 
 			/* On runway entry tile with reservation: start takeoff roll. */
 			if (IsAirportTile(v->tile)) {
-				Tile t(v->tile);
-				SetAirportTileReservation(t, true);
-				SetAirportTileReserver(t, v->index);
+				SetTaxiReservation(v, v->tile);
 			}
 			v->state = TAKEOFF;
 			v->modular_takeoff_tile = v->tile;
