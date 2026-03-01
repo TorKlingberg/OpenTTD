@@ -2408,7 +2408,6 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 		return std::find(target_runway_tiles.begin(), target_runway_tiles.end(), tile) != target_runway_tiles.end();
 	};
 
-	TileIndex queue_tile = runway_end;
 	TileIndex best_queue_tile = INVALID_TILE;
 	for (TileIndex tile : path.tiles) {
 		const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
@@ -2426,7 +2425,6 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 				 IsModularHangarPiece(td->piece_type) ||
 				 IsModularHelipadPiece(td->piece_type));
 		if (service_tile) {
-			queue_tile = tile;
 			continue;
 		}
 
@@ -2434,12 +2432,10 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 		const bool blocked_by_reservation =
 				HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index;
 		if (blocked_by_reservation || IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) {
-			queue_tile = tile;
 			continue;
 		}
 
 		best_queue_tile = tile;
-		queue_tile = tile;
 	}
 
 	if (best_queue_tile != INVALID_TILE) return best_queue_tile;

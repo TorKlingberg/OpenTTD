@@ -59,7 +59,7 @@ Key log patterns:
 - `V{id} seg-wait ONE_WAY` — waiting for next one-way tile (normal queuing)
 - `V{id} landing-chain fail` — can't land; runway+exit both blocked; stays in holding pattern
 
-For detailed debugging of stuck planes and landing failures, see `info/stuck_plane_debugging.md`.
+For detailed debugging of stuck planes and landing failures, see `skills/stuck_plane_debugging.md`.
 
 ## Coordinate System
 
