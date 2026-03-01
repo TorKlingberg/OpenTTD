@@ -1876,6 +1876,7 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 		if (goal != INVALID_TILE) {
 			v->ground_path_goal = goal;
 			v->modular_ground_target = target;
+			v->taxi_wait_counter = 0;
 			Debug(misc, 3, "[ModAp] Vehicle {} found takeoff target goal={} runway={}", v->index, goal.base(),
 				IsValidTile(v->modular_takeoff_tile) ? v->modular_takeoff_tile.base() : 0);
 			return;
@@ -1885,6 +1886,13 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 			/* No runway available; helicopter can take off vertically as fallback. */
 			if (!zeppeliner_blocked) v->state = HELITAKEOFF;
 			return;
+		}
+
+		/* No reachable takeoff path. Increment stuck counter and periodically
+		 * clear stale reservations that may be blocking the path. */
+		v->taxi_wait_counter++;
+		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
+			ClearTaxiPathReservation(v, v->tile, true);
 		}
 
 		LogModularTakeoffRunwayUnavailable(st, v);

@@ -3197,26 +3197,12 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 					IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 					v->modular_ground_target, dbg_path.found, dbg_path.cost);
 			}
-			if (v->taxi_wait_counter > 64) {
-				/* Force-clear all reservations (including preserved landing chain tiles)
-				 * to prevent stale reservations from blocking other aircraft. */
+			if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
+				/* Periodically force-clear reservations and try a different goal. */
 				ClearTaxiPathReservation(v, v->tile, true);
-				if (!TryRetargetModularGroundGoal(v, st)) {
-					ClearTaxiPathState(v, v->tile);
+				if (TryRetargetModularGroundGoal(v, st)) {
 					v->taxi_wait_counter = 0;
 				}
-			}
-			if (v->taxi_wait_counter >= 512) {
-				/* Last resort: give up and take off to break deadlock. */
-				Debug(misc, 1, "[ModAp] V{} unit#{} [FALLBACK] stuck-takeoff: tile={} goal={} tgt={} wait={}",
-					v->index, v->unitnumber,
-					IsValidTile(v->tile) ? v->tile.base() : 0,
-					IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-					v->modular_ground_target, v->taxi_wait_counter);
-				ClearTaxiPathReservation(v, INVALID_TILE, true);
-				ClearTaxiPathState(v, INVALID_TILE);
-				v->state = FLYING;
-				return false;
 			}
 			return false;
 		}
@@ -3271,23 +3257,11 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				occupied_by_other,
 				runway_busy);
 		}
-		if (v->taxi_wait_counter > 64) {
+		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
 			ClearTaxiPathReservation(v, v->tile, true);
-			if (!TryRetargetModularGroundGoal(v, st)) {
-				ClearTaxiPathState(v, v->tile);
+			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
-		}
-		if (v->taxi_wait_counter >= 512) {
-			Debug(misc, 1, "[ModAp] V{} unit#{} [FALLBACK] stuck-takeoff: tile={} goal={} tgt={} wait={}",
-				v->index, v->unitnumber,
-				IsValidTile(v->tile) ? v->tile.base() : 0,
-				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-				v->modular_ground_target, v->taxi_wait_counter);
-			ClearTaxiPathReservation(v, INVALID_TILE, true);
-			ClearTaxiPathState(v, INVALID_TILE);
-			v->state = FLYING;
-			return false;
 		}
 		return false;
 	}
@@ -3306,23 +3280,11 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 				v->modular_ground_target);
 		}
-		if (v->taxi_wait_counter > 64) {
+		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
 			ClearTaxiPathReservation(v, v->tile, true);
-			if (!TryRetargetModularGroundGoal(v, st)) {
-				ClearTaxiPathState(v, v->tile);
+			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
-		}
-		if (v->taxi_wait_counter >= 512) {
-			Debug(misc, 1, "[ModAp] V{} unit#{} [FALLBACK] stuck-takeoff: tile={} goal={} tgt={} wait={}",
-				v->index, v->unitnumber,
-				IsValidTile(v->tile) ? v->tile.base() : 0,
-				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-				v->modular_ground_target, v->taxi_wait_counter);
-			ClearTaxiPathReservation(v, INVALID_TILE, true);
-			ClearTaxiPathState(v, INVALID_TILE);
-			v->state = FLYING;
-			return false;
 		}
 		return false;
 	}
