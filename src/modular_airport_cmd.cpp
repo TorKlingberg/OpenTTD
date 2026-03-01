@@ -2722,6 +2722,16 @@ static void ReleaseTaxiReservation(Aircraft *v, TileIndex tile)
 	std::erase(v->taxi_reserved_tiles, tile);
 }
 
+static void ReleaseRunwayReservationTile(Aircraft *v, TileIndex tile)
+{
+	Tile t(tile);
+	if (IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
+		SetAirportTileReservation(t, false);
+	}
+	std::erase(v->modular_runway_reservation, tile);
+	std::erase(v->taxi_reserved_tiles, tile);
+}
+
 bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 {
 	if (v->taxi_path == nullptr || segment_idx >= v->taxi_path->segments.size()) return false;
@@ -3399,6 +3409,10 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			/* Free parking immediately after leaving so other aircraft can claim the stand. */
 			ReleaseTaxiReservation(v, old_tile);
 		}
+	}
+	if (old_type == TaxiSegmentType::RUNWAY) {
+		/* Release runway tiles behind us immediately after we leave them. */
+		ReleaseRunwayReservationTile(v, old_tile);
 	}
 	if (old_segment != next_segment && old_type == TaxiSegmentType::FREE_MOVE && next_type != TaxiSegmentType::RUNWAY) {
 		ClearTaxiPathReservation(v, v->tile);
