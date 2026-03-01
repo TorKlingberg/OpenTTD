@@ -8,5 +8,9 @@ Change "Aircraft last month" to last year instead.
 To help debug ground pathing and reservation issues:
 * A regression test that loads a save with several airports and many planes, and measures throughput after a year.
 
+
+* Check roll-out speed and length
+* Planes on stand should turn to face terminal building if there is one
+
+
 Pathing improvements:
-* When a plane leaves a stand, it should un-reserve the stand as soon as it has left it, not wait until taxi-ing the whole path is done.
