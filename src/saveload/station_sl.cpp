@@ -18,6 +18,7 @@
 #include "../vehicle_base.h"
 #include "../newgrf_station.h"
 #include "../newgrf_roadstop.h"
+#include "../station_map.h"
 #include "../timer/timer_game_calendar.h"
 
 #include "table/strings.h"
@@ -129,6 +130,21 @@ void AfterLoadStations()
 
 		StationUpdateCachedTriggers(st);
 		RoadStopUpdateCachedTriggers(st);
+	}
+
+	/* Clear modular airport tile reservations — tracking vectors are not saved,
+	 * so all map-level reservation bits are orphaned on load. Aircraft will
+	 * re-establish them as they resume ground movement. */
+	for (Station *sta2 : Station::Iterate()) {
+		if (sta2->airport.modular_tile_data == nullptr) continue;
+		for (const ModularAirportTileData &data : *sta2->airport.modular_tile_data) {
+			if (!IsValidTile(data.tile)) continue;
+			Tile t(data.tile);
+			if (!IsAirportTile(t)) continue;
+			if (HasAirportTileReservation(t)) {
+				SetAirportTileReservation(t, false);
+			}
+		}
 	}
 
 	/* Station blocked, wires and pylon flags need to be stored in the map. This is effectively cached data, so no

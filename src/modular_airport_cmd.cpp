@@ -324,26 +324,6 @@ void ClearModularRunwayReservation(Aircraft *v)
 		}
 	}
 	v->modular_runway_reservation.clear();
-
-	/* Robustness: periodically scan for orphaned runway reservations (every 16th call per vehicle).
-	 * The vector-based cleanup above handles the common case; this catches desync edge cases. */
-	static uint8_t scan_counter = 0;
-	if ((++scan_counter & 0x0F) == 0) {
-		Station *st = Station::GetIfValid(v->targetairport);
-		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
-			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-				if (!IsModularRunwayPiece(data.piece_type)) continue;
-				Tile t(data.tile);
-				if (!IsAirportTile(t)) continue;
-				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-runway-clear: st={} name='{}' V{} unit#{} tile={} state={} vtile={}",
-						st->index, GetModularAirportDebugName(st), v->index, v->unitnumber, data.tile.base(), v->state,
-						IsValidTile(v->tile) ? v->tile.base() : 0);
-					SetAirportTileReservation(t, false);
-				}
-			}
-		}
-	}
 }
 
 void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, TileIndex keep_tile)
@@ -2209,14 +2189,9 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 		return true;
 	}
 
-	/* Aircraft is active on this station ground, but this tile is not part of any tracked intent. */
-	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=untracked_intent state={} vtile={} goal={} tgt={}",
-		st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
-		IsValidTile(a->tile) ? a->tile.base() : 0,
-		IsValidTile(a->ground_path_goal) ? a->ground_path_goal.base() : 0,
-		a->modular_ground_target);
-	SetAirportTileReservation(t, false);
-	return true;
+	/* Aircraft is active on this station ground but tile is not in any tracked intent.
+	 * Trust the reservation — afterload sweep handles orphans from save/load. */
+	return false;
 }
 
 /**
@@ -2267,8 +2242,6 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	int best_non_runway_taxi_score = INT_MAX;
 	TileIndex best_blocked_tile = INVALID_TILE;  ///< Topologically reachable but currently blocked
 	int best_blocked_score = INT_MAX;
-	TileIndex best_compatible_fallback_tile = INVALID_TILE; ///< Last-resort end that still matches takeoff constraints
-	int best_compatible_fallback_score = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
@@ -2300,29 +2273,6 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		if (!large_safe) {
 			if (ShouldLogModularRateLimited(v->index, 42, 256)) {
 				Debug(misc, 2, "[ModAp] V{} takeoff-large-unsafe: tile={}", v->index, data.tile.base());
-			}
-		}
-
-		/* Keep a distance-based last resort, but only among runway ends that pass
-		 * hard takeoff constraints (mode/direction/aircraft size). */
-		bool fallback_reachable = true;
-		if (can_ground_route) {
-			/* Use topology-only reachability for fallback selection. If we cannot
-			 * route at all to this end, selecting it will only produce queue=INVALID loops. */
-			AirportGroundPath topo_path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
-			fallback_reachable = topo_path.found && !topo_path.tiles.empty();
-		}
-		if (fallback_reachable) {
-			int fallback_score = 0;
-			if (v != nullptr) {
-				int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-				int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-				fallback_score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-			}
-			const int ranked_fallback_score = fallback_score + large_penalty;
-			if (best_compatible_fallback_tile == INVALID_TILE || ranked_fallback_score < best_compatible_fallback_score) {
-				best_compatible_fallback_score = ranked_fallback_score;
-				best_compatible_fallback_tile = data.tile;
 			}
 		}
 
@@ -2388,14 +2338,9 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 
 	if (best_non_runway_taxi_tile != INVALID_TILE) return best_non_runway_taxi_tile;
 	if (best_path_tile != INVALID_TILE) return best_path_tile;
-	/* Prefer a topologically reachable (but temporarily blocked) runway over an
-	 * unreachable Manhattan-distance fallback. The aircraft will wait at the stand
-	 * for traffic to clear rather than getting stuck with an impossible goal. */
+	/* Topologically reachable but temporarily blocked — aircraft will wait for traffic to clear. */
 	if (best_blocked_tile != INVALID_TILE) return best_blocked_tile;
-	if (best_compatible_fallback_tile != INVALID_TILE && v != nullptr) {
-		Debug(misc, 2, "[ModAp] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_compatible_fallback_tile.base());
-	}
-	return best_compatible_fallback_tile;
+	return INVALID_TILE;
 }
 
 /**
@@ -2523,30 +2468,6 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear
 	/* Re-add preserved tiles. */
 	for (TileIndex tile : preserved) v->taxi_reserved_tiles.push_back(tile);
 
-	/* Robustness: periodically scan for orphaned non-runway reservations (every 16th call per vehicle).
-	 * The vector-based cleanup above handles the common case; this catches desync edge cases. */
-	static uint8_t taxi_scan_counter = 0;
-	if ((++taxi_scan_counter & 0x0F) == 0) {
-		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) && st->airport.modular_tile_data != nullptr) {
-			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-				if (data.tile == keep_tile) continue;
-				if (IsModularRunwayPiece(data.piece_type)) continue;
-				/* Don't orphan-clear tiles we're actively preserving. */
-				if (std::find(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(), data.tile) != v->taxi_reserved_tiles.end()) continue;
-				Tile t(data.tile);
-				if (!IsAirportTile(t)) continue;
-				if (HasAirportTileReservation(t) && GetAirportTileReserver(t) == v->index) {
-					Debug(misc, 2, "[ModAp] [FALLBACK] orphan-taxi-clear: st={} name='{}' V{} unit#{} tile={} state={} vtile={} goal={} tgt={}",
-						st->index, GetModularAirportDebugName(st), v->index, v->unitnumber, data.tile.base(), v->state,
-						IsValidTile(v->tile) ? v->tile.base() : 0,
-						IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-						v->modular_ground_target);
-					SetAirportTileReservation(t, false);
-				}
-			}
-		}
-	}
-
 	if (keep_tile != INVALID_TILE) {
 		Tile keep(keep_tile);
 		if (IsAirportTile(keep) && HasAirportTileReservation(keep) && GetAirportTileReserver(keep) == v->index) {
@@ -2584,72 +2505,6 @@ bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid)
 	if (reserver == vid) return false;
 	if (TryClearStaleModularReservation(st, tile, reserver)) return false;
 	return HasAirportTileReservation(t) && GetAirportTileReserver(t) != vid;
-}
-
-struct ModularCrossingQueueState {
-	std::map<VehicleID, uint64_t> waiting_since;
-};
-
-static std::map<uint64_t, ModularCrossingQueueState> _modular_crossing_queues;
-
-static uint64_t BuildModularCrossingQueueKey(const Station *st, std::span<const TileIndex> runway_resource_keys, TileIndex exit_tile)
-{
-	uint64_t key = 1469598103934665603ULL;
-	const auto mix = [&](uint64_t value) {
-		key ^= value + 0x9e3779b97f4a7c15ULL + (key << 6) + (key >> 2);
-	};
-
-	mix(static_cast<uint64_t>(st->index.base()));
-	mix(static_cast<uint64_t>(exit_tile.base()));
-	for (TileIndex tile : runway_resource_keys) mix(static_cast<uint64_t>(tile.base()));
-	return key;
-}
-
-static bool CanGrantRunwayCrossingNow(const Station *st, uint64_t queue_key, VehicleID vid)
-{
-	/* Periodically sweep all queues to purge empty/stale entries (every 256 ticks). */
-	const uint64_t now = TimerGameTick::counter;
-	if ((now & 0xFF) == 0) {
-		for (auto it = _modular_crossing_queues.begin(); it != _modular_crossing_queues.end(); ) {
-			if (it->second.waiting_since.empty()) {
-				it = _modular_crossing_queues.erase(it);
-			} else {
-				++it;
-			}
-		}
-	}
-
-	ModularCrossingQueueState &queue = _modular_crossing_queues[queue_key];
-
-	/* Drop stale waiters first. */
-	for (auto it = queue.waiting_since.begin(); it != queue.waiting_since.end(); ) {
-		const Aircraft *a = Aircraft::GetIfValid(it->first);
-		if (a == nullptr || !a->IsNormalAircraft() || (a->targetairport != st->index && a->last_station_visited != st->index)) {
-			it = queue.waiting_since.erase(it);
-		} else {
-			++it;
-		}
-	}
-
-	if (!queue.waiting_since.contains(vid)) queue.waiting_since[vid] = now;
-
-	VehicleID best_vid = vid;
-	uint64_t best_wait = UINT64_MAX;
-	for (const auto &[wait_vid, wait_since] : queue.waiting_since) {
-		if (wait_since < best_wait || (wait_since == best_wait && wait_vid < best_vid)) {
-			best_wait = wait_since;
-			best_vid = wait_vid;
-		}
-	}
-	return best_vid == vid;
-}
-
-static void MarkRunwayCrossingGranted(uint64_t queue_key, VehicleID vid)
-{
-	auto it = _modular_crossing_queues.find(queue_key);
-	if (it == _modular_crossing_queues.end()) return;
-	it->second.waiting_since.erase(vid);
-	if (it->second.waiting_since.empty()) _modular_crossing_queues.erase(it);
 }
 
 static bool IsPathTileRunwayPiece(const Station *st, TileIndex tile)
@@ -2790,14 +2645,11 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 				if (exit_tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) return false;
 			}
 
-			const uint64_t queue_key = BuildModularCrossingQueueKey(st, resource_keys, exit_tile);
-			if (!CanGrantRunwayCrossingNow(st, queue_key, v->index)) return false;
 			if (!TryReserveRunwayResourcesAtomic(v, st, ordered_resources, true)) return false;
 
 			/* Keep hold and exit non-runway tiles reserved while crossing runway resources. */
 			SetTaxiReservation(v, v->tile);
 			SetTaxiReservation(v, exit_tile);
-			MarkRunwayCrossingGranted(queue_key, v->index);
 			return true;
 		}
 
