@@ -747,6 +747,8 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	int rejected_direction = 0;
 	int rejected_reserved = 0;
 	int rejected_takeoff_queue = 0;
+	TileIndex best_small_runway = INVALID_TILE;
+	int best_small_runway_score = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		bool is_runway = IsModularRunwayPiece(data.piece_type);
@@ -802,10 +804,19 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				continue;
 			}
 
-			/* Large aircraft (AIR_FAST) require a long, large-family runway. */
+			/* Large aircraft (AIR_FAST) prefer a long, large-family runway.
+			 * If none exists, the small runway is used as a last resort (below). */
 			if ((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
 					!_cheats.no_jetcrash.value &&
 					!IsRunwaySafeForLarge(st, data.tile)) {
+				/* Track best small-runway fallback for large aircraft. */
+				int fx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+				int fy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+				int fscore = abs(fx - v->x_pos) + abs(fy - v->y_pos);
+				if (best_small_runway == INVALID_TILE || fscore < best_small_runway_score) {
+					best_small_runway_score = fscore;
+					best_small_runway = data.tile;
+				}
 				continue;
 			}
 		}
@@ -847,6 +858,12 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 			best_score = score;
 			best_tile = data.tile;
 		}
+	}
+
+	/* Large aircraft with no safe runway: fall back to the best small runway. */
+	if (best_tile == INVALID_TILE && !is_heli && best_small_runway != INVALID_TILE) {
+		Debug(misc, 2, "[ModAp] [FALLBACK] V{} landing-small-runway: no safe large runway, using small runway {}", v->index, best_small_runway.base());
+		best_tile = best_small_runway;
 	}
 
 	if (best_tile == INVALID_TILE && !is_heli && ShouldLogModularRateLimited(v->index, 18, 128)) {
@@ -2244,6 +2261,20 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
 		if ((flags & RUF_TAKEOFF) == 0) continue;
 
+		/* Keep a distance-based fallback so we don't deadlock.
+		 * This is computed BEFORE direction and large-aircraft checks so that
+		 * any takeoff-flagged runway end is always available as a last resort. */
+		int fallback_score = 0;
+		if (v != nullptr) {
+			int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+			int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+			fallback_score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+		}
+		if (best_fallback_tile == INVALID_TILE || fallback_score < best_fallback_score) {
+			best_fallback_score = fallback_score;
+			best_fallback_tile = data.tile;
+		}
+
 		/* Direction bits are interpreted as travel direction.
 		 * Takeoff from low end travels toward high end, and vice versa. */
 		const bool is_low = IsRunwayEndLow(st, data.tile);
@@ -2255,18 +2286,6 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 				!_cheats.no_jetcrash.value &&
 				!IsRunwaySafeForLarge(st, data.tile)) {
 			continue;
-		}
-
-		/* Keep a distance-based fallback so we don't deadlock if path probing fails transiently. */
-		int fallback_score = 0;
-		if (v != nullptr) {
-			int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-			int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-			fallback_score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-		}
-		if (best_fallback_tile == INVALID_TILE || fallback_score < best_fallback_score) {
-			best_fallback_score = fallback_score;
-			best_fallback_tile = data.tile;
 		}
 
 		/* Prefer reachable takeoff ends. */
@@ -2325,8 +2344,9 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 
 	if (best_non_runway_taxi_tile != INVALID_TILE) return best_non_runway_taxi_tile;
 	if (best_path_tile != INVALID_TILE) return best_path_tile;
-	/* With route context, an unreachable takeoff runway should be treated as unavailable. */
-	if (can_ground_route) return INVALID_TILE;
+	if (best_fallback_tile != INVALID_TILE && v != nullptr) {
+		Debug(misc, 2, "[ModAp] [FALLBACK] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_fallback_tile.base());
+	}
 	return best_fallback_tile;
 }
 
