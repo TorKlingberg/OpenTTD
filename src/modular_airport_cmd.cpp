@@ -1503,7 +1503,7 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
 	if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
 		/* Match stock behavior: abort modular landing while zeppeliner wreck blocks the airport. */
-		ClearTaxiPathReservation(v, INVALID_TILE, true);
+		ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 		ClearModularRunwayReservation(v);
 		v->modular_landing_goal = INVALID_TILE;
 		v->modular_landing_tile = INVALID_TILE;
@@ -2898,7 +2898,7 @@ void HandleModularGroundArrival(Aircraft *v)
 			case MGT_RUNWAY_TAKEOFF:
 				if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
 					/* Airport-wide zeppeliner block: hold departures until the wreck is cleared. */
-					ClearTaxiPathReservation(v, INVALID_TILE, true);
+					ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 					ClearModularRunwayReservation(v);
 					v->modular_takeoff_tile = INVALID_TILE;
 					v->modular_takeoff_progress = 0;
@@ -3146,7 +3146,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			}
 			if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
 				/* Periodically force-clear reservations and try a different goal. */
-				ClearTaxiPathReservation(v, v->tile, true);
+				ClearTaxiPathReservation(v, v->tile, true, false);
 				if (TryRetargetModularGroundGoal(v, st)) {
 					v->taxi_wait_counter = 0;
 				}
@@ -3205,7 +3205,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				runway_busy);
 		}
 		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-			ClearTaxiPathReservation(v, v->tile, true);
+			ClearTaxiPathReservation(v, v->tile, true, false);
 			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
@@ -3228,7 +3228,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				v->modular_ground_target);
 		}
 		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-			ClearTaxiPathReservation(v, v->tile, true);
+			ClearTaxiPathReservation(v, v->tile, true, false);
 			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
