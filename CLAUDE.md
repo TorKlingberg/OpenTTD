@@ -93,6 +93,7 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 | `src/table/airporttile_ids.h` | `AirportTiles` enum: `APT_STAND`, `APT_APRON`, `APT_RUNWAY_*`, `APT_DEPOT_*`, etc. |
 | `src/station_cmd.cpp` | `CmdBuildModularAirportTile`, `CmdSetTaxiwayFlags`, `CmdSetRunwayFlags` |
 | `src/airport_gui.cpp` | Shared airport toolbar + classic FTA airport picker UI |
+| `scripts/parse_airport_template.py` | Visualize template JSON files (`--grid`, `--detail`, `--runways`, `--raw`). See `skills/airport_template_analysis.md`. |
 
 ## Tile Classification
 
