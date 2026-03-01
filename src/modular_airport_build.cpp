@@ -164,7 +164,7 @@ uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_APRON_W:
 		case APT_APRON_S:
 		case APT_APRON_E:
-		case APT_ARPON_N:
+		case APT_APRON_N:
 		case APT_APRON_HOR:
 		case APT_APRON_N_FENCE_SW:
 		case APT_APRON_VER_CROSSING_S:
@@ -302,7 +302,7 @@ Money GetModularAirportPieceBuildCost(uint8_t piece_type)
 		case APT_APRON_VER_CROSSING_N:
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_E:
-		case APT_ARPON_N:
+		case APT_APRON_N:
 		case APT_APRON_HOR:
 		case APT_APRON_N_FENCE_SW:
 		case APT_PIER_NW_NE:

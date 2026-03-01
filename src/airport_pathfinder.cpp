@@ -175,7 +175,7 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 		case APT_APRON_E:
 		case APT_APRON_S:
 		case APT_APRON_W:
-		case APT_ARPON_N:
+		case APT_APRON_N:
 		case APT_APRON_HALF_EAST:
 		case APT_APRON_HALF_WEST:
 		case APT_GRASS_1:

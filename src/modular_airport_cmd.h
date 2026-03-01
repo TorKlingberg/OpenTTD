@@ -140,7 +140,7 @@ inline bool IsTaxiwayPiece(uint8_t piece_type)
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_VER_CROSSING_S:
 		case APT_APRON:
-		case APT_ARPON_N:
+		case APT_APRON_N:
 		case APT_APRON_E:
 		case APT_APRON_S:
 		case APT_APRON_W:

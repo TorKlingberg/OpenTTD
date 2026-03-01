@@ -94,7 +94,7 @@ static const std::initializer_list<AirportTileTable> _tile_table_city_0 = {
 	MK(1, 3, APT_APRON_W),
 	MK(2, 3, APT_APRON_VER_CROSSING_S),
 	MK(3, 3, APT_APRON_HOR_CROSSING_E),
-	MK(4, 3, APT_ARPON_N),
+	MK(4, 3, APT_APRON_N),
 	MK(5, 3, APT_TOWER_FENCE_SW),
 	MK(0, 4, APT_EMPTY_FENCE_NE),
 	MK(1, 4, APT_APRON_S),

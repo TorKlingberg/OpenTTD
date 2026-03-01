@@ -102,7 +102,7 @@ bool IsModernModularPiece(uint8_t piece_type)
 		case APT_APRON_VER_CROSSING_N:
 		case APT_APRON_HOR_CROSSING_E:
 		case APT_APRON_E:
-		case APT_ARPON_N:
+		case APT_APRON_N:
 		case APT_APRON_HOR:
 		case APT_APRON_N_FENCE_SW:
 		case APT_APRON_HALF_EAST:
@@ -722,6 +722,9 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	}
 
 	for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
+	if (ShouldLogModularRateLimited(v->index, 44, 16)) {
+		LogModularVehicleReservationState(st, v, "landing chain reserved");
+	}
 	return true;
 }
 
