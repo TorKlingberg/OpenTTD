@@ -2190,8 +2190,29 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	}
 
 	/* Aircraft is active on this station ground but tile is not in any tracked intent.
-	 * Trust the reservation — afterload sweep handles orphans from save/load. */
-	return false;
+	 * Trust the reservation short-term — but if the same untracked reservation persists
+	 * for >1024 ticks (~17 seconds), treat it as a genuine orphan from a tracking bug. */
+	static std::map<uint64_t, uint64_t> untracked_first_seen;
+	const uint64_t key = (static_cast<uint64_t>(tile.base()) << 20) | static_cast<uint64_t>(reserver.base());
+	const uint64_t now = TimerGameTick::counter;
+
+	auto [it, inserted] = untracked_first_seen.try_emplace(key, now);
+	if (inserted || (now - it->second) < 1024) return false;
+
+	/* Persistent untracked reservation — clear it as orphaned. */
+	untracked_first_seen.erase(it);
+	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=untracked_timeout state={} vtile={}",
+		st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
+		IsValidTile(a->tile) ? a->tile.base() : 0);
+	SetAirportTileReservation(t, false);
+
+	/* Periodically prune old entries (every 256 ticks). */
+	if ((now & 0xFF) == 0) {
+		std::erase_if(untracked_first_seen, [now](const auto &pair) {
+			return (now - pair.second) > 2048;
+		});
+	}
+	return true;
 }
 
 /**
