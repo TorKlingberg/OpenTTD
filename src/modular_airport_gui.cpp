@@ -65,6 +65,7 @@
 #include "safeguards.h"
 
 #include <cctype>
+#include <unordered_map>
 #include <unordered_set>
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
@@ -1457,11 +1458,15 @@ static inline bool IsTileReservedBy(TileIndex tile, VehicleID vid)
 	return IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == vid;
 }
 
-static void AppendReservedTileOrdered(std::vector<TileIndex> &out, std::unordered_set<uint32_t> &seen, TileIndex tile, VehicleID vid)
+static void DrawReservationChain(const Viewport &vp, DrawPixelInfo *dpi, const Point &origin, const std::vector<TileIndex> &chain, PixelColour colour)
 {
-	if (!IsTileReservedBy(tile, vid)) return;
-	if (!seen.insert(tile.base()).second) return;
-	out.push_back(tile);
+	Point prev = origin;
+	for (TileIndex tile : chain) {
+		Point curr = TileCenterToScreen(vp, tile);
+		if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, colour, 1);
+		GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, colour);
+		prev = curr;
+	}
 }
 
 static PixelColour GetReservationOverlayColour(VehicleID vid)
@@ -1494,29 +1499,84 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		if (!v->IsNormalAircraft()) continue;
 		if (v->taxi_path == nullptr && v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty()) continue;
 
-		std::vector<TileIndex> ordered_reserved;
-		std::unordered_set<uint32_t> seen;
-
+		std::unordered_map<uint32_t, uint16_t> path_index_by_tile;
 		if (v->taxi_path != nullptr) {
 			const auto &path = v->taxi_path->tiles;
-			const size_t start_idx = std::min<size_t>(v->taxi_path_index, path.size());
-			for (size_t i = start_idx; i < path.size(); ++i) {
-				AppendReservedTileOrdered(ordered_reserved, seen, path[i], v->index);
+			for (uint16_t i = 0; i < path.size(); ++i) {
+				path_index_by_tile.emplace(path[i].base(), i);
 			}
 		}
-		for (TileIndex tile : v->taxi_reserved_tiles) AppendReservedTileOrdered(ordered_reserved, seen, tile, v->index);
-		for (TileIndex tile : v->modular_runway_reservation) AppendReservedTileOrdered(ordered_reserved, seen, tile, v->index);
 
-		if (ordered_reserved.empty()) continue;
-		const PixelColour colour = GetReservationOverlayColour(v->index);
+		std::unordered_set<uint32_t> seen;
+		std::vector<std::pair<uint16_t, TileIndex>> behind_path_tiles;
+		std::vector<std::pair<uint16_t, TileIndex>> ahead_path_tiles;
+		std::vector<TileIndex> off_path_tiles;
+		const uint16_t current_index = std::min<uint16_t>(v->taxi_path_index, v->taxi_path != nullptr ? v->taxi_path->tiles.size() : 0);
+		const bool landing_phase = v->state == LANDING || v->state == ENDLANDING || v->state == HELILANDING || v->state == HELIENDLANDING;
 
-		Point prev = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
-		for (TileIndex tile : ordered_reserved) {
-			Point curr = TileCenterToScreen(vp, tile);
-			if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, colour, 1);
-			GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, colour);
-			prev = curr;
+		auto append_classified = [&](TileIndex tile) {
+			if (!IsTileReservedBy(tile, v->index)) return;
+			if (!seen.insert(tile.base()).second) return;
+
+			auto path_it = path_index_by_tile.find(tile.base());
+			if (path_it == path_index_by_tile.end()) {
+				off_path_tiles.push_back(tile);
+				return;
+			}
+
+			if (path_it->second < current_index) {
+				behind_path_tiles.emplace_back(path_it->second, tile);
+			} else {
+				ahead_path_tiles.emplace_back(path_it->second, tile);
+			}
+		};
+
+		if (landing_phase) {
+			for (TileIndex tile : v->modular_runway_reservation) append_classified(tile);
 		}
+
+		if (v->taxi_path != nullptr) {
+			for (TileIndex tile : v->taxi_path->tiles) append_classified(tile);
+		}
+		for (TileIndex tile : v->taxi_reserved_tiles) append_classified(tile);
+
+		if (!landing_phase) {
+			for (TileIndex tile : v->modular_runway_reservation) append_classified(tile);
+		}
+
+		if (seen.empty()) continue;
+		const PixelColour colour = GetReservationOverlayColour(v->index);
+		const Point origin = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
+
+		std::sort(ahead_path_tiles.begin(), ahead_path_tiles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+		std::sort(behind_path_tiles.begin(), behind_path_tiles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+
+		std::vector<TileIndex> forward_chain;
+		std::unordered_set<uint32_t> forward_seen;
+		auto append_forward_unique = [&](TileIndex tile) {
+			if (forward_seen.insert(tile.base()).second) forward_chain.push_back(tile);
+		};
+
+		/* For active landings, anchor the first segment at the touchdown tile. */
+		if (landing_phase && IsValidTile(v->modular_landing_tile) && IsTileReservedBy(v->modular_landing_tile, v->index)) {
+			append_forward_unique(v->modular_landing_tile);
+		}
+
+		for (const auto &[idx, tile] : ahead_path_tiles) {
+			(void)idx;
+			append_forward_unique(tile);
+		}
+		for (TileIndex tile : off_path_tiles) append_forward_unique(tile);
+
+		std::vector<TileIndex> backward_chain;
+		backward_chain.reserve(behind_path_tiles.size());
+		for (const auto &[idx, tile] : behind_path_tiles) {
+			(void)idx;
+			backward_chain.push_back(tile);
+		}
+
+		DrawReservationChain(vp, dpi, origin, forward_chain, colour);
+		DrawReservationChain(vp, dpi, origin, backward_chain, colour);
 	}
 }
 
