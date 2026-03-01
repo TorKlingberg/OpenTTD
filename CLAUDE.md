@@ -34,32 +34,9 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 - `algorithm file not found` — missing `-DCMAKE_CXX_FLAGS` above
 - `cannot find libatomic` — apply fix to `cmake/3rdparty/llvm/CheckAtomic.cmake`: change `if(MSVC)` to `if(MSVC OR APPLE)` at lines 52 and 75
 
-## Run and Debug
+## Debugging
 
-```bash
-# Load a savegame with full modular airport logging
-/Users/tor/ttd/OpenTTD/build/openttd -g ~/Documents/OpenTTD/save/SAVENAME.sav -d misc=3 2>/tmp/openttd.log
-```
-
-Useful flags: `-g savegame.sav` (load save), `-d misc=3` (debug level), `-f` (fullscreen), `-r 1920x1080` (resolution).
-
-Log files:
-- Debug output: `/tmp/openttd.log` (from the command above)
-- Crash logs: `~/Documents/OpenTTD/crash*.json.log`
-- Game saves: `~/Documents/OpenTTD/save/`
-
-Filter modular airport log lines:
-```bash
-grep '\[ModAp\]' /tmp/openttd.log | tail -100
-```
-
-Key log patterns:
-- `V{id} stuck(no-path)` — pathfinder found no topology path (bad airport layout or genuine dead end)
-- `V{id} seg-wait FREE_MOVE` — waiting for atomic free-move segment reservation (normal queuing)
-- `V{id} seg-wait ONE_WAY` — waiting for next one-way tile (normal queuing)
-- `V{id} landing-chain fail` — can't land; runway+exit both blocked; stays in holding pattern
-
-For detailed debugging of stuck planes and landing failures, see `skills/stuck_plane_debugging.md`.
+Debugger/logging workflows are documented in the skills list below.
 
 ## Coordinate System
 
@@ -95,7 +72,14 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 | `src/table/airporttile_ids.h` | `AirportTiles` enum: `APT_STAND`, `APT_APRON`, `APT_RUNWAY_*`, `APT_DEPOT_*`, etc. |
 | `src/station_cmd.cpp` | `CmdBuildModularAirportTile`, `CmdSetTaxiwayFlags`, `CmdSetRunwayFlags` |
 | `src/airport_gui.cpp` | Shared airport toolbar + classic FTA airport picker UI |
-| `scripts/parse_airport_template.py` | Visualize template JSON files (`--grid`, `--detail`, `--runways`, `--raw`). See `skills/airport_template_analysis.md`. |
+| `scripts/parse_airport_template.py` | Visualize template JSON files (`--grid`, `--detail`, `--runways`, `--raw`). |
+
+## Skills (Brief)
+
+- `skills/lldb_debugging.md` — LLDB attach/run workflows and modular runtime log commands.
+- `skills/stuck_plane_debugging.md` — detailed stuck-plane diagnosis playbook.
+- `skills/crash_debugging.md` — crash log and stacktrace triage steps.
+- `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.
 
 ## Tile Classification
 
@@ -120,6 +104,7 @@ Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/sta
 
 - `GetModularTileData(tile)` returns `nullptr` if the tile isn't in the modular layout — always null-check.
 - `FindAirportGroundPath` with `v=nullptr` ignores stand occupancy (topology only); with `v=aircraft` avoids occupied stands that aren't the goal.
+- Path cost has a non-goal stand/parking penalty (`+5`), so routes may prefer slightly longer taxiways over cutting through stands.
 - Runway flags (`RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`) propagate to all tiles in a contiguous runway via `CmdSetRunwayFlags`.
 - `AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are treated as NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata.
 - Depot windows can outlive tile deletion. Guard depot UI reads with a valid depot tile check.
@@ -131,8 +116,10 @@ Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/sta
 ## GUI Pitfalls
 
 - **`PickerWindowBase::Close()` calls `ResetObjectToPlace()`** — child picker windows (hangar, cosmetic, helipad) must override `Close()` with `this->Window::Close()` to avoid stealing the parent's placement cursor.
+- **Picker close behavior**: when child pickers close, parent builder should clear active placement for picker-backed tools (hangar/cosmetic/helipad) so main button state/cursor don't stay latched.
 - **`SetObjectToPlace` triggers `OnPlaceObjectAbort` on the current cursor owner** — when changing cursor ownership from within the same window (e.g. fence tool activation), wrap the call in `this->updating_cursor = true/false` to suppress the abort callback.
 - **`CloseWindowByClass` can trigger `ResetObjectToPlace` chains** — closing a `PickerWindowBase` sub-window triggers its `Close()` → `ResetObjectToPlace()` → `OnPlaceObjectAbort` on whoever owns the cursor. Guard with `updating_cursor` or override `Close()`.
+- **Year-gated picker availability**: if year changes while builder/pickers are open (e.g. Sandbox year change), re-run gating and invalidate picker windows so disabled states update immediately.
 - **Sub-tile click position**: use `_tile_fract_coords.x/.y` (0–15 in world X/Y), set by the viewport on every click. Same mechanism as the autoroad tool. Do NOT use `InverseRemapCoords` — it doesn't give tile-relative positions.
 - **Widget `SetPIPRatio(left, mid, right)`**: controls how extra space is distributed. `(0,0,1)` = left-aligned, `(1,0,1)` = centered, `(1,0,0)` = right-aligned.
 - **Helicopter landing stage**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` sets `modular_landing_stage = 0` before `AirportMoveModularLanding` runs. Helipad-specific overrides (like skipping the FAF approach) must go in `aircraft_cmd.cpp` right after that assignment, not in the landing movement code.

@@ -64,7 +64,31 @@ In `Aircraft` (`src/aircraft.h`):
 - modular landing/takeoff targets and stages
 - holding waypoint index
 
+Key fields you will debug most often:
+
+- `taxi_path`, `taxi_path_index`, `taxi_current_segment`
+- `taxi_reserved_tiles`, `modular_runway_reservation`
+- `ground_path_goal`
+- `modular_ground_target` (`MGT_NONE/TERMINAL/HELIPAD/HANGAR/RUNWAY_TAKEOFF/ROLLOUT`)
+- `modular_landing_tile`, `modular_landing_goal`, `modular_takeoff_tile`
+- `modular_holding_wp_index`
+
 Important: runtime path/reservation state is mostly recomputed, not fully persisted.
+
+### Aircraft flow (modular)
+
+High-level sequence:
+
+- `FLYING`: picks/approaches runway or helipad target
+- `LANDING` / `ENDLANDING`: commits landing, then transitions to ground goal
+- ground taxi (`AirportMoveModular`): follows segmented taxi path
+- parked (`TERM1` / `HANGAR`): waits/orders
+- departure: reserves takeoff runway, enters `TAKEOFF` chain, then back to `FLYING`
+
+Ground target transitions after landing are driven by `modular_ground_target`:
+
+- `MGT_ROLLOUT` first for runway rollout/egress
+- then retarget to `MGT_TERMINAL` / `MGT_HELIPAD` / `MGT_HANGAR` as appropriate
 
 ## Commands and Editing Flow
 
@@ -84,6 +108,7 @@ Defined in `src/station_cmd.h`:
 - checks piece availability by year (`IsModernModularPiece` / `GetModularPieceMinYear`)
 - enforces flat-level consistency within an existing modular airport
 - allows safe replacement of modular grass/empty tiles
+- allows in-place hangar replacement (hangar-on-hangar) without clearing station state first
 - stores directional hangar metadata in `piece_type`
 - validates one-way taxi settings against auto directions
 - inherits runway flags from contiguous runway if present; otherwise defaults
@@ -92,6 +117,7 @@ Defined in `src/station_cmd.h`:
 ### Build from stock airport
 
 `CmdBuildModularAirportFromStock` converts stock layouts to modular metadata, applies stock overrides, sets runway flags per airport type, and mirrors fence edges.
+For `AT_SMALL`, the legacy 3-tile terminal (`APT_SMALL_BUILDING_1/2/3`) is preserved in modular form.
 
 ### Edit runway/taxi/fence
 
@@ -124,6 +150,10 @@ Connectivity is based on:
 - runway operation restrictions
 - explicit edge fences (`edge_block_mask`)
 
+Cost preferences include:
+
+- non-goal stand/parking tiles get an extra move-cost penalty (`+5`) so aircraft avoid cutting through unrelated stands when alternatives exist
+
 ### Segment classes
 
 `TaxiSegmentType` (`src/airport_ground_pathfinder.h`):
@@ -137,6 +167,14 @@ Path segments drive reservation behavior:
 - runways reserve contiguous runway tiles atomically
 - one-way sections allow queueing behavior
 - free-move sections use segment-level reservation behavior
+
+In practice (`AirportMoveModular`):
+
+- `FREE_MOVE`: reserve the full segment atomically before entering; includes exit-guarantee into the next segment boundary
+- `ONE_WAY`: reserve-next / move / release-previous tile flow
+- `RUNWAY`: reserve full contiguous runway atomically (`TryReserveContiguousModularRunway`)
+
+Landing commit uses a stricter pre-reservation (`TryReserveLandingChain`) to reserve runway + immediate egress path before switching from flying to landing.
 
 ### Runway flags
 
@@ -157,6 +195,7 @@ Path segments drive reservation behavior:
 
 - directional hangars
 - NS runway override sprites
+- legacy small runway sprites without baked stock SE fence (modular fences come from `edge_block_mask`)
 - modular windsock/helipad variants
 - radar/flag animated airport tile layouts
 
@@ -167,11 +206,13 @@ This helper is used by normal tile drawing and template preview paths to reduce 
 `src/modular_airport_gui.cpp` includes:
 
 - piece toolbar and sub-pickers (hangar/cosmetic/helipad)
+- builder opens with no preselected piece (runway is not pre-pressed)
 - smart runway drag placement (auto end pieces)
 - taxi/runway overlay editing mode
 - edge-fence tool mode
 - holding overlay toggle
 - template manager launch
+- year-gated piece availability refresh while builder is open (including external year jumps, e.g. Sandbox options)
 
 ### Template manager and preview
 

@@ -1,4 +1,4 @@
-Change "Aircraft last month" to last year instead.
+* Change "Aircraft last month" to last year instead.
 
 * Diagonal taxi
 
@@ -11,6 +11,6 @@ To help debug ground pathing and reservation issues:
 
 * Check roll-out speed and length
 * Planes on stand should turn to face terminal building if there is one
-
+* Make sure multiplayer won't desync
 
 Pathing improvements:

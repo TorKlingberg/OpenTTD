@@ -59,9 +59,9 @@ After 64 ticks, `TryRetargetModularGroundGoal` fires but won't help if both goal
 
 When `taxi_wait_counter > 64`, `TryRetargetModularGroundGoal` picks a new goal. If the new goal has the same blocking problem, the counter resets to 0, waits 64 more ticks, retargets again — potentially ping-ponging between equally blocked goals indefinitely. Not a deadlock but effective livelock.
 
-### No takeoff fairness queue
+### Unneccessary fairness queue
 
-Runway crossings have a FIFO queue (`CanGrantRunwayCrossingNow`) to prevent starvation. Takeoff has no comparable mechanism — `TryReserveContiguousModularRunway` is just try-and-fail each tick. Multiple aircraft wanting the same runway for takeoff have no ordering guarantee.
+Runway crossings have a FIFO queue (`CanGrantRunwayCrossingNow`) to prevent starvation. I think this is not really needed, and complicates things.
 
 ### Three-tier fallback in takeoff runway selection
 
@@ -71,6 +71,3 @@ Runway crossings have a FIFO queue (`CanGrantRunwayCrossingNow`) to prevent star
 
 `FindNearestModularRunwayExitTile` (called from `HandleModularGroundArrival` MGT_ROLLOUT) iterates all runway tiles, checks 4 neighbors each, calls `FindAirportGroundPath` to every service tile. O(runway_length * 4 * service_tiles) pathfinder calls. Only fires in edge cases but could be expensive on large airports.
 
-### Landing denied when all stands full + no one-way buffer
-
-`TryReserveLandingChain` requires a one-way buffer zone if no stand is available (line 664-665). Without one-way tiles between runway and stands, all landing attempts are denied when stands are full. Aircraft circle indefinitely. By design, but can trap players who don't understand the layout requirement.
