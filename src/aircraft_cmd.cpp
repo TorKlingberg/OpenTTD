@@ -2037,7 +2037,8 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					}
 				}
 
-				TileIndex landing_goal = FindModularLandingGroundGoal(st, v);
+				TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, rollout);
 				v->modular_landing_goal = landing_goal;
 
 				if (v->subtype == AIR_AIRCRAFT) {

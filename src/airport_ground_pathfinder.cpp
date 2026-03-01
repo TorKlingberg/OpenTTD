@@ -424,7 +424,12 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	if (goal_is_runway) return strict;
 
 	/* Fallback: allow constrained perpendicular runway crossing. */
-	return run_pathfind(true);
+	AirportGroundPath crossing = run_pathfind(true);
+	if (crossing.found) {
+		Debug(misc, 2, "[ModAp] [FALLBACK] pathfind-crossing-fallback: from={} to={} cost={} strict_failed",
+			start.base(), goal.base(), crossing.cost);
+	}
+	return crossing;
 }
 
 /**
