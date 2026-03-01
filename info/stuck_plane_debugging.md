@@ -34,6 +34,22 @@ grep 'takeoff.*FindRunway=INVALID' /tmp/openttd.log | tail -10
 ```
 Means no runway was found for takeoff. Usually a direction flag or large-aircraft-on-small-runway issue.
 
+### Plane stuck at stand, runway found but unreachable
+```bash
+grep 'takeoff.*queue=INVALID' /tmp/openttd.log | tail -10
+```
+`FindModularRunwayTileForTakeoff` found a runway end but `FindModularTakeoffQueueTile` can't path to it. Common causes:
+- **Unreachable fallback runway**: The only runway returned was the Manhattan-distance fallback, which may be across an intervening runway with no ground path. Check `takeoff-fallback-runway` logs.
+- **Direction/size filter eliminated reachable runways**: All topologically reachable runway ends were filtered out by direction flags or large-aircraft checks, leaving only the unreachable fallback.
+- **All paths temporarily blocked**: Every reachable runway has traffic blocking the first segment.
+
+Debug with:
+```bash
+grep 'V{id}.*takeoff-skip' /tmp/openttd.log | tail -10   # direction/size filter rejections
+grep 'V{id}.*takeoff-path' /tmp/openttd.log | tail -10    # topology/enterability failures
+grep 'V{id}.*takeoff-fallback' /tmp/openttd.log | tail -10 # fallback used
+```
+
 ## Key Log Patterns
 
 ### Vehicle identification
@@ -88,7 +104,7 @@ These list the exact tiles reserved by and tracked for this vehicle.
 ```
 [ModAp] V74 unit#33 stuck(no-path) wait=64 state=2 tile=16811 goal=16556 tgt=4 path_found=0 cost=0
 ```
-- `wait` — ticks spent stuck (safety nets trigger at 64 and 512)
+- `wait` — ticks spent stuck (retarget attempted every 64 ticks)
 - `path_found` — whether pathfinder found any route (0=no, 1=yes but blocked)
 
 ```
@@ -112,6 +128,22 @@ No usable takeoff runway found. Causes:
 ```
 Path to runway exists but the first segment is blocked by another aircraft.
 
+### Takeoff runway selection diagnostics
+```
+[ModAp] V76 takeoff-skip dir: tile=16556 is_low=1 flags=5
+```
+Runway end skipped due to direction flags. Check `RUF_DIR_LOW`/`RUF_DIR_HIGH` on this runway.
+
+```
+[ModAp] V76 takeoff-skip large: tile=16556
+```
+Runway end skipped because aircraft is large and runway is too small.
+
+```
+[ModAp] V76 takeoff-path invalid: from=16811 to=16556
+```
+No topology path exists between the aircraft's tile and the runway end. The ground pathfinder found no route — check for intervening runways, missing taxiway connections, or blocked stands in the only path.
+
 ## Fallback / Safety Net Monitoring
 
 All fallback mechanisms log with `[FALLBACK]` for easy monitoring:
@@ -127,7 +159,6 @@ These should be rare. Frequent occurrences indicate an underlying bug:
 | `orphan-runway-clear` | Runway reservation scan found tiles reserved to wrong vehicle | Runway reservation tracking out of sync |
 | `orphan-taxi-clear` | Taxi reservation scan found tiles reserved to wrong vehicle | Taxi reservation tracking out of sync |
 | `force-clear-all` | Force-cleared all taxi reservations for a stuck vehicle | Vehicle stuck >64 ticks, aggressive cleanup |
-| `stuck-takeoff` | Vehicle stuck >512 ticks, forced to FLYING state | Last resort escape — something badly wrong |
 | `takeoff-fallback-runway` | Used fallback runway (wrong direction or small size) | No ideal runway available, using best effort |
 | `landing-small-runway` | Large aircraft landing on small runway | No large runway at this airport |
 | `pathfind-crossing-fallback` | Pathfinder strict pass failed, fallback allowed runway crossing | Layout requires crossing a runway to reach destination |
@@ -145,7 +176,7 @@ The `stale-clear` fallback includes a reason code:
 ### Step 1: Identify the symptom
 - Planes circling → check `landing-chain fail`
 - Plane stuck on ground → check `stuck(*)` lines for that vehicle
-- Plane at stand not leaving → check `takeoff.*FindRunway=INVALID`
+- Plane at stand not leaving → check `takeoff.*FindRunway=INVALID` or `takeoff.*queue=INVALID`
 
 ### Step 2: Find the blocking tile
 - Landing failures: `detail=TILE` in landing-chain fail
@@ -173,11 +204,24 @@ Two vehicles blocking each other:
 ```bash
 grep -E 'V(74|82) ' /tmp/openttd.log | tail -30
 ```
-If V74 needs a tile held by V82 and V82 needs a tile held by V74, that's a deadlock. The 64-tick force-clear and 512-tick stuck-takeoff safety nets should eventually break it.
+If V74 needs a tile held by V82 and V82 needs a tile held by V74, that's a deadlock. The 64-tick retarget and reservation clearing should eventually break it.
+
+### Step 6: Map the airport layout
+When takeoff paths fail, map out the tiles between the stand and runway:
+```python
+# Convert tile index to (x, y) — map width is typically 256
+tile = 11928
+x, y = tile % 256, tile // 256
+```
+Check each tile along the expected path for:
+- Intervening runways (pathfinder won't cross unless fallback mode)
+- Occupied stands blocking the only route
+- Missing taxiway connections
 
 ## In-Game Tools
 
-- **Query tool (?)**: Click on a tile to see its tile index and properties
+- **Query tool (?)**: Click on a tile to see its tile index, properties, and reservation owner
+- **Reservation overlay**: Toggle in the modular airport builder toolbar to see per-aircraft reservation chains drawn as blue lines
 - **Console `scrollto TILE`**: Center the viewport on a tile index
 - **Save/reload**: Clears all in-memory reservation state (taxi_reserved_tiles, taxi_path, etc. are not saved). If save/reload fixes the problem, it's a reservation state bug.
 
@@ -190,3 +234,7 @@ If V74 needs a tile held by V82 and V82 needs a tile held by V74, that's a deadl
 3. **Large aircraft on small-runway-only airport**: `FindModularRunwayTileForTakeoff` and `FindModularLandingTarget` now fall back to small runways when no large runway exists.
 
 4. **Layout dead ends**: A stand reachable only by crossing another stand or runway. The pathfinder's two-pass system allows runway crossing as a fallback (+8 cost penalty), but stand traversal is blocked if the stand is occupied. Consider adding one-way taxiway routing.
+
+5. **Unreachable fallback runway**: `FindModularRunwayTileForTakeoff` returns a Manhattan-distance fallback runway that has no ground path (e.g., separated by an intervening runway). Fixed by preferring "blocked but topologically reachable" runway ends over unreachable fallbacks. If all reachable ends are filtered by direction/size, the aircraft gets the unreachable fallback and loops. Fix: check `takeoff-skip dir`/`takeoff-skip large` logs to see which filters are too aggressive.
+
+6. **Runway sandwiching stands**: Airports with runways on both sides of the stands can create situations where aircraft can only reach one runway (the one they landed on) but need to take off from the other. Ensure at least one runway end reachable from each stand has `RUF_TAKEOFF` with correct direction flags.
