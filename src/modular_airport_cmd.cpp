@@ -2217,6 +2217,9 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 	if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) return INVALID_TILE;
 	const bool can_ground_route = CanUseModularGroundRouting(st, v);
+	const bool large_takeoff_required = (v != nullptr) &&
+			((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0) &&
+			!_cheats.no_jetcrash.value;
 	const auto tile_blocked = [&](TileIndex tile) -> bool {
 		Tile t(tile);
 		if (IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) return true;
@@ -2251,8 +2254,10 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	int best_path_score = INT_MAX;
 	TileIndex best_non_runway_taxi_tile = INVALID_TILE;
 	int best_non_runway_taxi_score = INT_MAX;
-	TileIndex best_fallback_tile = INVALID_TILE;
-	int best_fallback_score = INT_MAX;
+	TileIndex best_blocked_tile = INVALID_TILE;  ///< Topologically reachable but currently blocked
+	int best_blocked_score = INT_MAX;
+	TileIndex best_compatible_fallback_tile = INVALID_TILE; ///< Last-resort end that still matches takeoff constraints
+	int best_compatible_fallback_score = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
@@ -2261,31 +2266,53 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
 		if ((flags & RUF_TAKEOFF) == 0) continue;
 
-		/* Keep a distance-based fallback so we don't deadlock.
-		 * This is computed BEFORE direction and large-aircraft checks so that
-		 * any takeoff-flagged runway end is always available as a last resort. */
-		int fallback_score = 0;
-		if (v != nullptr) {
-			int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-			int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-			fallback_score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
-		}
-		if (best_fallback_tile == INVALID_TILE || fallback_score < best_fallback_score) {
-			best_fallback_score = fallback_score;
-			best_fallback_tile = data.tile;
-		}
-
 		/* Direction bits are interpreted as travel direction.
 		 * Takeoff from low end travels toward high end, and vice versa. */
 		const bool is_low = IsRunwayEndLow(st, data.tile);
-		if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
-		if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
-
-		/* Large aircraft require a long, large-family runway for takeoff too. */
-		if (v != nullptr && (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
-				!_cheats.no_jetcrash.value &&
-				!IsRunwaySafeForLarge(st, data.tile)) {
+		if (is_low && (flags & RUF_DIR_HIGH) == 0) {
+			if (v != nullptr && ShouldLogModularRateLimited(v->index, 40, 256)) {
+				Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
+			}
 			continue;
+		}
+		if (!is_low && (flags & RUF_DIR_LOW) == 0) {
+			if (v != nullptr && ShouldLogModularRateLimited(v->index, 41, 256)) {
+				Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
+			}
+			continue;
+		}
+
+		/* Size safety is a strong preference, but not a hard reject.
+		 * If no large-safe end is currently usable, allow best-effort takeoff. */
+		const bool large_safe = !large_takeoff_required || IsRunwaySafeForLarge(st, data.tile);
+		const int large_penalty = large_safe ? 0 : 1000000;
+		if (!large_safe) {
+			if (ShouldLogModularRateLimited(v->index, 42, 256)) {
+				Debug(misc, 2, "[ModAp] V{} takeoff-large-unsafe: tile={}", v->index, data.tile.base());
+			}
+		}
+
+		/* Keep a distance-based last resort, but only among runway ends that pass
+		 * hard takeoff constraints (mode/direction/aircraft size). */
+		bool fallback_reachable = true;
+		if (can_ground_route) {
+			/* Use topology-only reachability for fallback selection. If we cannot
+			 * route at all to this end, selecting it will only produce queue=INVALID loops. */
+			AirportGroundPath topo_path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+			fallback_reachable = topo_path.found && !topo_path.tiles.empty();
+		}
+		if (fallback_reachable) {
+			int fallback_score = 0;
+			if (v != nullptr) {
+				int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+				int cy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
+				fallback_score = abs(cx - v->x_pos) + abs(cy - v->y_pos);
+			}
+			const int ranked_fallback_score = fallback_score + large_penalty;
+			if (best_compatible_fallback_tile == INVALID_TILE || ranked_fallback_score < best_compatible_fallback_score) {
+				best_compatible_fallback_score = ranked_fallback_score;
+				best_compatible_fallback_tile = data.tile;
+			}
 		}
 
 		/* Prefer reachable takeoff ends. */
@@ -2316,9 +2343,15 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 				}
 				Debug(misc, 2, "[ModAp] V{} takeoff-path not enterable: from={} to={} reason={}", v->index, v->tile.base(), data.tile.base(), pe_reason);
 			}
+			/* Track as "reachable but blocked" — prefer over unreachable Manhattan fallback. */
+			const int blocked_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
+			if (best_blocked_tile == INVALID_TILE || blocked_cost < best_blocked_score) {
+				best_blocked_score = blocked_cost;
+				best_blocked_tile = data.tile;
+			}
 			continue;
 		}
-		const int path_cost = static_cast<int>(taxi_path.tiles.size() - 1);
+		const int path_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
 
 		bool uses_runway_before_goal = false;
 		for (TileIndex t : taxi_path.tiles) {
@@ -2344,10 +2377,14 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 
 	if (best_non_runway_taxi_tile != INVALID_TILE) return best_non_runway_taxi_tile;
 	if (best_path_tile != INVALID_TILE) return best_path_tile;
-	if (best_fallback_tile != INVALID_TILE && v != nullptr) {
-		Debug(misc, 2, "[ModAp] [FALLBACK] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_fallback_tile.base());
+	/* Prefer a topologically reachable (but temporarily blocked) runway over an
+	 * unreachable Manhattan-distance fallback. The aircraft will wait at the stand
+	 * for traffic to clear rather than getting stuck with an impossible goal. */
+	if (best_blocked_tile != INVALID_TILE) return best_blocked_tile;
+	if (best_compatible_fallback_tile != INVALID_TILE && v != nullptr) {
+		Debug(misc, 2, "[ModAp] [FALLBACK] V{} takeoff-fallback-runway: can_route={} tile={}", v->index, can_ground_route, best_compatible_fallback_tile.base());
 	}
-	return best_fallback_tile;
+	return best_compatible_fallback_tile;
 }
 
 /**
@@ -2362,16 +2399,28 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v);
 	if (!path.found || path.tiles.empty()) return INVALID_TILE;
 
+	/* Allow queueing and progress along the selected takeoff runway.
+	 * Some layouts can only reach the chosen runway end by entering that runway
+	 * at the opposite end and taxiing along it. */
+	std::vector<TileIndex> target_runway_tiles;
+	if (!GetContiguousModularRunwayTiles(st, runway_end, target_runway_tiles)) return INVALID_TILE;
+	auto is_on_target_runway = [&](TileIndex tile) {
+		return std::find(target_runway_tiles.begin(), target_runway_tiles.end(), tile) != target_runway_tiles.end();
+	};
+
 	TileIndex queue_tile = runway_end;
 	TileIndex best_queue_tile = INVALID_TILE;
 	for (TileIndex tile : path.tiles) {
 		const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
-		if (td != nullptr && IsModularRunwayPiece(td->piece_type)) {
+		const bool is_runway_tile = (td != nullptr && IsModularRunwayPiece(td->piece_type));
+		if (is_runway_tile && !is_on_target_runway(tile)) {
+			/* Don't queue onto unrelated runways while routing to takeoff. */
 			break;
 		}
 
 		/* Queueing for takeoff should happen on taxi/apron tiles, not stands/hangars/helipads,
-		 * and only on currently free tiles to avoid hard blocking by parked aircraft. */
+		 * and only on currently free tiles to avoid hard blocking by parked aircraft.
+		 * Target-runway tiles are explicitly allowed above. */
 		const bool service_tile = (td != nullptr) &&
 				(td->piece_type == APT_STAND || td->piece_type == APT_STAND_1 ||
 				 IsModularHangarPiece(td->piece_type) ||
