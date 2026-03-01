@@ -1382,7 +1382,8 @@ static constexpr int HOLDING_OVERLAY_CRUISE_ALTITUDE = (AIRCRAFT_MIN_FLYING_ALTI
  */
 static Point HoldingWorldToScreen(const Viewport &vp, int wx, int wy, int altitude = HOLDING_OVERLAY_CRUISE_ALTITUDE)
 {
-	Point p = RemapCoords(wx, wy, GetSlopePixelZ(wx, wy) + altitude);
+	/* Holding waypoints can temporarily lie outside the map while airport layout changes are in flight. */
+	Point p = RemapCoords(wx, wy, GetSlopePixelZOutsideMap(wx, wy) + altitude);
 	p.x = UnScaleByZoom(p.x - vp.virtual_left, vp.zoom) + vp.left;
 	p.y = UnScaleByZoom(p.y - vp.virtual_top,  vp.zoom) + vp.top;
 	return p;
