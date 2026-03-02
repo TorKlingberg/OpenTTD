@@ -380,6 +380,8 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		ClearTaxiPathState(v);
 		ClearModularRunwayReservation(v);
 		ClearModularAirportReservationsByVehicle(st, v->index);
+		delete v->landing_chain_path;
+		v->landing_chain_path = nullptr;
 
 		v->ground_path_goal = INVALID_TILE;
 		v->modular_ground_target = MGT_NONE;
@@ -2508,8 +2510,6 @@ void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile)
 	ClearTaxiPathReservation(v, keep_tile);
 	delete v->taxi_path;
 	v->taxi_path = nullptr;
-	delete v->landing_chain_path;
-	v->landing_chain_path = nullptr;
 	v->taxi_path_index = 0;
 	v->taxi_current_segment = 0;
 	v->taxi_wait_counter = 0;
