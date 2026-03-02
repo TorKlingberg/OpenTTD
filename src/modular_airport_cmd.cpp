@@ -691,6 +691,8 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 			return log_chain_fail("one_way_entry_blocked", entry);
 		}
 		SetTaxiReservation(v, entry);
+		delete v->landing_chain_path;
+		v->landing_chain_path = new TaxiPath(std::move(path));
 		return true;
 	}
 
@@ -715,6 +717,10 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	}
 
 	for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
+
+	delete v->landing_chain_path;
+	v->landing_chain_path = new TaxiPath(std::move(path));
+
 	if (ShouldLogModularRateLimited(v->index, 44, 16)) {
 		LogModularVehicleReservationState(st, v, "landing chain reserved");
 	}
@@ -2502,6 +2508,8 @@ void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile)
 	ClearTaxiPathReservation(v, keep_tile);
 	delete v->taxi_path;
 	v->taxi_path = nullptr;
+	delete v->landing_chain_path;
+	v->landing_chain_path = nullptr;
 	v->taxi_path_index = 0;
 	v->taxi_current_segment = 0;
 	v->taxi_wait_counter = 0;
@@ -2823,6 +2831,21 @@ void HandleModularGroundArrival(Aircraft *v)
 					v->ground_path_goal = goal;
 					v->modular_ground_target = target;
 					v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
+
+					/* Install pre-computed landing chain path if it matches current position and goal. */
+					if (v->landing_chain_path != nullptr &&
+							v->landing_chain_path->valid &&
+							!v->landing_chain_path->tiles.empty() &&
+							v->landing_chain_path->tiles.front() == v->tile &&
+							v->landing_chain_path->tiles.back() == goal) {
+						delete v->taxi_path;
+						v->taxi_path = v->landing_chain_path;
+						v->landing_chain_path = nullptr;
+						v->taxi_path_index = 0;
+						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path, 0);
+						v->taxi_wait_counter = 0;
+						SetTaxiReservation(v, v->tile);
+					}
 				} else {
 					/* No immediate service destination from rollout completion:
 					 * first vacate runway to the nearest non-runway airport tile. */
@@ -2845,6 +2868,10 @@ void HandleModularGroundArrival(Aircraft *v)
 						}
 					}
 				}
+
+				/* Discard any remaining landing chain path — either installed above or no longer needed. */
+				delete v->landing_chain_path;
+				v->landing_chain_path = nullptr;
 			}
 			break;
 
