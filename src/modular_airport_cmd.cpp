@@ -2521,6 +2521,8 @@ bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid)
 {
 	Tile t(tile);
 	if (!IsAirportTile(t)) return false;
+	/* Hangars are multi-capacity — never treat as reserved. */
+	if (IsModularHangarTile(st, tile)) return false;
 	if (!HasAirportTileReservation(t)) return false;
 	const VehicleID reserver = GetAirportTileReserver(t);
 	if (reserver == vid) return false;
@@ -2596,6 +2598,15 @@ void SetTaxiReservation(Aircraft *v, TileIndex tile)
 {
 	Tile t(tile);
 	if (!IsAirportTile(t)) return;
+	/* Hangars are multi-capacity — never set map-level reservation bits.
+	 * Still track in the vehicle's vector so path cleanup works. */
+	Station *st = Station::GetIfValid(v->targetairport);
+	if (st != nullptr && IsModularHangarTile(st, tile)) {
+		if (std::find(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(), tile) == v->taxi_reserved_tiles.end()) {
+			v->taxi_reserved_tiles.push_back(tile);
+		}
+		return;
+	}
 	SetAirportTileReservation(t, true);
 	SetAirportTileReserver(t, v->index);
 	if (std::find(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(), tile) == v->taxi_reserved_tiles.end()) {
