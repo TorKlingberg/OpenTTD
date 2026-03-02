@@ -3124,11 +3124,20 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 {
 	if (v->ground_path_goal == INVALID_TILE) return true;
 
+	/* Stock-parity rollout braking applies only while still physically on runway. */
+	bool rollout_on_runway = false;
+	if (v->modular_ground_target == MGT_ROLLOUT &&
+			IsValidTile(v->tile) &&
+			st->TileBelongsToAirport(v->tile)) {
+		const ModularAirportTileData *tile_data = st->airport.GetModularTileData(v->tile);
+		rollout_on_runway = (tile_data != nullptr && IsModularRunwayPiece(tile_data->piece_type));
+	}
+
 	/* Ground-path movement must never run at flight/takeoff speeds.
 	 * If landing/takeoff transitions leave residual high speed, clamp before any
 	 * pathing/reservation decisions to avoid long-tail runway deadlocks. */
 	const uint scaled_taxi_limit = SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed;
-	if (v->cur_speed > scaled_taxi_limit) {
+	if (!rollout_on_runway && v->cur_speed > scaled_taxi_limit) {
 		if (ShouldLogModularRateLimited(v->index, 35, 128)) {
 			Debug(misc, 1, "[ModAp] V{} clamp pre-ground-move speed {}->{} state={} tile={} goal={} tgt={}",
 				v->index, v->cur_speed, scaled_taxi_limit, v->state,
@@ -3292,7 +3301,10 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
 		}
 
-		int count = UpdateAircraftSpeed(v, SPEED_LIMIT_TAXI);
+		/* Match stock Brake behavior while rolling out on runway: soft decel to taxi speed. */
+		int count = rollout_on_runway ?
+				UpdateAircraftSpeed(v, SPEED_LIMIT_TAXI, false) :
+				UpdateAircraftSpeed(v, SPEED_LIMIT_TAXI);
 		while (count-- > 0) {
 			GetNewVehiclePosResult gp = GetNewVehiclePos(v);
 			v->x_pos = gp.x;
@@ -3317,6 +3329,13 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 
 	const TaxiSegmentType old_type = (old_segment < v->taxi_path->segments.size()) ? v->taxi_path->segments[old_segment].type : TaxiSegmentType::FREE_MOVE;
+	const bool runway_exit_transition = (old_type == TaxiSegmentType::RUNWAY && next_type != TaxiSegmentType::RUNWAY);
+	if (rollout_on_runway && runway_exit_transition && v->cur_speed > scaled_taxi_limit) {
+		/* Rollout soft-brake applies only while physically on runway; clamp immediately once exited. */
+		v->cur_speed = scaled_taxi_limit;
+		v->subspeed = 0;
+		v->modular_takeoff_progress = 0;
+	}
 	if (old_type == TaxiSegmentType::ONE_WAY) {
 		ReleaseTaxiReservation(v, old_tile);
 	} else {
