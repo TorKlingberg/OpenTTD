@@ -231,7 +231,7 @@ public:
 		}
 
 		/* Modular airport tile reservation owner (if any). */
-		if (IsAirport(tile)) {
+		if (IsTileType(tile, TileType::Station) && IsAirport(tile)) {
 			const Station *st = Station::GetByTile(tile);
 			const bool is_modular_tile =
 					st != nullptr &&
