@@ -1708,12 +1708,10 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		}
 
 		v->modular_takeoff_tile = runway;
-		TileIndex queue = FindModularTakeoffQueueTile(st, v, runway);
-		if (queue == INVALID_TILE) queue = runway;
-		v->ground_path_goal = queue;
+		v->ground_path_goal = runway;
 		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
 		v->state = TERM1;
-		Debug(misc, 2, "[ModAp] V{} takeoff recovery: requeue goal={} runway={}", v->index, queue.base(), runway.base());
+		Debug(misc, 2, "[ModAp] V{} takeoff recovery: requeue goal={} runway={}", v->index, runway.base(), runway.base());
 		return true;
 	};
 
@@ -2699,6 +2697,21 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 	if (seg.type == TaxiSegmentType::ONE_WAY) {
 		if (v->taxi_path_index + 1 >= tiles.size()) return true;
 		TileIndex next = tiles[v->taxi_path_index + 1];
+		const bool next_is_runway = IsPathTileRunwayPiece(st, next);
+
+		/* Leaving a one-way staging tile toward takeoff runway must reserve the
+		 * whole contiguous runway atomically before entering runway tiles. */
+		if (next_is_runway && v->modular_ground_target == MGT_RUNWAY_TAKEOFF) {
+			if (!TryReserveContiguousModularRunway(v, st, next)) return false;
+			return true;
+		}
+
+		/* Hangars are multi-capacity: track intent but do not map-reserve. */
+		if (IsModularHangarTile(st, next)) {
+			SetTaxiReservation(v, next);
+			return true;
+		}
+
 		if (IsTaxiTileReservedByOther(st, next, v->index)) return false;
 		if (IsModularTileOccupiedByOtherAircraft(st, next, v->index)) return false;
 		SetTaxiReservation(v, next);
@@ -2710,11 +2723,34 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 	std::vector<TileIndex> to_reserve;
 	to_reserve.reserve(seg.end_index - seg.start_index + 2);
 
-	for (uint16_t i = seg.start_index; i <= seg.end_index; ++i) {
+	/* For FREE_MOVE, only reserve/check tiles ahead of the current path index when
+	 * already inside this segment. Re-checking tiles behind can deadlock opposing
+	 * movers that each hold disjoint prefixes of the same segment. */
+	uint16_t reserve_start = seg.start_index;
+	if (v->taxi_path_index >= seg.start_index && v->taxi_path_index <= seg.end_index) {
+		reserve_start = std::max<uint16_t>(seg.start_index, static_cast<uint16_t>(v->taxi_path_index + 1));
+	}
+
+	for (uint16_t i = reserve_start; i <= seg.end_index; ++i) {
 		TileIndex tile = tiles[i];
 		if (!IsModularHangarTile(st, tile)) {
-			if (IsTaxiTileReservedByOther(st, tile, v->index)) return false;
-			if (tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) return false;
+			if (IsTaxiTileReservedByOther(st, tile, v->index)) {
+				if (ShouldLogModularRateLimited(v->index, 55, 128)) {
+					Tile dt(tile);
+					Debug(misc, 1, "[ModAp] V{} freemove-deny: reserved tile={} by V{} seg_i={} path_idx={} seg={}",
+						v->index, tile.base(),
+						(IsAirportTile(dt) && HasAirportTileReservation(dt)) ? GetAirportTileReserver(dt).base() : 0,
+						i, v->taxi_path_index, segment_idx);
+				}
+				return false;
+			}
+			if (tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) {
+				if (ShouldLogModularRateLimited(v->index, 56, 128)) {
+					Debug(misc, 1, "[ModAp] V{} freemove-deny: occupied tile={} seg_i={} path_idx={} seg={}",
+						v->index, tile.base(), i, v->taxi_path_index, segment_idx);
+				}
+				return false;
+			}
 		}
 		to_reserve.push_back(tile);
 	}
@@ -2723,10 +2759,29 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 		TileIndex exit_tile = tiles[seg.end_index + 1];
 		const uint8_t next_seg = segment_idx + 1;
 		if (next_seg < v->taxi_path->segments.size() && v->taxi_path->segments[next_seg].type == TaxiSegmentType::RUNWAY) {
-			if (!TryReserveContiguousModularRunway(v, st, exit_tile)) return false;
+			if (!TryReserveContiguousModularRunway(v, st, exit_tile)) {
+				if (ShouldLogModularRateLimited(v->index, 57, 128)) {
+					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit runway tile={} seg={}", v->index, exit_tile.base(), segment_idx);
+				}
+				return false;
+			}
 		} else if (!IsModularHangarTile(st, exit_tile)) {
-			if (IsTaxiTileReservedByOther(st, exit_tile, v->index)) return false;
-			if (IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) return false;
+			if (IsTaxiTileReservedByOther(st, exit_tile, v->index)) {
+				if (ShouldLogModularRateLimited(v->index, 58, 128)) {
+					Tile dt(exit_tile);
+					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit reserved tile={} by V{} seg={}",
+						v->index, exit_tile.base(),
+						(IsAirportTile(dt) && HasAirportTileReservation(dt)) ? GetAirportTileReserver(dt).base() : 0,
+						segment_idx);
+				}
+				return false;
+			}
+			if (IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) {
+				if (ShouldLogModularRateLimited(v->index, 59, 128)) {
+					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit occupied tile={} seg={}", v->index, exit_tile.base(), segment_idx);
+				}
+				return false;
+			}
 			to_reserve.push_back(exit_tile);
 		} else {
 			to_reserve.push_back(exit_tile);
@@ -3192,8 +3247,9 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 					v->modular_ground_target, dbg_path.found, dbg_path.cost);
 			}
 			if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-				/* Periodically force-clear reservations and try a different goal. */
-				ClearTaxiPathReservation(v, v->tile, true, false);
+				/* Periodically try a different goal.
+				 * Do not pre-clear reservations here; keep current staged ownership
+				 * unless retargeting actually succeeds and rebuilds path state. */
 				if (TryRetargetModularGroundGoal(v, st)) {
 					v->taxi_wait_counter = 0;
 				}
@@ -3252,7 +3308,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				runway_busy);
 		}
 		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-			ClearTaxiPathReservation(v, v->tile, true, false);
+			/* Keep existing reservations unless retarget succeeds. */
 			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
@@ -3275,7 +3331,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				v->modular_ground_target);
 		}
 		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-			ClearTaxiPathReservation(v, v->tile, true, false);
+			/* Keep existing reservations unless retarget succeeds. */
 			if (TryRetargetModularGroundGoal(v, st)) {
 				v->taxi_wait_counter = 0;
 			}
@@ -3353,9 +3409,9 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	if (old_segment != next_segment && old_type == TaxiSegmentType::FREE_MOVE && next_type != TaxiSegmentType::RUNWAY) {
 		ClearTaxiPathReservation(v, v->tile);
 	}
-	if (old_segment != next_segment && old_type == TaxiSegmentType::RUNWAY && next_type != TaxiSegmentType::RUNWAY) {
-		ClearTaxiPathReservation(v, v->tile);
-	}
+	/* RUNWAY->non-RUNWAY transition should not clear the whole taxi reservation set.
+	 * Keep pre-reserved post-runway path tiles from landing-chain continuity and
+	 * release only runway ownership via ReleaseRunwayReservationTile/ClearModularRunwayReservation. */
 	SetTaxiReservation(v, v->tile);
 
 	if (v->tile == v->ground_path_goal || v->taxi_path_index + 1 >= v->taxi_path->tiles.size()) {

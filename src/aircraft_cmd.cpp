@@ -1723,14 +1723,14 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				return;
 			}
 
-			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-			if (runway != INVALID_TILE) {
-				v->modular_takeoff_tile = runway;
-				v->ground_path_goal = FindModularTakeoffQueueTile(st, v, runway);
-				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-				Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={} queue={}", v->index, runway.base(), v->ground_path_goal.base());
-				return;
-			}
+				TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+				if (runway != INVALID_TILE) {
+					v->modular_takeoff_tile = runway;
+					v->ground_path_goal = runway;
+					v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+					Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
+					return;
+				}
 
 			if (v->subtype == AIR_HELICOPTER) {
 				/* No runway available; helicopter can take off vertically as fallback. */
@@ -1857,17 +1857,14 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 				}
 			}
 		}
-		if (!go_to_hangar) {
-			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-			if (runway != INVALID_TILE) {
-				v->modular_takeoff_tile = runway;
-				goal = FindModularTakeoffQueueTile(st, v, runway);
-				if (goal == INVALID_TILE && ShouldLogModularRateLimited(v->index, 38, 128)) {
-					Debug(misc, 2, "[ModAp] V{} takeoff: runway={} but queue=INVALID vtile={}", v->index, runway.base(), v->tile.base());
-				}
-			} else {
-				if (ShouldLogModularRateLimited(v->index, 39, 128)) {
-					Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+			if (!go_to_hangar) {
+				TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+				if (runway != INVALID_TILE) {
+					v->modular_takeoff_tile = runway;
+					goal = runway;
+				} else {
+					if (ShouldLogModularRateLimited(v->index, 39, 128)) {
+						Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
 				}
 			}
 			target = MGT_RUNWAY_TAKEOFF;
