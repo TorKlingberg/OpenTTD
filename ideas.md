@@ -14,3 +14,5 @@ To help debug ground pathing and reservation issues:
 * Make sure multiplayer won't desync
 
 Pathing improvements:
+* For landing-only runways, only reserve the runway before landing. Unless planes need to cross landing runway sometimes (may to get to takeoff runway)
+* Free all tiles as soon as plane has passed them?

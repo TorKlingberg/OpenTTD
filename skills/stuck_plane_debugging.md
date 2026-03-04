@@ -34,10 +34,36 @@ grep 'takeoff.*FindRunway=INVALID' /tmp/openttd.log | tail -10
 ```
 Means no runway was found for takeoff. Usually a direction flag or large-aircraft-on-small-runway issue.
 
-### Plane stuck at stand, runway found but unreachable
+### Plane stuck at stand, runway found but unreachable (legacy queue-goal path)
 ```bash
 grep 'takeoff.*queue=INVALID' /tmp/openttd.log | tail -10
 ```
+This is mainly useful for older logs. Current code uses runway tiles as takeoff goals instead of queue/free-move goal tiles.
+
+### Plane assigned takeoff target (current behavior)
+```bash
+grep 'takeoff target runway=' /tmp/openttd.log | tail -20
+grep 'found takeoff target goal=' /tmp/openttd.log | tail -20
+```
+For `MGT_RUNWAY_TAKEOFF`, goal should now be the selected runway tile (real goal), not a free-move queue tile.
+
+### Plane on free-move tile with no forward reservation
+```bash
+grep 'V{id}.*stuck(reserve)' /tmp/openttd.log | tail -20
+grep 'V{id}.*owned-reservations' /tmp/openttd.log | tail -10
+```
+If a plane repeatedly sits on a free-move tile with only current/self reservation and no forward claim, suspect reservation handoff/churn.
+
+### Runway reservation churn/flapping
+```bash
+grep 'V{id}.*runway-reserve denied' /tmp/openttd.log | tail -30
+grep 'V{id}.*reserve-state reason=.reserve granted.' /tmp/openttd.log | tail -30
+```
+Repeated deny/grant oscillation for the same vehicle/runway is a strong signal for reservation instability.
+
+### Takeoff retarget caveat
+`TryRetargetModularGroundGoal` does not retarget `MGT_RUNWAY_TAKEOFF`. If takeoff-side movement stalls, focus on reservation contention and segment progression, not alternate-goal retarget.
+
 `FindModularRunwayTileForTakeoff` found a runway end but `FindModularTakeoffQueueTile` can't path to it. Common causes:
 - **Unreachable fallback runway**: The only runway returned was the Manhattan-distance fallback, which may be across an intervening runway with no ground path. Check `takeoff-fallback-runway` logs.
 - **Direction/size filter eliminated reachable runways**: All topologically reachable runway ends were filtered out by direction flags or large-aircraft checks, leaving only the unreachable fallback.
@@ -114,6 +140,8 @@ These list the exact tiles reserved by and tracked for this vehicle.
 - `reserver` — who holds the reservation on that tile
 - `reserved_by_other` / `occupied_by_other` / `runway_busy` — why it can't proceed
 
+For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
+
 ### Takeoff failures
 ```
 [ModAp] V76 takeoff: FindRunway=INVALID vtile=16811
@@ -176,7 +204,7 @@ The `stale-clear` fallback includes a reason code:
 ### Step 1: Identify the symptom
 - Planes circling → check `landing-chain fail`
 - Plane stuck on ground → check `stuck(*)` lines for that vehicle
-- Plane at stand not leaving → check `takeoff.*FindRunway=INVALID` or `takeoff.*queue=INVALID`
+- Plane at stand not leaving → check `takeoff.*FindRunway=INVALID` and takeoff target logs (`takeoff target runway=` / `found takeoff target`)
 
 ### Step 2: Find the blocking tile
 - Landing failures: `detail=TILE` in landing-chain fail
@@ -217,6 +245,7 @@ Check each tile along the expected path for:
 - Intervening runways (pathfinder won't cross unless fallback mode)
 - Occupied stands blocking the only route
 - Missing taxiway connections
+- Free-move boundaries where no forward reservation can be acquired
 
 ## In-Game Tools
 
