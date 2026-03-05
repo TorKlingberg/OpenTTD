@@ -46,8 +46,15 @@ When reserving a `FREE_MOVE` segment:
 
 ### RUNWAY
 
-- full contiguous runway reservation is atomic via `TryReserveContiguousModularRunway`
-- runway crossing path (`non-runway -> runway -> non-runway`) reserves crossing resources atomically and also keeps current tile + first exit tile reserved
+- runway segments are classified by intent:
+  - terminal runway mode: runway is the destination for takeoff/takeoff-state progression
+  - transit runway mode: runway is used as a taxiway bridge toward a non-runway continuation
+- terminal runway mode reserves contiguous runway resources atomically
+- transit runway mode requires all-or-nothing pre-entry ownership of:
+  - runway resource(s),
+  - current hold tile,
+  - safe non-runway continuation tile after runway segment
+- if no safe continuation can be derived (or it is blocked), runway entry is denied
 
 ## 4) Release/retention behavior while moving (Reservation V2)
 
@@ -59,7 +66,8 @@ When reserving a `FREE_MOVE` segment:
   - current tile
   - active forward segment horizon (+ boundary tile)
   - landing-chain continuity (`landing_chain_path`)
-  - future runway resources found on future path suffix
+  - runway resources needed by active runway traversal and takeoff-intent runway ownership
+  - for active transit-runway traversal: hold tile + continuation tile
 - runway resources are atomic:
   - if any tile of runway resource `R` is still needed, all tiles in `R` stay reserved
 - runway reservation is no longer auto-cleared just because aircraft is on non-runway tile
@@ -101,6 +109,10 @@ Ground movement attempts to maintain:
 - plus one non-free-move boundary tile to step off the free-move region,
 - with special rule that runway entry for takeoff requires full contiguous runway reservation.
 - and after each movement step, deterministic release of owned tiles outside the computed keep-set.
+
+Additional runway-transit invariant:
+
+- aircraft must not enter runway-transit movement unless it already owns a continuation chain to a safe non-runway continuation tile.
 
 That invariant is enforced by staged segment reservation (`TryReserveTaxiSegment`) rather than by making intermediate queue tiles into permanent goals.
 
