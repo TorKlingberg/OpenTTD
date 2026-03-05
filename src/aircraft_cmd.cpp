@@ -41,6 +41,7 @@
 #include "airport_ground_pathfinder.h"
 #include "modular_airport_cmd.h"
 #include "timer/timer_game_tick.h"
+#include "timer/timer.h"
 
 #include "table/strings.h"
 #include "table/airporttile_ids.h"
@@ -54,6 +55,34 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+
+static uint64_t _airport_landings_this_year = 0;
+static uint64_t _airport_takeoffs_this_year = 0;
+
+void RecordAirportMovement(StationID station_id, bool landing)
+{
+	Station *st = Station::GetIfValid(station_id);
+	if (st == nullptr) return;
+
+	if (landing) {
+		st->airport_arrivals_this_month++;
+		_airport_landings_this_year++;
+	} else {
+		st->airport_departures_this_month++;
+		_airport_takeoffs_this_year++;
+	}
+}
+
+/** Economy yearly callback for airport movement totals. */
+static const IntervalTimer<TimerGameEconomy> _economy_airport_movement_yearly({TimerGameEconomy::YEAR, TimerGameEconomy::Priority::NONE}, [](auto)
+{
+	const auto current_year = TimerGameEconomy::year.base();
+	const auto finished_year = current_year > 0 ? current_year - 1 : 0;
+	Debug(misc, 1, "[AirportStats] Year {} totals: landings={} takeoffs={}", finished_year, _airport_landings_this_year, _airport_takeoffs_this_year);
+
+	_airport_landings_this_year = 0;
+	_airport_takeoffs_this_year = 0;
+});
 
 void Aircraft::UpdateDeltaXY()
 {
@@ -1865,7 +1894,7 @@ static void AircraftEventHandler_EndTakeOff(Aircraft *v, const AirportFTAClass *
 {
 	/* Modular airports account departures in AirportMoveModularTakeoff. */
 	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		Station::Get(v->targetairport)->airport_departures_this_month++;
+		RecordAirportMovement(v->targetairport, false);
 	}
 
 	v->state = FLYING;
@@ -1877,7 +1906,7 @@ static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass 
 {
 	/* Modular airports account departures in AirportMoveModularTakeoff/HeliTakeoff. */
 	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		Station::Get(v->targetairport)->airport_departures_this_month++;
+		RecordAirportMovement(v->targetairport, false);
 	}
 
 	v->state = FLYING;
@@ -2042,7 +2071,7 @@ void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *)
 {
 	/* Modular airports account arrivals in AirportMoveModularLanding. */
 	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		Station::Get(v->targetairport)->airport_arrivals_this_month++;
+		RecordAirportMovement(v->targetairport, true);
 	}
 
 	v->state = ENDLANDING;

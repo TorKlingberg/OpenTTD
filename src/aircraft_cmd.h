@@ -16,4 +16,6 @@
 
 CommandCost CmdBuildAircraft(DoCommandFlags flags, TileIndex tile, const Engine *e, Vehicle **v);
 
+void RecordAirportMovement(StationID station, bool landing);
+
 #endif /* AIRCRAFT_CMD_H */

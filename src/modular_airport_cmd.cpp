@@ -1600,7 +1600,7 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 
 			/* Reached threshold, land and start rollout */
 			Debug(misc, 3, "[ModAp] Vehicle {} touchdown at ({},{},{})", v->index, target_x, target_y, airport_z);
-			Station::Get(v->targetairport)->airport_arrivals_this_month++;
+			RecordAirportMovement(v->targetairport, true);
 			v->tile = v->modular_landing_tile;
 
 			/* Set up rollout phase - taxi along runway to opposite end */
@@ -1745,7 +1745,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 			ClearModularRunwayReservation(v);
 			ClearTaxiPathReservation(v);
 			v->state = FLYING;
-			Station::Get(v->targetairport)->airport_departures_this_month++;
+			RecordAirportMovement(v->targetairport, false);
 			v->modular_takeoff_tile = INVALID_TILE;
 			v->modular_takeoff_progress = 0;
 			v->tile = TileIndex{};
