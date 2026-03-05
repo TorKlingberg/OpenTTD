@@ -20,6 +20,7 @@
 #include <string_view>
 #include <cstdint>
 #include <cstddef>
+#include <vector>
 
 inline constexpr uint8_t MGT_NONE = 0;
 inline constexpr uint8_t MGT_TERMINAL = 1;
@@ -171,6 +172,9 @@ bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *
 bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker = nullptr);
 bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
+void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<TileIndex> &keep_set);
+void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<const TileIndex> keep_set, const char *reason);
+bool ShouldRetainRunwayReservation(const Aircraft *v, const Station *st);
 void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile = INVALID_TILE, bool force_clear_all = false, bool as_fallback = true);
 void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile = INVALID_TILE);
 void SetTaxiReservation(Aircraft *v, TileIndex tile);

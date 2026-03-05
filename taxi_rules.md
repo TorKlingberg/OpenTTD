@@ -49,17 +49,23 @@ When reserving a `FREE_MOVE` segment:
 - full contiguous runway reservation is atomic via `TryReserveContiguousModularRunway`
 - runway crossing path (`non-runway -> runway -> non-runway`) reserves crossing resources atomically and also keeps current tile + first exit tile reserved
 
-## 4) Release/retention behavior while moving
+## 4) Release/retention behavior while moving (Reservation V2)
 
-- one-way: release old tile when stepping forward
-- stands: released immediately after aircraft leaves stand tile
-- runway: release tiles behind as aircraft progresses (`ReleaseRunwayReservationTile`)
-- on runway exit: runway reservation is cleared when no longer on runway
-- free-move segment exit:
-  - on `FREE_MOVE -> non-RUNWAY` boundary, clear path reservations except keep current tile and preserved non-path reservations
-  - on `RUNWAY -> non-RUNWAY` boundary, do **not** clear full taxi reservation set (keeps pre-reserved post-runway tiles from landing chain continuity)
+- movement now uses reserve-then-reconcile:
+  - reserve forward tiles with `TryReserveTaxiSegment`
+  - compute keep-set with `BuildReservationKeepSet`
+  - release everything else with `ReconcileAircraftReservations`
+- keep-set includes:
+  - current tile
+  - active forward segment horizon (+ boundary tile)
+  - landing-chain continuity (`landing_chain_path`)
+  - future runway resources found on future path suffix
+- runway resources are atomic:
+  - if any tile of runway resource `R` is still needed, all tiles in `R` stay reserved
+- runway reservation is no longer auto-cleared just because aircraft is on non-runway tile
+  - takeoff intent uses `ShouldRetainRunwayReservation` to keep reservation only when it still matches current intended takeoff runway
 
-`ClearTaxiPathReservation` preserves non-runway reservations that are not on the current active taxi path when not force-clearing (to keep landing-chain continuity across path rebuilds/touchdown transitions).
+`ClearTaxiPathReservation` remains a transition/force-clear utility; normal per-step release is now reconcile-based.
 
 ## 5) Landing chain (pre-landing reservation)
 
@@ -94,5 +100,11 @@ Ground movement attempts to maintain:
 - reservation of the forward free-move chunk,
 - plus one non-free-move boundary tile to step off the free-move region,
 - with special rule that runway entry for takeoff requires full contiguous runway reservation.
+- and after each movement step, deterministic release of owned tiles outside the computed keep-set.
 
 That invariant is enforced by staged segment reservation (`TryReserveTaxiSegment`) rather than by making intermediate queue tiles into permanent goals.
+
+## 9) Runway deny behavior when already owning runway
+
+- `TryReserveContiguousModularRunway` no longer clears runway ownership on deny if the aircraft already owns the exact requested contiguous runway resource.
+- deny clears happen only when existing runway ownership is stale/mismatched with the requested runway resource.
