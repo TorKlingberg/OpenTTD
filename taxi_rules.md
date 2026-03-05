@@ -35,7 +35,9 @@ When reserving a `FREE_MOVE` segment:
 - reserve all forward tiles in the segment atomically
 - if already inside the same free-move segment, only reserve/check forward tiles (not tiles behind current index)
 - also reserve one "exit" tile (first tile of next segment)
-- if exit is `RUNWAY`, reserve full contiguous runway atomically before entering it
+- if exit is `RUNWAY`, apply the runway segment contract before entry (`TryReserveTaxiSegment` on the runway segment):
+  - terminal runway: reserve contiguous runway resource atomically
+  - transit runway: reserve runway + hold + continuation chain atomically
 - hangar tiles are treated as non-blocking (multi-capacity)
 
 ### ONE_WAY

@@ -61,6 +61,15 @@ grep 'V{id}.*reserve-state reason=.reserve granted.' /tmp/openttd.log | tail -30
 ```
 Repeated deny/grant oscillation for the same vehicle/runway is a strong signal for reservation instability.
 
+### Runway-transit contract diagnostics (Reservation V3+)
+```bash
+grep 'runway-transit-' /tmp/openttd.log | tail -50
+```
+Important patterns:
+- `runway-transit-deny` — runway-transit entry denied because continuation chain could not be acquired.
+- `runway-transit-debug` — emitted from stuck(reserve) context for runway segments; shows `terminal=<bool>` and continuation state.
+- `runway-transit-invariant: missing continuation ownership` — hard contract violation signal; should be rare/zero in healthy runs.
+
 ### Takeoff retarget caveat
 `TryRetargetModularGroundGoal` does not retarget `MGT_RUNWAY_TAKEOFF`. If takeoff-side movement stalls, focus on reservation contention and segment progression, not alternate-goal retarget.
 
@@ -141,6 +150,16 @@ These list the exact tiles reserved by and tracked for this vehicle.
 - `reserved_by_other` / `occupied_by_other` / `runway_busy` — why it can't proceed
 
 For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
+
+When runway is involved, also inspect:
+```bash
+grep 'V{id}.*runway-transit-debug' /tmp/openttd.log | tail -20
+grep 'V{id}.*runway-transit-invariant' /tmp/openttd.log | tail -20
+grep 'V{id}.*freemove-deny: exit runway tile' /tmp/openttd.log | tail -20
+```
+- `terminal=true` means runway is treated as the destination segment (takeoff/rollout flow).
+- `terminal=false` means runway is transit; continuation tile must be owned before entry.
+- Repeated `freemove-deny: exit runway tile=...` with `runway-reserve denied` usually indicates runway contention, not a reservation leak.
 
 ### Takeoff failures
 ```
@@ -234,6 +253,15 @@ grep -E 'V(74|82) ' /tmp/openttd.log | tail -30
 ```
 If V74 needs a tile held by V82 and V82 needs a tile held by V74, that's a deadlock. The 64-tick retarget and reservation clearing should eventually break it.
 
+For overload stress tests (intentional over-capacity), add:
+```bash
+tail -n 10000 /tmp/openttd.log > /tmp/openttd_last10k.log
+rg -c 'runway-transit-invariant' /tmp/openttd_last10k.log
+rg -c '\[FALLBACK\]' /tmp/openttd_last10k.log
+```
+- Expect many `stuck(reserve)` lines under overload.
+- Treat non-zero `runway-transit-invariant` or frequent `[FALLBACK]` as correctness regressions.
+
 ### Step 6: Map the airport layout
 When takeoff paths fail, map out the tiles between the stand and runway:
 ```python
@@ -267,3 +295,12 @@ Check each tile along the expected path for:
 5. **Unreachable fallback runway**: `FindModularRunwayTileForTakeoff` returns a Manhattan-distance fallback runway that has no ground path (e.g., separated by an intervening runway). Fixed by preferring "blocked but topologically reachable" runway ends over unreachable fallbacks. If all reachable ends are filtered by direction/size, the aircraft gets the unreachable fallback and loops. Fix: check `takeoff-skip dir`/`takeoff-skip large` logs to see which filters are too aggressive.
 
 6. **Runway sandwiching stands**: Airports with runways on both sides of the stands can create situations where aircraft can only reach one runway (the one they landed on) but need to take off from the other. Ensure at least one runway end reachable from each stand has `RUF_TAKEOFF` with correct direction flags.
+
+## Debugging Policy Preference
+
+When evaluating or proposing fixes, prefer solid reservation contracts over recovery behavior:
+
+- Prefer strict "can I enter?" rules before movement into `FREE_MOVE`/runway-transit sections.
+- Prevent unsafe entry (missing forward ownership chain) rather than trying to "unstick" later.
+- Treat fallback cleanup (`[FALLBACK]` stale/orphan clears, force-clear paths) as safety net only, not primary control flow.
+- If a plane gets stuck on a free-move tile, first question is whether entry should have been denied earlier.
