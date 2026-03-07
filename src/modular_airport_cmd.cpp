@@ -1600,61 +1600,81 @@ void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
 	const double radius_px = static_cast<double>(MODULAR_HOLDING_TURN_RADIUS_TILES * TILE_SIZE);
 	const double sample_px = static_cast<double>(MODULAR_HOLDING_SAMPLE_INTERVAL_PX);
 
-	for (size_t i = 0; i < gates.size(); ++i) {
-		const GateInfo &cur = gates[i];
-		const GateInfo &next = gates[(i + 1) % gates.size()];
+	/* Check if two gates are close enough (same direction, nearby) to share a waypoint. */
+	static constexpr int COLOCATE_LATERAL_MAX_PX = 5 * TILE_SIZE;
+	static constexpr int COLOCATE_ALONG_MAX_PX   = 3 * TILE_SIZE;
+	auto GatesColocated = [](const GateInfo &a, const GateInfo &b) -> bool {
+		if (a.approach_dir != b.approach_dir) return false;
+		const int dx = b.threshold_x - a.threshold_x;
+		const int dy = b.threshold_y - a.threshold_y;
+		const double along   = std::abs(dx * a.hdx + dy * a.hdy);
+		const double lateral = std::abs(dx * (-a.hdy) + dy * a.hdx);
+		return lateral <= COLOCATE_LATERAL_MAX_PX && along <= COLOCATE_ALONG_MAX_PX;
+	};
 
-		ModularHoldingLoop::Gate gate = {};
-		gate.runway_tile = cur.runway_tile;
-		gate.wp_index = static_cast<uint32_t>(loop.waypoints.size());
-		gate.approach_x = cur.gate_x;
-		gate.approach_y = cur.gate_y;
-		gate.threshold_x = cur.threshold_x;
-		gate.threshold_y = cur.threshold_y;
-		gate.approach_dir = cur.approach_dir;
-		loop.gates.push_back(gate);
-
-		AddWaypoint(loop.waypoints, cur.gate_x, cur.gate_y);
-
-		const double ex = static_cast<double>(cur.gate_x) + cur.hdx * overshoot_px;
-		const double ey = static_cast<double>(cur.gate_y) + cur.hdy * overshoot_px;
-		const double ox = ex - static_cast<double>(cur.gate_x);
-		const double oy = ey - static_cast<double>(cur.gate_y);
-		const double over_len = std::hypot(ox, oy);
-		if (over_len > 1e-9) {
-			const int count = static_cast<int>(std::floor(over_len / sample_px));
-			for (int s = 1; s <= count; ++s) {
-				const double t = (static_cast<double>(s) * sample_px) / over_len;
-				if (t >= 1.0 - 1e-9) break;
-				AddWaypoint(loop.waypoints, static_cast<double>(cur.gate_x) + ox * t, static_cast<double>(cur.gate_y) + oy * t);
-			}
+	/* Build the loop.  Consecutive colocated gates share a single waypoint
+	 * (and thus a single Dubins segment), avoiding extra turnaround loops
+	 * for parallel same-direction runways. */
+	for (size_t i = 0; i < gates.size(); ) {
+		/* Find the extent of this colocated group. */
+		size_t group_end = i + 1;
+		while (group_end < gates.size() && GatesColocated(gates[i], gates[group_end])) {
+			++group_end;
 		}
+
+		/* Compute the shared waypoint at the midpoint of the group's approach points. */
+		int mid_gate_x = 0, mid_gate_y = 0;
+		double mid_hdx = gates[i].hdx, mid_hdy = gates[i].hdy;
+		for (size_t j = i; j < group_end; ++j) {
+			mid_gate_x += gates[j].gate_x;
+			mid_gate_y += gates[j].gate_y;
+		}
+		const int group_size = static_cast<int>(group_end - i);
+		mid_gate_x /= group_size;
+		mid_gate_y /= group_size;
+
+		/* Create Gate entries for each runway in the group, all sharing the same wp_index. */
+		const uint32_t shared_wp = static_cast<uint32_t>(loop.waypoints.size());
+		for (size_t j = i; j < group_end; ++j) {
+			ModularHoldingLoop::Gate gate = {};
+			gate.runway_tile = gates[j].runway_tile;
+			gate.wp_index = shared_wp;
+			gate.approach_x = gates[j].gate_x;
+			gate.approach_y = gates[j].gate_y;
+			gate.threshold_x = gates[j].threshold_x;
+			gate.threshold_y = gates[j].threshold_y;
+			gate.approach_dir = gates[j].approach_dir;
+			loop.gates.push_back(gate);
+		}
+
+		AddWaypoint(loop.waypoints, mid_gate_x, mid_gate_y);
+
+		/* Find the next group's first gate for the Dubins target. */
+		size_t next_group_start = group_end % gates.size();
+		const GateInfo &next = gates[next_group_start];
+
+		/* Overshoot: endpoint only (no dense intermediates on straights). */
+		const double ex = static_cast<double>(mid_gate_x) + mid_hdx * overshoot_px;
+		const double ey = static_cast<double>(mid_gate_y) + mid_hdy * overshoot_px;
 		AddWaypoint(loop.waypoints, ex, ey);
 
-		DubinsPath path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
+		DubinsPath path = ComputeDubins(ex, ey, mid_hdx, mid_hdy,
 				static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
 				radius_px);
 		if (!path.valid) {
-			path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
+			path = ComputeDubins(ex, ey, mid_hdx, mid_hdy,
 					static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
 					radius_px * 0.5);
 		}
 		if (!path.valid) {
-			const double sx = static_cast<double>(next.gate_x) - ex;
-			const double sy = static_cast<double>(next.gate_y) - ey;
-			const double slen = std::hypot(sx, sy);
-			if (slen > 1e-9) {
-				const int count = static_cast<int>(std::floor(slen / sample_px));
-				for (int s = 1; s <= count; ++s) {
-					const double t = (static_cast<double>(s) * sample_px) / slen;
-					if (t >= 1.0 - 1e-9) break;
-					AddWaypoint(loop.waypoints, ex + sx * t, ey + sy * t);
-				}
-			}
+			/* Fallback straight line: no intermediates needed. */
+			i = group_end;
 			continue;
 		}
 
 		SampleDubinsPath(path, sample_px, loop.waypoints);
+
+		i = group_end;
 	}
 }
 
