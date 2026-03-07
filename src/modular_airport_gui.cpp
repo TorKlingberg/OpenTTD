@@ -1646,18 +1646,13 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		}
 
 		for (const auto &gate : loop.gates) {
-			/* Yellow: loop gate waypoint → approach fix (the peel-off turn, still at altitude). */
-			if (gate.wp_index < n) {
-				const auto &wp = loop.waypoints[gate.wp_index];
-				Point pwp = HoldingWorldToScreen(vp, wp.x, wp.y);
-				Point pap = HoldingWorldToScreen(vp, gate.approach_x, gate.approach_y);
-				if (HoldingSegVis(pwp, pap, dpi)) GfxDrawLine(pwp.x, pwp.y, pap.x, pap.y, PC_YELLOW, 1);
-			}
+			if (gate.wp_index >= n) continue;
 
-			/* Yellow: approach fix → threshold (straight final, descends from altitude to ground). */
-			Point pap = HoldingWorldToScreen(vp, gate.approach_x, gate.approach_y);
+			/* Yellow: gate waypoint → runway threshold. */
+			const auto &wp = loop.waypoints[gate.wp_index];
+			Point pgw = HoldingWorldToScreen(vp, wp.x, wp.y);
 			Point pth = HoldingWorldToScreen(vp, gate.threshold_x, gate.threshold_y, 0);
-			if (HoldingSegVis(pap, pth, dpi)) GfxDrawLine(pap.x, pap.y, pth.x, pth.y, PC_YELLOW, 1);
+			if (HoldingSegVis(pgw, pth, dpi)) GfxDrawLine(pgw.x, pgw.y, pth.x, pth.y, PC_YELLOW, 1);
 
 			/* Red threshold marker at ground level. */
 			GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
