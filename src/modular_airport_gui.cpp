@@ -1638,6 +1638,13 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			if (HoldingSegVis(pa, pb, dpi)) GfxDrawLine(pa.x, pa.y, pb.x, pb.y, PC_WHITE, 1);
 		}
 
+		/* Draw small squares at each waypoint. */
+		for (size_t i = 0; i < n; ++i) {
+			const auto &wp = loop.waypoints[i];
+			Point p = HoldingWorldToScreen(vp, wp.x, wp.y);
+			GfxFillRect(p.x - 2, p.y - 2, p.x + 2, p.y + 2, PC_WHITE);
+		}
+
 		for (const auto &gate : loop.gates) {
 			/* Yellow: loop gate waypoint → approach fix (the peel-off turn, still at altitude). */
 			if (gate.wp_index < n) {
