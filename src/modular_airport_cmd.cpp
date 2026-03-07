@@ -1470,6 +1470,7 @@ struct GateInfo {
 	double hdy;
 	int rel_x; ///< gate_x - center_x (integer, for deterministic angular sort)
 	int rel_y; ///< gate_y - center_y (integer, for deterministic angular sort)
+	std::vector<GateInfo> members; ///< colocated group members (empty = solo gate)
 };
 
 static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
@@ -1530,6 +1531,40 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 		gate.rel_x = approach_x * 2 - center_2x;
 		gate.rel_y = approach_y * 2 - center_2y;
 		gates.push_back(gate);
+	}
+
+	/* Colocate parallel same-direction gates before sorting.
+	 * Nearby gates with the same approach direction are merged into a single
+	 * representative at their midpoint, so the Dubins path treats them as one
+	 * flyover.  The original gates are stored in representative.members so
+	 * ComputeModularHoldingLoop can create per-runway Gate entries. */
+	static constexpr int COLOCATE_LATERAL_MAX_PX = 5 * TILE_SIZE;
+	static constexpr int COLOCATE_ALONG_MAX_PX   = 3 * TILE_SIZE;
+	for (size_t i = 0; i < gates.size(); ++i) {
+		for (size_t j = i + 1; j < gates.size(); ) {
+			if (gates[i].approach_dir != gates[j].approach_dir) { ++j; continue; }
+			const int dx = gates[j].threshold_x - gates[i].threshold_x;
+			const int dy = gates[j].threshold_y - gates[i].threshold_y;
+			const double along   = std::abs(dx * gates[i].hdx + dy * gates[i].hdy);
+			const double lateral = std::abs(dx * (-gates[i].hdy) + dy * gates[i].hdx);
+			if (lateral > COLOCATE_LATERAL_MAX_PX || along > COLOCATE_ALONG_MAX_PX) { ++j; continue; }
+
+			/* Absorb gate j into gate i's group. */
+			if (gates[i].members.empty()) gates[i].members.push_back(gates[i]); // include self
+			gates[i].members.push_back(gates[j]);
+			gates.erase(gates.begin() + j);
+		}
+
+		/* Recompute representative to midpoint of all members. */
+		if (!gates[i].members.empty()) {
+			int sum_gx = 0, sum_gy = 0;
+			for (const auto &m : gates[i].members) { sum_gx += m.gate_x; sum_gy += m.gate_y; }
+			const int n = static_cast<int>(gates[i].members.size());
+			gates[i].gate_x = sum_gx / n;
+			gates[i].gate_y = sum_gy / n;
+			gates[i].rel_x = gates[i].gate_x * 2 - center_2x;
+			gates[i].rel_y = gates[i].gate_y * 2 - center_2y;
+		}
 	}
 
 	/* Deterministic angular sort using integer quadrant + cross-product (no transcendental functions).
@@ -1600,81 +1635,62 @@ void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
 	const double radius_px = static_cast<double>(MODULAR_HOLDING_TURN_RADIUS_TILES * TILE_SIZE);
 	const double sample_px = static_cast<double>(MODULAR_HOLDING_SAMPLE_INTERVAL_PX);
 
-	/* Check if two gates are close enough (same direction, nearby) to share a waypoint. */
-	static constexpr int COLOCATE_LATERAL_MAX_PX = 5 * TILE_SIZE;
-	static constexpr int COLOCATE_ALONG_MAX_PX   = 3 * TILE_SIZE;
-	auto GatesColocated = [](const GateInfo &a, const GateInfo &b) -> bool {
-		if (a.approach_dir != b.approach_dir) return false;
-		const int dx = b.threshold_x - a.threshold_x;
-		const int dy = b.threshold_y - a.threshold_y;
-		const double along   = std::abs(dx * a.hdx + dy * a.hdy);
-		const double lateral = std::abs(dx * (-a.hdy) + dy * a.hdx);
-		return lateral <= COLOCATE_LATERAL_MAX_PX && along <= COLOCATE_ALONG_MAX_PX;
-	};
+	/* Build the loop.  GatherAndSortGates has already colocated parallel
+	 * same-direction gates into groups (representative at midpoint, originals
+	 * in .members).  Each sorted entry becomes one waypoint + Dubins segment. */
+	for (size_t i = 0; i < gates.size(); ++i) {
+		const GateInfo &cur = gates[i];
+		const GateInfo &next = gates[(i + 1) % gates.size()];
 
-	/* Build the loop.  Consecutive colocated gates share a single waypoint
-	 * (and thus a single Dubins segment), avoiding extra turnaround loops
-	 * for parallel same-direction runways. */
-	for (size_t i = 0; i < gates.size(); ) {
-		/* Find the extent of this colocated group. */
-		size_t group_end = i + 1;
-		while (group_end < gates.size() && GatesColocated(gates[i], gates[group_end])) {
-			++group_end;
-		}
-
-		/* Compute the shared waypoint at the midpoint of the group's approach points. */
-		int mid_gate_x = 0, mid_gate_y = 0;
-		double mid_hdx = gates[i].hdx, mid_hdy = gates[i].hdy;
-		for (size_t j = i; j < group_end; ++j) {
-			mid_gate_x += gates[j].gate_x;
-			mid_gate_y += gates[j].gate_y;
-		}
-		const int group_size = static_cast<int>(group_end - i);
-		mid_gate_x /= group_size;
-		mid_gate_y /= group_size;
-
-		/* Create Gate entries for each runway in the group, all sharing the same wp_index. */
+		/* Create Gate entries: if this is a colocated group, expand members;
+		 * otherwise create a single Gate from the representative. */
 		const uint32_t shared_wp = static_cast<uint32_t>(loop.waypoints.size());
-		for (size_t j = i; j < group_end; ++j) {
+		if (!cur.members.empty()) {
+			for (const auto &m : cur.members) {
+				ModularHoldingLoop::Gate gate = {};
+				gate.runway_tile = m.runway_tile;
+				gate.wp_index = shared_wp;
+				gate.approach_x = m.gate_x;
+				gate.approach_y = m.gate_y;
+				gate.threshold_x = m.threshold_x;
+				gate.threshold_y = m.threshold_y;
+				gate.approach_dir = m.approach_dir;
+				loop.gates.push_back(gate);
+			}
+		} else {
 			ModularHoldingLoop::Gate gate = {};
-			gate.runway_tile = gates[j].runway_tile;
+			gate.runway_tile = cur.runway_tile;
 			gate.wp_index = shared_wp;
-			gate.approach_x = gates[j].gate_x;
-			gate.approach_y = gates[j].gate_y;
-			gate.threshold_x = gates[j].threshold_x;
-			gate.threshold_y = gates[j].threshold_y;
-			gate.approach_dir = gates[j].approach_dir;
+			gate.approach_x = cur.gate_x;
+			gate.approach_y = cur.gate_y;
+			gate.threshold_x = cur.threshold_x;
+			gate.threshold_y = cur.threshold_y;
+			gate.approach_dir = cur.approach_dir;
 			loop.gates.push_back(gate);
 		}
 
-		AddWaypoint(loop.waypoints, mid_gate_x, mid_gate_y);
-
-		/* Find the next group's first gate for the Dubins target. */
-		size_t next_group_start = group_end % gates.size();
-		const GateInfo &next = gates[next_group_start];
+		/* Waypoint and Dubins use the representative's (midpoint) coordinates. */
+		AddWaypoint(loop.waypoints, cur.gate_x, cur.gate_y);
 
 		/* Overshoot: endpoint only (no dense intermediates on straights). */
-		const double ex = static_cast<double>(mid_gate_x) + mid_hdx * overshoot_px;
-		const double ey = static_cast<double>(mid_gate_y) + mid_hdy * overshoot_px;
+		const double ex = static_cast<double>(cur.gate_x) + cur.hdx * overshoot_px;
+		const double ey = static_cast<double>(cur.gate_y) + cur.hdy * overshoot_px;
 		AddWaypoint(loop.waypoints, ex, ey);
 
-		DubinsPath path = ComputeDubins(ex, ey, mid_hdx, mid_hdy,
+		DubinsPath path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
 				static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
 				radius_px);
 		if (!path.valid) {
-			path = ComputeDubins(ex, ey, mid_hdx, mid_hdy,
+			path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
 					static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
 					radius_px * 0.5);
 		}
 		if (!path.valid) {
 			/* Fallback straight line: no intermediates needed. */
-			i = group_end;
 			continue;
 		}
 
 		SampleDubinsPath(path, sample_px, loop.waypoints);
-
-		i = group_end;
 	}
 }
 
