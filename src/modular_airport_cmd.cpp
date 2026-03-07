@@ -1444,17 +1444,9 @@ static void SampleDubinsPath(const DubinsPath &path, double step_px, std::vector
 				AddWaypoint(out, x, y);
 			}
 		} else {
-			const double dx = seg.x1 - seg.x0;
-			const double dy = seg.y1 - seg.y0;
-			const double len = std::hypot(dx, dy);
-			if (len <= 1e-9) continue;
-
-			const int count = static_cast<int>(std::floor(len / step_px + 1e-7));
-			for (int i = 1; i <= count; ++i) {
-				const double t = (static_cast<double>(i) * step_px) / len;
-				if (t >= 1.0 - 1e-9) break;
-				AddWaypoint(out, seg.x0 + dx * t, seg.y0 + dy * t);
-			}
+			/* Straight segment: only emit the endpoint.
+			 * Dense intermediates caused aircraft to wiggle between nearby waypoints. */
+			AddWaypoint(out, seg.x1, seg.y1);
 		}
 	}
 }
@@ -1734,7 +1726,7 @@ void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target
 		return;
 	}
 
-	static constexpr uint32_t LOOKAHEAD = 5; ///< Waypoints ahead of base to steer toward.
+	static constexpr uint32_t LOOKAHEAD = 2; ///< Waypoints ahead of base to steer toward (sparse waypoints).
 	/* ADVANCE_DIST_SQ: when the aircraft is within this squared-pixel distance of the
 	 * current target waypoint, advance the base index by one.  Advancing early (before
 	 * reaching the exact pixel) prevents the aircraft from catching the target and
