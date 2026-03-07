@@ -1,6 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+## --current mode: build + run once on the working tree, no git interaction.
+if [[ "${1:-}" == "--current" ]]; then
+	YEARS_TO_RUN="${2:-1}"
+	if ! [[ "${YEARS_TO_RUN}" =~ ^[0-9]+$ ]]; then
+		echo "error: years_to_run must be a non-negative integer" >&2
+		exit 1
+	fi
+	echo "Running current working tree (years=${YEARS_TO_RUN})"
+	run_output="$(bash scripts/n_years_plus2.sh "${YEARS_TO_RUN}" 2>&1)" || { echo "${run_output}"; exit 1; }
+	echo "${run_output}"
+	landings_total=0
+	takeoffs_total=0
+	while IFS= read -r line; do
+		if [[ "${line}" =~ Year[[:space:]]([0-9]+)[[:space:]]totals:[[:space:]]landings=([0-9]+)[[:space:]]takeoffs=([0-9]+) ]]; then
+			year="${BASH_REMATCH[1]}"
+			if [[ "${year}" != "2016" ]]; then
+				landings_total=$((landings_total + BASH_REMATCH[2]))
+				takeoffs_total=$((takeoffs_total + BASH_REMATCH[3]))
+			fi
+		fi
+	done <<< "${run_output}"
+	echo "Total (excl 2016): landings=${landings_total} takeoffs=${takeoffs_total} movements=$((landings_total + takeoffs_total))"
+	exit 0
+fi
+
 START_COMMIT="${1:-42029f9699}"
 OUT_DIR="${2:-/tmp/airport_stats_history_$(date +%Y%m%d_%H%M%S)}"
 YEARS_TO_RUN="${3:-1}"
