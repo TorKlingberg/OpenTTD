@@ -1779,54 +1779,28 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 
 	if (v->modular_landing_tile == INVALID_TILE) {
 		v->modular_landing_tile = FindModularLandingTarget(st, v);
-		v->modular_landing_stage = 0;
 		if (v->modular_landing_tile == INVALID_TILE) {
 			Debug(misc, 3, "[ModAp] no runway/helipad tile found for landing at station {}", st->index);
 			return false;
 		}
-		/* Helicopters landing on a helipad skip the FAF approach stage —
-		 * they descend vertically, no runway-style approach needed. */
-		if (v->subtype == AIR_HELICOPTER) {
-			const ModularAirportTileData *land_data = st->airport.GetModularTileData(v->modular_landing_tile);
-			if (land_data != nullptr && IsModularHelipadPiece(land_data->piece_type)) {
-				v->modular_landing_stage = 1;
-			}
-		}
-		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to {} tile {}, stage={}, pos=({},{},{})",
-			v->index, v->modular_landing_stage == 1 ? "helipad" : "runway",
-			v->modular_landing_tile.base(), v->modular_landing_stage, v->x_pos, v->y_pos, v->z_pos);
+		Debug(misc, 3, "[ModAp] Vehicle {} starting approach to tile {}, pos=({},{},{})",
+			v->index, v->modular_landing_tile.base(), v->x_pos, v->y_pos, v->z_pos);
 	}
 
-	int target_x, target_y;
 	int airport_z = GetTileMaxPixelZ(v->modular_landing_tile) + 1;
 	/* Match stock heliport behavior: rooftop touchdown uses +60 px (afc->delta_z). */
 	if (v->subtype == AIR_HELICOPTER) {
 		const ModularAirportTileData *landing_data = st->airport.GetModularTileData(v->modular_landing_tile);
 		if (landing_data != nullptr && landing_data->piece_type == APT_HELIPORT) airport_z += 60;
 	}
-	int target_z = airport_z;
 
-	if (v->modular_landing_stage == 0) {
-		/* Approach phase: fly to FAF */
-		GetModularLandingApproachPoint(st, v->modular_landing_tile, &target_x, &target_y);
-		target_z = airport_z + 20 * 5; // Stay high
-	} else {
-		/* Final phase: fly to threshold */
-		target_x = TileX(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
-		target_y = TileY(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
-		
-		/* Helicopters maintain altitude in final phase until over the pad */
-		if (v->subtype == AIR_HELICOPTER) target_z = airport_z + 20 * 5;
-	}
+	/* Single-stage approach: fly straight to the runway threshold. */
+	int target_x = TileX(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
+	int target_y = TileY(v->modular_landing_tile) * TILE_SIZE + TILE_SIZE / 2;
 
-	/* Calculate distance to target */
 	int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
-	/* Update speed for approach/landing */
-	uint speed_limit = (v->modular_landing_stage == 0) ? SPEED_LIMIT_HOLD : SPEED_LIMIT_APPROACH;
-	int count = UpdateAircraftSpeed(v, speed_limit, false);
-
-	/* Only move if speed allows it */
+	int count = UpdateAircraftSpeed(v, SPEED_LIMIT_APPROACH, false);
 	if (count == 0) return false;
 
 	/* Move 'count' pixels towards target */
@@ -1840,18 +1814,7 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	/* Update direction with smooth turning */
 	if (new_x != v->x_pos || new_y != v->y_pos) {
 		Direction desired_dir = GetDirectionTowards(v, target_x, target_y);
-
 		if (desired_dir != v->direction) {
-			if (v->modular_landing_stage == 0 && v->subtype == AIR_AIRCRAFT) {
-				if (v->turn_counter > 0) {
-					v->turn_counter--;
-					int z = v->z_pos;
-					if (z < target_z) z++; else if (z > target_z) z--;
-					SetAircraftPosition(v, v->x_pos, v->y_pos, z);
-					return false;
-				}
-				v->turn_counter = 1;
-			}
 			v->last_direction = v->direction;
 			v->direction = desired_dir;
 		}
@@ -1862,71 +1825,55 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 
 	/* Altitude logic */
 	int z = v->z_pos;
-	if (v->modular_landing_stage == 0) {
-		/* Maintain approach altitude */
-		/* Simple seek towards target_z */
-		if (z < target_z) z++; else if (z > target_z) z--;
-	} else {
-		/* Final phase */
-		if (v->subtype == AIR_HELICOPTER) {
-			/* Helicopters: Fly to target at altitude, then descend vertically */
-			if (dist > 0) {
-				/* Maintain high altitude while moving horizontally */
-				if (z < target_z) z++; else if (z > target_z) z--;
-			} else {
-				/* Vertically descend to ground */
-				if (z > airport_z) z--;
-			}
+	if (v->subtype == AIR_HELICOPTER) {
+		/* Helicopters: fly to target at altitude, then descend vertically */
+		if (dist > 0) {
+			int target_z = airport_z + 20 * 5;
+			if (z < target_z) z++; else if (z > target_z) z--;
 		} else {
-			/* Planes: Glide slope for final */
-			if (z > airport_z) {
-				int t = std::max(1, dist - 4);
-				int delta = z - airport_z;
-				if (delta >= t) {
-					z -= CeilDiv(z - airport_z, t);
-				}
+			if (z > airport_z) z--;
+		}
+	} else {
+		/* Planes: glide slope to runway */
+		if (z > airport_z) {
+			int t = std::max(1, dist - 4);
+			int delta = z - airport_z;
+			if (delta >= t) {
+				z -= CeilDiv(z - airport_z, t);
 			}
 		}
 	}
 
 	SetAircraftPosition(v, new_x, new_y, z);
 
-	Debug(misc, 5, "[ModAp] Vehicle {} landing stage {}: pos=({},{},{}), target=({},{},{}), dist={}",
-		v->index, v->modular_landing_stage, v->x_pos, v->y_pos, v->z_pos, target_x, target_y, target_z, dist);
+	Debug(misc, 5, "[ModAp] Vehicle {} landing: pos=({},{},{}), target=({},{},{}), dist={}",
+		v->index, v->x_pos, v->y_pos, v->z_pos, target_x, target_y, airport_z, dist);
 
 	/* Check if reached target */
 	if (v->x_pos == target_x && v->y_pos == target_y) {
-		if (v->modular_landing_stage == 0) {
-			/* Reached FAF, switch to final */
-			v->modular_landing_stage = 1;
+		if (v->z_pos > airport_z) return false; // Still descending
+
+		/* Reached threshold, land and start rollout */
+		Debug(misc, 3, "[ModAp] Vehicle {} touchdown at ({},{},{})", v->index, target_x, target_y, airport_z);
+		RecordAirportMovement(v->targetairport, true);
+		v->tile = v->modular_landing_tile;
+
+		TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
+
+		v->modular_landing_tile = INVALID_TILE;
+		v->modular_landing_stage = 0;
+
+		AircraftEventHandler_Landing(v, st->airport.GetFTA());
+
+		if (rollout_point != INVALID_TILE) {
+			Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
+			v->ground_path_goal = rollout_point;
+			v->modular_ground_target = MGT_ROLLOUT;
+			v->state = TERM1;
 		} else {
-			if (v->z_pos > airport_z) return false; // Still descending
-
-			/* Reached threshold, land and start rollout */
-			Debug(misc, 3, "[ModAp] Vehicle {} touchdown at ({},{},{})", v->index, target_x, target_y, airport_z);
-			RecordAirportMovement(v->targetairport, true);
-			v->tile = v->modular_landing_tile;
-
-			/* Set up rollout phase - taxi along runway to opposite end */
-			TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
-
-			v->modular_landing_tile = INVALID_TILE;
-			v->modular_landing_stage = 0;
-
-			AircraftEventHandler_Landing(v, st->airport.GetFTA());
-
-			/* If we have a rollout point, go there first, otherwise go directly to terminal */
-			if (rollout_point != INVALID_TILE) {
-				Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
-				v->ground_path_goal = rollout_point;
-				v->modular_ground_target = MGT_ROLLOUT;
-				v->state = TERM1;
-			} else {
-				/* No rollout, go directly to terminal */
-				AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
-			}
-			return true;
+			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
 		}
+		return true;
 	}
 
 	return false;
