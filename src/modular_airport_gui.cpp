@@ -1620,6 +1620,23 @@ static bool HoldingSegVis(Point a, Point b, const DrawPixelInfo *dpi)
 	         || (a.y > bot && b.y > bot));
 }
 
+static PixelColour GetHoldingLoopColour(StationID sid)
+{
+	static constexpr PixelColour kColours[] = {
+		PC_WHITE,
+		PC_LIGHT_BLUE,
+		PC_ORANGE,
+		PC_LIGHT_YELLOW,
+		PC_RED,
+		PC_VERY_LIGHT_YELLOW,
+	};
+	uint32_t x = sid.base();
+	x ^= x >> 16;
+	x *= 0x7feb352dU;
+	x ^= x >> 15;
+	return kColours[x % lengthof(kColours)];
+}
+
 void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 {
 	for (const Station *st : Station::Iterate()) {
@@ -1629,20 +1646,22 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		const size_t n = loop.waypoints.size();
 		if (n < 2 || loop.gates.empty()) continue; /* Skip fallback rectangular loop (no gates). */
 
-		/* Draw the loop polyline at aircraft cruise altitude (white). */
+		const PixelColour loop_colour = GetHoldingLoopColour(st->index);
+
+		/* Draw the loop polyline at aircraft cruise altitude. */
 		for (size_t i = 0; i < n; ++i) {
 			const auto &a = loop.waypoints[i];
 			const auto &b = loop.waypoints[(i + 1) % n];
 			Point pa = HoldingWorldToScreen(vp, a.x, a.y);
 			Point pb = HoldingWorldToScreen(vp, b.x, b.y);
-			if (HoldingSegVis(pa, pb, dpi)) GfxDrawLine(pa.x, pa.y, pb.x, pb.y, PC_WHITE, 1);
+			if (HoldingSegVis(pa, pb, dpi)) GfxDrawLine(pa.x, pa.y, pb.x, pb.y, loop_colour, 1);
 		}
 
 		/* Draw small squares at each waypoint. */
 		for (size_t i = 0; i < n; ++i) {
 			const auto &wp = loop.waypoints[i];
 			Point p = HoldingWorldToScreen(vp, wp.x, wp.y);
-			GfxFillRect(p.x - 2, p.y - 2, p.x + 2, p.y + 2, PC_WHITE);
+			GfxFillRect(p.x - 2, p.y - 2, p.x + 2, p.y + 2, loop_colour);
 		}
 
 		for (const auto &gate : loop.gates) {
