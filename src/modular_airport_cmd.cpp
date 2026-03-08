@@ -1935,13 +1935,22 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 
 	const bool horizontal = (data->rotation % 2) == 0;
 
+	/* Compute runway length in tiles for liftoff point calculation. */
+	std::vector<TileIndex> takeoff_runway_tiles;
+	int runway_length_tiles = 1;
+	if (GetContiguousModularRunwayTiles(st, v->modular_takeoff_tile, takeoff_runway_tiles)) {
+		runway_length_tiles = std::max(1, (int)takeoff_runway_tiles.size());
+	}
+	/* Liftoff after 2/3 of runway length (in sub-tile progress units). */
+	int liftoff_progress = runway_length_tiles * TILE_SIZE * 2 / 3;
+
 	if (v->modular_takeoff_progress == 0) {
 		/* Determine takeoff direction by finding the other end of the runway */
 		TileIndex end_tile = GetRunwayOtherEnd(st, v->modular_takeoff_tile);
 		int end_x = TileX(end_tile) * TILE_SIZE + TILE_SIZE / 2;
 		int end_y = TileY(end_tile) * TILE_SIZE + TILE_SIZE / 2;
-		
-		/* If single tile runway, end_tile == start_tile. 
+
+		/* If single tile runway, end_tile == start_tile.
 		   Fallback to rotation-based direction if we can't determine direction from length. */
 		if (end_tile == v->modular_takeoff_tile) {
 			Direction dir = horizontal ? DIR_SE : DIR_SW;
@@ -1949,7 +1958,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		} else {
 			v->direction = GetDirectionTowards(v, end_x, end_y);
 		}
-		
+
 		PlayAircraftSound(v);
 	}
 
@@ -1959,13 +1968,12 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		/* Move forward along runway */
 		GetNewVehiclePosResult gp = GetNewVehiclePos(v);
 
-		/* Calculate altitude - gradual climb starting after initial acceleration */
+		/* Calculate altitude - stay on ground until 2/3 of runway, then climb */
 		int z = v->z_pos;
 		int target_z = GetAircraftFlightLevel(v, true);
 
-		/* Start climbing after 1 tile of acceleration, climb at ~1.5 pixels per tile traveled */
-		if (v->modular_takeoff_progress > TILE_SIZE) {
-			int climb_progress = v->modular_takeoff_progress - TILE_SIZE;
+		if (v->modular_takeoff_progress > liftoff_progress) {
+			int climb_progress = v->modular_takeoff_progress - liftoff_progress;
 			int desired_altitude = GetTileMaxPixelZ(v->modular_takeoff_tile) + 1 + (climb_progress * 3 / 2);
 
 			if (z < std::min(desired_altitude, target_z)) {
