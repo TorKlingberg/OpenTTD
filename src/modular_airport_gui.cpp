@@ -1661,6 +1661,8 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		for (size_t i = 0; i < n; ++i) {
 			const auto &wp = loop.waypoints[i];
 			Point p = HoldingWorldToScreen(vp, wp.x, wp.y);
+			if (p.x + 2 < dpi->left || p.x - 2 > dpi->left + dpi->width) continue;
+			if (p.y + 2 < dpi->top  || p.y - 2 > dpi->top + dpi->height) continue;
 			GfxFillRect(p.x - 2, p.y - 2, p.x + 2, p.y + 2, loop_colour);
 		}
 
@@ -1674,7 +1676,10 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			if (HoldingSegVis(pgw, pth, dpi)) GfxDrawLine(pgw.x, pgw.y, pth.x, pth.y, PC_YELLOW, 1);
 
 			/* Red threshold marker at ground level. */
-			GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
+			if (pth.x + 3 >= dpi->left && pth.x - 3 <= dpi->left + dpi->width &&
+					pth.y + 3 >= dpi->top && pth.y - 3 <= dpi->top + dpi->height) {
+				GfxFillRect(pth.x - 3, pth.y - 3, pth.x + 3, pth.y + 3, PC_RED);
+			}
 		}
 	}
 }

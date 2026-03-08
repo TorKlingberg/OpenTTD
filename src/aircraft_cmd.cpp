@@ -1434,7 +1434,6 @@ uint Aircraft::Crash(bool flooded)
 
 	this->modular_landing_tile = INVALID_TILE;
 	this->modular_landing_goal = INVALID_TILE;
-	this->modular_landing_stage = 0;
 	this->modular_takeoff_tile = INVALID_TILE;
 	this->modular_takeoff_progress = 0;
 	this->modular_ground_target = 0;
@@ -1723,14 +1722,14 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 				return;
 			}
 
-				TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-				if (runway != INVALID_TILE) {
-					v->modular_takeoff_tile = runway;
-					v->ground_path_goal = runway;
-					v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-					Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
-					return;
-				}
+			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+			if (runway != INVALID_TILE) {
+				v->modular_takeoff_tile = runway;
+				v->ground_path_goal = runway;
+				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+				Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
+				return;
+			}
 
 			if (v->subtype == AIR_HELICOPTER) {
 				/* No runway available; helicopter can take off vertically as fallback. */
@@ -1858,13 +1857,13 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 			}
 		}
 			if (!go_to_hangar) {
-				TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-				if (runway != INVALID_TILE) {
-					v->modular_takeoff_tile = runway;
-					goal = runway;
-				} else {
-					if (ShouldLogModularRateLimited(v->index, 39, 128)) {
-						Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+			if (runway != INVALID_TILE) {
+				v->modular_takeoff_tile = runway;
+				goal = runway;
+			} else {
+				if (ShouldLogModularRateLimited(v->index, 39, 128)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
 				}
 			}
 			target = MGT_RUNWAY_TAKEOFF;
@@ -2758,7 +2757,6 @@ bool Aircraft::Tick()
 			this->modular_ground_target = MGT_NONE;
 			this->modular_landing_tile = INVALID_TILE;
 			this->modular_landing_goal = INVALID_TILE;
-			this->modular_landing_stage = 0;
 			this->modular_takeoff_tile = INVALID_TILE;
 			this->modular_takeoff_progress = 0;
 			this->state = FLYING;
@@ -2776,7 +2774,6 @@ bool Aircraft::Tick()
 			this->modular_ground_target = MGT_NONE;
 			this->modular_landing_tile = INVALID_TILE;
 			this->modular_landing_goal = INVALID_TILE;
-			this->modular_landing_stage = 0;
 			this->modular_takeoff_tile = INVALID_TILE;
 			this->modular_takeoff_progress = 0;
 			this->state = FLYING;

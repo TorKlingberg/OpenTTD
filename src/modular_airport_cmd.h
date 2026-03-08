@@ -214,6 +214,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st);
 void AirportMoveModularFlying(Aircraft *v, const Station *st);
 
 bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute);
+void ResetModularAirportStaticState();
 
 bool IsModernModularPiece(uint8_t piece_type);
 TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type);

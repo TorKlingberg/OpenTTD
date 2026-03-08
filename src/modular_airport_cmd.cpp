@@ -65,6 +65,24 @@ static constexpr uint16_t SPEED_LIMIT_NONE = UINT16_MAX; ///< No environmental s
 
 static std::string_view GetModularAirportDebugName(const Station *st);
 
+struct ModularTakeoffFailLogState {
+	uint64_t last_tick = 0;
+	uint32_t suppressed_count = 0;
+};
+
+/** File-scope static maps that must be cleared on save/load. */
+static std::unordered_map<uint32_t, uint64_t> _rate_limit_last_tick;
+static std::map<uint64_t, uint64_t> _untracked_first_seen;
+static std::map<VehicleID, ModularTakeoffFailLogState> _takeoff_fail_state;
+
+/** Reset all static state in modular airport code; called after loading a save. */
+void ResetModularAirportStaticState()
+{
+	_rate_limit_last_tick.clear();
+	_untracked_first_seen.clear();
+	_takeoff_fail_state.clear();
+}
+
 bool IsModularHelipadPiece(uint8_t gfx)
 {
 	switch (gfx) {
@@ -387,7 +405,6 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		v->modular_ground_target = MGT_NONE;
 		v->modular_landing_tile = INVALID_TILE;
 		v->modular_landing_goal = INVALID_TILE;
-		v->modular_landing_stage = 0;
 		v->modular_takeoff_tile = INVALID_TILE;
 		v->modular_takeoff_progress = 0;
 
@@ -409,12 +426,11 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 
 bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interval_ticks)
 {
-	static std::unordered_map<uint32_t, uint64_t> last_tick_by_key;
 	const uint32_t key = (uint32_t(vid.base()) << 8) | channel;
 	const uint64_t now = TimerGameTick::counter;
-	auto it = last_tick_by_key.find(key);
-	if (it != last_tick_by_key.end() && now - it->second < interval_ticks) return false;
-	last_tick_by_key[key] = now;
+	auto it = _rate_limit_last_tick.find(key);
+	if (it != _rate_limit_last_tick.end() && now - it->second < interval_ticks) return false;
+	_rate_limit_last_tick[key] = now;
 	return true;
 }
 
@@ -1772,7 +1788,6 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		ClearModularRunwayReservation(v);
 		v->modular_landing_goal = INVALID_TILE;
 		v->modular_landing_tile = INVALID_TILE;
-		v->modular_landing_stage = 0;
 		v->state = FLYING;
 		return false;
 	}
@@ -1861,7 +1876,6 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
 
 		v->modular_landing_tile = INVALID_TILE;
-		v->modular_landing_stage = 0;
 
 		AircraftEventHandler_Landing(v, st->airport.GetFTA());
 
@@ -1915,7 +1929,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		v->ground_path_goal = runway;
 		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
 		v->state = TERM1;
-		Debug(misc, 2, "[ModAp] V{} takeoff recovery: requeue goal={} runway={}", v->index, runway.base(), runway.base());
+		Debug(misc, 2, "[ModAp] V{} takeoff recovery: requeue runway={}", v->index, runway.base());
 		return true;
 	};
 
@@ -2410,15 +2424,14 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	/* Aircraft is active on this station ground but tile is not in any tracked intent.
 	 * Trust the reservation short-term — but if the same untracked reservation persists
 	 * for >1024 ticks (~17 seconds), treat it as a genuine orphan from a tracking bug. */
-	static std::map<uint64_t, uint64_t> untracked_first_seen;
-	const uint64_t key = (static_cast<uint64_t>(tile.base()) << 20) | static_cast<uint64_t>(reserver.base());
+	const uint64_t key = (static_cast<uint64_t>(tile.base()) << 32) | static_cast<uint64_t>(reserver.base());
 	const uint64_t now = TimerGameTick::counter;
 
-	auto [it, inserted] = untracked_first_seen.try_emplace(key, now);
+	auto [it, inserted] = _untracked_first_seen.try_emplace(key, now);
 	if (inserted || (now - it->second) < 1024) return false;
 
 	/* Persistent untracked reservation — clear it as orphaned. */
-	untracked_first_seen.erase(it);
+	_untracked_first_seen.erase(it);
 	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=untracked_timeout state={} vtile={}",
 		st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
 		IsValidTile(a->tile) ? a->tile.base() : 0);
@@ -2426,7 +2439,7 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 
 	/* Periodically prune old entries (every 256 ticks). */
 	if ((now & 0xFF) == 0) {
-		std::erase_if(untracked_first_seen, [now](const auto &pair) {
+		std::erase_if(_untracked_first_seen, [now](const auto &pair) {
 			return (now - pair.second) > 2048;
 		});
 	}
@@ -2852,8 +2865,7 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 
 		std::vector<std::vector<TileIndex>> ordered_resources;
 		ordered_resources.reserve(runway_resources.size());
-		for (auto &[resource_key, resource_tiles] : runway_resources) {
-			(void)resource_key;
+		for (auto &[_, resource_tiles] : runway_resources) {
 			ordered_resources.push_back(resource_tiles);
 		}
 
@@ -2968,14 +2980,14 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 			/* Entering a free-move segment that leads into runway must satisfy
 			 * the runway segment's own contract (terminal vs transit). */
 			if (!TryReserveTaxiSegment(v, st, next_seg)) {
-				if (ShouldLogModularRateLimited(v->index, 57, 128)) {
+				if (ShouldLogModularRateLimited(v->index, 62, 128)) {
 					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit runway tile={} seg={}", v->index, exit_tile.base(), segment_idx);
 				}
 				return false;
 			}
 		} else if (!IsModularHangarTile(st, exit_tile)) {
 			if (IsTaxiTileReservedByOther(st, exit_tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 58, 128)) {
+				if (ShouldLogModularRateLimited(v->index, 63, 128)) {
 					Tile dt(exit_tile);
 					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit reserved tile={} by V{} seg={}",
 						v->index, exit_tile.base(),
@@ -2985,7 +2997,7 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 				return false;
 			}
 			if (IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 59, 128)) {
+				if (ShouldLogModularRateLimited(v->index, 64, 128)) {
 					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit occupied tile={} seg={}", v->index, exit_tile.base(), segment_idx);
 				}
 				return false;
@@ -3328,14 +3340,9 @@ void LogModularVehicleReservationState(const Station *st, const Aircraft *v, std
 	}
 }
 
-struct ModularTakeoffFailLogState {
-	uint64_t last_tick = 0;
-	uint32_t suppressed_count = 0;
-};
-
 void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v)
 {
-	static std::map<VehicleID, ModularTakeoffFailLogState> fail_state;
+	auto &fail_state = _takeoff_fail_state;
 	static constexpr uint64_t LOG_INTERVAL_TICKS = 74;
 
 	ModularTakeoffFailLogState &state = fail_state[v->index];
@@ -3404,7 +3411,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	 * pathing/reservation decisions to avoid long-tail runway deadlocks. */
 	const uint scaled_taxi_limit = SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed;
 	if (!rollout_on_runway && v->cur_speed > scaled_taxi_limit) {
-		if (ShouldLogModularRateLimited(v->index, 35, 128)) {
+		if (ShouldLogModularRateLimited(v->index, 61, 128)) {
 			Debug(misc, 1, "[ModAp] V{} clamp pre-ground-move speed {}->{} state={} tile={} goal={} tgt={}",
 				v->index, v->cur_speed, scaled_taxi_limit, v->state,
 				IsValidTile(v->tile) ? v->tile.base() : 0,
@@ -3563,7 +3570,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			const TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path, next_seg_ref);
 			const bool owns_continuation = AircraftOwnsTaxiReservationForTile(v, st, continuation_tile);
 			if (continuation_tile == INVALID_TILE || !owns_continuation) {
-				if (ShouldLogModularRateLimited(v->index, 60, 128)) {
+				if (ShouldLogModularRateLimited(v->index, 65, 128)) {
 					Debug(misc, 1, "[ModAp] V{} runway-transit-invariant: missing continuation ownership tile={} seg={} state={} goal={}",
 						v->index, IsValidTile(continuation_tile) ? continuation_tile.base() : 0, next_segment, v->state,
 						IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0);

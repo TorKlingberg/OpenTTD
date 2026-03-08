@@ -25,6 +25,7 @@
 #include "../company_func.h"
 #include "../disaster_vehicle.h"
 #include "../economy_base.h"
+#include "../modular_airport_cmd.h"
 
 #include "../safeguards.h"
 
@@ -544,6 +545,8 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 		if (v->type != VEH_EFFECT) v->UpdatePosition();
 		v->UpdateViewport(false);
 	}
+
+	ResetModularAirportStaticState();
 }
 
 bool TrainController(Train *v, Vehicle *nomove, bool reverse = true); // From train_cmd.cpp

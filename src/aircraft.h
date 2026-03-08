@@ -94,7 +94,7 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	TileIndex ground_path_goal = INVALID_TILE; ///< Goal tile for ground movement
 	TileIndex modular_landing_tile = INVALID_TILE; ///< Runway tile targeted for modular landing
 	TileIndex modular_landing_goal = INVALID_TILE; ///< Ground destination preselected during landing commit
-	uint8_t modular_landing_stage = 0; ///< Landing stage for modular approach
+	uint8_t modular_landing_stage = 0; ///< Unused, kept for saveload compat
 	uint8_t modular_ground_target = 0; ///< Modular ground destination (terminal/hangar/runway)
 	TileIndex modular_takeoff_tile = INVALID_TILE; ///< Runway tile targeted for modular takeoff
 	uint16_t modular_takeoff_progress = 0; ///< Progress along modular takeoff roll
