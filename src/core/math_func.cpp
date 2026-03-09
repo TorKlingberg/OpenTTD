@@ -62,3 +62,32 @@ uint32_t IntSqrt(uint32_t num)
 
 	return res;
 }
+
+/**
+ * Compute the 64-bit integer square root.
+ * @param num Radicand.
+ * @return Rounded integer square root.
+ */
+uint64_t IntSqrt64(uint64_t num)
+{
+	uint64_t res = 0;
+	uint64_t bit = 1ULL << 62; // Second to top bit number.
+
+	/* 'bit' starts at the highest power of four <= the argument. */
+	while (bit > num) bit >>= 2;
+
+	while (bit != 0) {
+		if (num >= res + bit) {
+			num -= res + bit;
+			res = (res >> 1) + bit;
+		} else {
+			res >>= 1;
+		}
+		bit >>= 2;
+	}
+
+	/* Arithmetic rounding to nearest integer. */
+	if (num > res) res++;
+
+	return res;
+}

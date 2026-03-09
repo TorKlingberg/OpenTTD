@@ -1233,59 +1233,132 @@ Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
 	return best_dir;
 }
 
+/**
+ * Fixed-point arithmetic (16.16) for deterministic Dubins holding loop generation.
+ */
+static constexpr int64_t FIXED_1 = 1LL << 16;
+static constexpr int64_t FIXED_PI = 205887LL; // 3.14159... in 16.16
+static constexpr int64_t FIXED_2PI = 411775LL;
+static constexpr int64_t FIXED_HALF_PI = 102944LL;
+static constexpr int64_t FIXED_EPSILON = 64; // ~0.001 in 16.16
+
+inline int64_t ModularToFixed(int i) { return (int64_t)i << 16; }
+inline int ModularFixedRound(int64_t val) { return val >= 0 ? (int)((val + 32768) >> 16) : -(int)((-val + 32768) >> 16); }
+inline int64_t ModularFixedMul(int64_t a, int64_t b) { return (a * b) >> 16; }
+inline int64_t ModularFixedDiv(int64_t a, int64_t b) { return (a << 16) / b; }
+
+static int64_t ModularNormalizeAngle2Pi(int64_t a)
+{
+	a %= FIXED_2PI;
+	if (a < 0) a += FIXED_2PI;
+	return a;
+}
+
+/** Precomputed sine table: 4096 entries for 0 to 2PI. */
+static int64_t _fixed_sin_table[4096];
+static bool _fixed_trig_initialized = false;
+
+static void InitializeFixedTrig()
+{
+	if (_fixed_trig_initialized) return;
+	for (int i = 0; i < 4096; ++i) {
+		double angle = (double)i * 2.0 * M_PI / 4096.0;
+		_fixed_sin_table[i] = (int64_t)(std::sin(angle) * 65536.0);
+	}
+	_fixed_trig_initialized = true;
+}
+
+static int64_t ModularFixedSin(int64_t a)
+{
+	InitializeFixedTrig();
+	a = ModularNormalizeAngle2Pi(a);
+	uint32_t idx = (uint32_t)((a * 4096LL) / FIXED_2PI) % 4096;
+	return _fixed_sin_table[idx];
+}
+
+static int64_t ModularFixedCos(int64_t a)
+{
+	return ModularFixedSin(a + FIXED_HALF_PI);
+}
+
+
+/**
+ * 64-bit fixed-point square root (16.16 in, 16.16 out).
+ */
+static int64_t ModularFixedSqrt(int64_t x)
+{
+	if (x <= 0) return 0;
+	return (int64_t)IntSqrt64((uint64_t)x << 16);
+}
+
+/**
+ * Deterministic Atan2 approximation (16.16).
+ * Uses a standard fast approximation formula.
+ */
+static int64_t ModularFixedAtan2(int64_t y, int64_t x)
+{
+	if (x == 0 && y == 0) return 0;
+
+	/* Octant-based approximation for better stability than a single polynomial. */
+	const int64_t abs_y = std::abs(y) + 1; // avoid div by zero
+	int64_t angle;
+	if (x >= 0) {
+		int64_t r = ModularFixedDiv(x - abs_y, x + abs_y);
+		/* angle = pi/4 - pi/4 * r (very rough, let's use a bit better one) */
+		/* poly: 0.1963*r^3 - 0.9817*r + pi/4 */
+		int64_t r2 = ModularFixedMul(r, r);
+		int64_t r3 = ModularFixedMul(r2, r);
+		angle = FIXED_PI / 4 - ModularFixedMul(64339, r) + ModularFixedMul(12865, r3);
+	} else {
+		int64_t r = ModularFixedDiv(x + abs_y, abs_y - x);
+		int64_t r2 = ModularFixedMul(r, r);
+		int64_t r3 = ModularFixedMul(r2, r);
+		angle = 3 * FIXED_PI / 4 - ModularFixedMul(64339, r) + ModularFixedMul(12865, r3);
+	}
+	if (y < 0) return -angle;
+	return angle;
+}
+
 struct DubinsArc {
-	double cx;
-	double cy;
-	double r;
-	double a0;
-	double sweep; // CCW positive, CW negative
+	int64_t cx;
+	int64_t cy;
+	int64_t r;
+	int64_t a0;
+	int64_t sweep; // CCW positive, CW negative
 };
 
 struct DubinsSeg {
 	bool is_arc;
 	DubinsArc arc;
-	double x0;
-	double y0;
-	double x1;
-	double y1;
+	int64_t x0;
+	int64_t y0;
+	int64_t x1;
+	int64_t y1;
 };
 
 struct DubinsPath {
 	std::vector<DubinsSeg> segs;
-	double length;
+	int64_t length;
 	bool valid;
 };
 
-static constexpr double DUBINS_PI = 3.14159265358979323846;
-
-static double NormalizeAngle2Pi(double a)
+static void DirToVecFixed(Direction d, int64_t &dx, int64_t &dy)
 {
-	a = std::fmod(a, 2.0 * DUBINS_PI);
-	if (a < 0.0) a += 2.0 * DUBINS_PI;
-	return a;
+	/* Precomputed normalized vectors for the 8 directions in 16.16.
+	 * Order: N, NE, E, SE, S, SW, W, NW (matching DIR_N, etc.)
+	 * N is (0, -1) in world coords, but here we match DirToVec's dir_dx/dy mapping.
+	 * DirToVec mapping: {-1, -1, -1, 0, 1, 1, 1, 0} / {-1, 0, 1, 1, 1, 0, -1, -1}
+	 */
+	static const int64_t v_dx[] = {-46341, -65536, -46341,      0,  46341,  65536,  46341,      0};
+	static const int64_t v_dy[] = {-46341,      0,  46341,  65536,  46341,      0, -46341, -65536};
+	dx = v_dx[d % 8];
+	dy = v_dy[d % 8];
 }
 
-static void DirToVec(Direction d, double &dx, double &dy)
+static void AddWaypoint(std::vector<ModularHoldingLoop::Waypoint> &out, int64_t x, int64_t y, int64_t cx, int64_t cy)
 {
-	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1, 0, 1, 1, 1, 0};
-	static constexpr int8_t dir_dy[DIR_END] = {-1, 0, 1, 1, 1, 0, -1, -1};
-
-	const int ix = dir_dx[d];
-	const int iy = dir_dy[d];
-	const double len = std::hypot(static_cast<double>(ix), static_cast<double>(iy));
-	if (len <= 0.0) {
-		dx = 1.0;
-		dy = 0.0;
-		return;
-	}
-	dx = ix / len;
-	dy = iy / len;
-}
-
-static void AddWaypoint(std::vector<ModularHoldingLoop::Waypoint> &out, double x, double y)
-{
-	const int ix = static_cast<int>(std::lround(x));
-	const int iy = static_cast<int>(std::lround(y));
+	const int ix = ModularFixedRound(x + cx);
+	const int iy = ModularFixedRound(y + cy);
 	if (!out.empty() && out.back().x == ix && out.back().y == iy) return;
 	out.push_back({ix, iy});
 }
@@ -1300,40 +1373,40 @@ static void AppendFallbackRectLoopWaypoints(std::vector<ModularHoldingLoop::Wayp
 	const int cy = (loop_y0 + loop_y1) / 2;
 
 	out.clear();
-	out.push_back({loop_x0, loop_y0});
-	out.push_back({cx, loop_y0});
-	out.push_back({loop_x1, loop_y0});
-	out.push_back({loop_x1, cy});
-	out.push_back({loop_x1, loop_y1});
-	out.push_back({cx, loop_y1});
-	out.push_back({loop_x0, loop_y1});
-	out.push_back({loop_x0, cy});
+	AddWaypoint(out, ModularToFixed(loop_x0), ModularToFixed(loop_y0), 0, 0);
+	AddWaypoint(out, ModularToFixed(cx), ModularToFixed(loop_y0), 0, 0);
+	AddWaypoint(out, ModularToFixed(loop_x1), ModularToFixed(loop_y0), 0, 0);
+	AddWaypoint(out, ModularToFixed(loop_x1), ModularToFixed(cy), 0, 0);
+	AddWaypoint(out, ModularToFixed(loop_x1), ModularToFixed(loop_y1), 0, 0);
+	AddWaypoint(out, ModularToFixed(cx), ModularToFixed(loop_y1), 0, 0);
+	AddWaypoint(out, ModularToFixed(loop_x0), ModularToFixed(loop_y1), 0, 0);
+	AddWaypoint(out, ModularToFixed(loop_x0), ModularToFixed(cy), 0, 0);
 }
 
-static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
-		double x2, double y2, double hdx2, double hdy2, double radius)
+static DubinsPath ComputeDubins(int64_t x1, int64_t y1, int64_t hdx1, int64_t hdy1,
+		int64_t x2, int64_t y2, int64_t hdx2, int64_t hdy2, int64_t radius)
 {
 	DubinsPath best = {};
 	best.valid = false;
-	best.length = std::numeric_limits<double>::infinity();
+	best.length = INT64_MAX;
 
-	if (radius <= 0.0) return best;
+	if (radius <= 0) return best;
 
-	const double th1 = std::atan2(hdy1, hdx1);
-	const double th2 = std::atan2(hdy2, hdx2);
-	const double dx = (x2 - x1) / radius;
-	const double dy = (y2 - y1) / radius;
-	const double d = std::hypot(dx, dy);
-	if (d < 1e-9) return best;
+	const int64_t th1 = ModularFixedAtan2(hdy1, hdx1);
+	const int64_t th2 = ModularFixedAtan2(hdy2, hdx2);
+	const int64_t dx = ModularFixedDiv(x2 - x1, radius);
+	const int64_t dy = ModularFixedDiv(y2 - y1, radius);
+	const int64_t d = ModularFixedSqrt(ModularFixedMul(dx, dx) + ModularFixedMul(dy, dy));
+	if (d < FIXED_EPSILON) return best;
 
-	const double theta = std::atan2(dy, dx);
-	const double alpha = NormalizeAngle2Pi(th1 - theta);
-	const double beta = NormalizeAngle2Pi(th2 - theta);
+	const int64_t theta = ModularFixedAtan2(dy, dx);
+	const int64_t alpha = ModularNormalizeAngle2Pi(th1 - theta);
+	const int64_t beta = ModularNormalizeAngle2Pi(th2 - theta);
 
 	struct Candidate {
-		double t;
-		double p;
-		double q;
+		int64_t t;
+		int64_t p;
+		int64_t q;
 		char types[3];
 		bool valid;
 	};
@@ -1341,13 +1414,13 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 	auto eval_lsl = [&]() -> Candidate {
 		Candidate c = {};
 		c.types[0] = 'L'; c.types[1] = 'S'; c.types[2] = 'L';
-		const double tmp0 = d + std::sin(alpha) - std::sin(beta);
-		const double p2 = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (std::sin(alpha) - std::sin(beta));
-		if (p2 < 0.0) return c;
-		const double tmp1 = std::atan2(std::cos(beta) - std::cos(alpha), tmp0);
-		c.t = NormalizeAngle2Pi(-alpha + tmp1);
-		c.p = std::sqrt(std::max(0.0, p2));
-		c.q = NormalizeAngle2Pi(beta - tmp1);
+		const int64_t p2 = (FIXED_1 << 1) + ModularFixedMul(d, d) - (ModularFixedCos(alpha - beta) << 1) + (ModularFixedMul(d, ModularFixedSin(alpha) - ModularFixedSin(beta)) << 1);
+		if (p2 < 0) return c;
+		const int64_t tmp0 = d + ModularFixedSin(alpha) - ModularFixedSin(beta);
+		const int64_t tmp1 = ModularFixedAtan2(ModularFixedCos(beta) - ModularFixedCos(alpha), tmp0);
+		c.t = ModularNormalizeAngle2Pi(-alpha + tmp1);
+		c.p = ModularFixedSqrt(p2);
+		c.q = ModularNormalizeAngle2Pi(beta - tmp1);
 		c.valid = true;
 		return c;
 	};
@@ -1355,13 +1428,13 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 	auto eval_rsr = [&]() -> Candidate {
 		Candidate c = {};
 		c.types[0] = 'R'; c.types[1] = 'S'; c.types[2] = 'R';
-		const double tmp0 = d - std::sin(alpha) + std::sin(beta);
-		const double p2 = 2.0 + d * d - 2.0 * std::cos(alpha - beta) + 2.0 * d * (-std::sin(alpha) + std::sin(beta));
-		if (p2 < 0.0) return c;
-		const double tmp1 = std::atan2(std::cos(alpha) - std::cos(beta), tmp0);
-		c.t = NormalizeAngle2Pi(alpha - tmp1);
-		c.p = std::sqrt(std::max(0.0, p2));
-		c.q = NormalizeAngle2Pi(-beta + tmp1);
+		const int64_t p2 = (FIXED_1 << 1) + ModularFixedMul(d, d) - (ModularFixedCos(alpha - beta) << 1) + (ModularFixedMul(d, -ModularFixedSin(alpha) + ModularFixedSin(beta)) << 1);
+		if (p2 < 0) return c;
+		const int64_t tmp0 = d - ModularFixedSin(alpha) + ModularFixedSin(beta);
+		const int64_t tmp1 = ModularFixedAtan2(ModularFixedCos(alpha) - ModularFixedCos(beta), tmp0);
+		c.t = ModularNormalizeAngle2Pi(alpha - tmp1);
+		c.p = ModularFixedSqrt(p2);
+		c.q = ModularNormalizeAngle2Pi(-beta + tmp1);
 		c.valid = true;
 		return c;
 	};
@@ -1369,13 +1442,13 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 	auto eval_lsr = [&]() -> Candidate {
 		Candidate c = {};
 		c.types[0] = 'L'; c.types[1] = 'S'; c.types[2] = 'R';
-		const double p2 = -2.0 + d * d + 2.0 * std::cos(alpha - beta) + 2.0 * d * (std::sin(alpha) + std::sin(beta));
-		if (p2 < 0.0) return c;
-		const double p = std::sqrt(std::max(0.0, p2));
-		const double tmp2 = std::atan2(-std::cos(alpha) - std::cos(beta), d + std::sin(alpha) + std::sin(beta)) - std::atan2(-2.0, p);
-		c.t = NormalizeAngle2Pi(-alpha + tmp2);
+		const int64_t p2 = -(FIXED_1 << 1) + ModularFixedMul(d, d) + (ModularFixedCos(alpha - beta) << 1) + (ModularFixedMul(d, ModularFixedSin(alpha) + ModularFixedSin(beta)) << 1);
+		if (p2 < 0) return c;
+		const int64_t p = ModularFixedSqrt(p2);
+		const int64_t tmp2 = ModularFixedAtan2(-ModularFixedCos(alpha) - ModularFixedCos(beta), d + ModularFixedSin(alpha) + ModularFixedSin(beta)) - ModularFixedAtan2(-(FIXED_1 << 1), p);
+		c.t = ModularNormalizeAngle2Pi(-alpha + tmp2);
 		c.p = p;
-		c.q = NormalizeAngle2Pi(-beta + tmp2);
+		c.q = ModularNormalizeAngle2Pi(-beta + tmp2);
 		c.valid = true;
 		return c;
 	};
@@ -1383,13 +1456,13 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 	auto eval_rsl = [&]() -> Candidate {
 		Candidate c = {};
 		c.types[0] = 'R'; c.types[1] = 'S'; c.types[2] = 'L';
-		const double p2 = -2.0 + d * d + 2.0 * std::cos(alpha - beta) - 2.0 * d * (std::sin(alpha) + std::sin(beta));
-		if (p2 < 0.0) return c;
-		const double p = std::sqrt(std::max(0.0, p2));
-		const double tmp2 = std::atan2(std::cos(alpha) + std::cos(beta), d - std::sin(alpha) - std::sin(beta)) - std::atan2(2.0, p);
-		c.t = NormalizeAngle2Pi(alpha - tmp2);
+		const int64_t p2 = -(FIXED_1 << 1) + ModularFixedMul(d, d) + (ModularFixedCos(alpha - beta) << 1) - (ModularFixedMul(d, ModularFixedSin(alpha) + ModularFixedSin(beta)) << 1);
+		if (p2 < 0) return c;
+		const int64_t p = ModularFixedSqrt(p2);
+		const int64_t tmp2 = ModularFixedAtan2(ModularFixedCos(alpha) + ModularFixedCos(beta), d - ModularFixedSin(alpha) - ModularFixedSin(beta)) - ModularFixedAtan2((FIXED_1 << 1), p);
+		c.t = ModularNormalizeAngle2Pi(alpha - tmp2);
 		c.p = p;
-		c.q = NormalizeAngle2Pi(beta - tmp2);
+		c.q = ModularNormalizeAngle2Pi(beta - tmp2);
 		c.valid = true;
 		return c;
 	};
@@ -1398,26 +1471,26 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 
 	for (const Candidate &cand : candidates) {
 		if (!cand.valid) continue;
-		const double cand_len = (cand.t + cand.p + cand.q) * radius;
+		const int64_t cand_len = ModularFixedMul(cand.t + cand.p + cand.q, radius);
 		if (cand_len >= best.length) continue;
 
 		std::vector<DubinsSeg> segs;
 		segs.reserve(3);
-		double px = x1;
-		double py = y1;
-		double th = th1;
+		int64_t px = x1;
+		int64_t py = y1;
+		int64_t th = th1;
 
-		auto append_arc = [&](char turn_type, double arc_angle) {
-			if (arc_angle <= 1e-9) return;
+		auto append_arc = [&](char turn_type, int64_t arc_angle) {
+			if (arc_angle <= FIXED_EPSILON) return;
 
 			const bool left = (turn_type == 'L');
-			const double cx = left ? (px - radius * std::sin(th)) : (px + radius * std::sin(th));
-			const double cy = left ? (py + radius * std::cos(th)) : (py - radius * std::cos(th));
-			const double a0 = std::atan2(py - cy, px - cx);
-			const double sweep = left ? arc_angle : -arc_angle;
-			const double a1 = a0 + sweep;
-			const double nx = cx + radius * std::cos(a1);
-			const double ny = cy + radius * std::sin(a1);
+			const int64_t cx = left ? (px - ModularFixedMul(radius, ModularFixedSin(th))) : (px + ModularFixedMul(radius, ModularFixedSin(th)));
+			const int64_t cy = left ? (py + ModularFixedMul(radius, ModularFixedCos(th))) : (py - ModularFixedMul(radius, ModularFixedCos(th)));
+			const int64_t a0 = ModularFixedAtan2(py - cy, px - cx);
+			const int64_t sweep = left ? arc_angle : -arc_angle;
+			const int64_t a1 = a0 + sweep;
+			const int64_t nx = cx + ModularFixedMul(radius, ModularFixedCos(a1));
+			const int64_t ny = cy + ModularFixedMul(radius, ModularFixedSin(a1));
 
 			DubinsSeg seg = {};
 			seg.is_arc = true;
@@ -1430,13 +1503,13 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 
 			px = nx;
 			py = ny;
-			th = NormalizeAngle2Pi(th + sweep);
+			th = ModularNormalizeAngle2Pi(th + sweep);
 		};
 
-		auto append_straight = [&](double dist) {
-			if (dist <= 1e-9) return;
-			const double nx = px + dist * std::cos(th);
-			const double ny = py + dist * std::sin(th);
+		auto append_straight = [&](int64_t dist) {
+			if (dist <= FIXED_EPSILON) return;
+			const int64_t nx = px + ModularFixedMul(dist, ModularFixedCos(th));
+			const int64_t ny = py + ModularFixedMul(dist, ModularFixedSin(th));
 			DubinsSeg seg = {};
 			seg.is_arc = false;
 			seg.x0 = px;
@@ -1449,7 +1522,7 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 		};
 
 		append_arc(cand.types[0], cand.t);
-		append_straight(cand.p * radius);
+		append_straight(ModularFixedMul(cand.p, radius));
 		append_arc(cand.types[2], cand.q);
 
 		best.segs = std::move(segs);
@@ -1460,31 +1533,30 @@ static DubinsPath ComputeDubins(double x1, double y1, double hdx1, double hdy1,
 	return best;
 }
 
-static void SampleDubinsPath(const DubinsPath &path, double step_px, std::vector<ModularHoldingLoop::Waypoint> &out)
+static void SampleDubinsPath(const DubinsPath &path, int64_t step_px, std::vector<ModularHoldingLoop::Waypoint> &out, int64_t cx, int64_t cy)
 {
-	if (!path.valid || step_px <= 0.0) return;
+	if (!path.valid || step_px <= 0) return;
 
 	for (const DubinsSeg &seg : path.segs) {
 		if (seg.is_arc) {
-			const double radius = seg.arc.r;
-			const double sweep_abs = std::abs(seg.arc.sweep);
-			if (radius <= 0.0 || sweep_abs <= 1e-9) continue;
+			const int64_t radius = seg.arc.r;
+			const int64_t sweep_abs = std::abs(seg.arc.sweep);
+			if (radius <= 0 || sweep_abs <= FIXED_EPSILON) continue;
 
-			const double step_ang = step_px / radius;
-			if (step_ang <= 0.0) continue;
-			const int count = static_cast<int>(std::floor(sweep_abs / step_ang));
-			const double sign = (seg.arc.sweep >= 0.0) ? 1.0 : -1.0;
+			const int64_t step_ang = ModularFixedDiv(step_px, radius);
+			if (step_ang <= 0) continue;
+			const int count = (int)(sweep_abs / step_ang);
+			const int64_t sign = (seg.arc.sweep >= 0) ? FIXED_1 : -FIXED_1;
 			for (int i = 1; i <= count; ++i) {
-				const double a = seg.arc.a0 + sign * static_cast<double>(i) * step_ang;
-				if (std::abs(a - (seg.arc.a0 + seg.arc.sweep)) <= 1e-9) break;
-				const double x = seg.arc.cx + radius * std::cos(a);
-				const double y = seg.arc.cy + radius * std::sin(a);
-				AddWaypoint(out, x, y);
+				const int64_t a = seg.arc.a0 + ModularFixedMul(sign, i * step_ang);
+				if (std::abs(a - (seg.arc.a0 + seg.arc.sweep)) <= FIXED_EPSILON) break;
+				const int64_t x = seg.arc.cx + ModularFixedMul(radius, ModularFixedCos(a));
+				const int64_t y = seg.arc.cy + ModularFixedMul(radius, ModularFixedSin(a));
+				AddWaypoint(out, x, y, cx, cy);
 			}
 		} else {
-			/* Straight segment: only emit the endpoint.
-			 * Dense intermediates caused aircraft to wiggle between nearby waypoints. */
-			AddWaypoint(out, seg.x1, seg.y1);
+			/* Straight segment: only emit the endpoint. */
+			AddWaypoint(out, seg.x1, seg.y1, cx, cy);
 		}
 	}
 }
@@ -1496,8 +1568,8 @@ struct GateInfo {
 	int threshold_x;
 	int threshold_y;
 	Direction approach_dir;
-	double hdx;
-	double hdy;
+	int64_t hdx;
+	int64_t hdy;
 	int rel_x; ///< gate_x - center_x (integer, for deterministic angular sort)
 	int rel_y; ///< gate_y - center_y (integer, for deterministic angular sort)
 	std::vector<GateInfo> members; ///< colocated group members (empty = solo gate)
@@ -1545,9 +1617,8 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 		const int threshold_y = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
 		const Direction approach_dir = GetRunwayApproachDirection(st, data.tile);
 
-		double hdx = 1.0;
-		double hdy = 0.0;
-		DirToVec(approach_dir, hdx, hdy);
+		int64_t hdx, hdy;
+		DirToVecFixed(approach_dir, hdx, hdy);
 
 		GateInfo gate = {};
 		gate.runway_tile = data.tile;
@@ -1575,9 +1646,11 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 			if (gates[i].approach_dir != gates[j].approach_dir) { ++j; continue; }
 			const int dx = gates[j].threshold_x - gates[i].threshold_x;
 			const int dy = gates[j].threshold_y - gates[i].threshold_y;
-			const double along   = std::abs(dx * gates[i].hdx + dy * gates[i].hdy);
-			const double lateral = std::abs(dx * (-gates[i].hdy) + dy * gates[i].hdx);
-			if (lateral > COLOCATE_LATERAL_MAX_PX || along > COLOCATE_ALONG_MAX_PX) { ++j; continue; }
+			const int64_t along   = std::abs(dx * gates[i].hdx + dy * gates[i].hdy);
+			const int64_t lateral = std::abs(dx * (-gates[i].hdy) + dy * gates[i].hdx);
+
+			if (lateral > (int64_t)COLOCATE_LATERAL_MAX_PX << 16 || along > (int64_t)COLOCATE_ALONG_MAX_PX << 16) { ++j; continue; }
+
 
 			/* Absorb gate j into gate i's group. */
 			if (gates[i].members.empty()) gates[i].members.push_back(gates[i]); // include self
@@ -1661,9 +1734,15 @@ void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
 		return;
 	}
 
-	const double overshoot_px = static_cast<double>(MODULAR_HOLDING_OVERSHOOT_TILES * TILE_SIZE);
-	const double radius_px = static_cast<double>(MODULAR_HOLDING_TURN_RADIUS_TILES * TILE_SIZE);
-	const double sample_px = static_cast<double>(MODULAR_HOLDING_SAMPLE_INTERVAL_PX);
+	/* Use station center as relative origin for fixed-point math to prevent overflow. */
+	const int center_px_x = (min_x + max_x) * TILE_SIZE / 2 + TILE_SIZE / 2;
+	const int center_px_y = (min_y + max_y) * TILE_SIZE / 2 + TILE_SIZE / 2;
+	const int64_t cx = ModularToFixed(center_px_x);
+	const int64_t cy = ModularToFixed(center_px_y);
+
+	const int64_t overshoot_px = ModularToFixed(MODULAR_HOLDING_OVERSHOOT_TILES * TILE_SIZE);
+	const int64_t radius_px = ModularToFixed(MODULAR_HOLDING_TURN_RADIUS_TILES * TILE_SIZE);
+	const int64_t sample_px = ModularToFixed(MODULAR_HOLDING_SAMPLE_INTERVAL_PX);
 
 	/* Build the loop.  GatherAndSortGates has already colocated parallel
 	 * same-direction gates into groups (representative at midpoint, originals
@@ -1700,27 +1779,32 @@ void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
 		}
 
 		/* Waypoint and Dubins use the representative's (midpoint) coordinates. */
-		AddWaypoint(loop.waypoints, cur.gate_x, cur.gate_y);
+		const int64_t cur_gx = ModularToFixed(cur.gate_x) - cx;
+		const int64_t cur_gy = ModularToFixed(cur.gate_y) - cy;
+		AddWaypoint(loop.waypoints, cur_gx, cur_gy, cx, cy);
 
 		/* Overshoot: endpoint only (no dense intermediates on straights). */
-		const double ex = static_cast<double>(cur.gate_x) + cur.hdx * overshoot_px;
-		const double ey = static_cast<double>(cur.gate_y) + cur.hdy * overshoot_px;
-		AddWaypoint(loop.waypoints, ex, ey);
+		const int64_t ex = cur_gx + ModularFixedMul(cur.hdx, overshoot_px);
+		const int64_t ey = cur_gy + ModularFixedMul(cur.hdy, overshoot_px);
+		AddWaypoint(loop.waypoints, ex, ey, cx, cy);
+
+		const int64_t next_gx = ModularToFixed(next.gate_x) - cx;
+		const int64_t next_gy = ModularToFixed(next.gate_y) - cy;
 
 		DubinsPath path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
-				static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
+				next_gx, next_gy, next.hdx, next.hdy,
 				radius_px);
 		if (!path.valid) {
 			path = ComputeDubins(ex, ey, cur.hdx, cur.hdy,
-					static_cast<double>(next.gate_x), static_cast<double>(next.gate_y), next.hdx, next.hdy,
-					radius_px * 0.5);
+					next_gx, next_gy, next.hdx, next.hdy,
+					radius_px >> 1);
 		}
 		if (!path.valid) {
 			/* Fallback straight line: no intermediates needed. */
 			continue;
 		}
 
-		SampleDubinsPath(path, sample_px, loop.waypoints);
+		SampleDubinsPath(path, sample_px, loop.waypoints, cx, cy);
 	}
 }
 

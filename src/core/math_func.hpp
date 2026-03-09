@@ -354,5 +354,6 @@ constexpr uint64_t PowerOfTen(int power)
 }
 
 uint32_t IntSqrt(uint32_t num);
+uint64_t IntSqrt64(uint64_t num);
 
 #endif /* MATH_FUNC_HPP */
