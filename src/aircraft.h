@@ -10,7 +10,9 @@
 #ifndef AIRCRAFT_H
 #define AIRCRAFT_H
 
+#include <memory>
 #include "station_map.h"
+
 #include "vehicle_base.h"
 #include "airport_ground_pathfinder.h"
 
@@ -85,8 +87,8 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	AircraftCache acache{};
 
 	/* Modular airport ground pathfinding */
-	TaxiPath *taxi_path = nullptr; ///< Classified taxi path for modular airports
-	TaxiPath *landing_chain_path = nullptr; ///< Pre-computed path from rollout to ground goal (set by landing chain)
+	std::unique_ptr<TaxiPath> taxi_path; ///< Classified taxi path for modular airports
+	std::unique_ptr<TaxiPath> landing_chain_path; ///< Pre-computed path from rollout to ground goal (set by landing chain)
 	uint16_t taxi_path_index = 0; ///< Current position in taxi_path->tiles
 	uint8_t taxi_current_segment = 0; ///< Current segment index in taxi_path->segments
 	std::vector<TileIndex> taxi_reserved_tiles{}; ///< Non-runway reservations held by segment logic
@@ -103,7 +105,7 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 
 	Aircraft(VehicleID index) : SpecializedVehicleBase(index) {}
 	/** We want to 'destruct' the right class. */
-	~Aircraft() override { this->PreDestructor(); delete this->taxi_path; delete this->landing_chain_path; }
+	~Aircraft() override { this->PreDestructor(); }
 
 	void MarkDirty() override;
 	void UpdateDeltaXY() override;

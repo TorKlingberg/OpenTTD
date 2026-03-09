@@ -303,32 +303,57 @@ static bool IsBigTerminalPiece(uint8_t piece_type)
 }
 
 /**
- * Check whether a modular airport has the infrastructure to support large aircraft:
- * a tower, a big terminal, and at least one safe (long, large-family) runway.
+ * Check whether a modular airport has at least one runway safe for large aircraft
+ * for the specified operation (landing or takeoff).
  */
-bool ModularAirportSupportsLargeAircraft(const Station *st)
+static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
 {
 	if (st->airport.modular_tile_data == nullptr) return false;
 
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (data.piece_type == APT_RUNWAY_END) {
+			bool has_flag = landing ? (data.runway_flags & RUF_LANDING) : (data.runway_flags & RUF_TAKEOFF);
+			if (has_flag && IsRunwaySafeForLarge(st, data.tile)) return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Get the safety status of a modular airport for large aircraft.
+ * Returns a bitmask of MISSING requirements.
+ */
+ModularAirportSafetyRequirement GetModularAirportSafetyStatus(const Station *st)
+{
+	if (st->airport.modular_tile_data == nullptr) return MASR_NONE;
+
+	ModularAirportSafetyRequirement missing = MASR_NONE;
 	bool has_tower = false;
 	bool has_big_terminal = false;
-	bool has_safe_runway = false;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (data.piece_type == APT_TOWER || data.piece_type == APT_TOWER_FENCE_SW) has_tower = true;
 		if (IsBigTerminalPiece(data.piece_type)) has_big_terminal = true;
-
-		/* Check runway ends for safety. */
-		if (IsModularRunwayPiece(data.piece_type) &&
-				(data.piece_type == APT_RUNWAY_END) &&
-				!has_safe_runway) {
-			has_safe_runway = IsRunwaySafeForLarge(st, data.tile);
-		}
-
-		if (has_tower && has_big_terminal && has_safe_runway) return true;
+		if (has_tower && has_big_terminal) break;
 	}
 
-	return has_tower && has_big_terminal && has_safe_runway;
+	if (!has_tower) missing |= MASR_TOWER;
+	if (!has_big_terminal) missing |= MASR_BIG_TERMINAL;
+	if (!ModularAirportHasSafeRunwayFor(st, true)) missing |= MASR_LANDING_RUNWAY;
+	if (!ModularAirportHasSafeRunwayFor(st, false)) missing |= MASR_TAKEOFF_RUNWAY;
+
+	return missing;
+}
+
+/**
+ * Check whether a modular airport has the infrastructure to support large aircraft:
+ * a tower, a big terminal, and at least one safe (long, large-family) runway
+ * for both landing and takeoff.
+ */
+bool ModularAirportSupportsLargeAircraft(const Station *st)
+{
+	return GetModularAirportSafetyStatus(st) == MASR_NONE;
 }
 
 void ClearModularRunwayReservation(Aircraft *v)
@@ -398,8 +423,7 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		ClearTaxiPathState(v);
 		ClearModularRunwayReservation(v);
 		ClearModularAirportReservationsByVehicle(st, v->index);
-		delete v->landing_chain_path;
-		v->landing_chain_path = nullptr;
+		v->landing_chain_path.reset();
 
 		v->ground_path_goal = INVALID_TILE;
 		v->modular_ground_target = MGT_NONE;
@@ -550,12 +574,12 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 			continue;
 		}
 
-		if (path_has_future_tile(v->taxi_path, tile, v->taxi_path_index)) {
+		if (path_has_future_tile(v->taxi_path.get(), tile, v->taxi_path_index)) {
 			keep_set.push_back(tile);
 			continue;
 		}
 
-		if (path_has_future_tile(v->landing_chain_path, tile, 0)) {
+		if (path_has_future_tile(v->landing_chain_path.get(), tile, 0)) {
 			keep_set.push_back(tile);
 			continue;
 		}
@@ -575,13 +599,13 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 			} else if (seg.type == TaxiSegmentType::RUNWAY) {
 				for (uint16_t i = seg_start; i <= seg.end_index && i < path_tiles.size(); ++i) keep_set.push_back(path_tiles[i]);
 
-				const bool terminal_runway = IsRunwaySegmentTerminalGoal(v, v->taxi_path, seg);
+				const bool terminal_runway = IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), seg);
 				if (!terminal_runway) {
 					if (seg.start_index > 0 && seg.start_index - 1 < path_tiles.size()) {
 						keep_set.push_back(path_tiles[seg.start_index - 1]);
 					}
 
-					TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path, seg);
+					TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path.get(), seg);
 					if (continuation_tile != INVALID_TILE) keep_set.push_back(continuation_tile);
 				}
 			} else if (seg.type == TaxiSegmentType::ONE_WAY) {
@@ -938,8 +962,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 			return log_chain_fail("one_way_entry_blocked", entry);
 		}
 		SetTaxiReservation(v, entry);
-		delete v->landing_chain_path;
-		v->landing_chain_path = new TaxiPath(std::move(path));
+		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
 		return true;
 	}
 
@@ -965,8 +988,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 
 	for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
 
-	delete v->landing_chain_path;
-	v->landing_chain_path = new TaxiPath(std::move(path));
+	v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
 
 	if (ShouldLogModularRateLimited(v->index, 44, 16)) {
 		LogModularVehicleReservationState(st, v, "landing chain reserved");
@@ -2730,8 +2752,7 @@ void ClearTaxiPathReservation(Aircraft *v, TileIndex keep_tile, bool force_clear
 void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile)
 {
 	ClearTaxiPathReservation(v, keep_tile);
-	delete v->taxi_path;
-	v->taxi_path = nullptr;
+	v->taxi_path.reset();
 	v->taxi_path_index = 0;
 	v->taxi_current_segment = 0;
 	v->taxi_wait_counter = 0;
@@ -2869,13 +2890,13 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 			ordered_resources.push_back(resource_tiles);
 		}
 
-		const bool terminal_runway = IsRunwaySegmentTerminalGoal(v, v->taxi_path, seg);
+		const bool terminal_runway = IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), seg);
 		if (terminal_runway) {
 			return TryReserveRunwayResourcesAtomic(v, st, ordered_resources, true);
 		}
 
 		/* Transit runway contract: acquire runway resource(s) and safe continuation atomically before entry. */
-		TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path, seg);
+		TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path.get(), seg);
 		if (continuation_tile == INVALID_TILE) {
 			if (ShouldLogModularRateLimited(v->index, 57, 128)) {
 				Debug(misc, 1, "[ModAp] V{} runway-transit-deny: no safe continuation seg={} tile={} goal={}",
@@ -3113,11 +3134,9 @@ void HandleModularGroundArrival(Aircraft *v)
 							!v->landing_chain_path->tiles.empty() &&
 							v->landing_chain_path->tiles.front() == v->tile &&
 							v->landing_chain_path->tiles.back() == goal) {
-						delete v->taxi_path;
-						v->taxi_path = v->landing_chain_path;
-						v->landing_chain_path = nullptr;
+						v->taxi_path = std::move(v->landing_chain_path);
 						v->taxi_path_index = 0;
-						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path, 0);
+						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 						v->taxi_wait_counter = 0;
 						SetTaxiReservation(v, v->tile);
 					}
@@ -3145,8 +3164,8 @@ void HandleModularGroundArrival(Aircraft *v)
 				}
 
 				/* Discard any remaining landing chain path — either installed above or no longer needed. */
-				delete v->landing_chain_path;
-				v->landing_chain_path = nullptr;
+				v->landing_chain_path.reset();
+
 			}
 			break;
 
@@ -3475,9 +3494,9 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			return false;
 		}
 
-		v->taxi_path = new TaxiPath(std::move(new_path));
+		v->taxi_path = std::make_unique<TaxiPath>(std::move(new_path));
 		v->taxi_path_index = 0;
-		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path, 0);
+		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 		v->taxi_wait_counter = 0;
 		SetTaxiReservation(v, v->tile);
 	}
@@ -3491,7 +3510,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 
 	const uint16_t current_index = v->taxi_path_index;
 	const uint16_t next_index = current_index + 1;
-	const uint8_t next_segment = FindTaxiSegmentIndex(v->taxi_path, next_index);
+	const uint8_t next_segment = FindTaxiSegmentIndex(v->taxi_path.get(), next_index);
 	if (next_segment >= v->taxi_path->segments.size()) {
 		ClearTaxiPathState(v, v->tile);
 		return false;
@@ -3501,7 +3520,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	const TaxiSegmentType next_type = v->taxi_path->segments[next_segment].type;
 	const TaxiSegment &next_seg_ref = v->taxi_path->segments[next_segment];
 	const bool next_is_terminal_runway = (next_type == TaxiSegmentType::RUNWAY) &&
-			IsRunwaySegmentTerminalGoal(v, v->taxi_path, next_seg_ref);
+			IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), next_seg_ref);
 	bool need_reserve = (next_type == TaxiSegmentType::ONE_WAY);
 	if (!need_reserve) {
 		Tile t(next_tile);
@@ -3537,7 +3556,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				VehicleID continuation_reserver = VehicleID::Invalid();
 				bool continuation_occupied = false;
 				if (!terminal_runway) {
-					continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path, next_seg_ref);
+					continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path.get(), next_seg_ref);
 					if (continuation_tile != INVALID_TILE && !IsModularHangarTile(st, continuation_tile)) {
 						Tile ct(continuation_tile);
 						continuation_reserved_by_other = IsAirportTile(ct) && HasAirportTileReservation(ct) && GetAirportTileReserver(ct) != v->index;
@@ -3567,7 +3586,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 
 	if (next_type == TaxiSegmentType::RUNWAY) {
 		if (!next_is_terminal_runway) {
-			const TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path, next_seg_ref);
+			const TileIndex continuation_tile = FindRunwayTransitContinuationTile(v, st, v->taxi_path.get(), next_seg_ref);
 			const bool owns_continuation = AircraftOwnsTaxiReservationForTile(v, st, continuation_tile);
 			if (continuation_tile == INVALID_TILE || !owns_continuation) {
 				if (ShouldLogModularRateLimited(v->index, 65, 128)) {
@@ -3636,7 +3655,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 
 	if (v->x_pos != target_x || v->y_pos != target_y) return false;
 
-	const uint8_t old_segment = FindTaxiSegmentIndex(v->taxi_path, current_index);
+	const uint8_t old_segment = FindTaxiSegmentIndex(v->taxi_path.get(), current_index);
 	v->tile = next_tile;
 	v->taxi_path_index = next_index;
 	v->taxi_current_segment = next_segment;

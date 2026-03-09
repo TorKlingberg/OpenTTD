@@ -16,6 +16,8 @@
 #include "airport.h"
 #include "table/airporttile_ids.h"
 
+#include "core/enum_type.hpp"
+
 #include <span>
 #include <string_view>
 #include <cstdint>
@@ -244,5 +246,17 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
+
+/** Requirements for a modular airport to be safe for large aircraft. */
+enum ModularAirportSafetyRequirement : uint8_t {
+	MASR_NONE           = 0,
+	MASR_TOWER          = 1 << 0, ///< Missing control tower
+	MASR_BIG_TERMINAL   = 1 << 1, ///< Missing large terminal building
+	MASR_LANDING_RUNWAY = 1 << 2, ///< Missing 6-tile large landing runway
+	MASR_TAKEOFF_RUNWAY = 1 << 3, ///< Missing 6-tile large takeoff runway
+};
+DECLARE_ENUM_AS_BIT_SET(ModularAirportSafetyRequirement)
+
+ModularAirportSafetyRequirement GetModularAirportSafetyStatus(const Station *st);
 
 #endif /* MODULAR_AIRPORT_CMD_H */

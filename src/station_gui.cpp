@@ -33,6 +33,7 @@
 #include "linkgraph/linkgraph.h"
 #include "zoom_func.h"
 #include "station_cmd.h"
+#include "modular_airport_cmd.h"
 
 #include "widgets/station_widget.h"
 #include "widgets/misc_widget.h"
@@ -1917,6 +1918,34 @@ struct StationViewWindow : public Window {
 			tr.top += WidgetDimensions::scaled.vsep_wide;
 			DrawString(tr, GetString(STR_STATION_AIRPORT_THROUGHPUT, st->airport_arrivals_last_month, st->airport_departures_last_month));
 			tr.top += GetCharacterHeight(FS_NORMAL);
+
+			/* Show modular safety status if applicable. */
+			if (st->airport.blocks.Test(AirportBlock::Modular) && TimerGameCalendar::year >= 1955) {
+				ModularAirportSafetyRequirement missing = GetModularAirportSafetyStatus(st);
+				if (missing != MASR_NONE) {
+					DrawString(tr, STR_STATION_MODULAR_AIRPORT_UNSAFE_HEADER);
+					tr.top += GetCharacterHeight(FS_NORMAL);
+
+					Rect ir = tr.Indent(WidgetDimensions::scaled.hsep_indent, rtl);
+					if (missing & MASR_TOWER) {
+						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TOWER);
+						ir.top += GetCharacterHeight(FS_NORMAL);
+					}
+					if (missing & MASR_BIG_TERMINAL) {
+						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TERMINAL);
+						ir.top += GetCharacterHeight(FS_NORMAL);
+					}
+					if (missing & MASR_LANDING_RUNWAY) {
+						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_LANDING);
+						ir.top += GetCharacterHeight(FS_NORMAL);
+					}
+					if (missing & MASR_TAKEOFF_RUNWAY) {
+						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TAKEOFF);
+						ir.top += GetCharacterHeight(FS_NORMAL);
+					}
+					tr.top = ir.top;
+				}
+			}
 		}
 		return CeilDiv(tr.top - r.top - WidgetDimensions::scaled.framerect.top, GetCharacterHeight(FS_NORMAL));
 	}
