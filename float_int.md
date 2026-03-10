@@ -18,23 +18,24 @@ While `ModularHoldingLoop::waypoints` is technically a rebuildable cache, it is 
     - Max intermediate product (e.g., $x^2$ or $x \times y$): $(2^{26})^2 = 2^{52}$.
     - Even with a radius × angle product (max $\approx 2^{25} \times 2^{19} = 2^{44}$), results fit safely within a signed `int64_t` ($2^{63}-1$).
 - **Rounding:** Final snap to integer pixel must match `std::lround` (round halfway cases away from zero):
-    - `inline int FixedRound(int64_t val) { return (val >= 0) ? (int)((val + 32768) >> 16) : -(int)((-val + 32768) >> 16); }`
+    - `inline int FP16Round(int64_t val) { return (val >= 0) ? (int)((val + 32768) >> 16) : -(int)((-val + 32768) >> 16); }`
 
 ### 2. Eliminating Floating-Point Initialization
 - **Coordinate Conversion:** Convert integer pixel coordinates directly: `(int64_t)(pixel - center) << 16`.
 - **Heading Vectors:** Replace `DirToVec` with a precomputed 16.16 lookup table for the 8 `Direction` constants.
 - **Radius:** Convert `radius` directly to 16.16.
-- **Sampling Step:** Use `FIXED_SAMPLE_STEP = 48 << 16` (matching `MODULAR_HOLDING_SAMPLE_INTERVAL_PX`).
+- **Sampling Step:** Use `FP16FromInt(MODULAR_HOLDING_SAMPLE_INTERVAL_PX)` (48 pixels).
 
 ### 3. Stable Integer Trigonometry
 Replace `std` calls with deterministic integer-based alternatives:
-- **`FixedSin` / `FixedCos`:** Use a **4096-entry** lookup table for $0..2\pi$ to ensure pixel-level accuracy even at maximum radius.
-- **`FixedAtan2`:** Implement a stable polynomial or CORDIC approximation. (Verify if `Direction` quantization allows skipping this).
-- **`FixedSqrt(x)`:** Implement using `IntSqrt64(x << 16)` to return a 16.16 result.
+- **`FP16Sin` / `FP16Cos`:** Use a hardcoded **4096-entry** `constexpr` lookup table (`table/fixedpoint_sin_table.h`) for $0..2\pi$ to ensure pixel-level accuracy and cross-platform determinism.
+- **`FP16Atan2`:** Polynomial approximation (0.1963*r^3 - 0.9817*r + pi/4, max error ~0.28 degrees).
+- **`FP16Sqrt(x)`:** Implement using `IntSqrt64(x << 16)` to return a 16.16 result.
 
 ### 4. Implementation Details
-- **`NormalizeAngle2Pi`:** Implement as `((a % FIXED_2PI) + FIXED_2PI) % FIXED_2PI` to correctly handle negative results from C++ `%`.
-- **Epsilon Checks:** Replace `1e-9` with `FIXED_EPSILON = 64`.
+- **`FP16NormalizeAngle2Pi`:** Implement as `a %= FP16_2PI; if (a < 0) a += FP16_2PI;` to correctly handle negative results from C++ `%`.
+- **Epsilon Checks:** Replace `1e-9` with `FP16_EPSILON = 64`.
+- **Naming:** All functions/constants use `FP16` prefix to avoid collision with macOS `FixMath.h` macros (`FixedRound`, `FixedToInt`, etc.).
 - **Dubins Candidates:** Refactor `eval_lsl`, `eval_rsr`, etc., to perform all arithmetic in 16.16 relative space.
 
 ## Benefit

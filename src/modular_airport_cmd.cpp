@@ -30,6 +30,7 @@
 #include "station_base.h"
 #include "station_map.h"
 #include "engine_base.h"
+#include "core/fixedpoint_func.hpp"
 #include "core/random_func.hpp"
 #include "core/backup_type.hpp"
 #include "zoom_func.h"
@@ -1233,8 +1234,6 @@ Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
 	return best_dir;
 }
 
-#include "core/fixedpoint_func.hpp"
-
 struct DubinsArc {
 	int64_t cx;
 	int64_t cy;
@@ -1261,9 +1260,9 @@ struct DubinsPath {
 static void DirToVecFixed(Direction d, int64_t &dx, int64_t &dy)
 {
 	/* Precomputed normalized vectors for the 8 directions in 16.16.
-	 * Order: N, NE, E, SE, S, SW, W, NW (matching DIR_N, etc.)
-	 * N is (0, -1) in world coords, but here we match DirToVec's dir_dx/dy mapping.
-	 * DirToVec mapping: {-1, -1, -1, 0, 1, 1, 1, 0} / {-1, 0, 1, 1, 1, 0, -1, -1}
+	 * Order matches Direction enum: DIR_N..DIR_NW.
+	 * Raw (dx,dy) per direction: {-1,-1}, {-1,0}, {-1,1}, {0,1}, {1,1}, {1,0}, {1,-1}, {0,-1}
+	 * Diagonal entries are 1/sqrt(2) * 65536 = 46341. Cardinal entries are 65536.
 	 */
 	static const int64_t v_dx[] = {-46341, -65536, -46341,      0,  46341,  65536,  46341,      0};
 	static const int64_t v_dy[] = {-46341,      0,  46341,  65536,  46341,      0, -46341, -65536};
@@ -1565,7 +1564,7 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 			const int64_t along   = std::abs(dx * gates[i].hdx + dy * gates[i].hdy);
 			const int64_t lateral = std::abs(dx * (-gates[i].hdy) + dy * gates[i].hdx);
 
-			if (lateral > (int64_t)COLOCATE_LATERAL_MAX_PX << 16 || along > (int64_t)COLOCATE_ALONG_MAX_PX << 16) { ++j; continue; }
+			if (lateral > FP16FromInt(COLOCATE_LATERAL_MAX_PX) || along > FP16FromInt(COLOCATE_ALONG_MAX_PX)) { ++j; continue; }
 
 			/* Absorb gate j into gate i's group. */
 			if (gates[i].members.empty()) gates[i].members.push_back(gates[i]); // include self
