@@ -15,6 +15,7 @@ add_files(
     control_codes.h
     elrail_data.h
     engines.h
+    fixedpoint_sin_table.h
     genland.h
     heightmap_colours.h
     industry_land.h
