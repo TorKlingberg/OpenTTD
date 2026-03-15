@@ -3027,6 +3027,7 @@ STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS            :{BLACK}Show tax
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING           :{BLACK}Show holding loop
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_RESERVATIONS      :{BLACK}Show aircraft taxi reservations
 STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL                    :{BLACK}Toggle edge fence: click on tile edge to block/unblock taxi movement
+STR_STATION_BUILD_MODULAR_AIRPORT_UPGRADE_TOOL                  :{BLACK}Upgrade airport: click or drag to upgrade old runways, hangars, and grass to modern variants
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP       :{BLACK}Open template manager (save/load/delete modular airport templates)
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_CAPTION       :{WHITE}Airport Template Manager
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP          :{BLACK}Saved modular airport templates
@@ -5254,6 +5255,8 @@ STR_ERROR_TOO_MANY_TRUCK_STOPS                                  :{WHITE}Too many
 STR_ERROR_TOO_CLOSE_TO_ANOTHER_DOCK                             :{WHITE}Too close to another dock
 STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT                          :{WHITE}Too close to another airport
 STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE                       :{WHITE}This airport piece is not yet available
+STR_ERROR_NOTHING_TO_UPGRADE                                    :{WHITE}Nothing to upgrade
+STR_ERROR_CAN_T_UPGRADE_AIRPORT                                 :{WHITE}Can't upgrade airport tiles here...
 STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION                    :{WHITE}Select a tile belonging to your modular airport
 STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY                           :{WHITE}Template name cannot be empty
 STR_ERROR_AIRPORT_TEMPLATE_IO                                   :{WHITE}Failed to save or load airport template

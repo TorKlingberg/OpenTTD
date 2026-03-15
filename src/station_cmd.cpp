@@ -2996,6 +2996,111 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	return cost;
 }
 
+/**
+ * Get the upgraded piece type for a modular airport tile.
+ * @param piece_type The current piece type.
+ * @return The upgraded piece type, or 0xFF if no upgrade is available.
+ */
+static uint8_t GetUpgradedPieceType(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_SMALL_NEAR_END: return APT_RUNWAY_END;
+		case APT_RUNWAY_SMALL_MIDDLE:   return APT_RUNWAY_5;
+		case APT_RUNWAY_SMALL_FAR_END:  return APT_RUNWAY_END;
+		case APT_SMALL_DEPOT_SE:        return APT_DEPOT_SE;
+		case APT_SMALL_DEPOT_SW:        return APT_DEPOT_SW;
+		case APT_SMALL_DEPOT_NW:        return APT_DEPOT_NW;
+		case APT_SMALL_DEPOT_NE:        return APT_DEPOT_NE;
+		case APT_GRASS_1:               return APT_APRON;
+		default:                        return 0xFF;
+	}
+}
+
+/**
+ * Upgrade old modular airport tiles to modern variants in an area.
+ * @param flags Command flags.
+ * @param tile One corner of the area.
+ * @param area_start Other corner of the area.
+ * @return The cost of this operation or an error.
+ */
+CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, TileIndex area_start)
+{
+	if (tile >= Map::Size() || area_start >= Map::Size()) return CMD_ERROR;
+
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+	bool found_upgradeable = false;
+	std::set<StationID> affected_stations;
+
+	TileArea ta(tile, area_start);
+	for (TileIndex t : ta) {
+		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) continue;
+
+		Station *st = Station::GetByTile(t);
+		if (st == nullptr || st->owner != _current_company) continue;
+		if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
+
+		ModularAirportTileData *md = st->airport.GetModularTileData(t);
+		if (md == nullptr) continue;
+
+		uint8_t new_piece = GetUpgradedPieceType(md->piece_type);
+		if (new_piece == 0xFF) continue;
+
+		/* Year-gate: modern pieces may not be available yet. */
+		if (IsModernModularPiece(new_piece) &&
+				TimerGameCalendar::year < GetModularPieceMinYear(new_piece)) {
+			continue;
+		}
+
+		CommandCost ret = EnsureNoVehicleOnGround(t);
+		if (ret.Failed()) return ret;
+
+		found_upgradeable = true;
+
+		/* Cost = removal + build of new piece (no discount). */
+		cost.AddCost(_price[Price::ClearStationAirport]);
+		cost.AddCost(GetModularAirportPieceBuildCost(new_piece));
+
+		if (flags.Test(DoCommandFlag::Execute)) {
+			/* Update modular metadata. */
+			uint8_t old_rotation = md->rotation;
+			md->piece_type = new_piece;
+			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(new_piece, old_rotation);
+
+			if (IsModularRunwayPiece(new_piece)) {
+				/* NormalizeRunwaySegmentVisuals sets gfx for the whole segment. */
+				NormalizeRunwaySegmentVisuals(st, t, (old_rotation % 2) == 0);
+			} else {
+				/* Non-runway tiles: update map gfx directly. */
+				SetStationGfx(Tile(t), new_piece);
+			}
+
+			st->airport.modular_tile_index_dirty = true;
+			st->airport.modular_holding_loop_dirty = true;
+
+			MarkTileDirtyByTile(t, 0, 8);
+			if (TileX(t) > 0 && TileY(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(1, 1));
+			if (TileX(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(1, 0));
+			if (TileY(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(0, 1));
+
+			affected_stations.insert(st->index);
+		}
+	}
+
+	if (!found_upgradeable) return CommandCost(STR_ERROR_NOTHING_TO_UPGRADE);
+
+	/* Batch station updates after all tiles are upgraded. */
+	if (flags.Test(DoCommandFlag::Execute)) {
+		for (StationID sid : affected_stations) {
+			Station *st = Station::GetIfValid(sid);
+			if (st == nullptr) continue;
+			st->AfterStationTileSetChange(true, StationType::Airport);
+			InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+		}
+	}
+
+	return cost;
+}
+
 /** Per-airport runway configuration: which Y-row gets which flags. */
 struct StockRunwayConfig {
 	int y_row;

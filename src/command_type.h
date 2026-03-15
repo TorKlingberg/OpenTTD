@@ -235,6 +235,7 @@ enum Commands : uint8_t {
 	CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK, ///< build a stock airport as a modular airport
 	CMD_SET_MODULAR_AIRPORT_EDGE_FENCE,  ///< toggle edge fence on modular airport tile
 	CMD_PLACE_MODULAR_AIRPORT_TEMPLATE, ///< place a saved modular airport template atomically
+	CMD_UPGRADE_MODULAR_AIRPORT_TILE,  ///< upgrade old modular airport tiles to modern variants
 
 	CMD_BUILD_DOCK,                   ///< build a dock
 

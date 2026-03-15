@@ -53,6 +53,7 @@ enum ModularAirportBuilderWidgets : WidgetID {
 	WID_MA_TOGGLE_SHOW_HOLDING,  ///< Show holding loop overlay toggle.
 	WID_MA_TOGGLE_SHOW_RESERVATIONS, ///< Show taxi reservation overlay toggle.
 	WID_MA_FENCE_TOOL,           ///< Edge fence toggle tool.
+	WID_MA_UPGRADE_TOOL,         ///< Upgrade old airport tiles to modern variants.
 	WID_MA_TEMPLATE_MANAGER,     ///< Open the template manager window.
 };
 

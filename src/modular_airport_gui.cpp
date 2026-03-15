@@ -243,6 +243,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	std::map<VehicleID, ReservationOverlayBounds> reservation_overlay_bounds;
 	bool updating_cursor = false; ///< True while UpdatePlacementCursor is running (suppresses abort side-effects).
 	bool fence_tool_active = false; ///< When true, clicks toggle edge fences instead of placing tiles.
+	bool upgrade_tool_active = false; ///< When true, clicks upgrade old tiles to modern variants.
 	TimerGameCalendar::Year cached_year = CalendarTime::MIN_YEAR;
 	const IntervalTimer<TimerGameCalendar> yearly_interval = {{TimerGameCalendar::YEAR, TimerGameCalendar::Priority::NONE}, [this](auto) {
 		this->RefreshYearGating();
@@ -441,10 +442,14 @@ public:
 			bool already_selected = (new_piece == this->selected_piece);
 			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 6);
 
-			/* Deactivate fence tool when selecting a piece. */
+			/* Deactivate fence/upgrade tools when selecting a piece. */
 			if (this->fence_tool_active) {
 				this->fence_tool_active = false;
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+			}
+			if (this->upgrade_tool_active) {
+				this->upgrade_tool_active = false;
+				this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
 			}
 			/* Raise the previously selected piece button. */
 			if (this->selected_piece < PIECE_COUNT) this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
@@ -506,6 +511,10 @@ public:
 			case WID_MA_FENCE_TOOL:
 				this->fence_tool_active = !this->fence_tool_active;
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, this->fence_tool_active);
+				if (this->upgrade_tool_active) {
+					this->upgrade_tool_active = false;
+					this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
+				}
 				if (this->fence_tool_active) {
 					/* Deselect any piece button so fence works standalone. */
 					if (this->selected_piece < PIECE_COUNT) {
@@ -525,9 +534,34 @@ public:
 				this->SetDirty();
 				break;
 
+			case WID_MA_UPGRADE_TOOL:
+				this->upgrade_tool_active = !this->upgrade_tool_active;
+				this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, this->upgrade_tool_active);
+				if (this->upgrade_tool_active) {
+					/* Deselect any piece button and fence tool. */
+					if (this->selected_piece < PIECE_COUNT) {
+						this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+						this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+					}
+					if (this->fence_tool_active) {
+						this->fence_tool_active = false;
+						this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+					}
+					this->updating_cursor = true;
+					CloseWindowByClass(WC_BUILD_DEPOT);
+					SetObjectToPlace(SPR_CURSOR_AIRPORT, PAL_NONE, HT_RECT, this->window_class, this->window_number);
+					this->updating_cursor = false;
+				} else {
+					this->UpdatePlacementCursor();
+				}
+				this->SetDirty();
+				break;
+
 			case WID_MA_TEMPLATE_MANAGER:
 				this->fence_tool_active = false;
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+				this->upgrade_tool_active = false;
+				this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
 				if (this->selected_piece < PIECE_COUNT) {
 					this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
 					this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
@@ -629,6 +663,12 @@ public:
 			return;
 		}
 
+		/* Upgrade tool: start area drag for upgrade command. */
+		if (this->upgrade_tool_active) {
+			VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_UPGRADE_AIRPORT);
+			return;
+		}
+
 		/* Fence tool: determine closest edge from click position and toggle fence.
 		 * Uses _tile_fract_coords (0-15 sub-tile position in world X/Y) set by
 		 * the viewport system on each click — same mechanism as the autoroad tool. */
@@ -704,6 +744,11 @@ public:
 		if (pt.x == -1) return;
 		/* Guard against out-of-bounds drag endpoints before constructing TileArea. */
 		if (start_tile >= Map::Size() || end_tile >= Map::Size()) return;
+
+		if (select_proc == DDSP_UPGRADE_AIRPORT) {
+			Command<CMD_UPGRADE_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_UPGRADE_AIRPORT, CcBuildAirport, end_tile, start_tile);
+			return;
+		}
 
 		if (select_proc == DDSP_DEMOLISH_AREA) {
 			/* Erase mode */
@@ -987,6 +1032,8 @@ private:
 		}
 		this->fence_tool_active = false;
 		this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+		this->upgrade_tool_active = false;
+		this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->SetDirty();
 	}
@@ -1556,6 +1603,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_10), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_FENCE_TOOL), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_AIRPORT_FENCE_Y, STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_UPGRADE_TOOL), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_IMG_CONVERT_ROAD, STR_STATION_BUILD_MODULAR_AIRPORT_UPGRADE_TOOL),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TEMPLATE_MANAGER), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_IMG_SAVE, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
