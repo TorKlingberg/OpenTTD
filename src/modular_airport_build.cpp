@@ -11,7 +11,9 @@
 
 #include "modular_airport_build.h"
 
+#include "airport_pathfinder.h"
 #include "clear_func.h"
+#include "command_func.h"
 #include "company_base.h"
 #include "company_func.h"
 #include "economy_func.h"
@@ -20,6 +22,8 @@
 #include "modular_airport_gui.h"
 #include "newgrf_debug.h"
 #include "station_map.h"
+#include "timer/timer_game_calendar.h"
+#include "vehicle_func.h"
 #include "viewport_func.h"
 #include "window_func.h"
 
@@ -511,6 +515,109 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 		}
 
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+	}
+
+	return cost;
+}
+
+/**
+ * Get the upgraded piece type for a modular airport tile.
+ * @param piece_type The current piece type.
+ * @return The upgraded piece type, or 0xFF if no upgrade is available.
+ */
+static uint8_t GetUpgradedPieceType(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_SMALL_NEAR_END: return APT_RUNWAY_END;
+		case APT_RUNWAY_SMALL_MIDDLE:   return APT_RUNWAY_5;
+		case APT_RUNWAY_SMALL_FAR_END:  return APT_RUNWAY_END;
+		case APT_SMALL_DEPOT_SE:        return APT_DEPOT_SE;
+		case APT_SMALL_DEPOT_SW:        return APT_DEPOT_SW;
+		case APT_SMALL_DEPOT_NW:        return APT_DEPOT_NW;
+		case APT_SMALL_DEPOT_NE:        return APT_DEPOT_NE;
+		case APT_GRASS_1:               return APT_APRON;
+		default:                        return 0xFF;
+	}
+}
+
+/**
+ * Upgrade old modular airport tiles to modern variants in an area.
+ * @param flags Command flags.
+ * @param tile One corner of the area.
+ * @param area_start Other corner of the area.
+ * @return The cost of this operation or an error.
+ */
+CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, TileIndex area_start)
+{
+	if (tile >= Map::Size() || area_start >= Map::Size()) return CMD_ERROR;
+
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+	bool found_upgradeable = false;
+	std::set<StationID> affected_stations;
+
+	TileArea ta(tile, area_start);
+	for (TileIndex t : ta) {
+		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) continue;
+
+		Station *st = Station::GetByTile(t);
+		if (st == nullptr || st->owner != _current_company) continue;
+		if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
+
+		ModularAirportTileData *md = st->airport.GetModularTileData(t);
+		if (md == nullptr) continue;
+
+		uint8_t new_piece = GetUpgradedPieceType(md->piece_type);
+		if (new_piece == 0xFF) continue;
+
+		/* Year-gate: modern pieces may not be available yet. */
+		if (IsModernModularPiece(new_piece) &&
+				TimerGameCalendar::year < GetModularPieceMinYear(new_piece)) {
+			continue;
+		}
+
+		CommandCost ret = EnsureNoVehicleOnGround(t);
+		if (ret.Failed()) return ret;
+
+		found_upgradeable = true;
+
+		/* Cost = removal + build of new piece (no discount). */
+		cost.AddCost(_price[Price::ClearStationAirport]);
+		cost.AddCost(GetModularAirportPieceBuildCost(new_piece));
+
+		if (flags.Test(DoCommandFlag::Execute)) {
+			/* Update map tile gfx and modular metadata. */
+			uint8_t old_rotation = md->rotation;
+			SetStationGfx(Tile(t), new_piece);
+			md->piece_type = new_piece;
+			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(new_piece, old_rotation);
+
+			/* Normalize may further adjust gfx for the segment context. */
+			if (IsModularRunwayPiece(new_piece)) {
+				NormalizeRunwaySegmentVisuals(st, t, (old_rotation % 2) == 0);
+			}
+
+			st->airport.modular_tile_index_dirty = true;
+			st->airport.modular_holding_loop_dirty = true;
+
+			MarkTileDirtyByTile(t, 0, 8);
+			if (TileX(t) > 0 && TileY(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(1, 1));
+			if (TileX(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(1, 0));
+			if (TileY(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(0, 1));
+
+			affected_stations.insert(st->index);
+		}
+	}
+
+	if (!found_upgradeable) return CommandCost(STR_ERROR_NOTHING_TO_UPGRADE);
+
+	/* Batch station updates after all tiles are upgraded. */
+	if (flags.Test(DoCommandFlag::Execute)) {
+		for (StationID sid : affected_stations) {
+			Station *st = Station::GetIfValid(sid);
+			if (st == nullptr) continue;
+			st->AfterStationTileSetChange(true, StationType::Airport);
+			InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+		}
 	}
 
 	return cost;
