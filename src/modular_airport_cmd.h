@@ -31,6 +31,8 @@ inline constexpr uint8_t MGT_HANGAR = 3;
 inline constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 inline constexpr uint8_t MGT_ROLLOUT = 5;
 
+inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this are not usable for landing or takeoff
+
 int UpdateAircraftSpeed(Aircraft *v, uint speed_limit = UINT16_MAX, bool hard_limit = true);
 void AircraftEntersTerminal(Aircraft *v);
 void PlayAircraftSound(const Vehicle *v);

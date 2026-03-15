@@ -1036,6 +1036,14 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				continue;
 			}
 
+			/* Skip runways that are too short to be usable. */
+			{
+				std::vector<TileIndex> rwy;
+				if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) {
+					continue;
+				}
+			}
+
 			/* Check runway flags: is landing allowed? */
 			uint8_t flags = GetRunwayFlags(st, data.tile);
 			if (!(flags & RUF_LANDING)) {
@@ -1517,6 +1525,12 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
 		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
 		if (!is_end) continue;
+
+		/* Skip runways that are too short to be usable. */
+		{
+			std::vector<TileIndex> rwy;
+			if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
+		}
 
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
 		if ((flags & RUF_LANDING) == 0) continue;
@@ -2518,6 +2532,12 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
 		if (!is_end) continue;
+
+		/* Skip runways that are too short to be usable. */
+		{
+			std::vector<TileIndex> rwy;
+			if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
+		}
 
 		const uint8_t flags = GetRunwayFlags(st, data.tile);
 		if ((flags & RUF_TAKEOFF) == 0) continue;
