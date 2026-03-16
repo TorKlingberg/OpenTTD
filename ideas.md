@@ -15,4 +15,10 @@ Pathing improvements:
 
 * Cache for airport path-finding?
 
-* Runway upgrade, try again
+* Setting to turn the whole feature off
+
+* Old runways etc. going the other way
+
+* Building runways tile by tile in N-S direction doesn't work?
+
+* Reservation path and station info text doesn't always clear/redraw when it should.
