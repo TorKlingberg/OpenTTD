@@ -12,9 +12,10 @@
 
 /** Widgets of the #BuildAirToolbarWindow class. */
 enum AirportToolbarWidgets : WidgetID {
-	WID_AT_AIRPORT,  ///< Build airport button.
-	WID_AT_DEMOLISH, ///< Demolish button.
-	WID_AT_MODULAR,  ///< Modular airport builder button (prototype).
+	WID_AT_AIRPORT,      ///< Build airport button.
+	WID_AT_DEMOLISH,     ///< Demolish button.
+	WID_AT_MODULAR,      ///< Modular airport builder button (prototype).
+	WID_AT_MODULAR_SEL,  ///< Selection wrapper for modular button in toolbar.
 };
 
 /** Widgets of the #BuildAirportWindow class. */
@@ -33,6 +34,7 @@ enum AirportPickerWidgets : WidgetID {
 	WID_AP_ACCEPTANCE,             ///< Acceptance info.
 	WID_AP_BTN_NOTMODULAR,         ///< Don't build as modular button.
 	WID_AP_BTN_MODULAR,            ///< Build as modular button.
+	WID_AP_MODULAR_SEL,            ///< Selection wrapper for modular toggle in stock picker.
 };
 
 /** Widgets of the #BuildModularAirportWindow class (prototype). */

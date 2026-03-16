@@ -148,9 +148,15 @@ struct BuildAirToolbarWindow : Window {
 	{
 		if (!gui_scope) return;
 
+		/* Hide/show the modular button based on the setting, and re-layout if changed. */
+		if (this->GetWidget<NWidgetStacked>(WID_AT_MODULAR_SEL)->SetDisplayedPlane(_settings_game.station.modular_airports ? 0 : SZSP_NONE)) {
+			this->ReInit();
+		}
+		if (!_settings_game.station.modular_airports) this->RaiseWidget(WID_AT_MODULAR);
+
 		bool can_build = CanBuildVehicleInfrastructure(VEH_AIRCRAFT);
 		this->SetWidgetDisabledState(WID_AT_AIRPORT, !can_build);
-		this->SetWidgetDisabledState(WID_AT_MODULAR, !can_build);
+		if (_settings_game.station.modular_airports) this->SetWidgetDisabledState(WID_AT_MODULAR, !can_build);
 		if (!can_build) {
 			CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
 			CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
@@ -158,10 +164,14 @@ struct BuildAirToolbarWindow : Window {
 
 			/* Show in the tooltip why this button is disabled. */
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
-			this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
+			if (_settings_game.station.modular_airports) {
+				this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
+			}
 		} else {
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP);
-			this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP);
+			if (_settings_game.station.modular_airports) {
+				this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP);
+			}
 		}
 	}
 
@@ -286,7 +296,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_air_toolbar_widgets 
 	EndContainer(),
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_AIRPORT), SetFill(0, 1), SetToolbarMinimalSize(2), SetSpriteTip(SPR_IMG_AIRPORT, STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP),
-		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_MODULAR), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_AIRPORT, STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP),
+		NWidget(NWID_SELECTION, INVALID_COLOUR, WID_AT_MODULAR_SEL),
+			NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_MODULAR), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_AIRPORT, STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP),
+		EndContainer(),
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), SetFill(1, 1), EndContainer(),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_DEMOLISH), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_DYNAMITE, STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 	EndContainer(),
@@ -345,6 +357,10 @@ public:
 
 		this->SetWidgetLoweredState(WID_AP_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_AP_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
+		/* Hide modular toggle if the setting is off. */
+		this->GetWidget<NWidgetStacked>(WID_AP_MODULAR_SEL)->SetDisplayedPlane(_settings_game.station.modular_airports ? 0 : SZSP_NONE);
+		if (!_settings_game.station.modular_airports) _build_airport_as_modular = false;
+
 		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
 		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
 		this->OnInvalidateData();
@@ -708,13 +724,17 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_airport_widget
 					EndContainer(),
 				EndContainer(),
 			EndContainer(),
-			NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_LABEL), SetFill(1, 0),
-			NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
-				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_NOTMODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
-												SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_OFF, STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP),
-					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_MODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
-												SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_ON, STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP),
+			NWidget(NWID_SELECTION, INVALID_COLOUR, WID_AP_MODULAR_SEL),
+				NWidget(NWID_VERTICAL),
+					NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_LABEL), SetFill(1, 0),
+					NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+						NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_NOTMODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
+														SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_OFF, STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP),
+							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_AP_BTN_MODULAR), SetMinimalSize(60, 12), SetFill(1, 0),
+														SetStringTip(STR_STATION_BUILD_AIRPORT_MODULAR_ON, STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP),
+						EndContainer(),
+					EndContainer(),
 				EndContainer(),
 			EndContainer(),
 			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_AP_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
