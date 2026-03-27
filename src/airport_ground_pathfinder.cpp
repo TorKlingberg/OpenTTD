@@ -241,9 +241,16 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	if (!from_ok) return false; // Direction not allowed from 'from'
 	if (!to_ok) return false; // Reverse direction not allowed
 
-	/* Explicit edge fences block movement in both directions. */
-	if (from_data->edge_block_mask & dir_bit) return false;
-	if (to_data->edge_block_mask & reverse_dir_bit) return false;
+	/* Explicit edge fences block movement in both directions.
+	 * Exception: movement within the same contiguous runway ignores edge
+	 * fences — these are decorative perimeter barriers, not internal runway
+	 * blockers. Without this, rollout paths between runway ends fail.
+	 * Only same-runway is exempt; fences between distinct parallel runways
+	 * remain enforced. */
+	if (!(from_is_runway && to_is_runway && IsSameContiguousRunway(st, from, to))) {
+		if (from_data->edge_block_mask & dir_bit) return false;
+		if (to_data->edge_block_mask & reverse_dir_bit) return false;
+	}
 
 	return true;
 }
