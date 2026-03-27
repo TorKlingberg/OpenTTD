@@ -8,6 +8,17 @@ scripts/build_and_run_debug.sh ~/Documents/OpenTTD/save/SAVENAME.sav
 ```
 This starts with `-d misc=3` and logs to `/tmp/openttd.log`.
 
+### Headless test runs
+
+You can run the game headlessly for a fixed number of ticks to test fixes without a GUI:
+```bash
+scripts/build_and_sign.sh && ./build/openttd -d misc=1 -x -g ~/Documents/OpenTTD/save/SAVENAME.sav -s null -m null -v null:ticks=500 > /tmp/openttd_test.log 2>&1
+```
+- `-v null:ticks=N` — run N game ticks then exit (no window)
+- `-s null -m null` — disable sound/music
+- `-x` — don't save on exit
+- Adjust `-d misc=N` for verbosity (1=stuck/warnings, 2=reservations, 3=all movement)
+
 ## Quick Triage
 
 ### Planes circling, not landing
