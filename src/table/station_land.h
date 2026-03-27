@@ -695,6 +695,13 @@ static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 static const DrawTileSpriteSpan _station_display_modular_newhelipad(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_newhelipad);
 
+/* Auto-jetway stand layout without the baked-in fence from stock city airport. */
+static const DrawTileSeqStruct _station_display_jetway_1_nofence[] = {
+	{ 7, 11,  0,  3,  3, 14, {SPR_AIRPORT_JETWAY_1 | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE} },
+};
+static const DrawTileSpriteSpan _station_display_modular_jetway_1(
+	PalSpriteID{SPR_AIRPORT_AIRCRAFT_STAND, PAL_NONE}, _station_display_jetway_1_nofence);
+
 /* NS (NW-SE on screen) runway sprites for modular airports. */
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_2(PalSpriteID{SPR_NSRUNWAY2, PAL_NONE});

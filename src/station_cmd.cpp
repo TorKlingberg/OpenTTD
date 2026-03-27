@@ -3896,8 +3896,12 @@ static void ApplyModularAirportTileLayoutOverridesLocal(const TileInfo *ti, Stat
 	}
 
 	/* Auto-jetway intentionally overrides the default stand layout returned by
-	 * GetAirportTileLayoutWithModularOverrides when a round terminal is adjacent. */
-	if (gfx != original_gfx) {
+	 * GetAirportTileLayoutWithModularOverrides when a round terminal is adjacent.
+	 * Use fence-free variant for jetway_1 since the stock layout has a baked-in
+	 * north fence that doesn't belong in modular airports. */
+	if (gfx == APT_STAND_1) {
+		t = &_station_display_modular_jetway_1;
+	} else if (gfx != original_gfx) {
 		t = GetStationTileLayout(StationType::Airport, gfx);
 	}
 }
