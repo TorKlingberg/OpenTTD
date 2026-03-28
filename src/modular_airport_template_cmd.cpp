@@ -356,7 +356,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			}
 		}
 
-		CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
+		CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 		if (ret.Failed()) return ret;
 		total.AddCost(ret.GetCost());
 
@@ -396,7 +396,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 			TileIndex t = abs_tiles[i];
 
-			CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(flags, t, rt.piece_type, final_join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi);
+			CommandCost ret = Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(flags, t, rt.piece_type, final_join_id, allow_adjacent, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 			if (ret.Failed()) return ret; // Should not fail due to Pass 1.
 
 			/* If we started with no station and this was the first tile, it created one.

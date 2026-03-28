@@ -2777,7 +2777,7 @@ CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airpor
 	return cost;
 }
 
-CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi)
+CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
 	bool reuse = (station_to_join != NEW_STATION);
 	if (!reuse) station_to_join = StationID::Invalid();
@@ -2947,6 +2947,26 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 					return false;
 			}
 		};
+
+		/* Auto-detect axis: if the current rotation doesn't match any adjacent
+		 * runway but the perpendicular axis does, flip to extend that runway.
+		 * Only when auto_rotate_runway is set (single-click placement). */
+		if (auto_rotate_runway && is_runway_piece(tile_data.piece_type)) {
+			const bool horizontal = (rotation % 2) == 0;
+			const TileIndexDiff same_diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+			bool has_same_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - same_diff), horizontal)
+			                  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + same_diff), horizontal);
+			if (!has_same_axis) {
+				const TileIndexDiff perp_diff = horizontal ? TileDiffXY(0, 1) : TileDiffXY(1, 0);
+				bool has_perp_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - perp_diff), !horizontal)
+				                  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + perp_diff), !horizontal);
+				if (has_perp_axis) {
+					rotation ^= 1;
+					tile_data.rotation = rotation;
+					tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
+				}
+			}
+		}
 
 		/* If this extends an existing runway, inherit its direction/usage flags. */
 		if (is_runway_piece(tile_data.piece_type)) {

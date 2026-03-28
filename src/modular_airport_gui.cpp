@@ -928,7 +928,7 @@ private:
 		 * This ensures all drag tiles join the same station even if not all
 		 * are directly adjacent to existing tiles. */
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false);
+			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false, false);
 	}
 
 	/**
@@ -938,7 +938,7 @@ private:
 	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station, uint8_t rot = 0)
 	{
 		Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false);
+			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false, false);
 	}
 
 	/**
@@ -954,10 +954,10 @@ private:
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_TILE>()),
-						tile, gfx, StationID::Invalid(), adjacent, rot, (uint8_t)0x0F, false).Succeeded();
+						tile, gfx, StationID::Invalid(), adjacent, rot, (uint8_t)0x0F, false, false).Succeeded();
 			} else {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-						tile, gfx, to_join, adjacent, rot, (uint8_t)0x0F, false);
+						tile, gfx, to_join, adjacent, rot, (uint8_t)0x0F, false, true);
 			}
 		};
 
