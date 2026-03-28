@@ -18,8 +18,22 @@
 #include <vector>
 
 struct Town;
+class AirportTileTableIterator;
+
+enum StationNaming : uint8_t {
+	STATIONNAMING_RAIL,
+	STATIONNAMING_ROAD,
+	STATIONNAMING_AIRPORT,
+	STATIONNAMING_OILRIG,
+	STATIONNAMING_DOCK,
+	STATIONNAMING_HELIPORT,
+};
 
 CommandCost GetStationAroundModular(TileArea ta, StationID closest_station, CompanyID company, struct Station **st);
+CommandCost CheckBuildableTile(TileIndex tile, DiagDirections invalid_dirs, int &allowed_z, bool allow_steep, bool check_bridge = true);
+CommandCost FindJoiningStation(StationID existing_station, StationID station_to_join, bool adjacent, TileArea ta, Station **st);
+CommandCost BuildStationPart(Station **st, DoCommandFlags flags, bool reuse, TileArea area, StationNaming name_class);
+CommandCost CheckFlatLandAirport(AirportTileTableIterator tile_iter, DoCommandFlags flags);
 
 enum StationClassID : uint16_t;
 enum RoadStopClassID : uint16_t;
