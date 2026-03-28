@@ -1644,6 +1644,79 @@ Direction GetModularHangarExitDirection(const Station *st, TileIndex tile)
 }
 
 /**
+ * Handle modular airport hangar logic: stale-tile recovery, target selection
+ * (terminal/helipad/runway), and helicopter vertical takeoff fallback.
+ */
+static void HandleModularHangar(Aircraft *v, const Station *st)
+{
+	/* Airport layout edits can remove the tile this aircraft was in (e.g. hangar removed).
+	 * Never query station data via v->tile in that case; re-target from targetairport only. */
+	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
+		if (ShouldLogModularRateLimited(v->index, 23, 64)) {
+			Debug(misc, 1, "[ModAp] Vehicle {} in HANGAR on stale tile {} (airport {}), clearing modular ground intent",
+				v->index, IsValidTile(v->tile) ? v->tile.base() : 0, st->index);
+		}
+		ClearTaxiPathState(v);
+		ClearModularRunwayReservation(v);
+		v->ground_path_goal = INVALID_TILE;
+		v->modular_ground_target = MGT_NONE;
+		return;
+	}
+
+	bool at_target = v->current_order.GetDestination() == v->targetairport;
+	Direction exit_dir = GetModularHangarExitDirection(st, v->tile);
+	const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
+
+	if (at_target) {
+		TileIndex goal = INVALID_TILE;
+		uint8_t target = MGT_NONE;
+		if (v->subtype == AIR_HELICOPTER) {
+			goal = FindFreeModularHelipad(st, v);
+			target = (goal != INVALID_TILE) ? MGT_HELIPAD : MGT_TERMINAL;
+		}
+		if (goal == INVALID_TILE) {
+			goal = FindFreeModularTerminal(st, v);
+			target = MGT_TERMINAL;
+		}
+
+		if (goal != INVALID_TILE) {
+			v->ground_path_goal = goal;
+			v->modular_ground_target = target;
+		}
+
+		/* No free stand/helipad yet: keep waiting in hangar.
+		 * Do not fall back to legacy hangar logic for modular airports. */
+		return;
+	}
+
+	if (zeppeliner_blocked) {
+		/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
+		return;
+	}
+
+	TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+	if (runway != INVALID_TILE) {
+		v->modular_takeoff_tile = runway;
+		v->ground_path_goal = runway;
+		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
+		return;
+	}
+
+	if (v->subtype == AIR_HELICOPTER) {
+		/* No runway available; helicopter can take off vertically as fallback. */
+		AircraftLeaveHangar(v, exit_dir);
+		v->state = HELITAKEOFF;
+		return;
+	}
+
+	LogModularTakeoffRunwayUnavailable(st, v);
+
+	/* No usable takeoff runway yet: keep waiting in hangar.
+	 * Do not fall back to legacy hangar logic for modular airports. */
+}
+
+/**
  * Handle aircraft movement/decision making in an airport hangar.
  * @param v Aircraft in the hangar.
  * @param apc Airport description containing the hangar.
@@ -1677,73 +1750,8 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 
 	const Station *st = Station::Get(v->targetairport);
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
-		/* Airport layout edits can remove the tile this aircraft was in (e.g. hangar removed).
-		 * Never query station data via v->tile in that case; re-target from targetairport only. */
-		if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
-			if (ShouldLogModularRateLimited(v->index, 23, 64)) {
-				Debug(misc, 1, "[ModAp] Vehicle {} in HANGAR on stale tile {} (airport {}), clearing modular ground intent",
-					v->index, IsValidTile(v->tile) ? v->tile.base() : 0, st->index);
-			}
-			ClearTaxiPathState(v);
-			ClearModularRunwayReservation(v);
-			v->ground_path_goal = INVALID_TILE;
-			v->modular_ground_target = MGT_NONE;
-			return;
-		}
-
-		bool at_target = v->current_order.GetDestination() == v->targetairport;
-		Direction exit_dir = GetModularHangarExitDirection(st, v->tile);
-		const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
-
-		if (at_target) {
-			TileIndex goal = INVALID_TILE;
-			uint8_t target = MGT_NONE;
-			if (v->subtype == AIR_HELICOPTER) {
-				goal = FindFreeModularHelipad(st, v);
-				target = (goal != INVALID_TILE) ? MGT_HELIPAD : MGT_TERMINAL;
-			}
-			if (goal == INVALID_TILE) {
-				goal = FindFreeModularTerminal(st, v);
-				target = MGT_TERMINAL;
-			}
-
-			if (goal != INVALID_TILE) {
-				v->ground_path_goal = goal;
-				v->modular_ground_target = target;
-				return;
-			}
-
-			/* No free stand/helipad yet: keep waiting in hangar.
-			 * Do not fall back to legacy hangar logic for modular airports. */
-			return;
-		} else {
-			if (zeppeliner_blocked) {
-				/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
-				return;
-			}
-
-			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-			if (runway != INVALID_TILE) {
-				v->modular_takeoff_tile = runway;
-				v->ground_path_goal = runway;
-				v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-				Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
-				return;
-			}
-
-			if (v->subtype == AIR_HELICOPTER) {
-				/* No runway available; helicopter can take off vertically as fallback. */
-				AircraftLeaveHangar(v, exit_dir);
-				v->state = HELITAKEOFF;
-				return;
-			}
-
-			LogModularTakeoffRunwayUnavailable(st, v);
-
-			/* No usable takeoff runway yet: keep waiting in hangar.
-			 * Do not fall back to legacy hangar logic for modular airports. */
-			return;
-		}
+		HandleModularHangar(v, st);
+		return;
 	}
 
 	/* if the block of the next position is busy, stay put */
@@ -1764,6 +1772,114 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 	}
 	AircraftLeaveHangar(v, st->airport.GetHangarExitDirection(v->tile));
 	AirportMove(v, apc);
+}
+
+/**
+ * Handle modular airport terminal/stand logic: rollout retarget, order-based
+ * goal selection (hangar/runway/helipad), stuck counter, and zeppeliner block.
+ */
+static void HandleModularTerminal(Aircraft *v, const Station *st)
+{
+	if (v->modular_ground_target != MGT_NONE) {
+		/* Post-rollout fallback: keep trying to acquire a proper service goal
+		 * instead of idling forever on apron/one-way holding tiles. */
+		if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
+			if (TryRetargetModularGroundGoal(v, st)) return;
+			if (v->modular_ground_target == MGT_ROLLOUT) {
+				TileIndex holding = FindModularRolloutHoldingTile(st, v, v->tile);
+				if (holding != INVALID_TILE && holding != v->tile) {
+					v->ground_path_goal = holding;
+					v->state = TERM1;
+					if (ShouldLogModularRateLimited(v->index, 34, 64)) {
+						Debug(misc, 2, "[ModAp] Vehicle {} rollout keepalive: move to holding tile {}", v->index, holding.base());
+					}
+					return;
+				}
+			}
+		}
+		return;
+	}
+
+	bool go_to_hangar = false;
+	switch (v->current_order.GetType()) {
+		case OT_GOTO_STATION: // ready to fly to another airport
+			break;
+		case OT_GOTO_DEPOT:   // visit hangar for servicing, sale, etc.
+			go_to_hangar = v->current_order.GetDestination() == v->targetairport;
+			break;
+		case OT_CONDITIONAL:
+			return;
+		default:  // orders have been deleted (no orders), goto depot and don't bother us
+			v->current_order.Free();
+			go_to_hangar = true;
+	}
+	const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
+	if (!go_to_hangar && zeppeliner_blocked) {
+		/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
+		return;
+	}
+
+	if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
+		const ModularAirportTileData *data = st->airport.GetModularTileData(v->tile);
+		if (data != nullptr && IsModularHelipadPiece(data->piece_type)) {
+			v->state = HELITAKEOFF;
+			return;
+		}
+		/* Not on helipad, fall through to runway takeoff flow. */
+	}
+
+	TileIndex goal = INVALID_TILE;
+	uint8_t target = MGT_NONE;
+	if (go_to_hangar) {
+		goal = FindFreeModularHangar(st, v);
+		if (goal != INVALID_TILE) {
+			target = MGT_HANGAR;
+		} else {
+			LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
+			/* Match stock airports: if depot order targets this airport but no hangar
+			 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
+			go_to_hangar = false;
+			if (ShouldLogModularRateLimited(v->index, 24, 128)) {
+				Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
+			}
+		}
+	}
+	if (!go_to_hangar) {
+		TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+		if (runway != INVALID_TILE) {
+			v->modular_takeoff_tile = runway;
+			goal = runway;
+		} else {
+			if (ShouldLogModularRateLimited(v->index, 39, 128)) {
+				Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+			}
+		}
+		target = MGT_RUNWAY_TAKEOFF;
+	}
+
+	if (goal != INVALID_TILE) {
+		v->ground_path_goal = goal;
+		v->modular_ground_target = target;
+		v->taxi_wait_counter = 0;
+		Debug(misc, 3, "[ModAp] Vehicle {} found takeoff target goal={} runway={}", v->index, goal.base(),
+			IsValidTile(v->modular_takeoff_tile) ? v->modular_takeoff_tile.base() : 0);
+		return;
+	}
+
+	if (v->subtype == AIR_HELICOPTER) {
+		/* No runway available; helicopter can take off vertically as fallback. */
+		if (!zeppeliner_blocked) v->state = HELITAKEOFF;
+		return;
+	}
+
+	/* No reachable takeoff path. Increment stuck counter and periodically
+	 * clear stale reservations that may be blocking the path. */
+	v->taxi_wait_counter++;
+	if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
+		ClearTaxiPathReservation(v, v->tile, true);
+	}
+
+	LogModularTakeoffRunwayUnavailable(st, v);
 }
 
 /** At one of the Airport's Terminals */
@@ -1791,107 +1907,7 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 
 	/* Modular airport logic */
 	if (Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		const Station *st = Station::Get(v->targetairport);
-		if (v->modular_ground_target != MGT_NONE) {
-			/* Post-rollout fallback: keep trying to acquire a proper service goal
-			 * instead of idling forever on apron/one-way holding tiles. */
-			if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
-				if (TryRetargetModularGroundGoal(v, st)) return;
-				if (v->modular_ground_target == MGT_ROLLOUT) {
-					TileIndex holding = FindModularRolloutHoldingTile(st, v, v->tile);
-					if (holding != INVALID_TILE && holding != v->tile) {
-						v->ground_path_goal = holding;
-						v->state = TERM1;
-						if (ShouldLogModularRateLimited(v->index, 34, 64)) {
-							Debug(misc, 2, "[ModAp] Vehicle {} rollout keepalive: move to holding tile {}", v->index, holding.base());
-						}
-						return;
-					}
-				}
-			}
-			return;
-		}
-
-		bool go_to_hangar = false;
-		switch (v->current_order.GetType()) {
-			case OT_GOTO_STATION: // ready to fly to another airport
-				break;
-			case OT_GOTO_DEPOT:   // visit hangar for servicing, sale, etc.
-				go_to_hangar = v->current_order.GetDestination() == v->targetairport;
-				break;
-			case OT_CONDITIONAL:
-				return;
-			default:  // orders have been deleted (no orders), goto depot and don't bother us
-				v->current_order.Free();
-				go_to_hangar = true;
-		}
-		const bool zeppeliner_blocked = st->airport.blocks.Test(AirportBlock::Zeppeliner);
-		if (!go_to_hangar && zeppeliner_blocked) {
-			/* Match stock behavior: do not depart while zeppeliner blocks this airport. */
-			return;
-		}
-
-		if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
-			const ModularAirportTileData *data = st->airport.GetModularTileData(v->tile);
-			if (data != nullptr && IsModularHelipadPiece(data->piece_type)) {
-				v->state = HELITAKEOFF;
-				return;
-			}
-			/* Not on helipad, fall through to runway takeoff flow. */
-		}
-
-		TileIndex goal = INVALID_TILE;
-		uint8_t target = MGT_NONE;
-		if (go_to_hangar) {
-			goal = FindFreeModularHangar(st, v);
-			if (goal != INVALID_TILE) {
-				target = MGT_HANGAR;
-			} else {
-				LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
-				/* Match stock airports: if depot order targets this airport but no hangar
-				 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
-				go_to_hangar = false;
-				if (ShouldLogModularRateLimited(v->index, 24, 128)) {
-					Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
-				}
-			}
-		}
-			if (!go_to_hangar) {
-			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-			if (runway != INVALID_TILE) {
-				v->modular_takeoff_tile = runway;
-				goal = runway;
-			} else {
-				if (ShouldLogModularRateLimited(v->index, 39, 128)) {
-					Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
-				}
-			}
-			target = MGT_RUNWAY_TAKEOFF;
-		}
-
-		if (goal != INVALID_TILE) {
-			v->ground_path_goal = goal;
-			v->modular_ground_target = target;
-			v->taxi_wait_counter = 0;
-			Debug(misc, 3, "[ModAp] Vehicle {} found takeoff target goal={} runway={}", v->index, goal.base(),
-				IsValidTile(v->modular_takeoff_tile) ? v->modular_takeoff_tile.base() : 0);
-			return;
-		}
-
-		if (v->subtype == AIR_HELICOPTER) {
-			/* No runway available; helicopter can take off vertically as fallback. */
-			if (!zeppeliner_blocked) v->state = HELITAKEOFF;
-			return;
-		}
-
-		/* No reachable takeoff path. Increment stuck counter and periodically
-		 * clear stale reservations that may be blocking the path. */
-		v->taxi_wait_counter++;
-		if (v->taxi_wait_counter > 64 && (v->taxi_wait_counter % 64) == 0) {
-			ClearTaxiPathReservation(v, v->tile, true);
-		}
-
-		LogModularTakeoffRunwayUnavailable(st, v);
+		HandleModularTerminal(v, Station::Get(v->targetairport));
 		return;
 	}
 
@@ -2147,40 +2163,45 @@ static void AircraftEventHandler_HeliLanding(Aircraft *v, const AirportFTAClass 
 	v->UpdateDeltaXY();
 }
 
+/**
+ * Handle post-landing goal selection for modular airports.
+ * Picks helipad, hangar, or terminal based on orders and aircraft type.
+ */
+static void HandleModularEndLanding(Aircraft *v, const Station *st)
+{
+	bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
+	TileIndex goal = INVALID_TILE;
+	uint8_t target = MGT_NONE;
+
+	if (v->subtype == AIR_HELICOPTER && !wants_depot) {
+		goal = FindFreeModularHelipad(st, v);
+		target = MGT_HELIPAD;
+	}
+
+	if (goal == INVALID_TILE && wants_depot) {
+		goal = FindFreeModularHangar(st, v);
+		target = MGT_HANGAR;
+		if (goal == INVALID_TILE) LogModularHangarDiagnostics(st, v, "endlanding_depot_no_hangar");
+	}
+
+	if (goal == INVALID_TILE) {
+		goal = FindFreeModularTerminal(st, v);
+		target = MGT_TERMINAL;
+	}
+
+	if (goal != INVALID_TILE) {
+		v->ground_path_goal = goal;
+		v->modular_ground_target = target;
+		v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
+	}
+}
+
 void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc)
 {
 	const Station *st = Station::Get(v->targetairport);
 
-	/* Check if this is a modular airport */
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
-		bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
-		TileIndex goal = INVALID_TILE;
-		uint8_t target = MGT_NONE;
-
-		if (v->subtype == AIR_HELICOPTER && !wants_depot) {
-			goal = FindFreeModularHelipad(st, v);
-			target = MGT_HELIPAD;
-		}
-
-		if (goal == INVALID_TILE && wants_depot) {
-			goal = FindFreeModularHangar(st, v);
-			target = MGT_HANGAR;
-			if (goal == INVALID_TILE) LogModularHangarDiagnostics(st, v, "endlanding_depot_no_hangar");
-		}
-
-		if (goal == INVALID_TILE) {
-			goal = FindFreeModularTerminal(st, v);
-			target = MGT_TERMINAL;
-		}
-
-		if (goal != INVALID_TILE) {
-			v->ground_path_goal = goal;
-			v->modular_ground_target = target;
-			v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;
-			return;
-		}
-
-		/* No suitable destination found - stay in place for now */
+		HandleModularEndLanding(v, st);
 		return;
 	}
 
