@@ -36,10 +36,6 @@ CargoTypes GetEmptyMask(const Station *st);
 void SetRailStationTileFlags(TileIndex tile, const StationSpec *statspec);
 const DrawTileSprites *GetStationTileLayout(StationType st, uint8_t gfx);
 void StationPickerDrawSprite(int x, int y, StationType st, RailType railtype, RoadType roadtype, int image);
-const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame = 0);
-const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation);
-const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar);
-const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type);
 
 bool HasStationInUse(StationID station, bool include_company, CompanyID company);
 

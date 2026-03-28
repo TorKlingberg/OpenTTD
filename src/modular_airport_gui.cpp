@@ -53,6 +53,7 @@
 #include "palette_func.h"
 #include "gfx_func.h"
 #include "modular_airport_cmd.h"
+#include "modular_airport_draw.h"
 #include "modular_airport_gui.h"
 #include "airport_template_gui.h"
 #include "newgrf_airporttiles.h"

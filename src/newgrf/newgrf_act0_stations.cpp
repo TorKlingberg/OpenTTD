@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 #include "../debug.h"
 #include "../newgrf_station.h"
+#include "../station_func.h"
 #include "newgrf_bytereader.h"
 #include "newgrf_internal.h"
 #include "newgrf_stringmapping.h"
@@ -72,10 +73,9 @@ static ChangeInfoResult StationChangeInfo(uint first, uint last, int prop, ByteR
 
 					if (buf.HasData(4) && buf.PeekDWord() == 0) {
 						buf.Skip(4);
-						extern const DrawTileSpriteSpan _station_display_datas_rail[8];
-						const DrawTileSpriteSpan &dtss = _station_display_datas_rail[t % 8];
-						dts->ground = dtss.ground;
-						dts->seq.insert(dts->seq.end(), dtss.GetSequence().begin(), dtss.GetSequence().end());
+						const DrawTileSprites *dtss = GetStationTileLayout(StationType::Rail, t % 8);
+						dts->ground = dtss->ground;
+						dts->seq.insert(dts->seq.end(), dtss->GetSequence().begin(), dtss->GetSequence().end());
 						continue;
 					}
 

@@ -10,10 +10,16 @@
 #ifndef MODULAR_AIRPORT_DRAW_H
 #define MODULAR_AIRPORT_DRAW_H
 
+#include "sprite.h"
 #include "station_map.h"
 #include "viewport_type.h"
 
 void DrawModularAirportPerimeterFences(const TileInfo *ti, PaletteID palette);
 void DrawModularAirportDirectionOverlays(const TileInfo *ti);
+const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame = 0);
+const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation);
+const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar);
+const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type);
+void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx, const DrawTileSprites *&t);
 
 #endif /* MODULAR_AIRPORT_DRAW_H */

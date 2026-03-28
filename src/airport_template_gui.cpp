@@ -29,6 +29,7 @@
 #include "station_map.h"
 #include "newgrf_airporttiles.h"
 #include "modular_airport_cmd.h"
+#include "modular_airport_draw.h"
 #include "modular_airport_gui.h"
 #include "hotkeys.h"
 #include "core/geometry_func.hpp"
