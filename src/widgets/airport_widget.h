@@ -51,12 +51,20 @@ enum ModularAirportBuilderWidgets : WidgetID {
 	WID_MA_PIECE_9,   ///< Grass piece button.
 	WID_MA_PIECE_10,  ///< Empty piece button.
 	WID_MA_PIECE_11,  ///< Erase piece button.
-	WID_MA_TOGGLE_SHOW_ARROWS,   ///< Show runway direction arrows toggle.
-	WID_MA_TOGGLE_SHOW_HOLDING,  ///< Show holding loop overlay toggle.
-	WID_MA_TOGGLE_SHOW_RESERVATIONS, ///< Show taxi reservation overlay toggle.
 	WID_MA_FENCE_TOOL,           ///< Edge fence toggle tool.
 	WID_MA_UPGRADE_TOOL,         ///< Upgrade old airport tiles to modern variants.
 	WID_MA_TEMPLATE_MANAGER,     ///< Open the template manager window.
+	WID_MA_INFO_OVERLAY,         ///< Open/close the info overlay settings window.
+};
+
+/** Widgets of the #BuildModularInfoOverlayWindow class. */
+enum ModularAirportInfoOverlayWidgets : WidgetID {
+	WID_MAIO_ARROWS_OFF,       ///< Taxi arrows off button.
+	WID_MAIO_ARROWS_ON,        ///< Taxi arrows on button.
+	WID_MAIO_HOLDING_OFF,      ///< Holding loop off button.
+	WID_MAIO_HOLDING_ON,       ///< Holding loop on button.
+	WID_MAIO_RESERVATIONS_OFF, ///< Taxi reservations off button.
+	WID_MAIO_RESERVATIONS_ON,  ///< Taxi reservations on button.
 };
 
 static constexpr WidgetID WID_MA_PIECE_FIRST = WID_MA_PIECE_0;

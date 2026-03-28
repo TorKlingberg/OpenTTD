@@ -464,6 +464,7 @@ public:
 		this->mode = TemplateManagerMode::None;
 		this->UpdateCursor();
 		CloseWindowById(WC_SELECT_STATION, 0);
+		if (this->parent != nullptr) this->parent->InvalidateData();
 		this->PickerWindowBase::Close();
 	}
 

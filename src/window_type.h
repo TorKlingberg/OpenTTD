@@ -414,6 +414,12 @@ enum WindowClass : uint16_t {
 	WC_AIRPORT_TEMPLATE_MANAGER,
 
 	/**
+	 * Modular airport info overlay settings; %Window numbers:
+	 *   - 0 = #ModularAirportInfoOverlayWidgets
+	 */
+	WC_MODULAR_AIRPORT_INFO_OVERLAY,
+
+	/**
 	 * Build bus station; %Window numbers:
 	 *   - #TRANSPORT_ROAD = #BuildRoadStationWidgets
 	 */

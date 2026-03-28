@@ -3031,6 +3031,8 @@ STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING           :{BLACK}Show hol
 STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_RESERVATIONS      :{BLACK}Show aircraft taxi reservations
 STR_STATION_BUILD_MODULAR_AIRPORT_FENCE_TOOL                    :{BLACK}Toggle edge fence: click on tile edge to block/unblock taxi movement
 STR_STATION_BUILD_MODULAR_AIRPORT_UPGRADE_TOOL                  :{BLACK}Upgrade airport: click or drag to upgrade old runways, hangars, and grass to modern variants
+STR_STATION_BUILD_MODULAR_AIRPORT_INFO_OVERLAY_CAPTION           :{WHITE}Info Overlays
+STR_STATION_BUILD_MODULAR_AIRPORT_INFO_OVERLAY_TOOLTIP           :{BLACK}Open/close info overlay settings
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP       :{BLACK}Open template manager (save/load/delete modular airport templates)
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_CAPTION       :{WHITE}Airport Template Manager
 STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP          :{BLACK}Saved modular airport templates

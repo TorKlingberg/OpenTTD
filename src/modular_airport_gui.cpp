@@ -233,9 +233,13 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 static void ShowModularHelipadPicker(Window *parent);
+static void ShowModularInfoOverlayWindow(Window *parent);
+
+class BuildModularInfoOverlayWindow;
 
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
+	friend class BuildModularInfoOverlayWindow;
 
 	uint8_t selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 	bool show_taxi_arrows = true;
@@ -254,10 +258,8 @@ public:
 	BuildModularAirportWindow(WindowDesc &desc, Window *parent) : PickerWindowBase(desc, parent)
 	{
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
-		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
-		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
-		this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
+		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, false);
 		this->UpdateYearGating();
 		this->cached_year = TimerGameCalendar::year;
 		this->UpdatePlacementCursor();
@@ -357,6 +359,7 @@ public:
 			ResetObjectToPlace();
 		}
 		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
+		CloseWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0);
 		CloseWindowByClass(WC_BUILD_DEPOT);
 		/* Raise the modular button on the airport toolbar. */
 		if (this->parent != nullptr) {
@@ -372,8 +375,8 @@ public:
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
-		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
-		/* Keep piece buttons the same size as standard construction toolbar buttons. */
+		if ((widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) && widget != WID_MA_FENCE_TOOL) return;
+		/* Keep piece buttons and fence button the same size as standard construction toolbar buttons. */
 		size.width = std::max<uint>(size.width, ScaleGUITrad(22));
 		size.height = std::max<uint>(size.height, ScaleGUITrad(22));
 	}
@@ -487,28 +490,6 @@ public:
 		}
 
 		switch (widget) {
-			case WID_MA_TOGGLE_SHOW_ARROWS:
-				this->show_taxi_arrows = !this->show_taxi_arrows;
-				_show_runway_direction_overlay = this->show_taxi_arrows;
-				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_ARROWS, this->show_taxi_arrows);
-				MarkWholeScreenDirty();
-				break;
-
-			case WID_MA_TOGGLE_SHOW_HOLDING:
-				this->show_holding_loop = !this->show_holding_loop;
-				_show_holding_overlay = this->show_holding_loop;
-				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_HOLDING, this->show_holding_loop);
-				MarkWholeScreenDirty();
-				break;
-
-			case WID_MA_TOGGLE_SHOW_RESERVATIONS:
-				this->show_taxi_reservations = !this->show_taxi_reservations;
-				_show_taxi_reservation_overlay = this->show_taxi_reservations;
-				if (!this->show_taxi_reservations) this->reservation_overlay_bounds.clear();
-				this->SetWidgetLoweredState(WID_MA_TOGGLE_SHOW_RESERVATIONS, this->show_taxi_reservations);
-				MarkWholeScreenDirty();
-				break;
-
 			case WID_MA_FENCE_TOOL:
 				this->fence_tool_active = !this->fence_tool_active;
 				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, this->fence_tool_active);
@@ -558,18 +539,38 @@ public:
 				this->SetDirty();
 				break;
 
-			case WID_MA_TEMPLATE_MANAGER:
-				this->fence_tool_active = false;
-				this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
-				this->upgrade_tool_active = false;
-				this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
-				if (this->selected_piece < PIECE_COUNT) {
-					this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
-					this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+			case WID_MA_TEMPLATE_MANAGER: {
+				Window *w = FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
+				if (w != nullptr) {
+					w->Close();
+				} else {
+					this->fence_tool_active = false;
+					this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
+					this->upgrade_tool_active = false;
+					this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
+					if (this->selected_piece < PIECE_COUNT) {
+						this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
+						this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+					}
+					this->UpdatePlacementCursor();
+					ShowBuildAirportTemplateManagerWindow(this);
 				}
-				this->UpdatePlacementCursor();
-				ShowBuildAirportTemplateManagerWindow(this);
+				this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0) != nullptr);
+				this->SetDirty();
 				break;
+			}
+
+			case WID_MA_INFO_OVERLAY: {
+				Window *w = FindWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0);
+				if (w != nullptr) {
+					w->Close();
+				} else {
+					ShowModularInfoOverlayWindow(this);
+				}
+				this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0) != nullptr);
+				this->SetDirty();
+				break;
+			}
 
 			default: break;
 		}
@@ -1035,7 +1036,16 @@ private:
 		this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
 		this->upgrade_tool_active = false;
 		this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
-		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
+		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0) != nullptr);
+		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0) != nullptr);
+		this->SetDirty();
+	}
+
+	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
+	{
+		if (!gui_scope) return;
+		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0) != nullptr);
+		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0) != nullptr);
 		this->SetDirty();
 	}
 
@@ -1585,6 +1595,131 @@ static void ShowModularHelipadPicker(Window *parent)
 	new BuildModularHelipadPickerWindow(_build_modular_helipad_picker_desc, parent);
 }
 
+class BuildModularInfoOverlayWindow : public Window {
+public:
+	BuildModularInfoOverlayWindow(WindowDesc &desc, Window *parent) : Window(desc)
+	{
+		this->parent = parent;
+		this->InitNested(0);
+		this->UpdateButtonStates();
+	}
+
+	void Close([[maybe_unused]] int data = 0) override
+	{
+		if (this->parent != nullptr) this->parent->InvalidateData();
+		this->Window::Close();
+	}
+
+	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
+	{
+		auto *builder = static_cast<BuildModularAirportWindow *>(this->parent);
+		if (builder == nullptr) return;
+
+		switch (widget) {
+			case WID_MAIO_ARROWS_OFF:
+				builder->show_taxi_arrows = false;
+				break;
+
+			case WID_MAIO_ARROWS_ON:
+				builder->show_taxi_arrows = true;
+				break;
+
+			case WID_MAIO_HOLDING_OFF:
+				builder->show_holding_loop = false;
+				break;
+
+			case WID_MAIO_HOLDING_ON:
+				builder->show_holding_loop = true;
+				break;
+
+			case WID_MAIO_RESERVATIONS_OFF:
+				builder->show_taxi_reservations = false;
+				builder->reservation_overlay_bounds.clear();
+				break;
+
+			case WID_MAIO_RESERVATIONS_ON:
+				builder->show_taxi_reservations = true;
+				break;
+
+			default:
+				return;
+		}
+
+		_show_runway_direction_overlay = builder->show_taxi_arrows;
+		_show_holding_overlay = builder->show_holding_loop;
+		_show_taxi_reservation_overlay = builder->show_taxi_reservations;
+		this->UpdateButtonStates();
+		MarkWholeScreenDirty();
+	}
+
+private:
+	void UpdateButtonStates()
+	{
+		auto *builder = static_cast<BuildModularAirportWindow *>(this->parent);
+		if (builder == nullptr) return;
+
+		this->SetWidgetLoweredState(WID_MAIO_ARROWS_OFF, !builder->show_taxi_arrows);
+		this->SetWidgetLoweredState(WID_MAIO_ARROWS_ON, builder->show_taxi_arrows);
+		this->SetWidgetLoweredState(WID_MAIO_HOLDING_OFF, !builder->show_holding_loop);
+		this->SetWidgetLoweredState(WID_MAIO_HOLDING_ON, builder->show_holding_loop);
+		this->SetWidgetLoweredState(WID_MAIO_RESERVATIONS_OFF, !builder->show_taxi_reservations);
+		this->SetWidgetLoweredState(WID_MAIO_RESERVATIONS_ON, builder->show_taxi_reservations);
+		this->SetDirty();
+	}
+};
+
+static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_info_overlay_widgets = {
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
+		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN),
+			SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_INFO_OVERLAY_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+	EndContainer(),
+	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
+		NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0), SetPadding(WidgetDimensions::unscaled.picker),
+			NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS), SetFill(1, 0),
+			NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_ARROWS_OFF), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_OFF, STR_NULL),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_ARROWS_ON), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_ON, STR_NULL),
+				EndContainer(),
+			EndContainer(),
+			NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING), SetFill(1, 0),
+			NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_HOLDING_OFF), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_OFF, STR_NULL),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_HOLDING_ON), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_ON, STR_NULL),
+				EndContainer(),
+			EndContainer(),
+			NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_RESERVATIONS), SetFill(1, 0),
+			NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+				NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_RESERVATIONS_OFF), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_OFF, STR_NULL),
+					NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAIO_RESERVATIONS_ON), SetMinimalSize(60, 12), SetFill(1, 0),
+						SetStringTip(STR_STATION_BUILD_COVERAGE_ON, STR_NULL),
+				EndContainer(),
+			EndContainer(),
+		EndContainer(),
+	EndContainer(),
+};
+
+static WindowDesc _build_modular_info_overlay_desc(
+	WDP_AUTO, {}, 0, 0,
+	WC_MODULAR_AIRPORT_INFO_OVERLAY, WC_BUILD_STATION,
+	WindowDefaultFlag::Construction,
+	_nested_build_modular_info_overlay_widgets
+);
+
+static void ShowModularInfoOverlayWindow(Window *parent)
+{
+	CloseWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0);
+	new BuildModularInfoOverlayWindow(_build_modular_info_overlay_desc, parent);
+}
+
 static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airport_widgets = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
@@ -1608,14 +1743,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 			SetSpriteTip(SPR_IMG_CONVERT_ROAD, STR_STATION_BUILD_MODULAR_AIRPORT_UPGRADE_TOOL),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TEMPLATE_MANAGER), SetFill(0, 1), SetToolbarMinimalSize(1),
 			SetSpriteTip(SPR_IMG_SAVE, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_TOOLTIP),
+		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_INFO_OVERLAY), SetFill(0, 1), SetToolbarMinimalSize(1),
+			SetSpriteTip(SPR_IMG_QUERY, STR_STATION_BUILD_MODULAR_AIRPORT_INFO_OVERLAY_TOOLTIP),
 		NWidget(WWT_TEXTBTN, COLOUR_DARK_GREEN, WID_MA_PIECE_11), SetFill(0, 1), SetToolbarMinimalSize(1), SetToolTip(STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
-		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), EndContainer(),
-		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_ARROWS), SetFill(0, 1), SetToolbarMinimalSize(1),
-			SetSpriteTip(SPR_ONEWAY_BASE + 2, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_ARROWS),
-		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_HOLDING), SetFill(0, 1), SetToolbarMinimalSize(1),
-			SetSpriteTip(SPR_BLOT, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_HOLDING),
-		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_MA_TOGGLE_SHOW_RESERVATIONS), SetFill(0, 1), SetToolbarMinimalSize(1),
-			SetSpriteTip(SPR_SQUARE, STR_STATION_BUILD_MODULAR_AIRPORT_TOGGLE_SHOW_RESERVATIONS),
 	EndContainer(),
 };
 
