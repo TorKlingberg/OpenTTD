@@ -9,15 +9,8 @@
 * New menu for modular debug, while text labels and on/off buttons
 
 Pathing improvements:
-* For landing-only runways, only reserve the runway before landing. Unless planes need to cross landing runway sometimes (may to get to takeoff runway)
-
 * What if a plane decides to go for service in the middle of a free-move segemnt, and can't get a path to hangar?
-
 * Cache for airport path-finding?
-
-* Setting to turn the whole feature off
-
-* Old runways etc. going the other way
 
 * Building runways tile by tile in N-S direction doesn't work?
 
