@@ -1906,8 +1906,9 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 	if (v->current_order.IsType(OT_NOTHING)) return;
 
 	/* Modular airport logic */
-	if (Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
-		HandleModularTerminal(v, Station::Get(v->targetairport));
+	const Station *st = Station::Get(v->targetairport);
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		HandleModularTerminal(v, st);
 		return;
 	}
 
