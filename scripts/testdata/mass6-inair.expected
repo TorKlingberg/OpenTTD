@@ -1,0 +1,3 @@
+# Regression test reference values for mass6-inair.sav (1 year run)
+# The test fails if the actual value falls below the minimum.
+min_movements=1829

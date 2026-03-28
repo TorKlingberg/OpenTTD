@@ -15,5 +15,5 @@ TOTAL_DAYS=$((YEARS * 365 + EXTRA_MONTH_DAYS + SAFETY_DAYS))
 TOTAL_TICKS=$((TOTAL_DAYS * DAY_TICKS))
 
 scripts/build_and_sign.sh \
-	&& ./build/openttd -d misc=1 -x -g /Users/tor/Documents/OpenTTD/save/mass6-inair.sav -s null -m null -v null:ticks="${TOTAL_TICKS}" > /tmp/openttd.log 2>&1 \
+	&& ./build/openttd -d misc=1 -x -g scripts/testdata/mass6-inair.sav -s null -m null -v null:ticks="${TOTAL_TICKS}" > /tmp/openttd.log 2>&1 \
 	&& rg "\[AirportStats\] Year [0-9]+ totals" /tmp/openttd.log
