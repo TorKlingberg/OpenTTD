@@ -21,9 +21,9 @@ if [[ -z "${min_movements}" ]]; then
 fi
 
 echo "Reference: min_movements=${min_movements}"
-echo "Running 1-year simulation..."
+echo "Running 5-year simulation..."
 
-run_output="$(bash scripts/airport_stats_history.sh --current 1 2>&1)" || {
+run_output="$(bash scripts/airport_stats_history.sh --current 5 2>&1)" || {
 	echo "FAIL: run failed"
 	echo "${run_output}"
 	exit 1
