@@ -150,6 +150,13 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 		t = &_station_display_modular_newhelipad;
 	}
 
+	/* Modular APT_STAND_1 can exist as persisted piece data (for example after
+	 * stock-airport conversion or in saved templates). Use the fence-free jetway
+	 * layout in all modular contexts, not only for adjacency-derived visuals. */
+	if (modular_piece_type == APT_STAND_1) {
+		t = &_station_display_modular_jetway_1;
+	}
+
 	if (t == nullptr) switch (gfx) {
 		case APT_RADAR_GRASS_FENCE_SW:
 			t = &_station_display_datas_airport_radar_grass_fence_sw[animation_frame % lengthof(_station_display_datas_airport_radar_grass_fence_sw)];
