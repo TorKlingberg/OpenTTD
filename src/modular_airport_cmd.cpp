@@ -1629,6 +1629,119 @@ const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
 	return *st->airport.modular_holding_loop;
 }
 
+/**
+ * Compute the best helicopter landing/takeoff tile for a modular airport without helipads.
+ * If any helipad exists, both tiles are set to INVALID_TILE (use real helipads).
+ * Otherwise, prefer an apron tile not adjacent to buildings, closest to airport center.
+ * Fallback: runway ends with appropriate flags.
+ */
+static void ComputeModularHeliTiles(const Station *st)
+{
+	st->airport.modular_heli_landing_tile = INVALID_TILE;
+	st->airport.modular_heli_takeoff_tile = INVALID_TILE;
+
+	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return;
+
+	/* Step 1: If any helipad exists, use real helipads instead. */
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (IsModularHelipadPiece(data.piece_type)) return;
+	}
+
+	/* Compute bounding box center. */
+	int min_x = INT_MAX, min_y = INT_MAX, max_x = INT_MIN, max_y = INT_MIN;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		int tx = static_cast<int>(TileX(data.tile));
+		int ty = static_cast<int>(TileY(data.tile));
+		min_x = std::min(min_x, tx);
+		min_y = std::min(min_y, ty);
+		max_x = std::max(max_x, tx);
+		max_y = std::max(max_y, ty);
+	}
+	int center_x = (min_x + max_x) / 2;
+	int center_y = (min_y + max_y) / 2;
+
+	/* Step 2: Find best apron/taxiway tile not adjacent to any building. */
+	TileIndex best_apron = INVALID_TILE;
+	int best_apron_dist = INT_MAX;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsApronOrTaxiwayPiece(data.piece_type)) continue;
+
+		/* Check 8-directional adjacency for buildings. */
+		bool adjacent_to_building = false;
+		static const TileIndexDiff neighbors[] = {
+			TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1),
+			TileDiffXY(1, 1), TileDiffXY(1, -1), TileDiffXY(-1, 1), TileDiffXY(-1, -1),
+		};
+		for (TileIndexDiff diff : neighbors) {
+			TileIndex neighbor = data.tile + diff;
+			const ModularAirportTileData *nd = st->airport.GetModularTileData(neighbor);
+			if (nd != nullptr && IsModularBuildingPiece(nd->piece_type)) {
+				adjacent_to_building = true;
+				break;
+			}
+		}
+		if (adjacent_to_building) continue;
+
+		int tx = static_cast<int>(TileX(data.tile));
+		int ty = static_cast<int>(TileY(data.tile));
+		int dist = abs(tx - center_x) + abs(ty - center_y);
+		if (dist < best_apron_dist) {
+			best_apron_dist = dist;
+			best_apron = data.tile;
+		}
+	}
+
+	if (best_apron != INVALID_TILE) {
+		st->airport.modular_heli_landing_tile = best_apron;
+		st->airport.modular_heli_takeoff_tile = best_apron;
+		return;
+	}
+
+	/* Step 3: Fallback — find runway ends with appropriate flags. */
+	TileIndex best_landing = INVALID_TILE;
+	int best_landing_dist = INT_MAX;
+	TileIndex best_takeoff = INVALID_TILE;
+	int best_takeoff_dist = INT_MAX;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+
+		bool is_end = (data.piece_type == APT_RUNWAY_END ||
+		               data.piece_type == APT_RUNWAY_SMALL_NEAR_END ||
+		               data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+		if (!is_end) continue;
+
+		/* Check minimum runway length. */
+		std::vector<TileIndex> rwy;
+		if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
+
+		uint8_t flags = GetRunwayFlags(st, data.tile);
+		int tx = static_cast<int>(TileX(data.tile));
+		int ty = static_cast<int>(TileY(data.tile));
+		int dist = abs(tx - center_x) + abs(ty - center_y);
+
+		if ((flags & RUF_LANDING) && dist < best_landing_dist) {
+			best_landing_dist = dist;
+			best_landing = data.tile;
+		}
+		if ((flags & RUF_TAKEOFF) && dist < best_takeoff_dist) {
+			best_takeoff_dist = dist;
+			best_takeoff = data.tile;
+		}
+	}
+
+	st->airport.modular_heli_landing_tile = best_landing;
+	st->airport.modular_heli_takeoff_tile = best_takeoff;
+}
+
+void EnsureModularHeliTilesValid(const Station *st)
+{
+	if (!st->airport.modular_heli_tiles_dirty) return;
+	ComputeModularHeliTiles(st);
+	st->airport.modular_heli_tiles_dirty = false;
+}
+
 void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop)
 {
 	int min_x = INT_MAX;
@@ -1918,6 +2031,12 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			v->ground_path_goal = rollout_point;
 			v->modular_ground_target = MGT_ROLLOUT;
 			v->state = TERM1;
+		} else if (v->subtype == AIR_HELICOPTER && v->modular_landing_goal != INVALID_TILE) {
+			/* Helicopter landed on apron tile (no rollout needed).
+			 * Use HandleModularGroundArrival via MGT_ROLLOUT to honor pre-selected landing goal. */
+			v->ground_path_goal = v->tile;
+			v->modular_ground_target = MGT_ROLLOUT;
+			HandleModularGroundArrival(v);
 		} else {
 			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
 		}
@@ -3304,6 +3423,11 @@ void HandleModularGroundArrival(Aircraft *v)
 			v->state = TAKEOFF;
 			v->modular_takeoff_tile = v->tile;
 			v->modular_takeoff_progress = 0;
+			v->modular_ground_target = MGT_NONE;
+			break;
+
+		case MGT_HELI_TAKEOFF_TILE:
+			v->state = HELITAKEOFF;
 			v->modular_ground_target = MGT_NONE;
 			break;
 

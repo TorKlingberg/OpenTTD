@@ -383,6 +383,9 @@ struct Airport : public TileArea {
 	mutable bool modular_tile_index_dirty = false; ///< Whether modular tile index needs rebuild
 	mutable ModularHoldingLoop *modular_holding_loop = nullptr; ///< Cached holding loop for modular airports
 	mutable bool modular_holding_loop_dirty = true; ///< Whether modular holding loop needs rebuild
+	mutable TileIndex modular_heli_landing_tile = INVALID_TILE; ///< Computed helicopter landing tile (no helipads)
+	mutable TileIndex modular_heli_takeoff_tile = INVALID_TILE; ///< Computed helicopter takeoff tile (no helipads)
+	mutable bool modular_heli_tiles_dirty = true; ///< Whether computed heli tiles need recompute
 
 	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there

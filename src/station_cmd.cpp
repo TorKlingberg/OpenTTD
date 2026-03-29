@@ -2839,6 +2839,7 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		delete st->airport.modular_holding_loop;
 		st->airport.modular_holding_loop = nullptr;
 		st->airport.modular_holding_loop_dirty = true;
+		st->airport.modular_heli_tiles_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
 
 		st->rect.AfterRemoveRect(st, st->airport);

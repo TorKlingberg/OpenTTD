@@ -1825,7 +1825,13 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 			v->state = HELITAKEOFF;
 			return;
 		}
-		/* Not on helipad, fall through to runway takeoff flow. */
+		/* Check if we're already on the computed heli takeoff tile. */
+		EnsureModularHeliTilesValid(st);
+		if (v->tile == st->airport.modular_heli_takeoff_tile) {
+			v->state = HELITAKEOFF;
+			return;
+		}
+		/* Not on helipad or computed takeoff tile, fall through to runway takeoff flow. */
 	}
 
 	TileIndex goal = INVALID_TILE;
@@ -1845,16 +1851,30 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 		}
 	}
 	if (!go_to_hangar) {
-		TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
-		if (runway != INVALID_TILE) {
-			v->modular_takeoff_tile = runway;
-			goal = runway;
-		} else {
-			if (ShouldLogModularRateLimited(v->index, 39, 128)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+		/* Helicopters prefer computed vertical takeoff tile over runway takeoff. */
+		if (v->subtype == AIR_HELICOPTER) {
+			EnsureModularHeliTilesValid(st);
+			if (st->airport.modular_heli_takeoff_tile != INVALID_TILE) {
+				if (v->tile == st->airport.modular_heli_takeoff_tile) {
+					v->state = HELITAKEOFF;
+					return;
+				}
+				goal = st->airport.modular_heli_takeoff_tile;
+				target = MGT_HELI_TAKEOFF_TILE;
 			}
 		}
-		target = MGT_RUNWAY_TAKEOFF;
+		if (goal == INVALID_TILE) {
+			TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
+			if (runway != INVALID_TILE) {
+				v->modular_takeoff_tile = runway;
+				goal = runway;
+			} else {
+				if (ShouldLogModularRateLimited(v->index, 39, 128)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+				}
+			}
+			target = MGT_RUNWAY_TAKEOFF;
+		}
 	}
 
 	if (goal != INVALID_TILE) {
@@ -1867,7 +1887,15 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 	}
 
 	if (v->subtype == AIR_HELICOPTER) {
-		/* No runway available; helicopter can take off vertically as fallback. */
+		/* Try computed heli takeoff tile before falling back to vertical takeoff in place. */
+		EnsureModularHeliTilesValid(st);
+		if (st->airport.modular_heli_takeoff_tile != INVALID_TILE && v->tile != st->airport.modular_heli_takeoff_tile) {
+			v->ground_path_goal = st->airport.modular_heli_takeoff_tile;
+			v->modular_ground_target = MGT_HELI_TAKEOFF_TILE;
+			v->taxi_wait_counter = 0;
+			return;
+		}
+		/* No runway and no computed takeoff tile (or already on it); take off vertically. */
 		if (!zeppeliner_blocked) v->state = HELITAKEOFF;
 		return;
 	}
@@ -2013,8 +2041,27 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			TileIndex runway_tile = INVALID_TILE;
 
 			if (v->subtype == AIR_HELICOPTER) {
-				/* Keep helicopter behaviour unchanged until a dedicated heli holding loop exists. */
-				runway_tile = FindModularLandingTarget(st, v);
+				EnsureModularHeliTilesValid(st);
+				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
+					/* Verify the computed tile still exists in the airport. */
+					const ModularAirportTileData *hd = st->airport.GetModularTileData(st->airport.modular_heli_landing_tile);
+					if (hd == nullptr) {
+						st->airport.modular_heli_tiles_dirty = true;
+						EnsureModularHeliTilesValid(st);
+					}
+				}
+				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
+					/* If computed tile is a runway, check it's not reserved by another aircraft. */
+					const ModularAirportTileData *hld = st->airport.GetModularTileData(st->airport.modular_heli_landing_tile);
+					if (hld != nullptr && IsModularRunwayPiece(hld->piece_type) &&
+							IsContiguousModularRunwayReservedByOther(v, st, st->airport.modular_heli_landing_tile)) {
+						runway_tile = FindModularLandingTarget(st, v);
+					} else {
+						runway_tile = st->airport.modular_heli_landing_tile;
+					}
+				} else {
+					runway_tile = FindModularLandingTarget(st, v);
+				}
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
@@ -2059,7 +2106,10 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				}
 
 				TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
-				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, rollout);
+				/* For helicopter landing on a computed apron tile, rollout is INVALID_TILE;
+				 * use the landing tile itself as the pathfinder origin. */
+				TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway_tile;
+				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
 				v->modular_landing_goal = landing_goal;
 
 				if (v->subtype == AIR_AIRCRAFT) {

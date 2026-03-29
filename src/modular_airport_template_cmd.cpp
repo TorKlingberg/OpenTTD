@@ -167,6 +167,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 			current = next;
 		}
 		st->airport.modular_holding_loop_dirty = true;
+		st->airport.modular_heli_tiles_dirty = true;
 		if (_show_holding_overlay) MarkWholeScreenDirty();
 	}
 

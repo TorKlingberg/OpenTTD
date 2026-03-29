@@ -30,6 +30,7 @@ inline constexpr uint8_t MGT_HELIPAD = 2;
 inline constexpr uint8_t MGT_HANGAR = 3;
 inline constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 inline constexpr uint8_t MGT_ROLLOUT = 5;
+inline constexpr uint8_t MGT_HELI_TAKEOFF_TILE = 6;
 
 inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this are not usable for landing or takeoff
 
@@ -137,6 +138,32 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 	}
 }
 
+inline bool IsModularBuildingPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_ROUND_TERMINAL:
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+		case APT_TOWER:
+		case APT_TOWER_FENCE_SW:
+		case APT_RADIO_TOWER_FENCE_NE:
+		case APT_RADAR_GRASS_FENCE_SW:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+			return true;
+		default:
+			return false;
+	}
+}
+
 inline bool IsTaxiwayPiece(uint8_t piece_type)
 {
 	switch (piece_type) {
@@ -151,6 +178,23 @@ inline bool IsTaxiwayPiece(uint8_t piece_type)
 		case APT_APRON_W:
 		case APT_APRON_HALF_EAST:
 		case APT_APRON_HALF_WEST:
+			return true;
+		default:
+			return false;
+	}
+}
+
+inline bool IsApronOrTaxiwayPiece(uint8_t piece_type)
+{
+	if (IsTaxiwayPiece(piece_type)) return true;
+	switch (piece_type) {
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
 			return true;
 		default:
 			return false;
@@ -219,6 +263,8 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st);
 
 bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute);
 void ResetModularAirportStaticState();
+
+void EnsureModularHeliTilesValid(const Station *st);
 
 bool IsModernModularPiece(uint8_t piece_type);
 TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type);
