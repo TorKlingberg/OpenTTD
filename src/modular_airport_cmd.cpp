@@ -890,7 +890,10 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		return false;
 	};
 
-	TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+	const ModularAirportTileData *touchdown_data = st->airport.GetModularTileData(runway_tile);
+	const bool touchdown_on_runway = touchdown_data != nullptr && IsModularRunwayPiece(touchdown_data->piece_type);
+	TileIndex rollout = touchdown_on_runway ? FindModularRunwayRolloutPoint(st, runway_tile) : INVALID_TILE;
+	const TileIndex chain_origin = touchdown_on_runway ? rollout : runway_tile;
 	const auto log_chain_fail = [&](std::string_view reason, TileIndex detail = INVALID_TILE) {
 		if (ShouldLogModularRateLimited(v->index, 43, 128)) {
 			Debug(misc, 2, "[ModAp] V{} landing-chain fail: reason={} runway={} goal={} rollout={} detail={}",
@@ -902,9 +905,11 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		return false;
 	};
 
+	if (!touchdown_on_runway && blocked_by_other(runway_tile)) return log_chain_fail("touchdown_tile_blocked", runway_tile);
+
 	/* No ground goal: only allow landing if there's a one-way buffer to queue on. */
 	if (ground_goal == INVALID_TILE) {
-		if (rollout == INVALID_TILE) return log_chain_fail("no_goal_rollout_invalid");
+		if (chain_origin == INVALID_TILE) return log_chain_fail("no_goal_origin_invalid");
 
 		/* Find any stand on the airport as a pathfinding target (topology only). */
 		TileIndex any_stand = INVALID_TILE;
@@ -918,11 +923,10 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		}
 		if (any_stand == INVALID_TILE) return log_chain_fail("no_goal_no_stand");
 
-		TaxiPath path = BuildTaxiPath(st, rollout, any_stand, nullptr);
+		TaxiPath path = BuildTaxiPath(st, chain_origin, any_stand, nullptr);
 		if (!path.valid || path.segments.empty()) return log_chain_fail("no_goal_path_invalid");
 
-		/* Skip runway segments to find the first non-runway segment. */
-		uint8_t seg_idx = 0;
+		uint8_t seg_idx = FindTaxiSegmentIndex(&path, 0);
 		while (seg_idx < path.segments.size() && path.segments[seg_idx].type == TaxiSegmentType::RUNWAY) seg_idx++;
 		if (seg_idx >= path.segments.size()) return log_chain_fail("no_goal_no_non_runway_segment");
 
@@ -932,18 +936,32 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		TileIndex first_oneway = path.tiles[path.segments[seg_idx].start_index];
 		if (blocked_by_other(first_oneway)) return log_chain_fail("no_goal_first_one_way_blocked", first_oneway);
 
-		if (!TryReserveContiguousModularRunway(v, st, runway_tile)) return log_chain_fail("no_goal_runway_reserve_failed");
+		if (touchdown_on_runway) {
+			if (!TryReserveContiguousModularRunway(v, st, runway_tile)) return log_chain_fail("no_goal_runway_reserve_failed");
+		} else {
+			SetTaxiReservation(v, runway_tile);
+		}
 		SetTaxiReservation(v, first_oneway);
+		v->landing_chain_path.reset();
 		return true;
 	}
 
 	/* Normal landing chain: reserve runway + exit path to first safe queuing point. */
-	if (!TryReserveContiguousModularRunway(v, st, runway_tile)) return log_chain_fail("runway_reserve_failed");
+	if (touchdown_on_runway) {
+		if (!TryReserveContiguousModularRunway(v, st, runway_tile)) return log_chain_fail("runway_reserve_failed");
+	} else {
+		SetTaxiReservation(v, runway_tile);
+	}
 
-	if (rollout == INVALID_TILE) return true;
+	if (chain_origin == INVALID_TILE) return true;
+	if (ground_goal == chain_origin) {
+		v->landing_chain_path.reset();
+		return true;
+	}
 
-	TaxiPath path = BuildTaxiPath(st, rollout, ground_goal, nullptr);
+	TaxiPath path = BuildTaxiPath(st, chain_origin, ground_goal, nullptr);
 	if (!path.valid || path.tiles.empty() || path.segments.empty()) {
+		if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 		ClearModularRunwayReservation(v);
 		return log_chain_fail("path_invalid");
 	}
@@ -955,13 +973,16 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	const TaxiSegment &seg = path.segments[seg_idx];
 	std::vector<TileIndex> tmp_reserved;
 	tmp_reserved.reserve(seg.end_index - seg.start_index + 2);
+	if (!touchdown_on_runway) tmp_reserved.push_back(runway_tile);
 
 	if (seg.type == TaxiSegmentType::ONE_WAY) {
 		TileIndex entry = path.tiles[seg.start_index];
 		if (blocked_by_other(entry)) {
+			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 			ClearModularRunwayReservation(v);
 			return log_chain_fail("one_way_entry_blocked", entry);
 		}
+		for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
 		SetTaxiReservation(v, entry);
 		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
 		return true;
@@ -970,6 +991,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	for (uint16_t i = seg.start_index; i <= seg.end_index; ++i) {
 		TileIndex tile = path.tiles[i];
 		if (blocked_by_other(tile)) {
+			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 			ClearTaxiPathReservation(v, INVALID_TILE);
 			ClearModularRunwayReservation(v);
 			return log_chain_fail("segment_blocked", tile);
@@ -980,6 +1002,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	if (seg.end_index + 1 < path.tiles.size()) {
 		TileIndex exit_tile = path.tiles[seg.end_index + 1];
 		if (blocked_by_other(exit_tile)) {
+			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 			ClearTaxiPathReservation(v, INVALID_TILE);
 			ClearModularRunwayReservation(v);
 			return log_chain_fail("exit_blocked", exit_tile);
@@ -1947,33 +1970,21 @@ void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target
 
 static void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, int *target_y)
 {
-	int min_x = INT_MAX;
-	int min_y = INT_MAX;
-	int max_x = INT_MIN;
-	int max_y = INT_MIN;
-
-	if (st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			const int tx = static_cast<int>(TileX(data.tile));
-			const int ty = static_cast<int>(TileY(data.tile));
-			min_x = std::min(min_x, tx);
-			min_y = std::min(min_y, ty);
-			max_x = std::max(max_x, tx);
-			max_y = std::max(max_y, ty);
-		}
+	TileIndex hold_center = INVALID_TILE;
+	EnsureModularHeliTilesValid(st);
+	if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
+		hold_center = st->airport.modular_heli_landing_tile;
 	} else {
-		const int tx = static_cast<int>(TileX(st->xy));
-		const int ty = static_cast<int>(TileY(st->xy));
-		min_x = max_x = tx;
-		min_y = max_y = ty;
+		hold_center = FindModularLandingTarget(st, v);
 	}
+	if (hold_center == INVALID_TILE) hold_center = st->xy;
 
-	const int center_x = (min_x + max_x) * TILE_SIZE / 2 + TILE_SIZE / 2;
-	const int center_y = (min_y + max_y) * TILE_SIZE / 2 + TILE_SIZE / 2;
-	const int half_span_tiles = std::max(6, std::max(max_x - min_x + 1, max_y - min_y + 1) / 2 + 4);
-	const int offset = half_span_tiles * TILE_SIZE;
+	const int center_x = TileX(hold_center) * TILE_SIZE + TILE_SIZE / 2;
+	const int center_y = TileY(hold_center) * TILE_SIZE + TILE_SIZE / 2;
+	static constexpr int HOLD_SQUARE_SIZE_TILES = 6;
+	const int offset = (HOLD_SQUARE_SIZE_TILES * TILE_SIZE) / 2;
 
-	static constexpr int ADVANCE_DIST = TILE_SIZE * 4;
+	static constexpr int ADVANCE_DIST = TILE_SIZE;
 	static constexpr int ADVANCE_DIST_SQ = ADVANCE_DIST * ADVANCE_DIST;
 
 	struct HoldPoint {
@@ -1981,27 +1992,31 @@ static void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *tar
 		int y;
 	};
 
-	const HoldPoint corners[4] = {
+	const HoldPoint points[8] = {
 		{center_x - offset, center_y - offset},
+		{center_x,          center_y - offset},
 		{center_x + offset, center_y - offset},
+		{center_x + offset, center_y},
 		{center_x + offset, center_y + offset},
+		{center_x,          center_y + offset},
 		{center_x - offset, center_y + offset},
+		{center_x - offset, center_y},
 	};
 
-	if (v->modular_holding_wp_index == UINT32_MAX || v->modular_holding_wp_index >= 4) {
-		v->modular_holding_wp_index = v->index.base() % 4;
+	if (v->modular_holding_wp_index == UINT32_MAX || v->modular_holding_wp_index >= 8) {
+		v->modular_holding_wp_index = v->index.base() % 8;
 	}
 
 	uint32_t idx = v->modular_holding_wp_index;
-	const int dx = v->x_pos - corners[idx].x;
-	const int dy = v->y_pos - corners[idx].y;
+	const int dx = v->x_pos - points[idx].x;
+	const int dy = v->y_pos - points[idx].y;
 	if (dx * dx + dy * dy <= ADVANCE_DIST_SQ) {
-		idx = (idx + 1) % 4;
+		idx = (idx + 1) % 8;
 		v->modular_holding_wp_index = idx;
 	}
 
-	*target_x = corners[idx].x;
-	*target_y = corners[idx].y;
+	*target_x = points[idx].x;
+	*target_y = points[idx].y;
 }
 
 

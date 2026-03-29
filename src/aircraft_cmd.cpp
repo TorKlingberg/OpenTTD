@@ -2128,34 +2128,19 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
 				v->modular_landing_goal = landing_goal;
 
-				if (v->subtype == AIR_AIRCRAFT) {
-					if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
-						/* Never commit landing without a reserved post-touchdown chain. */
-						if (ShouldLogModularRateLimited(v->index, 42, 128)) {
-							const TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
-							Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
-								v->index, runway_tile.base(),
-								landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
-								rollout == INVALID_TILE ? 0 : rollout.base(),
-								IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
-						}
-						v->modular_landing_goal = INVALID_TILE;
-						v->state = FLYING;
-						return;
+				if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
+					/* Never commit landing without a reserved post-touchdown chain. */
+					if (ShouldLogModularRateLimited(v->index, 42, 128)) {
+						const TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+						Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
+							v->index, runway_tile.base(),
+							landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
+							rollout == INVALID_TILE ? 0 : rollout.base(),
+							IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
 					}
-				} else {
-					/* Helicopters: don't land without an exit plan either. */
-					if (landing_goal == INVALID_TILE) {
-						v->state = FLYING;
-						return;
-					}
-					if (runway_tile == st->airport.modular_heli_landing_tile) {
-						if (!IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
-							v->state = FLYING;
-							return;
-						}
-						SetTaxiReservation(v, runway_tile);
-					}
+					v->modular_landing_goal = INVALID_TILE;
+					v->state = FLYING;
+					return;
 				}
 
 				/* Start landing sequence */
