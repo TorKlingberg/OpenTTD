@@ -1695,6 +1695,7 @@ static void ComputeModularHeliTiles(const Station *st)
 	if (best_apron != INVALID_TILE) {
 		st->airport.modular_heli_landing_tile = best_apron;
 		st->airport.modular_heli_takeoff_tile = best_apron;
+		Debug(misc, 2, "[ModAp] Station {} computed heli tile: apron {}", st->index, best_apron.base());
 		return;
 	}
 
@@ -1733,6 +1734,10 @@ static void ComputeModularHeliTiles(const Station *st)
 
 	st->airport.modular_heli_landing_tile = best_landing;
 	st->airport.modular_heli_takeoff_tile = best_takeoff;
+	Debug(misc, 2, "[ModAp] Station {} computed heli tile: landing={} takeoff={} (runway fallback)",
+		st->index,
+		best_landing == INVALID_TILE ? 0 : best_landing.base(),
+		best_takeoff == INVALID_TILE ? 0 : best_takeoff.base());
 }
 
 void EnsureModularHeliTilesValid(const Station *st)

@@ -2070,7 +2070,12 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 							hld != nullptr && IsModularRunwayPiece(hld->piece_type) &&
 							IsContiguousModularRunwayReservedByOther(v, st, st->airport.modular_heli_landing_tile);
 					if (tile_blocked || runway_blocked) {
-						runway_tile = FindModularLandingTarget(st, v);
+						/* Computed tile busy — circle and wait rather than using a runway. */
+						if (ShouldLogModularRateLimited(v->index, 50, 128)) {
+							Debug(misc, 3, "[ModAp] V{} heli computed landing tile {} blocked, circling", v->index, st->airport.modular_heli_landing_tile.base());
+						}
+						v->state = FLYING;
+						return;
 					} else {
 						runway_tile = st->airport.modular_heli_landing_tile;
 					}
