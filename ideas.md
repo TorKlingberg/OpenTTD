@@ -6,8 +6,6 @@
 * Planes on stand should turn to face terminal building if there is one
 * Make sure multiplayer won't desync
 
-* New menu for modular debug, while text labels and on/off buttons
-
 Pathing improvements:
 * What if a plane decides to go for service in the middle of a free-move segemnt, and can't get a path to hangar?
 * Cache for airport path-finding?
