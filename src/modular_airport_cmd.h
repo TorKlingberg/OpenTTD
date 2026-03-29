@@ -232,6 +232,7 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx);
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr, TileIndex rollout_tile = INVALID_TILE);
 bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_tile, TileIndex ground_goal);
 TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v);
+bool IsModularHeliLandingTileAvailable(const Station *st, const Aircraft *v, TileIndex tile);
 void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, int *target_x, int *target_y);
 Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile);
 const ModularHoldingLoop &GetModularHoldingLoop(const Station *st);

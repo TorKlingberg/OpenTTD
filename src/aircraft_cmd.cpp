@@ -2061,15 +2061,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					}
 				}
 				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
-					/* Computed heli tiles must still be available. Runway tiles also need runway-specific checks. */
-					const ModularAirportTileData *hld = st->airport.GetModularTileData(st->airport.modular_heli_landing_tile);
-					const bool tile_blocked =
-							IsTaxiTileReservedByOther(st, st->airport.modular_heli_landing_tile, v->index) ||
-							IsModularTileOccupiedByOtherAircraft(st, st->airport.modular_heli_landing_tile, v->index);
-					const bool runway_blocked =
-							hld != nullptr && IsModularRunwayPiece(hld->piece_type) &&
-							IsContiguousModularRunwayReservedByOther(v, st, st->airport.modular_heli_landing_tile);
-					if (tile_blocked || runway_blocked) {
+					if (!IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
 						/* Computed tile busy — circle and wait rather than using a runway. */
 						if (ShouldLogModularRateLimited(v->index, 50, 128)) {
 							Debug(misc, 3, "[ModAp] V{} heli computed landing tile {} blocked, circling", v->index, st->airport.modular_heli_landing_tile.base());
@@ -2081,6 +2073,10 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					}
 				} else {
 					runway_tile = FindModularLandingTarget(st, v);
+				}
+				if (runway_tile != INVALID_TILE && !IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
+					v->state = FLYING;
+					return;
 				}
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
@@ -2154,8 +2150,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 						return;
 					}
 					if (runway_tile == st->airport.modular_heli_landing_tile) {
-						if (IsTaxiTileReservedByOther(st, runway_tile, v->index) ||
-								IsModularTileOccupiedByOtherAircraft(st, runway_tile, v->index)) {
+						if (!IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
 							v->state = FLYING;
 							return;
 						}

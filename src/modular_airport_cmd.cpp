@@ -1148,6 +1148,20 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	return best_tile;
 }
 
+bool IsModularHeliLandingTileAvailable(const Station *st, const Aircraft *v, TileIndex tile)
+{
+	if (tile == INVALID_TILE || st->airport.modular_tile_data == nullptr) return false;
+
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return false;
+
+	if (IsTaxiTileReservedByOther(st, tile, v->index)) return false;
+	if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) return false;
+	if (IsModularRunwayPiece(data->piece_type) && IsContiguousModularRunwayReservedByOther(v, st, tile)) return false;
+
+	return true;
+}
+
 void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, int *target_x, int *target_y)
 {
 	/* Default to runway tile center */
@@ -1931,6 +1945,65 @@ void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target
 	if (wp_index != nullptr) *wp_index = v->modular_holding_wp_index;
 }
 
+static void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, int *target_y)
+{
+	int min_x = INT_MAX;
+	int min_y = INT_MAX;
+	int max_x = INT_MIN;
+	int max_y = INT_MIN;
+
+	if (st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			const int tx = static_cast<int>(TileX(data.tile));
+			const int ty = static_cast<int>(TileY(data.tile));
+			min_x = std::min(min_x, tx);
+			min_y = std::min(min_y, ty);
+			max_x = std::max(max_x, tx);
+			max_y = std::max(max_y, ty);
+		}
+	} else {
+		const int tx = static_cast<int>(TileX(st->xy));
+		const int ty = static_cast<int>(TileY(st->xy));
+		min_x = max_x = tx;
+		min_y = max_y = ty;
+	}
+
+	const int center_x = (min_x + max_x) * TILE_SIZE / 2 + TILE_SIZE / 2;
+	const int center_y = (min_y + max_y) * TILE_SIZE / 2 + TILE_SIZE / 2;
+	const int half_span_tiles = std::max(6, std::max(max_x - min_x + 1, max_y - min_y + 1) / 2 + 4);
+	const int offset = half_span_tiles * TILE_SIZE;
+
+	static constexpr int ADVANCE_DIST = TILE_SIZE * 4;
+	static constexpr int ADVANCE_DIST_SQ = ADVANCE_DIST * ADVANCE_DIST;
+
+	struct HoldPoint {
+		int x;
+		int y;
+	};
+
+	const HoldPoint corners[4] = {
+		{center_x - offset, center_y - offset},
+		{center_x + offset, center_y - offset},
+		{center_x + offset, center_y + offset},
+		{center_x - offset, center_y + offset},
+	};
+
+	if (v->modular_holding_wp_index == UINT32_MAX || v->modular_holding_wp_index >= 4) {
+		v->modular_holding_wp_index = v->index.base() % 4;
+	}
+
+	uint32_t idx = v->modular_holding_wp_index;
+	const int dx = v->x_pos - corners[idx].x;
+	const int dy = v->y_pos - corners[idx].y;
+	if (dx * dx + dy * dy <= ADVANCE_DIST_SQ) {
+		idx = (idx + 1) % 4;
+		v->modular_holding_wp_index = idx;
+	}
+
+	*target_x = corners[idx].x;
+	*target_y = corners[idx].y;
+}
+
 
 bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 {
@@ -1993,13 +2066,9 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	/* Altitude logic */
 	int z = v->z_pos;
 	if (v->subtype == AIR_HELICOPTER) {
-		/* Helicopters: fly to target at altitude, then descend vertically */
-		if (dist > 0) {
-			int target_z = airport_z + 20 * 5;
-			if (z < target_z) z++; else if (z > target_z) z--;
-		} else {
-			if (z > airport_z) z--;
-		}
+		/* Helicopters stay at their current altitude while moving laterally,
+		 * then descend straight down once centered over the touchdown tile. */
+		if (dist == 0 && z > airport_z) z--;
 	} else {
 		/* Planes: glide slope to runway */
 		if (z > airport_z) {
@@ -3854,24 +3923,30 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 				v->index, nearest_wp, n_wp, v->x_pos, v->y_pos, target_x, target_y);
 		}
 	} else {
-		/* Helicopter: fly directly towards helipad tile center (no runway-style
-		 * approach offset), or fall back to station center if no target found. */
-		TileIndex target = st->airport.tile;
-		if (target == INVALID_TILE) target = st->xy;
-		runway = FindModularLandingTarget(st, v);
-		if (runway != INVALID_TILE) {
-			const ModularAirportTileData *land_data = st->airport.GetModularTileData(runway);
-			if (land_data != nullptr && IsModularHelipadPiece(land_data->piece_type)) {
-				/* Helipad: fly directly to tile center, no FAF offset. */
-				target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
-				target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
-			} else {
-				/* Runway landing: use standard approach point. */
-				GetModularLandingApproachPoint(st, runway, &target_x, &target_y);
-			}
+		/* Helicopters either aim directly for a currently usable landing tile,
+		 * or hold in a square pattern until one becomes available. */
+		EnsureModularHeliTilesValid(st);
+		if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
+				st->airport.GetModularTileData(st->airport.modular_heli_landing_tile) == nullptr) {
+			st->airport.modular_heli_tiles_dirty = true;
+			EnsureModularHeliTilesValid(st);
+		}
+
+		if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
+				IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
+			runway = st->airport.modular_heli_landing_tile;
 		} else {
-			target_x = TileX(target) * TILE_SIZE + TILE_SIZE / 2;
-			target_y = TileY(target) * TILE_SIZE + TILE_SIZE / 2;
+			TileIndex candidate = FindModularLandingTarget(st, v);
+			if (candidate != INVALID_TILE && IsModularHeliLandingTileAvailable(st, v, candidate)) {
+				runway = candidate;
+			}
+		}
+
+		if (runway != INVALID_TILE) {
+			target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
+			target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
+		} else {
+			GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
 		}
 	}
 
