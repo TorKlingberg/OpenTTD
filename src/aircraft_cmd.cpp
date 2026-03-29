@@ -1694,6 +1694,16 @@ static void HandleModularHangar(Aircraft *v, const Station *st)
 		return;
 	}
 
+	if (v->subtype == AIR_HELICOPTER) {
+		EnsureModularHeliTilesValid(st);
+		if (st->airport.modular_heli_takeoff_tile != INVALID_TILE) {
+			v->ground_path_goal = st->airport.modular_heli_takeoff_tile;
+			v->modular_ground_target = MGT_HELI_TAKEOFF_TILE;
+			Debug(misc, 3, "[ModAp] Vehicle {} takeoff target heli_tile={}", v->index, st->airport.modular_heli_takeoff_tile.base());
+			return;
+		}
+	}
+
 	TileIndex runway = FindModularRunwayTileForTakeoff(st, v);
 	if (runway != INVALID_TILE) {
 		v->modular_takeoff_tile = runway;
@@ -2051,10 +2061,15 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					}
 				}
 				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
-					/* If computed tile is a runway, check it's not reserved by another aircraft. */
+					/* Computed heli tiles must still be available. Runway tiles also need runway-specific checks. */
 					const ModularAirportTileData *hld = st->airport.GetModularTileData(st->airport.modular_heli_landing_tile);
-					if (hld != nullptr && IsModularRunwayPiece(hld->piece_type) &&
-							IsContiguousModularRunwayReservedByOther(v, st, st->airport.modular_heli_landing_tile)) {
+					const bool tile_blocked =
+							IsTaxiTileReservedByOther(st, st->airport.modular_heli_landing_tile, v->index) ||
+							IsModularTileOccupiedByOtherAircraft(st, st->airport.modular_heli_landing_tile, v->index);
+					const bool runway_blocked =
+							hld != nullptr && IsModularRunwayPiece(hld->piece_type) &&
+							IsContiguousModularRunwayReservedByOther(v, st, st->airport.modular_heli_landing_tile);
+					if (tile_blocked || runway_blocked) {
 						runway_tile = FindModularLandingTarget(st, v);
 					} else {
 						runway_tile = st->airport.modular_heli_landing_tile;
@@ -2132,6 +2147,14 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					if (landing_goal == INVALID_TILE) {
 						v->state = FLYING;
 						return;
+					}
+					if (runway_tile == st->airport.modular_heli_landing_tile) {
+						if (IsTaxiTileReservedByOther(st, runway_tile, v->index) ||
+								IsModularTileOccupiedByOtherAircraft(st, runway_tile, v->index)) {
+							v->state = FLYING;
+							return;
+						}
+						SetTaxiReservation(v, runway_tile);
 					}
 				}
 

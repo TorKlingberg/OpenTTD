@@ -3427,6 +3427,12 @@ void HandleModularGroundArrival(Aircraft *v)
 			break;
 
 		case MGT_HELI_TAKEOFF_TILE:
+			if (st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
+				v->ground_path_goal = v->tile;
+				v->modular_ground_target = MGT_NONE;
+				v->state = TERM1;
+				return;
+			}
 			v->state = HELITAKEOFF;
 			v->modular_ground_target = MGT_NONE;
 			break;
