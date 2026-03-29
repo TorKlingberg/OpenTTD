@@ -237,6 +237,20 @@ static void ShowModularInfoOverlayWindow(Window *parent);
 
 class BuildModularInfoOverlayWindow;
 
+static Point GetModularAirportChildWindowPosition(const Window *parent, int16_t sm_width, int16_t sm_height, bool align_right)
+{
+	if (parent == nullptr) return GetToolbarAlignedWindowPosition(sm_width);
+
+	int x = align_right ? parent->left + parent->width - sm_width : parent->left;
+	int y = parent->top + parent->height;
+
+	x = SoftClamp(x, 0, _screen.width - sm_width);
+	if (y + sm_height > _screen.height) y = std::max(0, parent->top - sm_height);
+	y = SoftClamp(y, 0, _screen.height - sm_height);
+
+	return {x, y};
+}
+
 class BuildModularAirportWindow : public PickerWindowBase {
 	static constexpr int PIECE_COUNT = lengthof(_modular_airport_pieces);
 	friend class BuildModularInfoOverlayWindow;
@@ -375,14 +389,36 @@ public:
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
-		if ((widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) && widget != WID_MA_FENCE_TOOL) return;
-		/* Keep piece buttons and fence button the same size as standard construction toolbar buttons. */
+		if (widget == WID_MA_FENCE_TOOL) {
+			/* Keep the fence tool the same fixed width as other toolbar buttons, regardless of sprite width. */
+			size.width = ScaleGUITrad(22);
+			size.height = std::max<uint>(size.height, ScaleGUITrad(22));
+			return;
+		}
+		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
+		/* Keep piece buttons the same size as standard construction toolbar buttons. */
 		size.width = std::max<uint>(size.width, ScaleGUITrad(22));
 		size.height = std::max<uint>(size.height, ScaleGUITrad(22));
 	}
 
 	void DrawWidget(const Rect &r, WidgetID widget) const override
 	{
+		if (widget == WID_MA_FENCE_TOOL) {
+			DrawPixelInfo tmp_dpi;
+			Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
+			if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
+			AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+			Point offset;
+			ZoomLevel icon_zoom = _gui_zoom;
+			if (icon_zoom < ZoomLevel::Max) ++icon_zoom;
+			Dimension d = GetSpriteSize(SPR_AIRPORT_FENCE_Y, &offset, icon_zoom);
+			d.width -= offset.x;
+			d.height -= offset.y;
+			int x = (ir.Width() - static_cast<int>(d.width)) / 2;
+			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+			DrawSprite(SPR_AIRPORT_FENCE_Y, PAL_NONE, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			return;
+		}
 		if (widget < WID_MA_PIECE_FIRST || widget > WID_MA_PIECE_LAST) return;
 		const auto &piece = _modular_airport_pieces[widget - WID_MA_PIECE_FIRST];
 		DrawPixelInfo tmp_dpi;
@@ -1143,6 +1179,11 @@ public:
 		this->Window::Close();
 	}
 
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		return GetModularAirportChildWindowPosition(this->parent, sm_width, sm_height, false);
+	}
+
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
 	{
 		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
@@ -1264,6 +1305,11 @@ public:
 			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(3);
 		}
 		this->Window::Close();
+	}
+
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		return GetModularAirportChildWindowPosition(this->parent, sm_width, sm_height, false);
 	}
 
 	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
@@ -1516,6 +1562,11 @@ public:
 		this->Window::Close();
 	}
 
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		return GetModularAirportChildWindowPosition(this->parent, sm_width, sm_height, false);
+	}
+
 	void UpdateWidgetSize(WidgetID widget, Dimension &size,
 	                      [[maybe_unused]] const Dimension &padding,
 	                      [[maybe_unused]] Dimension &fill,
@@ -1606,8 +1657,14 @@ public:
 
 	void Close([[maybe_unused]] int data = 0) override
 	{
-		if (this->parent != nullptr) this->parent->InvalidateData();
+		Window *parent = this->parent;
 		this->Window::Close();
+		if (parent != nullptr) parent->InvalidateData();
+	}
+
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		return GetModularAirportChildWindowPosition(this->parent, sm_width, sm_height, true);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override

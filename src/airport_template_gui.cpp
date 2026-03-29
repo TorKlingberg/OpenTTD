@@ -464,8 +464,20 @@ public:
 		this->mode = TemplateManagerMode::None;
 		this->UpdateCursor();
 		CloseWindowById(WC_SELECT_STATION, 0);
-		if (this->parent != nullptr) this->parent->InvalidateData();
+		Window *parent = this->parent;
 		this->PickerWindowBase::Close();
+		if (parent != nullptr) parent->InvalidateData();
+	}
+
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		if (this->parent == nullptr) return this->Window::OnInitialPosition(sm_width, sm_height, window_number);
+
+		int x = SoftClamp(this->parent->left, 0, _screen.width - sm_width);
+		int y = this->parent->top + this->parent->height;
+		if (y + sm_height > _screen.height) y = std::max(0, this->parent->top - sm_height);
+		y = SoftClamp(y, 0, _screen.height - sm_height);
+		return {x, y};
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
