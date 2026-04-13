@@ -3960,7 +3960,24 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 		if (runway != INVALID_TILE) {
 			target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
 			target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
+
+			/* Once the helicopter is close enough to begin landing, do not keep
+			 * orbiting the touchdown tile unless the full landing chain can be
+			 * reserved right now. Otherwise fall back to the holding square. */
+			const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
+			if (dist_tiles < 50) {
+				TileIndex rollout = FindModularRunwayRolloutPoint(st, runway);
+				TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway;
+				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
+				if (!TryReserveLandingChain(v, st, runway, landing_goal)) {
+					runway = INVALID_TILE;
+				}
+			}
 		} else {
+			GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
+		}
+
+		if (runway == INVALID_TILE) {
 			GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
 		}
 	}
