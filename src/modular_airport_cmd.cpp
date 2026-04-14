@@ -1045,7 +1045,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 		if (!is_runway && !is_helipad) continue;
 
 		if (is_heli) {
-			/* Helicopters prefer helipads but can use runways */
+			if (is_runway) continue; /* Helicopters use helipads only; computed tile handles no-helipad airports */
 		} else {
 			if (is_helipad) continue; /* Planes can't land on helipads */
 		}
@@ -1122,8 +1122,6 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 		int dist_flight = abs(cx - v->x_pos) + abs(cy - v->y_pos);
 
 		int score = dist_flight;
-
-		if (is_heli && is_runway) score += 1000000; /* Prefer helipads significantly */
 
 		/* Per-runway terminal scoring: find the nearest stand from this runway's
 		 * rollout point, not a single global terminal. */
@@ -1679,7 +1677,8 @@ static void ComputeModularHeliTiles(const Station *st)
 
 	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return;
 
-	/* Step 1: If any helipad exists, use real helipads instead. */
+	/* If the airport has helipads, helicopters use those directly via
+	 * FindModularLandingTarget — no computed tile needed. */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (IsModularHelipadPiece(data.piece_type)) return;
 	}
@@ -2109,28 +2108,29 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		RecordAirportMovement(v->targetairport, true);
 		v->tile = v->modular_landing_tile;
 
-		TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
-
 		v->modular_landing_tile = INVALID_TILE;
 
 		AircraftEventHandler_Landing(v, st->airport.GetFTA());
 
-		if (rollout_point != INVALID_TILE) {
-			Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
-			v->ground_path_goal = rollout_point;
-			v->modular_ground_target = MGT_ROLLOUT;
-			v->state = TERM1;
-		} else if (v->subtype == AIR_HELICOPTER && v->modular_landing_goal != INVALID_TILE) {
-			/* Helicopter landed on apron tile (no rollout needed).
-			 * Use HandleModularGroundArrival via MGT_ROLLOUT to honor pre-selected landing goal. */
+		if (v->subtype == AIR_HELICOPTER && v->modular_landing_goal != INVALID_TILE) {
+			/* Helicopters never do runway rollout — go straight to the
+			 * pre-selected ground destination regardless of landing surface. */
 			v->ground_path_goal = v->tile;
 			v->modular_ground_target = MGT_ROLLOUT;
 			HandleModularGroundArrival(v);
-		} else {
-			if (v->subtype == AIR_HELICOPTER) {
-				Debug(misc, 1, "[ModAp] V{} helicopter touchdown without ground goal — should not happen", v->index);
-			}
+		} else if (v->subtype == AIR_HELICOPTER) {
+			Debug(misc, 1, "[ModAp] V{} helicopter touchdown without ground goal — should not happen", v->index);
 			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
+		} else {
+			TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->tile);
+			if (rollout_point != INVALID_TILE) {
+				Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
+				v->ground_path_goal = rollout_point;
+				v->modular_ground_target = MGT_ROLLOUT;
+				v->state = TERM1;
+			} else {
+				AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
+			}
 		}
 		return true;
 	}
@@ -3941,8 +3941,11 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 				v->index, nearest_wp, n_wp, v->x_pos, v->y_pos, target_x, target_y);
 		}
 	} else {
-		/* Helicopters either aim directly for a currently usable landing tile,
-		 * or hold in a square pattern until one becomes available. */
+		/* Helicopter landing tile selection:
+		 * - Airport with helipads: use FindModularLandingTarget (helipads only).
+		 * - Airport without helipads: use the single computed tile (apron or
+		 *   runway, recomputed only on layout change).
+		 * Circle in holding pattern if the target is busy. */
 		EnsureModularHeliTilesValid(st);
 		if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
 				st->airport.GetModularTileData(st->airport.modular_heli_landing_tile) == nullptr) {
@@ -3950,19 +3953,18 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 			EnsureModularHeliTilesValid(st);
 		}
 
-		if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
-				IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
-			runway = st->airport.modular_heli_landing_tile;
-		} else if (st->airport.modular_heli_landing_tile == INVALID_TILE) {
-			/* No computed heli tile (airport has helipads) — fall back to
-			 * normal landing target selection which may use a runway. */
+		if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
+			/* No helipads — use the computed tile. */
+			if (IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
+				runway = st->airport.modular_heli_landing_tile;
+			}
+		} else {
+			/* Airport has helipads — find an available one. */
 			TileIndex candidate = FindModularLandingTarget(st, v);
 			if (candidate != INVALID_TILE && IsModularHeliLandingTileAvailable(st, v, candidate)) {
 				runway = candidate;
 			}
 		}
-		/* else: computed tile exists but is temporarily unavailable — helicopter
-		 * will circle in the holding pattern until it becomes free. */
 
 		if (runway != INVALID_TILE) {
 			target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;

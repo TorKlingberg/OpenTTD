@@ -2051,32 +2051,23 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			TileIndex runway_tile = INVALID_TILE;
 
 			if (v->subtype == AIR_HELICOPTER) {
+				/* Helicopter landing: computed tile (no helipads) or helipad. */
 				EnsureModularHeliTilesValid(st);
 				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
-					/* Verify the computed tile still exists in the airport. */
 					const ModularAirportTileData *hd = st->airport.GetModularTileData(st->airport.modular_heli_landing_tile);
 					if (hd == nullptr) {
 						st->airport.modular_heli_tiles_dirty = true;
 						EnsureModularHeliTilesValid(st);
 					}
-				}
-				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
-					if (!IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
-						/* Computed tile busy — circle and wait rather than using a runway. */
-						if (ShouldLogModularRateLimited(v->index, 50, 128)) {
-							Debug(misc, 3, "[ModAp] V{} heli computed landing tile {} blocked, circling", v->index, st->airport.modular_heli_landing_tile.base());
-						}
-						v->state = FLYING;
-						return;
-					} else {
+					if (IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
 						runway_tile = st->airport.modular_heli_landing_tile;
 					}
 				} else {
+					/* Airport has helipads — find an available one. */
 					runway_tile = FindModularLandingTarget(st, v);
-				}
-				if (runway_tile != INVALID_TILE && !IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
-					v->state = FLYING;
-					return;
+					if (runway_tile != INVALID_TILE && !IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
+						runway_tile = INVALID_TILE;
+					}
 				}
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
