@@ -2128,6 +2128,15 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
 				v->modular_landing_goal = landing_goal;
 
+				/* Helicopters must have a concrete ground destination (terminal,
+				 * helipad, or hangar) before committing to land.  They can circle
+				 * indefinitely, so there is no reason to land without one. */
+				if (v->subtype == AIR_HELICOPTER && landing_goal == INVALID_TILE) {
+					v->modular_landing_goal = INVALID_TILE;
+					v->state = FLYING;
+					return;
+				}
+
 				if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
 					/* Never commit landing without a reserved post-touchdown chain. */
 					if (ShouldLogModularRateLimited(v->index, 42, 128)) {

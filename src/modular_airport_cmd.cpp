@@ -2127,6 +2127,9 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			v->modular_ground_target = MGT_ROLLOUT;
 			HandleModularGroundArrival(v);
 		} else {
+			if (v->subtype == AIR_HELICOPTER) {
+				Debug(misc, 1, "[ModAp] V{} helicopter touchdown without ground goal — should not happen", v->index);
+			}
 			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
 		}
 		return true;
@@ -3950,31 +3953,35 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 		if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
 				IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
 			runway = st->airport.modular_heli_landing_tile;
-		} else {
+		} else if (st->airport.modular_heli_landing_tile == INVALID_TILE) {
+			/* No computed heli tile (airport has helipads) — fall back to
+			 * normal landing target selection which may use a runway. */
 			TileIndex candidate = FindModularLandingTarget(st, v);
 			if (candidate != INVALID_TILE && IsModularHeliLandingTileAvailable(st, v, candidate)) {
 				runway = candidate;
 			}
 		}
+		/* else: computed tile exists but is temporarily unavailable — helicopter
+		 * will circle in the holding pattern until it becomes free. */
 
 		if (runway != INVALID_TILE) {
 			target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
 			target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
 
-			/* Once the helicopter is close enough to begin landing, do not keep
-			 * orbiting the touchdown tile unless the full landing chain can be
-			 * reserved right now. Otherwise fall back to the holding square. */
+			/* Lightweight pre-check: verify a ground destination exists before
+			 * approaching.  Do NOT call TryReserveLandingChain here — that would
+			 * reserve tiles as a side-effect, leaking reservations when the
+			 * helicopter later decides not to land.  The real reservation happens
+			 * exactly once, at commitment time in AircraftEventHandler_Flying. */
 			const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
 			if (dist_tiles < 50) {
 				TileIndex rollout = FindModularRunwayRolloutPoint(st, runway);
 				TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway;
 				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
-				if (!TryReserveLandingChain(v, st, runway, landing_goal)) {
+				if (landing_goal == INVALID_TILE) {
 					runway = INVALID_TILE;
 				}
 			}
-		} else {
-			GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
 		}
 
 		if (runway == INVALID_TILE) {
