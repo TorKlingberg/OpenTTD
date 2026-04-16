@@ -2355,7 +2355,6 @@ static void AirportGoToNextPosition(Aircraft *v)
 		if (phys_st != nullptr && phys_st->airport.blocks.Test(AirportBlock::Modular)) active_st = phys_st;
 	}
 
-	/* Check if this is a modular airport - handle before AircraftController */
 	if (active_st->airport.blocks.Test(AirportBlock::Modular)) {
 		/* For landing aircraft, use custom modular landing logic */
 		if (v->state == LANDING || v->state == ENDLANDING || v->state == HELILANDING || v->state == HELIENDLANDING) {

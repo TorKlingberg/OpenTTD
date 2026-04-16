@@ -455,8 +455,9 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		return strict;
 	}
 
-	/* If a runway goal itself is unreachable, crossing fallback cannot help. */
-	if (goal_is_runway) return strict;
+	/* Note: even when the goal is a runway, the crossing fallback may be needed
+	 * if an intermediate runway must be crossed to reach the goal runway
+	 * (e.g. parallel runways separated by grass/taxi tiles). */
 
 	/* Fallback: allow constrained perpendicular runway crossing. */
 	AirportGroundPath crossing = run_pathfind(true);

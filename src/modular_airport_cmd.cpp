@@ -779,10 +779,7 @@ bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, 
 
 	for (TileIndex tile : runway_tiles) {
 		if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) return true;
-
-		Tile t(tile);
-		if (!IsAirportTile(t)) continue;
-		if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) return true;
+		if (IsTaxiTileReservedByOther(st, tile, v->index)) return true;
 	}
 
 	return false;
@@ -3038,11 +3035,11 @@ static bool TryReserveRunwayResourcesAtomic(Aircraft *v, const Station *st, cons
 				return false;
 			}
 
-			Tile t(tile);
-			if (!IsAirportTile(t)) continue;
-			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) {
+			if (IsTaxiTileReservedByOther(st, tile, v->index)) {
 				if (ShouldLogModularRateLimited(v->index, 1, 128)) {
-					Debug(misc, 2, "[ModAp] V{} runway-reserve denied: runway tile {} reserved by V{}", v->index, tile.base(), GetAirportTileReserver(t).base());
+					Tile t(tile);
+					Debug(misc, 2, "[ModAp] V{} runway-reserve denied: runway tile {} reserved by V{}", v->index, tile.base(),
+						HasAirportTileReservation(t) ? GetAirportTileReserver(t).base() : 0);
 				}
 				return false;
 			}
@@ -3282,6 +3279,11 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 			break;
 		case MGT_ROLLOUT:
 			alt_goal = FindModularLandingGroundGoal(st, v, &alt_target);
+			break;
+		case MGT_HELI_TAKEOFF_TILE:
+			EnsureModularHeliTilesValid(st);
+			alt_goal = st->airport.modular_heli_takeoff_tile;
+			alt_target = MGT_HELI_TAKEOFF_TILE;
 			break;
 		default:
 			return false;
@@ -3689,6 +3691,11 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(v->ground_path_goal);
 	if (goal_data == nullptr) {
+		if (ShouldLogModularRateLimited(v->index, 62, 128)) {
+			Debug(misc, 1, "[ModAp] V{} goal_data null for goal={} tgt={} st={} vtile={}",
+				v->index, v->ground_path_goal.base(), v->modular_ground_target,
+				st->index, IsValidTile(v->tile) ? v->tile.base() : 0);
+		}
 		ClearTaxiPathState(v);
 		v->ground_path_goal = INVALID_TILE;
 		v->modular_ground_target = MGT_NONE;
@@ -3710,7 +3717,9 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			v->taxi_path->tiles[v->taxi_path_index] != v->tile ||
 			v->taxi_path->tiles.back() != v->ground_path_goal;
 	if (needs_rebuild) {
+		const uint16_t saved_wait = v->taxi_wait_counter;
 		ClearTaxiPathState(v, v->tile);
+		v->taxi_wait_counter = saved_wait;
 		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
