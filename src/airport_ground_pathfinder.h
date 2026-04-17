@@ -55,7 +55,7 @@ struct TaxiPath {
  * @param v The aircraft (optional, for stand avoidance).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr);
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false);
 
 /**
  * Check if a tile is a one-way taxiway tile.
@@ -74,6 +74,6 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile);
  * @param v The aircraft (optional, for stand avoidance).
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr);
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false);
 
 #endif /* AIRPORT_GROUND_PATHFINDER_H */

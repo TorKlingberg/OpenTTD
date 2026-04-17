@@ -2730,116 +2730,124 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		return true;
 	};
 
-	TileIndex best_path_tile = INVALID_TILE;
-	int best_path_score = INT_MAX;
-	TileIndex best_non_runway_taxi_tile = INVALID_TILE;
-	int best_non_runway_taxi_score = INT_MAX;
-	TileIndex best_blocked_tile = INVALID_TILE;  ///< Topologically reachable but currently blocked
-	int best_blocked_score = INT_MAX;
+	/* Try runway ends in two passes: first strict (no intermediate runway crossing),
+	 * then with crossing allowed. This prevents crossing paths from being selected
+	 * over temporarily-blocked strict paths, which would add runway contention. */
+	for (int pass = 0; pass < 2; ++pass) {
+		const bool allow_crossing = (pass == 1);
 
-	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-		if (!is_end) continue;
+		TileIndex best_path_tile = INVALID_TILE;
+		int best_path_score = INT_MAX;
+		TileIndex best_non_runway_taxi_tile = INVALID_TILE;
+		int best_non_runway_taxi_score = INT_MAX;
+		TileIndex best_blocked_tile = INVALID_TILE;  ///< Topologically reachable but currently blocked
+		int best_blocked_score = INT_MAX;
 
-		/* Skip runways that are too short to be usable. */
-		{
-			std::vector<TileIndex> rwy;
-			if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
-		}
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
+			if (!is_end) continue;
 
-		const uint8_t flags = GetRunwayFlags(st, data.tile);
-		if ((flags & RUF_TAKEOFF) == 0) continue;
-
-		/* Direction bits are interpreted as travel direction.
-		 * Takeoff from low end travels toward high end, and vice versa. */
-		const bool is_low = IsRunwayEndLow(st, data.tile);
-		if (is_low && (flags & RUF_DIR_HIGH) == 0) {
-			if (v != nullptr && ShouldLogModularRateLimited(v->index, 40, 256)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
+			/* Skip runways that are too short to be usable. */
+			{
+				std::vector<TileIndex> rwy;
+				if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
 			}
-			continue;
-		}
-		if (!is_low && (flags & RUF_DIR_LOW) == 0) {
-			if (v != nullptr && ShouldLogModularRateLimited(v->index, 41, 256)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
-			}
-			continue;
-		}
 
-		/* Size safety is a strong preference, but not a hard reject.
-		 * If no large-safe end is currently usable, allow best-effort takeoff. */
-		const bool large_safe = !large_takeoff_required || IsRunwaySafeForLarge(st, data.tile);
-		const int large_penalty = large_safe ? 0 : 1000000;
-		if (!large_safe) {
-			if (ShouldLogModularRateLimited(v->index, 42, 256)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff-large-unsafe: tile={}", v->index, data.tile.base());
-			}
-		}
+			const uint8_t flags = GetRunwayFlags(st, data.tile);
+			if ((flags & RUF_TAKEOFF) == 0) continue;
 
-		/* Prefer reachable takeoff ends. */
-		if (!can_ground_route) continue;
-		TaxiPath taxi_path = BuildTaxiPath(st, v->tile, data.tile, v);
-		if (!taxi_path.valid) {
-			if (v != nullptr && ShouldLogModularRateLimited(v->index, 35, 128)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff-path invalid: from={} to={}", v->index, v->tile.base(), data.tile.base());
-			}
-			continue;
-		}
-		if (!path_enterable(taxi_path)) {
-			if (v != nullptr && ShouldLogModularRateLimited(v->index, 36, 128)) {
-				/* Determine why path is not enterable for easier debugging. */
-				const uint8_t pe_seg_idx = FindTaxiSegmentIndex(&taxi_path, 1);
-				const char *pe_reason = "unknown";
-				if (pe_seg_idx >= taxi_path.segments.size()) {
-					pe_reason = "seg_idx_oob";
-				} else {
-					const TaxiSegment &pe_seg = taxi_path.segments[pe_seg_idx];
-					if (pe_seg.type == TaxiSegmentType::RUNWAY) {
-						pe_reason = "runway_busy";
-					} else if (pe_seg.type == TaxiSegmentType::ONE_WAY) {
-						pe_reason = "oneway_blocked";
-					} else {
-						pe_reason = "freemove_blocked";
-					}
+			/* Direction bits are interpreted as travel direction.
+			 * Takeoff from low end travels toward high end, and vice versa. */
+			const bool is_low = IsRunwayEndLow(st, data.tile);
+			if (is_low && (flags & RUF_DIR_HIGH) == 0) {
+				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 40, 256)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
 				}
-				Debug(misc, 2, "[ModAp] V{} takeoff-path not enterable: from={} to={} reason={}", v->index, v->tile.base(), data.tile.base(), pe_reason);
+				continue;
 			}
-			/* Track as "reachable but blocked" — prefer over unreachable Manhattan fallback. */
-			const int blocked_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
-			if (best_blocked_tile == INVALID_TILE || blocked_cost < best_blocked_score) {
-				best_blocked_score = blocked_cost;
-				best_blocked_tile = data.tile;
+			if (!is_low && (flags & RUF_DIR_LOW) == 0) {
+				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 41, 256)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
+				}
+				continue;
 			}
-			continue;
-		}
-		const int path_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
 
-		bool uses_runway_before_goal = false;
-		for (TileIndex t : taxi_path.tiles) {
-			if (t == data.tile) break;
-			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-			if (td != nullptr && IsModularRunwayPiece(td->piece_type)) {
-				uses_runway_before_goal = true;
-				break;
+			/* Size safety is a strong preference, but not a hard reject.
+			 * If no large-safe end is currently usable, allow best-effort takeoff. */
+			const bool large_safe = !large_takeoff_required || IsRunwaySafeForLarge(st, data.tile);
+			const int large_penalty = large_safe ? 0 : 1000000;
+			if (!large_safe) {
+				if (pass == 0 && ShouldLogModularRateLimited(v->index, 42, 256)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff-large-unsafe: tile={}", v->index, data.tile.base());
+				}
+			}
+
+			/* Prefer reachable takeoff ends. */
+			if (!can_ground_route) continue;
+			TaxiPath taxi_path = BuildTaxiPath(st, v->tile, data.tile, v, allow_crossing);
+			if (!taxi_path.valid) {
+				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 35, 128)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff-path invalid: from={} to={}", v->index, v->tile.base(), data.tile.base());
+				}
+				continue;
+			}
+			if (!path_enterable(taxi_path)) {
+				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 36, 128)) {
+					/* Determine why path is not enterable for easier debugging. */
+					const uint8_t pe_seg_idx = FindTaxiSegmentIndex(&taxi_path, 1);
+					const char *pe_reason = "unknown";
+					if (pe_seg_idx >= taxi_path.segments.size()) {
+						pe_reason = "seg_idx_oob";
+					} else {
+						const TaxiSegment &pe_seg = taxi_path.segments[pe_seg_idx];
+						if (pe_seg.type == TaxiSegmentType::RUNWAY) {
+							pe_reason = "runway_busy";
+						} else if (pe_seg.type == TaxiSegmentType::ONE_WAY) {
+							pe_reason = "oneway_blocked";
+						} else {
+							pe_reason = "freemove_blocked";
+						}
+					}
+					Debug(misc, 2, "[ModAp] V{} takeoff-path not enterable: from={} to={} reason={}", v->index, v->tile.base(), data.tile.base(), pe_reason);
+				}
+				/* Track as "reachable but blocked" — prefer over unreachable Manhattan fallback. */
+				const int blocked_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
+				if (best_blocked_tile == INVALID_TILE || blocked_cost < best_blocked_score) {
+					best_blocked_score = blocked_cost;
+					best_blocked_tile = data.tile;
+				}
+				continue;
+			}
+			const int path_cost = static_cast<int>(taxi_path.tiles.size() - 1) + large_penalty;
+
+			bool uses_runway_before_goal = false;
+			for (TileIndex t : taxi_path.tiles) {
+				if (t == data.tile) break;
+				const ModularAirportTileData *td = st->airport.GetModularTileData(t);
+				if (td != nullptr && IsModularRunwayPiece(td->piece_type)) {
+					uses_runway_before_goal = true;
+					break;
+				}
+			}
+
+			if (!uses_runway_before_goal &&
+					(best_non_runway_taxi_tile == INVALID_TILE || path_cost < best_non_runway_taxi_score)) {
+				best_non_runway_taxi_score = path_cost;
+				best_non_runway_taxi_tile = data.tile;
+			}
+
+			if (best_path_tile == INVALID_TILE || path_cost < best_path_score) {
+				best_path_score = path_cost;
+				best_path_tile = data.tile;
 			}
 		}
 
-		if (!uses_runway_before_goal &&
-				(best_non_runway_taxi_tile == INVALID_TILE || path_cost < best_non_runway_taxi_score)) {
-			best_non_runway_taxi_score = path_cost;
-			best_non_runway_taxi_tile = data.tile;
-		}
-
-		if (best_path_tile == INVALID_TILE || path_cost < best_path_score) {
-			best_path_score = path_cost;
-			best_path_tile = data.tile;
-		}
+		if (best_non_runway_taxi_tile != INVALID_TILE) return best_non_runway_taxi_tile;
+		if (best_path_tile != INVALID_TILE) return best_path_tile;
+		/* Topologically reachable but temporarily blocked — aircraft will wait for traffic to clear. */
+		if (best_blocked_tile != INVALID_TILE) return best_blocked_tile;
+		/* If strict pass found nothing, try again with crossing allowed. */
 	}
-
-	if (best_non_runway_taxi_tile != INVALID_TILE) return best_non_runway_taxi_tile;
-	if (best_path_tile != INVALID_TILE) return best_path_tile;
-	/* Topologically reachable but temporarily blocked — aircraft will wait for traffic to clear. */
-	if (best_blocked_tile != INVALID_TILE) return best_blocked_tile;
 	return INVALID_TILE;
 }
 
@@ -2852,7 +2860,8 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 	if (runway_end == INVALID_TILE || v == nullptr) return runway_end;
 	if (!CanUseModularGroundRouting(st, v)) return runway_end;
 
-	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v);
+	/* Runway already selected — allow crossing if needed. */
+	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v, true);
 	if (!path.found || path.tiles.empty()) return INVALID_TILE;
 
 	/* Allow queueing and progress along the selected takeoff runway.
@@ -3720,7 +3729,10 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		const uint16_t saved_wait = v->taxi_wait_counter;
 		ClearTaxiPathState(v, v->tile);
 		v->taxi_wait_counter = saved_wait;
-		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v);
+		/* Allow runway crossing when already committed to a goal — the two-pass
+		 * selection in FindModularRunwayTileForTakeoff ensures crossing goals
+		 * are only assigned when no strict path exists. */
+		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v, true);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
 			if (v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {

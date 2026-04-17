@@ -346,7 +346,7 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex
  * @param v The aircraft (optional, for reservation checking).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing)
 {
 	/* Validate inputs */
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) {
@@ -455,9 +455,10 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		return strict;
 	}
 
-	/* Note: even when the goal is a runway, the crossing fallback may be needed
-	 * if an intermediate runway must be crossed to reach the goal runway
-	 * (e.g. parallel runways separated by grass/taxi tiles). */
+	/* For runway goals, only allow crossing fallback when explicitly requested.
+	 * Without this gate, crossing paths to runways get selected over temporarily-blocked
+	 * non-crossing paths, adding unnecessary runway contention. */
+	if (goal_is_runway && !allow_runway_goal_crossing) return strict;
 
 	/* Fallback: allow constrained perpendicular runway crossing. */
 	AirportGroundPath crossing = run_pathfind(true);
@@ -560,11 +561,11 @@ static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const st
  * @param v The aircraft (optional, for stand avoidance).
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v)
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing)
 {
 	TaxiPath result;
 
-	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v);
+	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing);
 	if (!path.found) return result;
 
 	result.tiles = std::move(path.tiles);
