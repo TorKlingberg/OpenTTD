@@ -4,12 +4,13 @@ set -euo pipefail
 ## --current mode: build + run once on the working tree, no git interaction.
 if [[ "${1:-}" == "--current" ]]; then
 	YEARS_TO_RUN="${2:-1}"
+	SAVE_FILE="${3:-scripts/testdata/mass6-inair.sav}"
 	if ! [[ "${YEARS_TO_RUN}" =~ ^[0-9]+$ ]]; then
 		echo "error: years_to_run must be a non-negative integer" >&2
 		exit 1
 	fi
-	echo "Running current working tree (years=${YEARS_TO_RUN})"
-	run_output="$(bash scripts/n_years_plus2.sh "${YEARS_TO_RUN}" 2>&1)" || { echo "${run_output}"; exit 1; }
+	echo "Running current working tree (years=${YEARS_TO_RUN}, save=${SAVE_FILE})"
+	run_output="$(bash scripts/n_years_plus2.sh "${YEARS_TO_RUN}" "${SAVE_FILE}" 2>&1)" || { echo "${run_output}"; exit 1; }
 	echo "${run_output}"
 	landings_total=0
 	takeoffs_total=0
