@@ -2218,6 +2218,11 @@ void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *)
 
 static void AircraftEventHandler_HeliLanding(Aircraft *v, const AirportFTAClass *)
 {
+	/* Modular airports account arrivals in AirportMoveModularLanding. */
+	if (!Station::Get(v->targetairport)->airport.blocks.Test(AirportBlock::Modular)) {
+		RecordAirportMovement(v->targetairport, true);
+	}
+
 	v->state = HELIENDLANDING;
 	v->UpdateDeltaXY();
 }

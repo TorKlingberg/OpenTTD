@@ -2149,6 +2149,7 @@ bool AirportMoveModularHeliTakeoff(Aircraft *v, [[maybe_unused]] const Station *
 	ClearModularRunwayReservation(v);
 	ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 	v->state = FLYING;
+	RecordAirportMovement(v->targetairport, false);
 	v->tile = TileIndex{};
 	AircraftNextAirportPos_and_Order(v);
 	return true;
