@@ -28,7 +28,6 @@
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
 static const size_t MAX_CROSSING_CACHE_SIZE = 4096;
 static const int PASS_THROUGH_STAND_PENALTY = 5;
-static bool IsModularRunwayPieceLocal(uint8_t gfx);
 static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
 static std::unordered_set<uint64_t> _crossing_required_path_cache;
 
@@ -108,7 +107,7 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
 	const ModularAirportTileData *a_data = st->airport.GetModularTileData(a);
 	const ModularAirportTileData *b_data = st->airport.GetModularTileData(b);
 	if (a_data == nullptr || b_data == nullptr) return false;
-	if (!IsModularRunwayPieceLocal(a_data->piece_type) || !IsModularRunwayPieceLocal(b_data->piece_type)) return false;
+	if (!IsModularRunwayPiece(a_data->piece_type) || !IsModularRunwayPiece(b_data->piece_type)) return false;
 
 	const bool horizontal_a = (a_data->rotation % 2) == 0;
 	const bool horizontal_b = (b_data->rotation % 2) == 0;
@@ -122,7 +121,7 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
 		for (int x = x0; x <= x1; ++x) {
 			TileIndex t = TileXY(x, y);
 			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-			if (td == nullptr || !IsModularRunwayPieceLocal(td->piece_type) || (td->rotation % 2) != 0) return false;
+			if (td == nullptr || !IsModularRunwayPiece(td->piece_type) || (td->rotation % 2) != 0) return false;
 		}
 		return true;
 	}
@@ -134,7 +133,7 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
 	for (int y = y0; y <= y1; ++y) {
 		TileIndex t = TileXY(x, y);
 		const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-		if (td == nullptr || !IsModularRunwayPieceLocal(td->piece_type) || (td->rotation % 2) == 0) return false;
+		if (td == nullptr || !IsModularRunwayPiece(td->piece_type) || (td->rotation % 2) == 0) return false;
 	}
 	return true;
 }
@@ -176,8 +175,8 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Get tile data for 'to' */
 	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
 	if (to_data == nullptr) return false;
-	const bool from_is_runway = IsModularRunwayPieceLocal(from_data->piece_type);
-	const bool to_is_runway = IsModularRunwayPieceLocal(to_data->piece_type);
+	const bool from_is_runway = IsModularRunwayPiece(from_data->piece_type);
+	const bool to_is_runway = IsModularRunwayPiece(to_data->piece_type);
 
 	/* Runway tiles may only connect along the same runway axis.
 	 * In crossing fallback mode, allow perpendicular hops between adjacent
@@ -416,7 +415,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 					}
 
 					/* In crossing fallback mode, strongly prefer non-runway alternatives. */
-					if (allow_runway_crossing && neighbor != goal && IsModularRunwayPieceLocal(nb_data->piece_type)) {
+					if (allow_runway_crossing && neighbor != goal && IsModularRunwayPiece(nb_data->piece_type)) {
 						move_cost += 8;
 					}
 				}
@@ -437,7 +436,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	};
 
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
-	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPieceLocal(goal_data->piece_type));
+	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPiece(goal_data->piece_type));
 	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal);
 	const bool prefer_crossing = !goal_is_runway && _crossing_required_path_cache.contains(crossing_key);
 
@@ -474,28 +473,6 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 }
 
 /**
- * Check if a piece type is a modular runway piece.
- * (Local copy to avoid cross-file dependency on aircraft_cmd.cpp)
- */
-static bool IsModularRunwayPieceLocal(uint8_t gfx)
-{
-	switch (gfx) {
-		case APT_RUNWAY_1:
-		case APT_RUNWAY_2:
-		case APT_RUNWAY_3:
-		case APT_RUNWAY_4:
-		case APT_RUNWAY_5:
-		case APT_RUNWAY_END:
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default:
-			return false;
-	}
-}
-
-/**
  * Check if a tile is a one-way taxiway tile.
  * @param st The station.
  * @param tile The tile to check.
@@ -519,7 +496,7 @@ static TaxiSegmentType ClassifyTile(const Station *st, TileIndex tile)
 	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return TaxiSegmentType::FREE_MOVE;
 
-	if (IsModularRunwayPieceLocal(data->piece_type)) return TaxiSegmentType::RUNWAY;
+	if (IsModularRunwayPiece(data->piece_type)) return TaxiSegmentType::RUNWAY;
 	if (IsTaxiwayPiece(data->piece_type) && data->one_way_taxi) return TaxiSegmentType::ONE_WAY;
 	return TaxiSegmentType::FREE_MOVE;
 }
