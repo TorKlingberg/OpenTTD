@@ -1043,6 +1043,11 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 		if (is_heli) {
 			if (is_runway) continue; /* Helicopters use helipads only; computed tile handles no-helipad airports */
+			/* Skip helipads occupied or reserved by another aircraft so multiple helicopters
+			 * spread across free helipads instead of all targeting the same one. */
+			Tile t(data.tile);
+			if (HasAirportTileReservation(t) && GetAirportTileReserver(t) != v->index) continue;
+			if (IsModularTileOccupiedByOtherAircraft(st, data.tile, v->index)) continue;
 		} else {
 			if (is_helipad) continue; /* Planes can't land on helipads */
 		}
@@ -1135,14 +1140,18 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				score += dist_taxi * 4;
 			}
 		} else {
-			/* For helipad, find nearest terminal from helipad itself. */
-			TileIndex term_tile = FindFreeModularTerminal(st, v, data.tile);
-			if (term_tile != INVALID_TILE) {
-				int tx = TileX(term_tile) * TILE_SIZE;
-				int ty = TileY(term_tile) * TILE_SIZE;
-				int dist_taxi = abs(cx - tx) + abs(cy - ty);
-				score += dist_taxi * 4;
+			/* Helipads: prefer ones near a stand (cheap euclidean — helicopters don't taxi,
+			 * so an A*-aware probe like the runway path adds no information but is very
+			 * expensive when called per helipad per flying tick). */
+			int nearest_stand_dist = INT_MAX;
+			for (const ModularAirportTileData &d2 : *st->airport.modular_tile_data) {
+				if (d2.piece_type != APT_STAND && d2.piece_type != APT_STAND_1) continue;
+				int sx = TileX(d2.tile) * TILE_SIZE;
+				int sy = TileY(d2.tile) * TILE_SIZE;
+				int d = abs(cx - sx) + abs(cy - sy);
+				if (d < nearest_stand_dist) nearest_stand_dist = d;
 			}
+			if (nearest_stand_dist != INT_MAX) score += nearest_stand_dist * 4;
 		}
 
 		if (score < best_score) {
@@ -2410,16 +2419,13 @@ bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, Veh
 {
 	/* Hangars can hold multiple aircraft; never treat them as occupied. */
 	if (IsModularHangarTile(st, tile)) return false;
+	if (!st->TileBelongsToAirport(tile)) return false;
 
-	for (const Aircraft *other : Aircraft::Iterate()) {
-		if (other->index == self) continue;
-		if (!other->IsNormalAircraft()) continue;
-		if (!IsValidTile(other->tile)) continue;
-		if (other->tile != tile) continue;
-		if (!st->TileBelongsToAirport(other->tile)) continue;
-		return true;
-	}
-	return false;
+	return HasVehicleOnTile(tile, [self](const Vehicle *v) {
+		if (v->type != VEH_AIRCRAFT) return false;
+		if (v->index == self) return false;
+		return Aircraft::From(v)->IsNormalAircraft();
+	});
 }
 
 TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v, TileIndex from_tile)
