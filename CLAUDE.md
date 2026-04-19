@@ -80,6 +80,7 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 - `skills/stuck_plane_debugging.md` — detailed stuck-plane diagnosis playbook.
 - `skills/crash_debugging.md` — crash log and stacktrace triage steps.
 - `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.
+- `skills/performance_profiling.md` — macOS `sample` profiling + `quick_test.sh`/`regression_test.sh` validation.
 
 ## Tile Classification
 
