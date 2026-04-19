@@ -3969,56 +3969,14 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 				v->index, nearest_wp, n_wp, v->x_pos, v->y_pos, target_x, target_y);
 		}
 	} else {
-		/* Helicopter landing tile selection:
-		 * - Airport with helipads: use FindModularLandingTarget (helipads only).
-		 * - Airport without helipads: use the single computed tile (apron or
-		 *   runway, recomputed only on layout change).
-		 * Circle in holding pattern if the target is busy or airport is closed. */
-		if (!st->airport.blocks.Test(AirportBlock::AirportClosed)) {
-			EnsureModularHeliTilesValid(st);
-			if (st->airport.modular_heli_landing_tile != INVALID_TILE &&
-					st->airport.GetModularTileData(st->airport.modular_heli_landing_tile) == nullptr) {
-				st->airport.modular_heli_tiles_dirty = true;
-				EnsureModularHeliTilesValid(st);
-			}
-
-			if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
-				/* No helipads — use the computed tile. */
-				if (IsModularHeliLandingTileAvailable(st, v, st->airport.modular_heli_landing_tile)) {
-					runway = st->airport.modular_heli_landing_tile;
-				}
-			} else {
-				/* Airport has helipads — find an available one. */
-				TileIndex candidate = FindModularLandingTarget(st, v);
-				if (candidate != INVALID_TILE && IsModularHeliLandingTileAvailable(st, v, candidate)) {
-					runway = candidate;
-				}
-			}
-
-			if (runway != INVALID_TILE) {
-				target_x = TileX(runway) * TILE_SIZE + TILE_SIZE / 2;
-				target_y = TileY(runway) * TILE_SIZE + TILE_SIZE / 2;
-
-				/* Lightweight pre-check: verify a ground destination exists before
-				 * approaching.  Do NOT call TryReserveLandingChain here — that would
-				 * reserve tiles as a side-effect, leaking reservations when the
-				 * helicopter later decides not to land.  The real reservation happens
-				 * exactly once, at commitment time in AircraftEventHandler_Flying. */
-				const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
-				if (dist_tiles < 50) {
-					TileIndex rollout = FindModularRunwayRolloutPoint(st, runway);
-					TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway;
-					TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
-					if (landing_goal == INVALID_TILE) {
-						runway = INVALID_TILE;
-					}
-				}
-			}
-		}
-
-		if (runway == INVALID_TILE) {
-			GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
-		}
+		/* Helicopters always orbit the holding square while in FLYING.
+		 * AircraftEventHandler_Flying runs immediately after this and decides
+		 * whether to commit (reserve + transition to HELILANDING).  Once
+		 * committed, AirportMoveModularLanding flies the heli from its current
+		 * holding position to the landing tile.  Targeting the runway here too
+		 * would make every flying heli redirect to the same point in the brief
+		 * window between landings, even though only one of them will commit. */
+		GetModularHeliHoldingTarget(v, st, &target_x, &target_y);
 	}
 
 	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
