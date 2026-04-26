@@ -614,12 +614,14 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 			}
 		}
 
-		/* Keep runway resources only when runway ownership is semantically active:
-		 * - takeoff intent retention, or
-		 * - currently traversing a runway segment (turn-back support). */
+		/* Keep runway resources we currently own along the remaining taxi path.
+		 * This covers takeoff intent, active runway traversal, AND upcoming
+		 * transit crossings pre-committed by a FREE_MOVE segment — the latter
+		 * would otherwise be released post-step, leaving the aircraft stalled
+		 * on a FREE_MOVE (grass/apron) tile when re-reservation fails. */
 		const bool on_runway_segment = (v->taxi_current_segment < segments.size() &&
 				segments[v->taxi_current_segment].type == TaxiSegmentType::RUNWAY);
-		if (v->modular_ground_target == MGT_RUNWAY_TAKEOFF || on_runway_segment) {
+		{
 			std::set<TileIndex> runway_resource_keys;
 			uint16_t from = v->taxi_path_index;
 			uint16_t to = static_cast<uint16_t>(path_tiles.size());
@@ -633,6 +635,11 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 				TileIndex tile = path_tiles[i];
 				const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
 				if (td == nullptr || !IsModularRunwayPiece(td->piece_type)) continue;
+
+				/* Only retain runway resources we actually own — this naturally filters
+				 * to pre-committed transit crossings and active takeoff/rollout runways. */
+				Tile t(tile);
+				if (!IsAirportTile(t) || !HasAirportTileReservation(t) || GetAirportTileReserver(t) != v->index) continue;
 
 				std::vector<TileIndex> resource;
 				if (!GetContiguousModularRunwayTiles(st, tile, resource) || resource.empty()) continue;
@@ -3796,6 +3803,11 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	/* Runway-transit entry is a strict contract: always validate/reserve chain before move. */
 	if (next_type == TaxiSegmentType::RUNWAY && !next_is_terminal_runway) need_reserve = true;
+	/* Crossing into a new segment must atomically validate the whole next segment, not just
+	 * the entry tile. Otherwise, a runway-transit pre-commit (which only pins the first
+	 * continuation tile) can let an aircraft step into a FREE_MOVE segment without the rest
+	 * of it reserved, and stop on a non-safe tile (grass/apron) when downstream is blocked. */
+	if (next_segment != v->taxi_current_segment) need_reserve = true;
 	if (need_reserve && !TryReserveTaxiSegment(v, st, next_segment)) {
 		v->taxi_wait_counter++;
 		if (v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
