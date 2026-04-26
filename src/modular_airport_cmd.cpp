@@ -896,8 +896,13 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 
 	const ModularAirportTileData *touchdown_data = st->airport.GetModularTileData(runway_tile);
 	const bool touchdown_on_runway = touchdown_data != nullptr && IsModularRunwayPiece(touchdown_data->piece_type);
+	const bool heli_direct_ground = v->subtype == AIR_HELICOPTER;
 	TileIndex rollout = touchdown_on_runway ? FindModularRunwayRolloutPoint(st, runway_tile) : INVALID_TILE;
-	const TileIndex chain_origin = touchdown_on_runway ? rollout : runway_tile;
+	/* Fixed-wing aircraft reserve from the rollout point because they must stay on the
+	 * runway through landing rollout. Helicopters hand off to ground movement directly
+	 * from their touchdown tile, so their pre-landing chain must start there or the
+	 * touchdown handoff will rebuild the path and reservation set. */
+	const TileIndex chain_origin = (touchdown_on_runway && !heli_direct_ground) ? rollout : runway_tile;
 	const auto log_chain_fail = [&](std::string_view reason, TileIndex detail = INVALID_TILE) {
 		if (ShouldLogModularRateLimited(v->index, 43, 128)) {
 			Debug(misc, 2, "[ModAp] V{} landing-chain fail: reason={} runway={} goal={} rollout={} detail={}",
