@@ -614,22 +614,19 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 			}
 		}
 
-		/* Keep runway resources we currently own along the remaining taxi path.
-		 * This covers takeoff intent, active runway traversal, AND upcoming
-		 * transit crossings pre-committed by a FREE_MOVE segment — the latter
-		 * would otherwise be released post-step, leaving the aircraft stalled
-		 * on a FREE_MOVE (grass/apron) tile when re-reservation fails. */
+		/* Keep runway resources only when runway ownership is semantically active:
+		 * - takeoff intent retention via ShouldRetainRunwayReservation(),
+		 * - active runway traversal, or
+		 * - the immediately upcoming transit runway pre-committed by the current
+		 *   FREE_MOVE segment. Keeping arbitrary future owned runways reduces
+		 *   runway availability for unrelated traffic. */
 		const bool on_runway_segment = (v->taxi_current_segment < segments.size() &&
 				segments[v->taxi_current_segment].type == TaxiSegmentType::RUNWAY);
-		{
+		if (on_runway_segment) {
 			std::set<TileIndex> runway_resource_keys;
-			uint16_t from = v->taxi_path_index;
-			uint16_t to = static_cast<uint16_t>(path_tiles.size());
-			if (on_runway_segment) {
-				const TaxiSegment &active_seg = segments[v->taxi_current_segment];
-				from = std::max<uint16_t>(active_seg.start_index, v->taxi_path_index);
-				to = std::min<uint16_t>(static_cast<uint16_t>(path_tiles.size()), static_cast<uint16_t>(active_seg.end_index + 1));
-			}
+			const TaxiSegment &active_seg = segments[v->taxi_current_segment];
+			const uint16_t from = std::max<uint16_t>(active_seg.start_index, v->taxi_path_index);
+			const uint16_t to = std::min<uint16_t>(static_cast<uint16_t>(path_tiles.size()), static_cast<uint16_t>(active_seg.end_index + 1));
 
 			for (uint16_t i = from; i < to; ++i) {
 				TileIndex tile = path_tiles[i];
@@ -651,6 +648,29 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 				std::vector<TileIndex> resource;
 				if (GetContiguousModularRunwayTiles(st, key, resource)) {
 					for (TileIndex tile : resource) keep_set.push_back(tile);
+				}
+			}
+		} else if (v->taxi_current_segment < segments.size()) {
+			const TaxiSegment &active_seg = segments[v->taxi_current_segment];
+			if (active_seg.type == TaxiSegmentType::FREE_MOVE) {
+				const uint8_t next_seg_idx = static_cast<uint8_t>(v->taxi_current_segment + 1);
+				if (next_seg_idx < segments.size()) {
+					const TaxiSegment &next_seg = segments[next_seg_idx];
+					const bool next_is_transit_runway = next_seg.type == TaxiSegmentType::RUNWAY &&
+							!IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), next_seg);
+					if (next_is_transit_runway) {
+						for (uint16_t i = next_seg.start_index; i <= next_seg.end_index && i < path_tiles.size(); ++i) {
+							TileIndex tile = path_tiles[i];
+							Tile t(tile);
+							if (!IsAirportTile(t) || !HasAirportTileReservation(t) || GetAirportTileReserver(t) != v->index) continue;
+
+							std::vector<TileIndex> resource;
+							if (GetContiguousModularRunwayTiles(st, tile, resource)) {
+								for (TileIndex runway_tile : resource) keep_set.push_back(runway_tile);
+								break;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -3801,6 +3821,8 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	const TaxiSegment &next_seg_ref = v->taxi_path->segments[next_segment];
 	const bool next_is_terminal_runway = (next_type == TaxiSegmentType::RUNWAY) &&
 			IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), next_seg_ref);
+	const TaxiSegmentType current_type = (v->taxi_current_segment < v->taxi_path->segments.size()) ?
+			v->taxi_path->segments[v->taxi_current_segment].type : TaxiSegmentType::FREE_MOVE;
 	bool need_reserve = (next_type == TaxiSegmentType::ONE_WAY);
 	if (!need_reserve) {
 		Tile t(next_tile);
@@ -3808,11 +3830,19 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	/* Runway-transit entry is a strict contract: always validate/reserve chain before move. */
 	if (next_type == TaxiSegmentType::RUNWAY && !next_is_terminal_runway) need_reserve = true;
-	/* Crossing into a new segment must atomically validate the whole next segment, not just
-	 * the entry tile. Otherwise, a runway-transit pre-commit (which only pins the first
-	 * continuation tile) can let an aircraft step into a FREE_MOVE segment without the rest
-	 * of it reserved, and stop on a non-safe tile (grass/apron) when downstream is blocked. */
-	if (next_segment != v->taxi_current_segment) need_reserve = true;
+	/* Only force whole-segment revalidation for helicopters on the unsafe
+	 * transit-runway -> FREE_MOVE handoff. A transit runway pre-commit only pins the
+	 * first continuation tile, so stepping off the runway without validating the whole
+	 * FREE_MOVE segment can leave a helicopter waiting on grass/apron. Doing this for
+	 * all aircraft reduces unrelated fixed-wing throughput. */
+	if (next_segment != v->taxi_current_segment &&
+			v->subtype == AIR_HELICOPTER &&
+			current_type == TaxiSegmentType::RUNWAY &&
+			next_type == TaxiSegmentType::FREE_MOVE &&
+			v->taxi_current_segment < v->taxi_path->segments.size() &&
+			!IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), v->taxi_path->segments[v->taxi_current_segment])) {
+		need_reserve = true;
+	}
 	if (need_reserve && !TryReserveTaxiSegment(v, st, next_segment)) {
 		v->taxi_wait_counter++;
 		if (v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
