@@ -201,14 +201,16 @@ uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 		case APT_SMALL_DEPOT_NE:
 			return stock_gfx;
 		case APT_HELIPORT:
+			return APT_HELIPORT;
 		case APT_HELIPAD_1:
 		case APT_HELIPAD_2_FENCE_NW:
 		case APT_HELIPAD_2:
 		case APT_HELIPAD_2_FENCE_NE_SE:
+			return APT_HELIPAD_2;
 		case APT_HELIPAD_3_FENCE_SE_SW:
 		case APT_HELIPAD_3_FENCE_NW_SW:
 		case APT_HELIPAD_3_FENCE_NW:
-			return APT_HELIPAD_2;
+			return APT_HELIPAD_3_FENCE_NW;
 		case APT_TOWER:
 		case APT_TOWER_FENCE_SW:
 			return APT_TOWER;

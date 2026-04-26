@@ -188,7 +188,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 
 static constexpr HelipadPiece _helipad_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD, SPR_AIRPORT_HELIPAD, APT_HELIPAD_2,          0},
-	{STR_AIRPORT_HELISTATION,                         SPR_NEWHELIPAD,       APT_HELIPAD_3_FENCE_NW, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_PLAIN_H, SPR_NEWHELIPAD,       APT_HELIPAD_3_FENCE_NW, 0},
 	{STR_AIRPORT_HELIPORT,                            SPR_HELIPORT,         APT_HELIPORT,           10},
 };
 
@@ -1618,7 +1618,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_helipa
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
 		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN, WID_MAHPAD_CAPTION),
-			SetStringTip(STR_AIRPORT_CLASS_HELIPORTS, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+			SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_HELIPAD_PICKER_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
 		NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
@@ -1626,7 +1626,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_helipa
 			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_0), SetFill(0, 0),
 				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD),
 			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_1), SetFill(0, 0),
-				SetToolTip(STR_AIRPORT_HELISTATION),
+				SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_PLAIN_H),
 			NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_MAHPAD_PIECE_2), SetFill(0, 0),
 				SetToolTip(STR_AIRPORT_HELIPORT),
 		EndContainer(),
