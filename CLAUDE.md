@@ -53,7 +53,16 @@ Use screen-relative terms (up/down/left/right), not compass directions — all a
 
 # Modular Airports
 
-The modular airport system lets players build airports tile-by-tile. The reservation design is in `taxi_rules.md`.
+The modular airport system lets players build airports tile-by-tile. The reservation design is in `skills/reservations-design.md`.
+
+## Regression Testing
+
+`scripts/regression_test.sh` runs two saves under headless 5-year simulations and compares total airport movements against committed minimums:
+
+- `scripts/testdata/mass6-inair.sav` — minimum **9147** movements (mixed fixed-wing throughput)
+- `scripts/testdata/helis.sav` — minimum **9600** movements (helicopter-heavy stress)
+
+Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 
 ## Key Source Files
 
@@ -81,6 +90,7 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 - `skills/crash_debugging.md` — crash log and stacktrace triage steps.
 - `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.
 - `skills/performance_profiling.md` — macOS `sample` profiling + `quick_test.sh`/`regression_test.sh` validation.
+- `skills/reservations-design.md` — segment types, safe-stop invariant, reservation lifecycle, and entry-contract pitfalls.
 
 ## Tile Classification
 

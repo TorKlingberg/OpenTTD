@@ -146,6 +146,8 @@ Following the reserve-state line, look for:
 ```
 These list the exact tiles reserved by and tracked for this vehicle.
 
+**Note:** `owned-reservations` is read from **map state** (`HasAirportTileReservation`/`GetAirportTileReserver`), not from the vehicle's `taxi_reserved_tiles` vector. `tracked-runway` is the vehicle's `modular_runway_reservation`. A divergence between the two — or between either of them and what `taxi_reserved_tiles` "should" hold — is a tracker/map mismatch and a useful diagnostic for reservation overlap or leak bugs.
+
 ### Stuck diagnostics
 ```
 [ModAp] V74 unit#33 stuck(no-path) wait=64 state=2 tile=16811 goal=16556 tgt=4 path_found=0 cost=0
