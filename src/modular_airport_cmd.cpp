@@ -440,6 +440,7 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		v->modular_landing_goal = INVALID_TILE;
 		v->modular_takeoff_tile = INVALID_TILE;
 		v->modular_takeoff_progress = 0;
+		v->modular_holding_wp_index = UINT32_MAX;
 
 		/* Move to hangar tile. */
 		int hx = TileX(hangar) * TILE_SIZE + TILE_SIZE / 2;
@@ -447,10 +448,13 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		int hz = GetTileMaxPixelZ(hangar);
 
 		v->tile = hangar;
+		v->targetairport = st->index;
+		v->state = HANGAR;
+		v->pos = v->previous_pos = 0;
 		SetAircraftPosition(v, hx, hy, hz);
 		VehicleEnterDepot(v);
 
-		Debug(misc, 1, "[ModAp] Teleported vehicle {} from removed tile {} to hangar {}",
+		Debug(misc, 1, "[ModAp] Teleported vehicle {} from removed tile {} to hangar {}, state reset to HANGAR",
 			v->index, tile.base(), hangar.base());
 	}
 
