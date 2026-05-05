@@ -661,7 +661,7 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 		} else if (v->taxi_current_segment < segments.size()) {
 			const TaxiSegment &active_seg = segments[v->taxi_current_segment];
 			if (active_seg.type == TaxiSegmentType::FREE_MOVE) {
-				const uint8_t next_seg_idx = static_cast<uint8_t>(v->taxi_current_segment + 1);
+				const size_t next_seg_idx = static_cast<size_t>(v->taxi_current_segment) + 1;
 				if (next_seg_idx < segments.size()) {
 					const TaxiSegment &next_seg = segments[next_seg_idx];
 					const bool next_is_transit_runway = next_seg.type == TaxiSegmentType::RUNWAY &&
@@ -2093,6 +2093,11 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 	 * AfterLoadStations(). Reclaim the landing chain before continuing descent;
 	 * otherwise a second aircraft can choose the same helipad/touchdown tile. */
 	if (v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty() && v->landing_chain_path == nullptr) {
+		/* Helicopters require a concrete ground goal to land (they'd otherwise circle
+		 * forever — see aircraft_cmd.cpp commit path that rejects helicopter landing
+		 * when goal is INVALID_TILE). Re-derive the goal here when the saved value
+		 * was lost. Fixed-wing INVALID_TILE is preserved as-is: it represents a
+		 * deliberate "queue on a one-way buffer" landing handled by TryReserveLandingChain. */
 		if (v->subtype == AIR_HELICOPTER && v->modular_landing_goal == INVALID_TILE) {
 			TileIndex rollout = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
 			TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : v->modular_landing_tile;
@@ -3864,11 +3869,19 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	/* Runway-transit entry is a strict contract: always validate/reserve chain before move. */
 	if (next_type == TaxiSegmentType::RUNWAY && !next_is_terminal_runway) need_reserve = true;
-	/* Only force whole-segment revalidation for helicopters on the unsafe
-	 * transit-runway -> FREE_MOVE handoff. A transit runway pre-commit only pins the
-	 * first continuation tile, so stepping off the runway without validating the whole
-	 * FREE_MOVE segment can leave a helicopter waiting on grass/apron. Doing this for
-	 * all aircraft reduces unrelated fixed-wing throughput. */
+	/* Helicopter-specific correctness fix for the transit-runway -> FREE_MOVE handoff.
+	 * The transit runway pre-commit (see TryReserveTaxiSegment / FindRunwayTransitContinuationTile)
+	 * only pins the first continuation tile, not the rest of the FREE_MOVE segment.
+	 *
+	 * Helicopters routinely route runway -> FREE_MOVE because helipads and the apron
+	 * tiles they egress over are classified as FREE_MOVE. Without revalidating the full
+	 * segment here, a helicopter can step off the runway and stall on an unreserved
+	 * apron/grass tile.
+	 *
+	 * Fixed-wing paths typically transition runway -> ONE_WAY taxiway instead, where
+	 * the explicit ONE_WAY reservation already handles validation. Forcing this branch
+	 * for fixed-wing would cost throughput on the common case without preventing a
+	 * real bug. */
 	if (next_segment != v->taxi_current_segment &&
 			v->subtype == AIR_HELICOPTER &&
 			current_type == TaxiSegmentType::RUNWAY &&
