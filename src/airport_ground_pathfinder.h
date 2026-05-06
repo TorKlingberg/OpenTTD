@@ -11,6 +11,7 @@
 #define AIRPORT_GROUND_PATHFINDER_H
 
 #include "tile_type.h"
+#include <cstdint>
 #include <vector>
 
 struct Station;
@@ -75,5 +76,9 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile);
  * @return A TaxiPath with tiles and segments filled in.
  */
 TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false);
+
+extern std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
+void NormalizeModularAirportCrossingPathCache();
+void ClearModularAirportCrossingPathCache();
 
 #endif /* AIRPORT_GROUND_PATHFINDER_H */

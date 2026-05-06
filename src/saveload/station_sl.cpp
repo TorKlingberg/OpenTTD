@@ -132,17 +132,20 @@ void AfterLoadStations()
 		RoadStopUpdateCachedTriggers(st);
 	}
 
-	/* Clear modular airport tile reservations — tracking vectors are not saved,
-	 * so all map-level reservation bits are orphaned on load. Aircraft will
-	 * re-establish them as they resume ground movement. */
-	for (Station *sta2 : Station::Iterate()) {
-		if (sta2->airport.modular_tile_data == nullptr) continue;
-		for (const ModularAirportTileData &data : *sta2->airport.modular_tile_data) {
-			if (!IsValidTile(data.tile)) continue;
-			Tile t(data.tile);
-			if (!IsAirportTile(t)) continue;
-			if (HasAirportTileReservation(t)) {
-				SetAirportTileReservation(t, false);
+	/* Before SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, aircraft-side tracking vectors
+	 * were not saved, so map-level reservation bits became orphaned after load.
+	 * Newer saves keep those vectors and must preserve the map reservations as part
+	 * of the multiplayer game state. */
+	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_RESERVATION_VECTORS)) {
+		for (Station *sta2 : Station::Iterate()) {
+			if (sta2->airport.modular_tile_data == nullptr) continue;
+			for (const ModularAirportTileData &data : *sta2->airport.modular_tile_data) {
+				if (!IsValidTile(data.tile)) continue;
+				Tile t(data.tile);
+				if (!IsAirportTile(t)) continue;
+				if (HasAirportTileReservation(t)) {
+					SetAirportTileReservation(t, false);
+				}
 			}
 		}
 	}

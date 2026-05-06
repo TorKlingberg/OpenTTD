@@ -19,7 +19,6 @@
 #include "table/airporttile_ids.h"
 #include <queue>
 #include <unordered_map>
-#include <unordered_set>
 #include <algorithm>
 
 #include "safeguards.h"
@@ -29,11 +28,49 @@ static const int MAX_PATHFINDER_ITERATIONS = 1000;
 static const size_t MAX_CROSSING_CACHE_SIZE = 4096;
 static const int PASS_THROUGH_STAND_PENALTY = 5;
 static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
-static std::unordered_set<uint64_t> _crossing_required_path_cache;
+std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
 
 static uint64_t BuildCrossingCacheKey(TileIndex start, TileIndex goal)
 {
 	return (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
+}
+
+void NormalizeModularAirportCrossingPathCache()
+{
+	std::sort(_modular_airport_crossing_required_path_cache.begin(), _modular_airport_crossing_required_path_cache.end());
+	_modular_airport_crossing_required_path_cache.erase(
+			std::unique(_modular_airport_crossing_required_path_cache.begin(), _modular_airport_crossing_required_path_cache.end()),
+			_modular_airport_crossing_required_path_cache.end());
+	if (_modular_airport_crossing_required_path_cache.size() > MAX_CROSSING_CACHE_SIZE) {
+		_modular_airport_crossing_required_path_cache.clear();
+	}
+}
+
+void ClearModularAirportCrossingPathCache()
+{
+	_modular_airport_crossing_required_path_cache.clear();
+}
+
+static bool HasCrossingCacheKey(uint64_t key)
+{
+	return std::binary_search(_modular_airport_crossing_required_path_cache.begin(), _modular_airport_crossing_required_path_cache.end(), key);
+}
+
+static void EraseCrossingCacheKey(uint64_t key)
+{
+	auto it = std::lower_bound(_modular_airport_crossing_required_path_cache.begin(), _modular_airport_crossing_required_path_cache.end(), key);
+	if (it != _modular_airport_crossing_required_path_cache.end() && *it == key) {
+		_modular_airport_crossing_required_path_cache.erase(it);
+	}
+}
+
+static bool InsertCrossingCacheKey(uint64_t key)
+{
+	auto it = std::lower_bound(_modular_airport_crossing_required_path_cache.begin(), _modular_airport_crossing_required_path_cache.end(), key);
+	if (it != _modular_airport_crossing_required_path_cache.end() && *it == key) return false;
+	_modular_airport_crossing_required_path_cache.insert(it, key);
+	if (_modular_airport_crossing_required_path_cache.size() > MAX_CROSSING_CACHE_SIZE) _modular_airport_crossing_required_path_cache.clear();
+	return true;
 }
 
 /** Node in the A* search */
@@ -42,11 +79,16 @@ struct PathNode {
 	int g_cost;          ///< Cost from start to this node
 	int f_cost;          ///< Estimated total cost (g_cost + heuristic)
 	TileIndex parent;    ///< Parent tile in the path
+	uint32_t sequence;    ///< Deterministic insertion order for equal-cost ties
 
-	PathNode(TileIndex t, int g, int f, TileIndex p) : tile(t), g_cost(g), f_cost(f), parent(p) {}
+	PathNode(TileIndex t, int g, int f, TileIndex p, uint32_t seq) : tile(t), g_cost(g), f_cost(f), parent(p), sequence(seq) {}
 
 	/** Comparison for priority queue (lower f_cost = higher priority) */
-	bool operator>(const PathNode &other) const { return f_cost > other.f_cost; }
+	bool operator>(const PathNode &other) const
+	{
+		if (this->f_cost != other.f_cost) return this->f_cost > other.f_cost;
+		return this->sequence < other.sequence;
+	}
 };
 
 /**
@@ -376,9 +418,10 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> open_set;
 		std::unordered_map<TileIndex, int> g_costs;
 		std::unordered_map<TileIndex, TileIndex> parents;
+		uint32_t sequence = 0;
 
 		int h_start = CalculateHeuristic(start, goal);
-		open_set.emplace(start, 0, h_start, INVALID_TILE);
+		open_set.emplace(start, 0, h_start, INVALID_TILE, sequence++);
 		g_costs[start] = 0;
 
 		int iterations = 0;
@@ -427,7 +470,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 					parents[neighbor] = current.tile;
 
 					int h = CalculateHeuristic(neighbor, goal);
-					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile);
+					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile, sequence++);
 				}
 			}
 		}
@@ -438,19 +481,20 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
 	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPiece(goal_data->piece_type));
 	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal);
-	const bool prefer_crossing = !goal_is_runway && _crossing_required_path_cache.contains(crossing_key);
+	const bool prefer_crossing = !goal_is_runway && HasCrossingCacheKey(crossing_key);
 
-	/* Learned crossing-required pair: go straight to crossing-capable pass. */
+	/* Learned crossing-required pair: go straight to crossing-capable pass.
+	 * This cache is saved because it changes live path choices. */
 	if (prefer_crossing) {
 		AirportGroundPath cached_crossing = run_pathfind(true);
 		if (cached_crossing.found) return cached_crossing;
-		_crossing_required_path_cache.erase(crossing_key);
+		EraseCrossingCacheKey(crossing_key);
 	}
 
 	/* First pass: strict mode blocks non-goal runway entry from taxi/apron tiles. */
 	AirportGroundPath strict = run_pathfind(false);
 	if (strict.found) {
-		_crossing_required_path_cache.erase(crossing_key);
+		EraseCrossingCacheKey(crossing_key);
 		return strict;
 	}
 
@@ -462,8 +506,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	/* Fallback: allow constrained perpendicular runway crossing. */
 	AirportGroundPath crossing = run_pathfind(true);
 	if (crossing.found) {
-		const bool is_new_pair = _crossing_required_path_cache.insert(crossing_key).second;
-		if (_crossing_required_path_cache.size() > MAX_CROSSING_CACHE_SIZE) _crossing_required_path_cache.clear();
+		const bool is_new_pair = InsertCrossingCacheKey(crossing_key);
 		if (is_new_pair) {
 			Debug(misc, 2, "[ModAp] pathfind-crossing-required: from={} to={} cost={} strict_failed",
 				start.base(), goal.base(), crossing.cost);

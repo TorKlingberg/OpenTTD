@@ -12,7 +12,13 @@
 #include "saveload.h"
 #include "newgrf_sl.h"
 
+#include "../airport_ground_pathfinder.h"
+
 #include "../safeguards.h"
+
+static const SaveLoad _modular_airport_crossing_path_cache_desc[] = {
+	SLEG_CONDVECTOR("keys", _modular_airport_crossing_required_path_cache, SLE_UINT64, SLV_MODULAR_AIRPORT_CROSSING_CACHE, SL_MAX_VERSION),
+};
 
 struct APIDChunkHandler : NewGRFMappingChunkHandler {
 	APIDChunkHandler() : NewGRFMappingChunkHandler('APID', _airport_mngr) {}
@@ -22,11 +28,37 @@ struct ATIDChunkHandler : NewGRFMappingChunkHandler {
 	ATIDChunkHandler() : NewGRFMappingChunkHandler('ATID', _airporttile_mngr) {}
 };
 
+struct MACPChunkHandler : ChunkHandler {
+	MACPChunkHandler() : ChunkHandler('MACP', CH_TABLE) {}
+
+	void Save() const override
+	{
+		NormalizeModularAirportCrossingPathCache();
+		SlTableHeader(_modular_airport_crossing_path_cache_desc);
+
+		SlSetArrayIndex(0);
+		SlGlobList(_modular_airport_crossing_path_cache_desc);
+	}
+
+	void Load() const override
+	{
+		_modular_airport_crossing_required_path_cache.clear();
+		const std::vector<SaveLoad> slt = SlTableHeader(_modular_airport_crossing_path_cache_desc);
+
+		if (SlIterateArray() == -1) return;
+		SlGlobList(slt);
+		if (SlIterateArray() != -1) SlErrorCorrupt("Too many MACP entries");
+		NormalizeModularAirportCrossingPathCache();
+	}
+};
+
 static const ATIDChunkHandler ATID;
 static const APIDChunkHandler APID;
+static const MACPChunkHandler MACP;
 static const ChunkHandlerRef airport_chunk_handlers[] = {
 	ATID,
 	APID,
+	MACP,
 };
 
 extern const ChunkHandlerTable _airport_chunk_handlers(airport_chunk_handlers);

@@ -109,7 +109,7 @@ Notes:
 
 ## Saveload
 
-Modular tile data is saved via `ModularAirportTileDataDesc` in `src/saveload/station_sl.cpp`. Aircraft modular fields (`taxi_path`, `taxi_reserved_tiles`, `modular_holding_wp_index`, etc.) are **not** saved — recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved from `SLV_MODULAR_AIRPORT_RESERVATION_VECTORS` onward because map-level reservation bits affect multiplayer game state. The crossing-required ground-path cache is saved via the `MACP` chunk from `SLV_MODULAR_AIRPORT_CROSSING_CACHE` because it changes path choices. `taxi_path`, `landing_chain_path`, and `modular_holding_wp_index` are **not** saved — paths/holding phase are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
 
 ## Common Pitfalls
 

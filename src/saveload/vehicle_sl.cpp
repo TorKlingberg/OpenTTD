@@ -983,6 +983,8 @@ public:
 		 SLE_CONDVAR(Aircraft, modular_ground_target, SLE_UINT8,                  SLV_MODULAR_AIRPORT_RESERVATION, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, modular_takeoff_tile,  SLE_UINT32,                 SLV_MODULAR_AIRPORT_RESERVATION, SL_MAX_VERSION),
 		 SLE_CONDVAR(Aircraft, modular_takeoff_progress, SLE_UINT16,              SLV_MODULAR_AIRPORT_RESERVATION, SL_MAX_VERSION),
+		 SLE_CONDVECTOR(Aircraft, taxi_reserved_tiles, SLE_UINT32,                SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, SL_MAX_VERSION),
+		 SLE_CONDVECTOR(Aircraft, modular_runway_reservation, SLE_UINT32,         SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, SL_MAX_VERSION),
 	};
 	static inline const SaveLoadCompatTable compat_description = _vehicle_aircraft_sl_compat;
 

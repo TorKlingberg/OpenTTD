@@ -81,14 +81,12 @@ struct ModularTakeoffFailLogState {
 
 /** File-scope static maps that must be cleared on save/load. */
 static std::unordered_map<uint32_t, uint64_t> _rate_limit_last_tick;
-static std::map<uint64_t, uint64_t> _untracked_first_seen;
 static std::map<VehicleID, ModularTakeoffFailLogState> _takeoff_fail_state;
 
 /** Reset all static state in modular airport code; called after loading a save. */
 void ResetModularAirportStaticState()
 {
 	_rate_limit_last_tick.clear();
-	_untracked_first_seen.clear();
 	_takeoff_fail_state.clear();
 }
 
@@ -2746,27 +2744,12 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	}
 
 	/* Aircraft is active on this station ground but tile is not in any tracked intent.
-	 * Trust the reservation short-term — but if the same untracked reservation persists
-	 * for >1024 ticks (~17 seconds), treat it as a genuine orphan from a tracking bug. */
-	const uint64_t key = (static_cast<uint64_t>(tile.base()) << 32) | static_cast<uint64_t>(reserver.base());
-	const uint64_t now = TimerGameTick::counter;
-
-	auto [it, inserted] = _untracked_first_seen.try_emplace(key, now);
-	if (inserted || (now - it->second) < 1024) return false;
-
-	/* Persistent untracked reservation — clear it as orphaned. */
-	_untracked_first_seen.erase(it);
-	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=untracked_timeout state={} vtile={}",
+	 * Clear immediately rather than after an unsaved timeout: the decision is derived
+	 * entirely from saved game state, so multiplayer joiners reach the same result. */
+	Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} V{} unit#{} reason=active_untracked state={} vtile={}",
 		st->index, GetModularAirportDebugName(st), tile.base(), a->index, a->unitnumber, a->state,
 		IsValidTile(a->tile) ? a->tile.base() : 0);
 	ClearModularAirportTileReservation(t);
-
-	/* Periodically prune old entries (every 256 ticks). */
-	if ((now & 0xFF) == 0) {
-		std::erase_if(_untracked_first_seen, [now](const auto &pair) {
-			return (now - pair.second) > 2048;
-		});
-	}
 	return true;
 }
 

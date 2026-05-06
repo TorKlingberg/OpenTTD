@@ -419,6 +419,8 @@ enum SaveLoadVersion : uint16_t {
 	SLV_AIRPORT_THROUGHPUT,                 ///< 367  Modular airport throughput counters.
 	SLV_MODULAR_AIRPORT_FENCE,             ///< 368  Modular airport edge fences.
 	SLV_MODULAR_AIRPORT_RESERVATION,        ///< 369  Modular airport reservation state for aircraft.
+	SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, ///< 370  Modular airport aircraft reservation vectors.
+	SLV_MODULAR_AIRPORT_CROSSING_CACHE,     ///< 371  Modular airport crossing-required path cache.
 
 	SL_MAX_VERSION,                         ///< Highest possible saveload version
 };

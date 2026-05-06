@@ -32,6 +32,7 @@
 #include "town_kdtree.h"
 #include "viewport_kdtree.h"
 #include "newgrf_profiling.h"
+#include "airport_ground_pathfinder.h"
 #include "3rdparty/monocypher/monocypher.h"
 
 #include "safeguards.h"
@@ -106,6 +107,7 @@ void InitializeGame(uint size_x, uint size_y, bool reset_date, bool reset_settin
 	if (reset_settings) MakeNewgameSettingsLive();
 
 	_newgrf_profilers.clear();
+	ClearModularAirportCrossingPathCache();
 
 	if (reset_date) {
 		TimerGameCalendar::Date new_date = TimerGameCalendar::ConvertYMDToDate(_settings_game.game_creation.starting_year, 0, 1);
