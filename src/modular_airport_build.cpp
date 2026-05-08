@@ -817,7 +817,8 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool new_facility, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
 	if (!is_modular_replace) {
-		Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlag::Execute, tile);
+		CommandCost ret = Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlag::Execute, tile);
+		assert(ret.Succeeded());
 	}
 
 	if (new_facility) nearest->noise_reached += newnoise_level;
