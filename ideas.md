@@ -10,3 +10,4 @@ Pathing improvements:
 * What if a plane decides to go for service in the middle of a free-move segemnt, and can't get a path to hangar?
 * Cache for airport path-finding?
 
+* OpenTTD has unit tests: openttd_test in src/tests/ Extend it with tests for modular airports. Don't test every single line, just the most important things.

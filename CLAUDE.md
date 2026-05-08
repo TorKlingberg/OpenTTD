@@ -57,7 +57,7 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs two saves under headless 5-year simulations and compares total airport movements against committed minimums:
+`scripts/regression_test.sh` runs two saves under headless 5-year simulations (take ~2 minutes) and compares total airport movements against committed minimums:
 
 - `scripts/testdata/mass6-inair.sav` — minimum **9147** movements (mixed fixed-wing throughput)
 - `scripts/testdata/helis.sav` — minimum **9600** movements (helicopter-heavy stress)
