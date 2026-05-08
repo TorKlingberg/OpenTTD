@@ -144,7 +144,7 @@ static void LogModularHangarDiagnostics(const Station *st, const Aircraft *v, st
 		if (!IsModularHangarPiece(data.piece_type)) continue;
 		hangar_count++;
 
-		const AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v);
+		const AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v, false, false);
 		Tile t(data.tile);
 		const bool reserved = IsAirportTile(t) && HasAirportTileReservation(t);
 		const VehicleID reserver = reserved ? GetAirportTileReserver(t) : VehicleID::Invalid();

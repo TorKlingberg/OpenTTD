@@ -3708,7 +3708,7 @@ void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v)
 			bool path_ok = false;
 			int path_cost = -1;
 			if (can_ground_route) {
-				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr);
+				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr, false, false);
 				path_ok = path.found;
 				path_cost = path.found ? path.cost : -1;
 			}

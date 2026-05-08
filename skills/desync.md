@@ -105,6 +105,8 @@ Ground pathfinding affects simulation.
 
 Any learned path preference, crossing-required pair, or route-selection cache must either be saved or removed. If using A*, define equal-cost queue order explicitly.
 
+Diagnostic and debug-only callers of pathfinder helpers must not mutate that cache. `FindAirportGroundPath` takes an `update_cache` flag — pass `false` from any caller that is gated by unsaved state (rate-limit maps, debug-suppression counters). Otherwise, an unsaved gate that fires on the host but not on a freshly-joined client diverges the saved cache and changes future path choices.
+
 Stale-reservation cleanup must be deterministic.
 
 Avoid unsaved "seen for N ticks" maps unless they are saved. Prefer decisions based only on saved vehicle state, saved map state, and synchronized game tick.

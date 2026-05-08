@@ -54,9 +54,13 @@ struct TaxiPath {
  * @param start Starting tile.
  * @param goal Goal tile.
  * @param v The aircraft (optional, for stand avoidance).
+ * @param allow_runway_goal_crossing Allow crossing-fallback paths when the goal is a runway.
+ * @param update_cache When false, the crossing-required cache is read but never written.
+ *                     Diagnostic/debug probes must pass false so that unsaved rate-limit
+ *                     gating cannot diverge the saved cache across multiplayer clients.
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false);
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true);
 
 /**
  * Check if a tile is a one-way taxiway tile.

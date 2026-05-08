@@ -387,7 +387,7 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex
  * @param v The aircraft (optional, for reservation checking).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache)
 {
 	/* Validate inputs */
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) {
@@ -484,17 +484,19 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	const bool prefer_crossing = !goal_is_runway && HasCrossingCacheKey(crossing_key);
 
 	/* Learned crossing-required pair: go straight to crossing-capable pass.
-	 * This cache is saved because it changes live path choices. */
+	 * This cache is saved because it changes live path choices. Diagnostic
+	 * probes (update_cache=false) read the learned preference but never write,
+	 * so unsaved rate-limit gating cannot diverge cache state across MP clients. */
 	if (prefer_crossing) {
 		AirportGroundPath cached_crossing = run_pathfind(true);
 		if (cached_crossing.found) return cached_crossing;
-		EraseCrossingCacheKey(crossing_key);
+		if (update_cache) EraseCrossingCacheKey(crossing_key);
 	}
 
 	/* First pass: strict mode blocks non-goal runway entry from taxi/apron tiles. */
 	AirportGroundPath strict = run_pathfind(false);
 	if (strict.found) {
-		EraseCrossingCacheKey(crossing_key);
+		if (update_cache) EraseCrossingCacheKey(crossing_key);
 		return strict;
 	}
 
@@ -505,7 +507,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 
 	/* Fallback: allow constrained perpendicular runway crossing. */
 	AirportGroundPath crossing = run_pathfind(true);
-	if (crossing.found) {
+	if (crossing.found && update_cache) {
 		const bool is_new_pair = InsertCrossingCacheKey(crossing_key);
 		if (is_new_pair) {
 			Debug(misc, 2, "[ModAp] pathfind-crossing-required: from={} to={} cost={} strict_failed",
