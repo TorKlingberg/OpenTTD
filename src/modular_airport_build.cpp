@@ -450,6 +450,22 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {
+		bool remove_entire_airport = true;
+		for (TileIndex cur_tile : st->airport) {
+			if (!st->TileBelongsToAirport(cur_tile)) continue;
+			if (std::find(tiles_to_remove.begin(), tiles_to_remove.end(), cur_tile) == tiles_to_remove.end()) {
+				remove_entire_airport = false;
+				break;
+			}
+		}
+		Town *nearest = nullptr;
+		uint oldnoise_level = 0;
+		if (remove_entire_airport) {
+			uint dist;
+			nearest = AirportGetNearestTown(st, dist);
+			if (nearest != nullptr) oldnoise_level = GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
+		}
+
 		std::vector<std::pair<TileIndex, uint8_t>> removed_runway_tiles;
 		if (st->airport.modular_tile_data != nullptr) {
 			for (TileIndex t : tiles_to_remove) {
@@ -509,6 +525,11 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			st->airport.h = new_area.h;
 			st->AfterStationTileSetChange(false, StationType::Airport);
 		} else {
+			if (nearest != nullptr) {
+				nearest->noise_reached -= oldnoise_level;
+				if (_settings_game.economy.station_noise_level) SetWindowDirty(WC_TOWN_VIEW, nearest->index);
+			}
+
 			delete st->airport.psa;
 			delete st->airport.modular_tile_data;
 			st->airport.modular_tile_data = nullptr;
@@ -711,6 +732,40 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
 	}
 
+	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
+	Town *nearest = nullptr;
+	uint newnoise_level = 0;
+	if (will_create_airport_facility) {
+		const AirportSpec *as = AirportSpec::Get(AT_SMALL);
+		uint dist;
+		nearest = AirportGetNearestTown(as, DIR_N, tile, OrthogonalTileIterator(airport_area), dist);
+		newnoise_level = GetAirportNoiseLevelForDistance(as, dist);
+
+		StringID authority_refuse_message = STR_NULL;
+		Town *authority_refuse_town = nullptr;
+
+		if (_settings_game.economy.station_noise_level) {
+			if ((nearest->noise_reached + newnoise_level) > nearest->MaxTownNoise()) {
+				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_NOISE;
+				authority_refuse_town = nearest;
+			}
+		} else if (_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
+			Town *t = ClosestTownFromTile(tile, UINT_MAX);
+			uint num = 0;
+			for (const Station *other : Station::Iterate()) {
+				if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
+			}
+			if (num >= 2) {
+				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT;
+				authority_refuse_town = t;
+			}
+		}
+
+		if (authority_refuse_message != STR_NULL) {
+			return CommandCostWithParam(authority_refuse_message, authority_refuse_town->index);
+		}
+	}
+
 	/* Enforce same height level across the entire modular airport. */
 	if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular) &&
 			st->airport.modular_tile_data != nullptr && !st->airport.modular_tile_data->empty()) {
@@ -728,6 +783,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		bool new_facility = !st->facilities.Test(StationFacility::Airport);
+		if (new_facility) nearest->noise_reached += newnoise_level;
 
 		st->AddFacility(StationFacility::Airport, tile);
 		if (new_facility) {
@@ -872,6 +928,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
 		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+		if (new_facility && _settings_game.economy.station_noise_level) SetWindowDirty(WC_TOWN_VIEW, nearest->index);
 	}
 
 	return cost;

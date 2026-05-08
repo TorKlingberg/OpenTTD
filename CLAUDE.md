@@ -77,7 +77,7 @@ Run after any change to reservation, pathfinder, or movement code. A small drop 
 | `src/airport_ground_pathfinder.cpp` | A* ground pathfinder + segment classification |
 | `src/airport_ground_pathfinder.h` | `TaxiPath`, `TaxiSegment`, `TaxiSegmentType`, `BuildTaxiPath` |
 | `src/base_station_base.h` | `ModularAirportTileData` struct (per-tile metadata) |
-| `src/station_map.h` | Tile reservation functions: `HasAirportTileReservation`, `SetAirportTileReservation`, `GetAirportTileReserver` |
+| `src/station_map.h`, `src/modular_airport_cmd.cpp` | Reservation flag helpers plus modular reservation owner helpers (`GetModularAirportTileReservationOwner`, etc.) |
 | `src/table/airporttile_ids.h` | `AirportTiles` enum: `APT_STAND`, `APT_APRON`, `APT_RUNWAY_*`, `APT_DEPOT_*`, etc. |
 | `src/station_cmd.cpp` | `CmdBuildModularAirportTile`, `CmdSetTaxiwayFlags`, `CmdSetRunwayFlags` |
 | `src/airport_gui.cpp` | Shared airport toolbar + classic FTA airport picker UI |
@@ -109,7 +109,15 @@ Notes:
 
 ## Saveload
 
-Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved from `SLV_MODULAR_AIRPORT_RESERVATION_VECTORS` onward because map-level reservation bits affect multiplayer game state. The crossing-required ground-path cache is saved via the `MACP` chunk from `SLV_MODULAR_AIRPORT_CROSSING_CACHE` because it changes path choices. `taxi_path`, `landing_chain_path`, and `modular_holding_wp_index` are **not** saved — paths/holding phase are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved from `SLV_MODULAR_AIRPORT_RESERVATION_VECTORS` onward because map-level reservation bits affect multiplayer game state. The crossing-required ground-path cache is saved via the `MACP` chunk from `SLV_MODULAR_AIRPORT_CROSSING_CACHE` because it changes path choices. `modular_holding_wp_index` is saved from `SLV_MODULAR_AIRPORT_STATE_FIXES` because it affects aircraft movement. `taxi_path` and `landing_chain_path` are **not** saved — paths are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+
+## Modular Airport Invariants
+
+- Any state that affects aircraft movement, reservations, or path choices must be saved or deterministically rebuilt on load.
+- Airport tile `m7` is animation frame storage. Modular reservation ownership belongs in `ModularAirportTileData::reservation_owner`; map `m6` bit 2 is only the reservation-present flag.
+- Template placement must preflight the whole final placement before executing. A failure after preflight is an internal bug path, not an acceptable partial build.
+- Modular airport creation/removal must keep stock airport town-noise and two-airport local-authority accounting semantics for the selected airport type.
+- Changes to movement, reservation, build atomicity, or airport accounting need save/load, multiplayer determinism, and regression coverage checks.
 
 ## Common Pitfalls
 

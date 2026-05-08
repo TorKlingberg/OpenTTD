@@ -97,7 +97,7 @@ static bool IsTileReservedBy(TileIndex tile, VehicleID vid)
 {
 	if (!IsValidTile(tile)) return false;
 	Tile t(tile);
-	return IsAirportTile(t) && HasAirportTileReservation(t) && GetAirportTileReserver(t) == vid;
+	return IsAirportTile(t) && IsModularAirportTileReservedBy(tile, vid);
 }
 
 static bool GetReservationOverlayBoundsForAircraft(const Aircraft *v, ReservationOverlayBounds *out_bounds)

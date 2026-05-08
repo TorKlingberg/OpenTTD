@@ -21,6 +21,7 @@
 #include "company_base.h"
 #include "station_base.h"
 #include "station_map.h"
+#include "modular_airport_cmd.h"
 #include "waypoint_base.h"
 #include "vehicle_base.h"
 #include "texteff.hpp"
@@ -242,7 +243,7 @@ public:
 				VehicleID reserver = VehicleID::Invalid();
 				Tile t_tile(tile);
 				if (HasAirportTileReservation(t_tile)) {
-					reserver = GetAirportTileReserver(t_tile);
+					reserver = GetModularAirportTileReservationOwner(tile);
 					const Vehicle *v = Vehicle::GetIfValid(reserver);
 					if (v != nullptr && v->type == VEH_AIRCRAFT) {
 						reserved_by = STR_VEHICLE_NAME;

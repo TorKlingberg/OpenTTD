@@ -15,10 +15,12 @@
 #include "../station_base.h"
 #include "../waypoint_base.h"
 #include "../roadstop_base.h"
+#include "../aircraft.h"
 #include "../vehicle_base.h"
 #include "../newgrf_station.h"
 #include "../newgrf_roadstop.h"
 #include "../station_map.h"
+#include "../map_func.h"
 #include "../timer/timer_game_calendar.h"
 
 #include "table/strings.h"
@@ -132,22 +134,47 @@ void AfterLoadStations()
 		RoadStopUpdateCachedTriggers(st);
 	}
 
-	/* Before SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, aircraft-side tracking vectors
-	 * were not saved, so map-level reservation bits became orphaned after load.
-	 * Newer saves keep those vectors and must preserve the map reservations as part
-	 * of the multiplayer game state. */
-	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_RESERVATION_VECTORS)) {
-		for (Station *sta2 : Station::Iterate()) {
-			if (sta2->airport.modular_tile_data == nullptr) continue;
-			for (const ModularAirportTileData &data : *sta2->airport.modular_tile_data) {
-				if (!IsValidTile(data.tile)) continue;
-				Tile t(data.tile);
-				if (!IsAirportTile(t)) continue;
-				if (HasAirportTileReservation(t)) {
-					SetAirportTileReservation(t, false);
-				}
+	/* Keep modular reservation map bits and metadata consistent after load.
+	 * Older branch-local saves stored the owner in m7/m8; migrate that owner into
+	 * ModularAirportTileData before m7 resumes being airport animation state.
+	 * Before reservation vectors existed, map reservations cannot be tied back to
+	 * aircraft deterministically, so clear them. */
+	for (Station *sta2 : Station::Iterate()) {
+		if (sta2->airport.modular_tile_data == nullptr) continue;
+
+		for (ModularAirportTileData &data : *sta2->airport.modular_tile_data) {
+			if (!IsValidTile(data.tile)) {
+				data.reservation_owner = VehicleID::Invalid().base();
+				continue;
+			}
+
+			Tile t(data.tile);
+			if (!IsAirportTile(t)) {
+				data.reservation_owner = VehicleID::Invalid().base();
+				continue;
+			}
+
+			if (!HasAirportTileReservation(t) || IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_RESERVATION_VECTORS)) {
+				SetAirportTileReservation(t, false);
+				data.reservation_owner = VehicleID::Invalid().base();
+				continue;
+			}
+
+			if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_STATE_FIXES)) {
+				data.reservation_owner = static_cast<uint32_t>(t.m8()) | (static_cast<uint32_t>(t.m7()) << 16);
+				t.m7() = 0;
+				t.m8() = 0;
+			}
+
+			Vehicle *veh = Vehicle::GetIfValid(VehicleID{data.reservation_owner});
+			const bool valid_owner = veh != nullptr && veh->type == VEH_AIRCRAFT && Aircraft::From(veh)->IsNormalAircraft();
+			if (!valid_owner) {
+				SetAirportTileReservation(t, false);
+				data.reservation_owner = VehicleID::Invalid().base();
 			}
 		}
+
+		sta2->airport.RebuildModularTileIndex();
 	}
 
 	/* Station blocked, wires and pylon flags need to be stored in the map. This is effectively cached data, so no
@@ -563,7 +590,7 @@ public:
 	std::vector<RoadStopTileData> &GetVector(BaseStation *bst) const override { return bst->custom_roadstop_tile_data; }
 };
 
-class SlModularAirportTileData : public DefaultSaveLoadHandler<SlModularAirportTileData, BaseStation> {
+class SlLegacyModularAirportTileData : public DefaultSaveLoadHandler<SlLegacyModularAirportTileData, BaseStation> {
 public:
 	static inline const SaveLoad description[] = {
 	    SLE_VAR(ModularAirportTileData, tile,                SLE_UINT32),
@@ -595,7 +622,7 @@ public:
 	{
 		if (bst->facilities.Test(StationFacility::Waypoint)) return;
 		Station *st = Station::From(bst);
-		size_t count = SlGetStructListLength(UINT32_MAX);
+		size_t count = SlGetStructListLength(Map::Size());
 		if (count == 0) return;
 
 		st->airport.EnsureModularDataExists();
@@ -607,6 +634,67 @@ public:
 			SlObject(&data, this->GetLoadDescription());
 			st->airport.modular_tile_data->push_back(data);
 		}
+		st->airport.modular_tile_index_dirty = true;
+	}
+};
+
+class SlModularAirportTileData : public DefaultSaveLoadHandler<SlModularAirportTileData, BaseStation> {
+public:
+	static inline const SaveLoad description[] = {
+	    SLE_VAR(ModularAirportTileData, tile,                SLE_UINT32),
+	    SLE_VAR(ModularAirportTileData, piece_type,          SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, rotation,            SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, one_way_taxi,        SLE_BOOL),
+	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  SLE_UINT8),
+	    SLE_VAR(ModularAirportTileData, runway_flags,        SLE_UINT8),
+	    SLE_CONDVAR(ModularAirportTileData, edge_block_mask,  SLE_UINT8, SLV_MODULAR_AIRPORT_FENCE, SL_MAX_VERSION),
+	    SLE_CONDVAR(ModularAirportTileData, reservation_owner, SLE_UINT32, SLV_MODULAR_AIRPORT_STATE_FIXES, SL_MAX_VERSION),
+	};
+	static inline const SaveLoadCompatTable compat_description = {};
+
+	void Save(BaseStation *bst) const override
+	{
+		if (bst->facilities.Test(StationFacility::Waypoint)) {
+			SlSetStructListLength(0);
+			return;
+		}
+
+		Station *st = Station::From(bst);
+		if (st->airport.modular_tile_data == nullptr) {
+			SlSetStructListLength(0);
+			return;
+		}
+
+		SlSetStructListLength(st->airport.modular_tile_data->size());
+		for (ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			SlObject(&data, this->GetDescription());
+		}
+	}
+
+	void Load(BaseStation *bst) const override
+	{
+		size_t count = SlGetStructListLength(Map::Size());
+
+		if (bst->facilities.Test(StationFacility::Waypoint)) {
+			ModularAirportTileData data;
+			for (size_t i = 0; i < count; i++) SlObject(&data, this->GetLoadDescription());
+			return;
+		}
+
+		Station *st = Station::From(bst);
+		if (count == 0) return;
+
+		st->airport.EnsureModularDataExists();
+		st->airport.modular_tile_data->clear();
+		st->airport.modular_tile_data->reserve(count);
+
+		for (size_t i = 0; i < count; i++) {
+			ModularAirportTileData data;
+			SlObject(&data, this->GetLoadDescription());
+			st->airport.modular_tile_data->push_back(data);
+		}
+		st->airport.modular_tile_index_dirty = true;
 	}
 };
 
@@ -758,7 +846,8 @@ static const SaveLoad _station_desc[] = {
 	SLEG_CONDSTRUCTLIST("speclist", SlStationSpecList<StationSpec>, SLV_27, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstopspeclist", SlStationSpecList<RoadStopSpec>, SLV_NEWGRF_ROAD_STOPS, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstoptiledata", SlRoadStopTileData, SLV_ROAD_STOP_TILE_DATA, SL_MAX_VERSION),
-	SLEG_CONDSTRUCT("modularairporttiledata", SlModularAirportTileData, SLV_MODULAR_AIRPORT_PATHFINDING, SL_MAX_VERSION),
+	SLEG_CONDSTRUCT("modularairporttiledata", SlLegacyModularAirportTileData, SLV_MODULAR_AIRPORT_PATHFINDING, SLV_MODULAR_AIRPORT_STATE_FIXES),
+	SLEG_CONDSTRUCTLIST("modularairporttiledata", SlModularAirportTileData, SLV_MODULAR_AIRPORT_STATE_FIXES, SL_MAX_VERSION),
 };
 
 struct STNNChunkHandler : ChunkHandler {

@@ -147,7 +147,7 @@ static void LogModularHangarDiagnostics(const Station *st, const Aircraft *v, st
 		const AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, v, false, false);
 		Tile t(data.tile);
 		const bool reserved = IsAirportTile(t) && HasAirportTileReservation(t);
-		const VehicleID reserver = reserved ? GetAirportTileReserver(t) : VehicleID::Invalid();
+		const VehicleID reserver = reserved ? GetModularAirportTileReservationOwner(data.tile) : VehicleID::Invalid();
 		const bool occupied = IsModularTileOccupiedByOtherAircraft(st, data.tile, v->index);
 		Debug(misc, 2, "[ModAp] V{}  hangar={} path_found={} cost={} reserved={} reserver={} occupied={} piece={}",
 			v->index, data.tile.base(), path.found, path.cost, reserved,

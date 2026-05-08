@@ -211,7 +211,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	if (IsTaxiwayPiece(from_data->piece_type) && from_data->one_way_taxi) {
 		from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
 	}
-	
+
 	bool from_ok = (from_dirs & dir_bit) != 0;
 
 	/* Get tile data for 'to' */
@@ -268,7 +268,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	else if (dir_bit == 0x08) reverse_dir_bit = 0x02; // West -> East
 
 	uint8_t to_dirs = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
-	
+
 	bool to_ok = (to_dirs & reverse_dir_bit) != 0;
 
 	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_DEPOT_SW ||

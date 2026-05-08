@@ -2611,6 +2611,28 @@ Town *AirportGetNearestTown(const AirportSpec *as, Direction rotation, TileIndex
 	return nearest;
 }
 
+static Town *AirportGetNearestTownFromTiles(TileIterator &&it, uint &mindist)
+{
+	assert(Town::GetNumItems() > 0);
+
+	Town *nearest = nullptr;
+	mindist = UINT_MAX - 1; // prevent overflow
+
+	for (TileIndex cur_tile = *it; cur_tile != INVALID_TILE; cur_tile = ++it) {
+		Town *t = CalcClosestTownFromTile(cur_tile, mindist + 1);
+		if (t == nullptr) continue;
+
+		uint dist = DistanceManhattan(t->xy, cur_tile);
+		if (dist == mindist && nearest != nullptr && t->index < nearest->index) nearest = t;
+		if (dist < mindist) {
+			nearest = t;
+			mindist = dist;
+		}
+	}
+
+	return nearest;
+}
+
 /**
  * Finds the town nearest to given existing airport. Based on minimal manhattan distance to any airport's tile.
  * If two towns have the same distance, town with lower index is returned.
@@ -2618,8 +2640,9 @@ Town *AirportGetNearestTown(const AirportSpec *as, Direction rotation, TileIndex
  * @param[out] mindist Minimum distance to town
  * @return nearest town to airport
  */
-static Town *AirportGetNearestTown(const Station *st, uint &mindist)
+Town *AirportGetNearestTown(const Station *st, uint &mindist)
 {
+	if (st->airport.blocks.Test(AirportBlock::Modular)) return AirportGetNearestTownFromTiles(AirportTileIterator(st), mindist);
 	return AirportGetNearestTown(st->airport.GetSpec(), st->airport.rotation, st->airport.tile, AirportTileIterator(st), mindist);
 }
 
@@ -2630,10 +2653,10 @@ void UpdateAirportsNoise()
 	for (Town *t : Town::Iterate()) t->noise_reached = 0;
 
 	for (const Station *st : Station::Iterate()) {
-		if (st->airport.tile != INVALID_TILE && st->airport.type != AT_OILRIG && !st->airport.blocks.Test(AirportBlock::Modular)) {
+		if (st->airport.tile != INVALID_TILE && st->airport.type != AT_OILRIG) {
 			uint dist;
 			Town *nearest = AirportGetNearestTown(st, dist);
-			nearest->noise_reached += GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
+			if (nearest != nullptr) nearest->noise_reached += GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
 		}
 	}
 }

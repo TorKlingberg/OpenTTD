@@ -421,6 +421,7 @@ enum SaveLoadVersion : uint16_t {
 	SLV_MODULAR_AIRPORT_RESERVATION,        ///< 369  Modular airport reservation state for aircraft.
 	SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, ///< 370  Modular airport aircraft reservation vectors.
 	SLV_MODULAR_AIRPORT_CROSSING_CACHE,     ///< 371  Modular airport crossing-required path cache.
+	SLV_MODULAR_AIRPORT_STATE_FIXES,        ///< 372  Modular airport saved holding state, reservation owners, and tile-data list format.
 
 	SL_MAX_VERSION,                         ///< Highest possible saveload version
 };

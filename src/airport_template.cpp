@@ -260,7 +260,7 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 	j["width"] = template_to_save.width;
 	j["height"] = template_to_save.height;
 	j["schema_version"] = template_to_save.schema_version;
-	
+
 	std::vector<AirportTemplateTile> sorted_tiles = template_to_save.tiles;
 	std::sort(sorted_tiles.begin(), sorted_tiles.end(), [](const AirportTemplateTile &a, const AirportTemplateTile &b) {
 		if (a.dy != b.dy) return a.dy < b.dy;
