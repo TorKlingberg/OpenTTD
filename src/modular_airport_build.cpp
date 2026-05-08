@@ -658,7 +658,22 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 	return cost;
 }
 
-CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
+/**
+ * Check if a modular airport tile can be built.
+ * @param flags Command flags.
+ * @param tile Tile to build on.
+ * @param gfx Piece type.
+ * @param station_to_join Station to join, or INVALID_STATION.
+ * @param allow_adjacent Whether to allow adjacent stations.
+ * @param st [in/out] Reference to station pointer.
+ * @param nearest [out] Reference to nearest town pointer.
+ * @param newnoise_level [out] Reference to noise level.
+ * @param new_facility [out] Reference to new facility flag.
+ * @param is_modular_replace [out] Reference to replacement flag.
+ * @param cost [in/out] Accumulated construction cost.
+ * @return Success or error code.
+ */
+CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, Town *&nearest, uint &newnoise_level, bool &new_facility, bool &is_modular_replace, CommandCost &cost)
 {
 	bool reuse = (station_to_join != NEW_STATION);
 	if (!reuse) station_to_join = StationID::Invalid();
@@ -677,7 +692,6 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
 	if (ret.Failed()) return ret;
 
-	CommandCost cost(EXPENSES_CONSTRUCTION);
 	int allowed_z = -1;
 
 	/* Check if we're replacing an allowed modular airport tile.
@@ -691,9 +705,9 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	};
 	auto IsReplaceableTile = [&](TileIndex t, uint8_t new_piece_type) {
 		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) return false;
-		const Station *st = Station::GetByTile(t);
-		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) return false;
-		const ModularAirportTileData *md = st->airport.GetModularTileData(t);
+		const Station *st_local = Station::GetByTile(t);
+		if (st_local == nullptr || !st_local->airport.blocks.Test(AirportBlock::Modular)) return false;
+		const ModularAirportTileData *md = st_local->airport.GetModularTileData(t);
 		if (md == nullptr) return false;
 
 		if (md->piece_type == APT_GRASS_1 || md->piece_type == APT_EMPTY) return true;
@@ -702,7 +716,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		const bool new_hangar = IsHangarPiece(new_piece_type);
 		return existing_hangar && new_hangar;
 	};
-	bool is_modular_replace = IsReplaceableTile(tile, static_cast<uint8_t>(gfx));
+	is_modular_replace = IsReplaceableTile(tile, static_cast<uint8_t>(gfx));
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
 
 	if (is_modular_replace) {
@@ -714,28 +728,30 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		if (ret.Failed()) return ret;
 		cost.AddCost(ret.GetCost());
 
-		ret = Command<CMD_LANDSCAPE_CLEAR>::Do(flags, tile);
+		/* Always test landscape clear in Check phase. Apply path will do the real clear. */
+		ret = Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), tile);
 		if (ret.Failed()) return ret;
 		cost.AddCost(ret.GetCost());
 	}
 
 	TileArea airport_area(tile, 1, 1);
 
-	Station *st = nullptr;
-	ret = FindJoiningStation(existing_at_tile, station_to_join, allow_adjacent, airport_area, &st);
-	if (ret.Failed()) return ret;
+	if (st == nullptr) {
+		ret = FindJoiningStation(existing_at_tile, station_to_join, allow_adjacent, airport_area, &st);
+		if (ret.Failed()) return ret;
 
-	/* Distant join */
-	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
+		/* Distant join */
+		if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
+	}
 
 	if (st != nullptr && st->facilities.Test(StationFacility::Airport) && !st->airport.blocks.Test(AirportBlock::Modular)) {
 		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
 	}
 
-	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
-	Town *nearest = nullptr;
-	uint newnoise_level = 0;
-	if (will_create_airport_facility) {
+	new_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
+	nearest = nullptr;
+	newnoise_level = 0;
+	if (new_facility) {
 		const AirportSpec *as = AirportSpec::Get(AT_SMALL);
 		uint dist;
 		nearest = AirportGetNearestTown(as, DIR_N, tile, OrthogonalTileIterator(airport_area), dist);
@@ -781,154 +797,192 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
 
-	if (flags.Test(DoCommandFlag::Execute)) {
-		bool new_facility = !st->facilities.Test(StationFacility::Airport);
-		if (new_facility) nearest->noise_reached += newnoise_level;
+	return CommandCost();
+}
 
-		st->AddFacility(StationFacility::Airport, tile);
-		if (new_facility) {
-			st->airport.type = AT_SMALL;
-			st->airport.layout = 0;
-			st->airport.blocks = {};
-			st->airport.blocks.Set(AirportBlock::Modular);
-			st->airport.rotation = DIR_N;
-			Company::Get(st->owner)->infrastructure.airport++;
-		}
+/**
+ * Apply the mutation for a modular airport tile.
+ * @param tile Tile to build on.
+ * @param gfx Piece type.
+ * @param st Station to add tile to.
+ * @param nearest Nearest town.
+ * @param newnoise_level Noise level.
+ * @param new_facility Whether a new airport facility is being created.
+ * @param is_modular_replace Whether an existing tile is being replaced.
+ * @param rotation Rotation of the piece.
+ * @param taxi_dir_mask User taxi direction mask.
+ * @param one_way_taxi Whether taxi direction is one-way.
+ * @param auto_rotate_runway Whether to automatically rotate runways based on neighbors.
+ */
+void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool new_facility, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
+{
+	if (!is_modular_replace) {
+		Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlag::Execute, tile);
+	}
+
+	if (new_facility) nearest->noise_reached += newnoise_level;
+
+	st->AddFacility(StationFacility::Airport, tile);
+	if (new_facility) {
+		st->airport.type = AT_SMALL;
+		st->airport.layout = 0;
+		st->airport.blocks = {};
 		st->airport.blocks.Set(AirportBlock::Modular);
+		st->airport.rotation = DIR_N;
+		Company::Get(st->owner)->infrastructure.airport++;
+	}
+	st->airport.blocks.Set(AirportBlock::Modular);
 
-		st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
+	st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
 
-		Tile t(tile);
-		MakeAirport(t, st->owner, st->index, static_cast<uint8_t>(gfx), WaterClass::Invalid);
-		SetStationTileRandomBits(t, GB(Random(), 0, 4));
-		st->airport.Add(tile);
+	Tile t(tile);
+	MakeAirport(t, st->owner, st->index, static_cast<uint8_t>(gfx), WaterClass::Invalid);
+	SetStationTileRandomBits(t, GB(Random(), 0, 4));
+	st->airport.Add(tile);
 
-		if (AirportTileSpec::Get(GetTranslatedAirportTileID(static_cast<uint8_t>(gfx)))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
-		TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
+	if (AirportTileSpec::Get(GetTranslatedAirportTileID(static_cast<uint8_t>(gfx)))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+	TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
 
-		/* Store modular airport tile data */
-		st->airport.EnsureModularDataExists();
+	/* Store modular airport tile data */
+	st->airport.EnsureModularDataExists();
 
-		/* Remove any existing data for this tile (in case of replacement) */
-		auto &tile_data_vec = *st->airport.modular_tile_data;
-		tile_data_vec.erase(
-			std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
-				[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
-			tile_data_vec.end()
-		);
-		st->airport.modular_tile_index_dirty = true;
+	/* Remove any existing data for this tile (in case of replacement) */
+	auto &tile_data_vec = *st->airport.modular_tile_data;
+	tile_data_vec.erase(
+		std::remove_if(tile_data_vec.begin(), tile_data_vec.end(),
+			[tile](const ModularAirportTileData &data) { return data.tile == tile; }),
+		tile_data_vec.end()
+	);
+	st->airport.modular_tile_index_dirty = true;
 
-		/* Create and store new tile data */
-		ModularAirportTileData tile_data;
-		tile_data.tile = tile;
-		/* Convert canonical SE hangars to directional variants based on rotation.
-		 * Only canonical forms (APT_DEPOT_SE / APT_SMALL_DEPOT_SE) are rotated here;
-		 * template tiles arrive pre-rotated via RotateTemplateTile and pass through unchanged.
-		 * Do NOT use SwapBuildingPieceForRotation here — it would double-rotate template tiles
-		 * (which also apply it) and double-swap APT_BUILDING_1/2 and runway near/far ends. */
-		uint8_t directional_piece = static_cast<uint8_t>(gfx);
-		if (directional_piece == APT_DEPOT_SE) {
-			static constexpr uint8_t kLargeByRot[] = {APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW};
-			directional_piece = kLargeByRot[rotation % 4];
-		} else if (directional_piece == APT_SMALL_DEPOT_SE) {
-			static constexpr uint8_t kSmallByRot[] = {APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_NE, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_SW};
-			directional_piece = kSmallByRot[rotation % 4];
+	/* Create and store new tile data */
+	ModularAirportTileData tile_data;
+	tile_data.tile = tile;
+
+	/* Convert canonical SE hangars to directional variants based on rotation.
+	 * Only canonical forms (APT_DEPOT_SE / APT_SMALL_DEPOT_SE) are rotated here;
+	 * template tiles arrive pre-rotated via RotateTemplateTile and pass through unchanged.
+	 * Do NOT use SwapBuildingPieceForRotation here — it would double-rotate template tiles
+	 * (which also apply it) and double-swap APT_BUILDING_1/2 and runway near/far ends. */
+	uint8_t directional_piece = static_cast<uint8_t>(gfx);
+	if (directional_piece == APT_DEPOT_SE) {
+		static constexpr uint8_t kLargeByRot[] = {APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW};
+		directional_piece = kLargeByRot[rotation % 4];
+	} else if (directional_piece == APT_SMALL_DEPOT_SE) {
+		static constexpr uint8_t kSmallByRot[] = {APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_NE, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_SW};
+		directional_piece = kSmallByRot[rotation % 4];
+	}
+	tile_data.piece_type = directional_piece;
+	tile_data.rotation = rotation;
+	tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
+	taxi_dir_mask &= 0x0F;
+
+	/* One-way taxi only applies to taxiway/apron surface tiles and requires exactly one valid direction. */
+	if (IsTaxiwayPiece(tile_data.piece_type) && one_way_taxi && HasExactlyOneBit(taxi_dir_mask) && (tile_data.auto_taxi_dir_mask & taxi_dir_mask) != 0) {
+		tile_data.one_way_taxi = true;
+		tile_data.user_taxi_dir_mask = taxi_dir_mask;
+	} else {
+		tile_data.one_way_taxi = false;
+		tile_data.user_taxi_dir_mask = 0x0F;
+	}
+	auto is_runway_piece = [](uint8_t piece_type) {
+		switch (piece_type) {
+			case APT_RUNWAY_1:
+			case APT_RUNWAY_2:
+			case APT_RUNWAY_3:
+			case APT_RUNWAY_4:
+			case APT_RUNWAY_5:
+			case APT_RUNWAY_END:
+			case APT_RUNWAY_SMALL_NEAR_END:
+			case APT_RUNWAY_SMALL_MIDDLE:
+			case APT_RUNWAY_SMALL_FAR_END:
+				return true;
+			default:
+				return false;
 		}
-		tile_data.piece_type = directional_piece;
-		tile_data.rotation = rotation;
-		tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
-		taxi_dir_mask &= 0x0F;
+	};
 
-		/* One-way taxi only applies to taxiway/apron surface tiles and requires exactly one valid direction. */
-		if (IsTaxiwayPiece(tile_data.piece_type) && one_way_taxi && HasExactlyOneBit(taxi_dir_mask) && (tile_data.auto_taxi_dir_mask & taxi_dir_mask) != 0) {
-			tile_data.one_way_taxi = true;
-			tile_data.user_taxi_dir_mask = taxi_dir_mask;
+	/* Auto-detect axis: if the current rotation doesn't match any adjacent
+	 * runway but the perpendicular axis does, flip to extend that runway.
+	 * Only when auto_rotate_runway is set (single-click placement). */
+	if (auto_rotate_runway && is_runway_piece(tile_data.piece_type)) {
+		const bool horizontal = (rotation % 2) == 0;
+		const TileIndexDiff same_diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+		bool has_same_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - same_diff), horizontal)
+						  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + same_diff), horizontal);
+		if (!has_same_axis) {
+			const TileIndexDiff perp_diff = horizontal ? TileDiffXY(0, 1) : TileDiffXY(1, 0);
+			bool has_perp_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - perp_diff), !horizontal)
+							  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + perp_diff), !horizontal);
+			if (has_perp_axis) {
+				rotation ^= 1;
+				tile_data.rotation = rotation;
+				tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
+			}
+		}
+	}
+
+	/* If this extends an existing runway, inherit its direction/usage flags. */
+	if (is_runway_piece(tile_data.piece_type)) {
+		const bool horizontal = (rotation % 2) == 0;
+		const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+		bool inherited_runway_flags = false;
+
+		const ModularAirportTileData *prev = st->airport.GetModularTileData(tile - diff);
+		if (IsRunwayPieceOnAxis(prev, horizontal)) {
+			tile_data.runway_flags = prev->runway_flags;
+			inherited_runway_flags = true;
 		} else {
-			tile_data.one_way_taxi = false;
-			tile_data.user_taxi_dir_mask = 0x0F;
-		}
-		auto is_runway_piece = [](uint8_t piece_type) {
-			switch (piece_type) {
-				case APT_RUNWAY_1:
-				case APT_RUNWAY_2:
-				case APT_RUNWAY_3:
-				case APT_RUNWAY_4:
-				case APT_RUNWAY_5:
-				case APT_RUNWAY_END:
-				case APT_RUNWAY_SMALL_NEAR_END:
-				case APT_RUNWAY_SMALL_MIDDLE:
-				case APT_RUNWAY_SMALL_FAR_END:
-					return true;
-				default:
-					return false;
-			}
-		};
-
-		/* Auto-detect axis: if the current rotation doesn't match any adjacent
-		 * runway but the perpendicular axis does, flip to extend that runway.
-		 * Only when auto_rotate_runway is set (single-click placement). */
-		if (auto_rotate_runway && is_runway_piece(tile_data.piece_type)) {
-			const bool horizontal = (rotation % 2) == 0;
-			const TileIndexDiff same_diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-			bool has_same_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - same_diff), horizontal)
-			                  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + same_diff), horizontal);
-			if (!has_same_axis) {
-				const TileIndexDiff perp_diff = horizontal ? TileDiffXY(0, 1) : TileDiffXY(1, 0);
-				bool has_perp_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - perp_diff), !horizontal)
-				                  || IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile + perp_diff), !horizontal);
-				if (has_perp_axis) {
-					rotation ^= 1;
-					tile_data.rotation = rotation;
-					tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(tile_data.piece_type, rotation);
-				}
-			}
-		}
-
-		/* If this extends an existing runway, inherit its direction/usage flags. */
-		if (is_runway_piece(tile_data.piece_type)) {
-			const bool horizontal = (rotation % 2) == 0;
-			const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-			bool inherited_runway_flags = false;
-
-			const ModularAirportTileData *prev = st->airport.GetModularTileData(tile - diff);
-			if (IsRunwayPieceOnAxis(prev, horizontal)) {
-				tile_data.runway_flags = prev->runway_flags;
+			const ModularAirportTileData *next = st->airport.GetModularTileData(tile + diff);
+			if (IsRunwayPieceOnAxis(next, horizontal)) {
+				tile_data.runway_flags = next->runway_flags;
 				inherited_runway_flags = true;
-			} else {
-				const ModularAirportTileData *next = st->airport.GetModularTileData(tile + diff);
-				if (IsRunwayPieceOnAxis(next, horizontal)) {
-					tile_data.runway_flags = next->runway_flags;
-					inherited_runway_flags = true;
-				}
-			}
-
-			if (!inherited_runway_flags) {
-				/* Default new isolated runways to one-way up-screen landing. */
-				tile_data.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW;
 			}
 		}
 
-		tile_data_vec.push_back(tile_data);
-		st->airport.modular_tile_index_dirty = true;
-		st->airport.modular_holding_loop_dirty = true;
-		st->airport.modular_heli_tiles_dirty = true;
-		if (_show_holding_overlay) MarkWholeScreenDirty();
-
-		/* Normalize runway end/middle visuals for the segment this tile belongs to. */
-		if (IsModularRunwayPiece(tile_data.piece_type)) {
-			NormalizeRunwaySegmentVisuals(st, tile, (tile_data.rotation % 2) == 0);
+		if (!inherited_runway_flags) {
+			/* Default new isolated runways to one-way up-screen landing. */
+			tile_data.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW;
 		}
+	}
 
-		/* Mark tile and neighbors dirty to ensure tall building sprites
-		 * (terminals, towers, radar) that extend beyond tile bounds are fully redrawn. */
-		MarkTileDirtyByTile(tile, 0, 8);
-		if (TileX(tile) > 0 && TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 1));
-		if (TileX(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 0));
-		if (TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(0, 1));
+	tile_data_vec.push_back(tile_data);
+	st->airport.modular_tile_index_dirty = true;
+	st->airport.modular_holding_loop_dirty = true;
+	st->airport.modular_heli_tiles_dirty = true;
+	if (_show_holding_overlay) MarkWholeScreenDirty();
 
-		st->AfterStationTileSetChange(true, StationType::Airport);
-		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
-		if (new_facility && _settings_game.economy.station_noise_level) SetWindowDirty(WC_TOWN_VIEW, nearest->index);
+	/* Normalize runway end/middle visuals for the segment this tile belongs to. */
+	if (IsModularRunwayPiece(tile_data.piece_type)) {
+		NormalizeRunwaySegmentVisuals(st, tile, (tile_data.rotation % 2) == 0);
+	}
+
+	/* Mark tile and neighbors dirty to ensure tall building sprites
+	 * (terminals, towers, radar) that extend beyond tile bounds are fully redrawn. */
+	MarkTileDirtyByTile(tile, 0, 8);
+	if (TileX(tile) > 0 && TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 1));
+	if (TileX(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(1, 0));
+	if (TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(0, 1));
+
+	st->AfterStationTileSetChange(true, StationType::Airport);
+	InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+	if (new_facility && _settings_game.economy.station_noise_level) SetWindowDirty(WC_TOWN_VIEW, nearest->index);
+}
+
+CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
+{
+	Station *st = nullptr;
+	Town *nearest = nullptr;
+	uint newnoise_level = 0;
+	bool new_facility = false;
+	bool is_modular_replace = false;
+	CommandCost cost(EXPENSES_CONSTRUCTION);
+
+	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, station_to_join, allow_adjacent, st, nearest, newnoise_level, new_facility, is_modular_replace, cost);
+	if (ret.Failed()) return ret;
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		BuildModularAirportTile_Apply(tile, gfx, st, nearest, newnoise_level, new_facility, is_modular_replace, rotation, taxi_dir_mask, one_way_taxi, auto_rotate_runway);
 	}
 
 	return cost;
