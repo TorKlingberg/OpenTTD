@@ -64,6 +64,20 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 
+## Unit Testing
+
+Modular airport logic is verified by unit tests in `src/tests/test_modular_airport.cpp`. These cover pure logic (classification, rotations), map-dependent helpers, ground pathfinding (including stand avoidance), and reservation invariants.
+
+Run all unit tests:
+```bash
+/Users/tor/ttd/OpenTTD/build/openttd_test
+```
+
+Run only modular airport tests:
+```bash
+/Users/tor/ttd/OpenTTD/build/openttd_test "ModularAirport*"
+```
+
 ## Key Source Files
 
 | File | Purpose |
