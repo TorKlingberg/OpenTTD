@@ -805,17 +805,18 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
  * @param tile Tile to build on.
  * @param gfx Piece type.
  * @param st Station to add tile to.
- * @param nearest Nearest town.
- * @param newnoise_level Noise level.
- * @param new_facility Whether a new airport facility is being created.
+ * @param nearest Nearest town (only used when this tile creates the airport facility).
+ * @param newnoise_level Noise level (only used when this tile creates the airport facility).
  * @param is_modular_replace Whether an existing tile is being replaced.
  * @param rotation Rotation of the piece.
  * @param taxi_dir_mask User taxi direction mask.
  * @param one_way_taxi Whether taxi direction is one-way.
  * @param auto_rotate_runway Whether to automatically rotate runways based on neighbors.
  */
-void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool new_facility, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
+void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
+	const bool new_facility = !st->facilities.Test(StationFacility::Airport);
+
 	if (!is_modular_replace) {
 		CommandCost ret = Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlag::Execute, tile);
 		assert(ret.Succeeded());
@@ -983,7 +984,7 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 	if (ret.Failed()) return ret;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		BuildModularAirportTile_Apply(tile, gfx, st, nearest, newnoise_level, new_facility, is_modular_replace, rotation, taxi_dir_mask, one_way_taxi, auto_rotate_runway);
+		BuildModularAirportTile_Apply(tile, gfx, st, nearest, newnoise_level, is_modular_replace, rotation, taxi_dir_mask, one_way_taxi, auto_rotate_runway);
 	}
 
 	return cost;

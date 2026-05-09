@@ -22,7 +22,7 @@ uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx);
 uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type);
 Money GetModularAirportPieceBuildCost(uint8_t piece_type);
 CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, Town *&nearest, uint &newnoise_level, bool &new_facility, bool &is_modular_replace, CommandCost &cost);
-void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool new_facility, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);
+void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);
 CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags);
 
 #endif /* MODULAR_AIRPORT_BUILD_H */

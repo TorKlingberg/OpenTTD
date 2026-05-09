@@ -494,11 +494,13 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		for (size_t i = 0; i < rotated_tiles.size(); i++) placement_order.push_back(i);
 	}
 
-	/* Step 3.B: Per-tile validation loop. */
+	/* Step 3.B: Per-tile validation loop.
+	 * Only `is_replace` is per-tile. `nearest`/`newnoise`/`new_facility` from `_Check` are
+	 * computed against the dry-run (no facility yet) state for every tile in a greenfield
+	 * placement, so they would multiply-count if applied per tile. The whole-template
+	 * `nearest`/`newnoise_level` computed above are the correct values; `_Apply` derives
+	 * `new_facility` itself from live state at mutation time. */
 	struct TileValidationResult {
-		Town *nearest;
-		uint newnoise;
-		bool new_facility_tile;
 		bool is_replace;
 	};
 	std::vector<TileValidationResult> validation_results(rotated_tiles.size());
@@ -507,9 +509,12 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		TileIndex t = abs_tiles[i];
 
 		Station *tile_st = st;
+		Town *tile_nearest = nullptr;
+		uint tile_newnoise = 0;
+		bool tile_new_facility = false;
 		TileValidationResult &res = validation_results[i];
 
-		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, res.nearest, res.newnoise, res.new_facility_tile, res.is_replace, total);
+		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_nearest, tile_newnoise, tile_new_facility, res.is_replace, total);
 		if (ret.Failed()) return ret;
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
@@ -542,7 +547,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			TileIndex t = abs_tiles[i];
 			const TileValidationResult &res = validation_results[i];
 
-			BuildModularAirportTile_Apply(t, rt.piece_type, st, res.nearest, res.newnoise, res.new_facility_tile, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
+			BuildModularAirportTile_Apply(t, rt.piece_type, st, nearest, newnoise_level, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
