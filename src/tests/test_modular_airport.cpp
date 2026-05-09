@@ -71,6 +71,35 @@ static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint
 	st->airport.modular_tile_index_dirty = true;
 }
 
+static ModularAirportTileData *AddModularTileWithData(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)
+{
+	AddModularTile(st, tile, piece_type, rotation);
+	return st->airport.GetModularTileData(tile);
+}
+
+static void AddLargeRunway(Station *st, TileIndex start, uint length, uint8_t rotation = 0, uint8_t flags = RUF_DEFAULT)
+{
+	for (uint i = 0; i < length; i++) {
+		const TileIndex tile = start + ((rotation % 2) == 0 ? TileDiffXY(i, 0) : TileDiffXY(0, i));
+		ModularAirportTileData *data = AddModularTileWithData(st, tile, (i == 0 || i + 1 == length) ? APT_RUNWAY_END : APT_RUNWAY_5, rotation);
+		data->runway_flags = flags;
+	}
+}
+
+static void CheckReservedBy(const std::vector<TileIndex> &tiles, VehicleID vid)
+{
+	for (TileIndex tile : tiles) {
+		CHECK(IsModularAirportTileReservedBy(tile, vid));
+	}
+}
+
+static void CheckUnreserved(const std::vector<TileIndex> &tiles)
+{
+	for (TileIndex tile : tiles) {
+		CHECK_FALSE(HasModularAirportTileReservation(tile));
+	}
+}
+
 TEST_CASE("ModularAirportSafety")
 {
 	Map::Allocate(64, 64);
@@ -90,6 +119,35 @@ TEST_CASE("ModularAirportSafety")
 		AddModularTile(st, base, APT_TOWER, 0);
 		status = GetModularAirportSafetyStatus(st);
 		CHECK((status & MASR_TOWER) == 0);
+	}
+
+	SECTION("Large Aircraft Requirements Are Independent") {
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 5);
+
+		ModularAirportSafetyRequirement status = GetModularAirportSafetyStatus(st);
+		CHECK((status & MASR_TOWER) == 0);
+		CHECK((status & MASR_BIG_TERMINAL) == 0);
+		CHECK((status & MASR_LANDING_RUNWAY) != 0);
+		CHECK((status & MASR_TAKEOFF_RUNWAY) != 0);
+
+		Station *large_st = SetupModularAirport(base, 10, 10);
+		REQUIRE(large_st != nullptr);
+		AddModularTile(large_st, base, APT_TOWER, 0);
+		AddModularTile(large_st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(large_st, base + TileDiffXY(0, 3), 6, 0, RUF_LANDING);
+		status = GetModularAirportSafetyStatus(large_st);
+		CHECK((status & MASR_LANDING_RUNWAY) == 0);
+		CHECK((status & MASR_TAKEOFF_RUNWAY) != 0);
+
+		Station *complete_st = SetupModularAirport(base, 10, 10);
+		REQUIRE(complete_st != nullptr);
+		AddModularTile(complete_st, base, APT_TOWER, 0);
+		AddModularTile(complete_st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(complete_st, base + TileDiffXY(0, 3), 6);
+		CHECK(GetModularAirportSafetyStatus(complete_st) == MASR_NONE);
+		CHECK(ModularAirportSupportsLargeAircraft(complete_st));
 	}
 }
 
@@ -165,14 +223,54 @@ TEST_CASE("ModularAirportPathfinding")
 
 		// Path with avoidance
 		SetupAircraftPool();
-		Aircraft *other = CreateAircraft(VehicleID(1));
-		other->tile = base + TileDiffXY(1, 0); // Occupy intermediate stand
+		Aircraft *self = CreateAircraft(VehicleID(1));
+		self->tile = start;
+		self->ground_path_goal = base + TileDiffXY(2, 1);
+		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), VehicleID(2));
 		
-		AirportGroundPath path = FindAirportGroundPath(st, start, base + TileDiffXY(2, 1), other);
+		AirportGroundPath path = FindAirportGroundPath(st, start, base + TileDiffXY(2, 1), self);
 		CHECK(path.found);
 		for (TileIndex t : path.tiles) {
-			CHECK(t != other->tile);
+			CHECK(t != base + TileDiffXY(1, 0));
 		}
+	}
+
+	SECTION("Reserved Stand Blocks When No Alternative Exists") {
+		AddModularTile(st, base, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_STAND, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *self = CreateAircraft(VehicleID(3));
+		self->tile = base;
+		self->ground_path_goal = base + TileDiffXY(2, 0);
+		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), VehicleID(4));
+
+		AirportGroundPath path = FindAirportGroundPath(st, base, base + TileDiffXY(2, 0), self);
+		CHECK_FALSE(path.found);
+	}
+
+	SECTION("One Way Taxi Direction Is Enforced") {
+		AddModularTile(st, base, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
+		ModularAirportTileData *one_way = st->airport.GetModularTileData(base + TileDiffXY(1, 0));
+		REQUIRE(one_way != nullptr);
+		one_way->one_way_taxi = true;
+		one_way->user_taxi_dir_mask = 0x02; // East
+
+		CHECK(FindAirportGroundPath(st, base, base + TileDiffXY(2, 0)).found);
+		CHECK_FALSE(FindAirportGroundPath(st, base + TileDiffXY(2, 0), base).found);
+	}
+
+	SECTION("Edge Blocks Prevent Adjacent Taxi Movement") {
+		AddModularTile(st, base, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
+		ModularAirportTileData *left = st->airport.GetModularTileData(base);
+		REQUIRE(left != nullptr);
+		left->edge_block_mask = 0x02; // East
+
+		CHECK_FALSE(FindAirportGroundPath(st, base, base + TileDiffXY(1, 0)).found);
 	}
 
 	SECTION("Taxi Path Classification") {
@@ -195,6 +293,14 @@ TEST_CASE("ModularAirportPathfinding")
 		CHECK(path.segments[1].type == TaxiSegmentType::ONE_WAY);
 		CHECK(path.segments[2].type == TaxiSegmentType::FREE_MOVE);
 		CHECK(path.segments[3].type == TaxiSegmentType::RUNWAY);
+		CHECK(path.segments[0].start_index == 0);
+		CHECK(path.segments[0].end_index == 0);
+		CHECK(path.segments[3].start_index == 3);
+		CHECK(path.segments[3].end_index == 3);
+		CHECK(FindTaxiSegmentIndex(&path, 0) == 0);
+		CHECK(FindTaxiSegmentIndex(&path, 1) == 1);
+		CHECK(FindTaxiSegmentIndex(&path, 3) == 3);
+		CHECK(FindTaxiSegmentIndex(&path, 4) == path.segments.size());
 	}
 }
 
@@ -221,21 +327,43 @@ TEST_CASE("ModularAirportReservations")
 		AddModularTile(st, base, APT_RUNWAY_END, 0);
 		AddModularTile(st, base + TileDiffXY(1, 0), APT_RUNWAY_5, 0);
 		AddModularTile(st, base + TileDiffXY(2, 0), APT_RUNWAY_END, 0);
+		const std::vector<TileIndex> runway_tiles = {base, base + TileDiffXY(1, 0), base + TileDiffXY(2, 0)};
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
 		CHECK(TryReserveContiguousModularRunway(v, st, base));
 		
-		CHECK(IsModularAirportTileReservedBy(base, v->index));
-		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(1, 0), v->index));
-		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 0), v->index));
+		CheckReservedBy(runway_tiles, v->index);
 		
 		// Another aircraft trying to reserve
 		Aircraft *v2 = CreateAircraft(VehicleID(11));
 		CHECK_FALSE(TryReserveContiguousModularRunway(v2, st, base));
 		
 		ClearModularRunwayReservation(v);
+		CheckUnreserved(runway_tiles);
+	}
+
+	SECTION("Runway Reservation Failure Is Atomic") {
+		AddModularTile(st, base, APT_RUNWAY_END, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_RUNWAY_5, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_RUNWAY_END, 0);
+		const std::vector<TileIndex> runway_tiles = {base, base + TileDiffXY(1, 0), base + TileDiffXY(2, 0)};
+
+		SetupAircraftPool();
+		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), VehicleID(12));
+		Aircraft *v = CreateAircraft(VehicleID(13));
+
+		CHECK_FALSE(TryReserveContiguousModularRunway(v, st, base));
 		CHECK_FALSE(HasModularAirportTileReservation(base));
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(1, 0), VehicleID(12)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(2, 0)));
+		CHECK(v->modular_runway_reservation.empty());
+
+		ClearModularAirportTileReservation(base + TileDiffXY(1, 0));
+		CHECK(TryReserveContiguousModularRunway(v, st, base + TileDiffXY(1, 0)));
+		CheckReservedBy(runway_tiles, v->index);
+		CHECK(TryReserveContiguousModularRunway(v, st, base));
+		CheckReservedBy(runway_tiles, v->index);
 	}
 }
 
@@ -260,6 +388,40 @@ TEST_CASE("ModularAirportMapDependentLogic")
 
 		CHECK(GetRunwayOtherEnd(st, base) == base + TileDiffXY(2, 0));
 		CHECK(GetRunwayOtherEnd(st, base + TileDiffXY(2, 0)) == base);
+		CHECK(GetRunwayOtherEnd(st, base + TileDiffXY(1, 0)) == base + TileDiffXY(2, 0));
+	}
+
+	SECTION("Vertical Runway Discovery From Middle Tile") {
+		AddModularTile(st, base, APT_RUNWAY_END, 1);
+		AddModularTile(st, base + TileDiffXY(0, 1), APT_RUNWAY_5, 1);
+		AddModularTile(st, base + TileDiffXY(0, 2), APT_RUNWAY_END, 1);
+
+		std::vector<TileIndex> tiles;
+		CHECK(GetContiguousModularRunwayTiles(st, base + TileDiffXY(0, 1), tiles));
+		REQUIRE(tiles.size() == 3);
+		CHECK(tiles[0] == base);
+		CHECK(tiles[1] == base + TileDiffXY(0, 1));
+		CHECK(tiles[2] == base + TileDiffXY(0, 2));
+		CHECK(GetRunwayOtherEnd(st, base) == base + TileDiffXY(0, 2));
+	}
+
+	SECTION("Runway Discovery Stops At Gaps And Mixed Axes") {
+		AddModularTile(st, base, APT_RUNWAY_END, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_RUNWAY_END, 0);
+
+		std::vector<TileIndex> tiles;
+		CHECK(GetContiguousModularRunwayTiles(st, base, tiles));
+		REQUIRE(tiles.size() == 1);
+		CHECK(tiles[0] == base);
+
+		Station *mixed_st = SetupModularAirport(base, 5, 5);
+		REQUIRE(mixed_st != nullptr);
+		AddModularTile(mixed_st, base, APT_RUNWAY_END, 0);
+		AddModularTile(mixed_st, base + TileDiffXY(1, 0), APT_RUNWAY_5, 1);
+		CHECK(GetContiguousModularRunwayTiles(mixed_st, base, tiles));
+		REQUIRE(tiles.size() == 1);
+		CHECK_FALSE(GetContiguousModularRunwayTiles(mixed_st, base + TileDiffXY(2, 0), tiles));
 	}
 
 	SECTION("Runway Axis") {
@@ -316,6 +478,13 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(IsModularHangarPiece(APT_DEPOT_SE));
 		CHECK(IsModularHangarPiece(APT_SMALL_DEPOT_NW));
 		CHECK_FALSE(IsModularHangarPiece(APT_STAND));
+	}
+
+	SECTION("Legacy Small Hangar Pieces") {
+		CHECK(IsLegacySmallHangarPiece(APT_SMALL_DEPOT_SE));
+		CHECK(IsLegacySmallHangarPiece(APT_SMALL_DEPOT_NE));
+		CHECK_FALSE(IsLegacySmallHangarPiece(APT_DEPOT_SE));
+		CHECK_FALSE(IsLegacySmallHangarPiece(APT_STAND));
 	}
 }
 
@@ -384,6 +553,14 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 3, 1) == APT_RUNWAY_SMALL_MIDDLE);
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 3, 2) == APT_RUNWAY_SMALL_NEAR_END);
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 1, 0) == APT_RUNWAY_SMALL_NEAR_END);
+	}
+
+	SECTION("Modern Piece Availability") {
+		CHECK_FALSE(IsModernModularPiece(APT_APRON));
+		CHECK_FALSE(IsModernModularPiece(APT_SMALL_DEPOT_SE));
+		CHECK(IsModernModularPiece(APT_RUNWAY_1));
+		CHECK(GetModularPieceMinYear(APT_APRON) == CalendarTime::MIN_YEAR);
+		CHECK(GetModularPieceMinYear(APT_RUNWAY_1) == AirportSpec::Get(AT_LARGE)->min_year);
 	}
 }
 
