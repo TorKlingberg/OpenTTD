@@ -54,6 +54,8 @@ static void SetupAircraftPool()
 	_vehicle_pool.CleanPool();
 }
 
+/* Bare-shell aircraft for tests: only fields read by the APIs under test
+ * (index, subtype, tile, x_pos/y_pos, ground_path_goal) are populated by callers. */
 static Aircraft *CreateAircraft(VehicleID index)
 {
 	Aircraft *v = Aircraft::CreateAtIndex(index);
@@ -158,10 +160,14 @@ TEST_CASE("ModularAirportHoldingLoop")
 		CHECK(IsHoldingGateActive(0, 0, 8)); // AT gate
 		CHECK(IsHoldingGateActive(7, 0, 8)); // Just before gate (wrap)
 		CHECK_FALSE(IsHoldingGateActive(1, 0, 8)); // Just passed gate
-		
+
 		CHECK(IsHoldingGateActive(3, 4, 8)); // Just before gate
 		CHECK(IsHoldingGateActive(4, 4, 8)); // AT gate
 		CHECK_FALSE(IsHoldingGateActive(5, 4, 8)); // Just passed gate
+
+		// Edge cases.
+		CHECK_FALSE(IsHoldingGateActive(0, 0, 0)); // Empty loop is never active.
+		CHECK(IsHoldingGateActive(0, 0, 1)); // Single waypoint: at-gate and "previous" alias.
 	}
 
 	SECTION("GetNearestModularHoldingWaypoint") {
@@ -419,8 +425,10 @@ TEST_CASE("ModularAirportMapDependentLogic")
 		REQUIRE(mixed_st != nullptr);
 		AddModularTile(mixed_st, base, APT_RUNWAY_END, 0);
 		AddModularTile(mixed_st, base + TileDiffXY(1, 0), APT_RUNWAY_5, 1);
+		tiles.clear();
 		CHECK(GetContiguousModularRunwayTiles(mixed_st, base, tiles));
 		REQUIRE(tiles.size() == 1);
+		tiles.clear();
 		CHECK_FALSE(GetContiguousModularRunwayTiles(mixed_st, base + TileDiffXY(2, 0), tiles));
 	}
 
