@@ -121,7 +121,9 @@ CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *
 	uint8_t dir_flags = runway_flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
 	if (dir_flags != RUF_DIR_LOW && dir_flags != RUF_DIR_HIGH) return CMD_ERROR;
 
-	if (st == nullptr) return CMD_ERROR;
+	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
+	 * BuildModularAirportTile_Check has already validated the placement. */
+	if (st == nullptr) return CommandCost();
 
 	CommandCost ret = CheckOwnership(st->owner);
 	if (ret.Failed()) return ret;
@@ -191,14 +193,17 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 
 CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st, uint8_t piece_type = 0, uint8_t rotation = 0)
 {
-	if (st == nullptr) return CMD_ERROR;
+	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
+	 * BuildModularAirportTile_Check has already validated the placement. The taxi-direction
+	 * checks below still run against the supplied piece_type/rotation. */
+	ModularAirportTileData *data = (st != nullptr) ? st->airport.GetModularTileData(tile) : nullptr;
+	if (st != nullptr) {
+		CommandCost ret = CheckOwnership(st->owner);
+		if (ret.Failed()) return ret;
 
-	CommandCost ret = CheckOwnership(st->owner);
-	if (ret.Failed()) return ret;
+		if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
+	}
 
-	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
-
-	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	uint8_t current_piece_type = (data != nullptr) ? data->piece_type : piece_type;
 	uint8_t current_rotation = (data != nullptr) ? data->rotation : rotation;
 
@@ -249,7 +254,9 @@ CommandCost SetEdgeFence_Check(TileIndex tile [[maybe_unused]], uint8_t edge_bit
 	/* Validate: exactly one edge bit. */
 	if (edge_bit != 0x01 && edge_bit != 0x02 && edge_bit != 0x04 && edge_bit != 0x08) return CMD_ERROR;
 
-	if (st == nullptr) return CMD_ERROR;
+	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
+	 * BuildModularAirportTile_Check has already validated the placement. */
+	if (st == nullptr) return CommandCost();
 
 	CommandCost ret = CheckOwnership(st->owner);
 	if (ret.Failed()) return ret;
@@ -411,8 +418,20 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	uint newnoise_level = 0;
 	if (will_create_airport_facility) {
 		const AirportSpec *as = AirportSpec::Get(AT_SMALL);
-		uint dist;
-		nearest = AirportGetNearestTown(as, DIR_N, abs_tiles[0], OrthogonalTileIterator(union_area), dist);
+		/* Find nearest town across the actual template tile set. The AirportSpec-based
+		 * AirportGetNearestTown helper asserts every iterated tile fits within the spec's
+		 * size_x*size_y bounding box, which a multi-tile template can exceed. */
+		uint dist = UINT_MAX - 1;
+		for (TileIndex t : abs_tiles) {
+			Town *town = CalcClosestTownFromTile(t, dist + 1);
+			if (town == nullptr) continue;
+			uint d = DistanceManhattan(town->xy, t);
+			if (d == dist && nearest != nullptr && town->index < nearest->index) nearest = town;
+			if (d < dist) {
+				nearest = town;
+				dist = d;
+			}
+		}
 		newnoise_level = GetAirportNoiseLevelForDistance(as, dist);
 
 		StringID authority_refuse_message = STR_NULL;
