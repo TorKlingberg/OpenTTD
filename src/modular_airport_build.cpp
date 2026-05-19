@@ -760,7 +760,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		StringID authority_refuse_message = STR_NULL;
 		Town *authority_refuse_town = nullptr;
 
-		if (_settings_game.economy.station_noise_level) {
+		if (_settings_game.economy.station_noise_level && nearest != nullptr) {
 			if ((nearest->noise_reached + newnoise_level) > nearest->MaxTownNoise()) {
 				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_NOISE;
 				authority_refuse_town = nearest;
@@ -822,7 +822,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, To
 		assert(ret.Succeeded());
 	}
 
-	if (new_facility) nearest->noise_reached += newnoise_level;
+	if (new_facility && nearest != nullptr) nearest->noise_reached += newnoise_level;
 
 	st->AddFacility(StationFacility::Airport, tile);
 	if (new_facility) {

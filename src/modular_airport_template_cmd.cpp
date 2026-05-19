@@ -437,7 +437,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		StringID authority_refuse_message = STR_NULL;
 		Town *authority_refuse_town = nullptr;
 
-		if (_settings_game.economy.station_noise_level) {
+		if (_settings_game.economy.station_noise_level && nearest != nullptr) {
 			if ((nearest->noise_reached + newnoise_level) > nearest->MaxTownNoise()) {
 				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_NOISE;
 				authority_refuse_town = nearest;
