@@ -732,15 +732,22 @@ void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<con
 	std::vector<TileIndex> sorted_keep(keep_set.begin(), keep_set.end());
 	SortAndUniqueTiles(sorted_keep);
 
+	/* Release every map reservation bit the aircraft owns that is not in the
+	 * keep-set. The aircraft's own reservation vectors are authoritative for
+	 * which map bits it owns — every setter (SetTaxiReservation,
+	 * TryReserveContiguousModularRunway, TryReserveRunwayResourcesAtomic) records
+	 * the tile here — so we walk those vectors instead of scanning the whole
+	 * airport, which makes per-step reconcile O(reserved) rather than O(tiles). */
 	uint16_t released = 0;
-	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		Tile t(data.tile);
-		if (!IsAirportTile(t)) continue;
-		if (!IsModularAirportTileReservedBy(data.tile, v->index)) continue;
-		if (ContainsSortedTile(sorted_keep, data.tile)) continue;
-		ClearModularAirportTileReservation(data.tile);
+	const auto release_if_unwanted = [&](TileIndex tile) {
+		if (tile == INVALID_TILE || ContainsSortedTile(sorted_keep, tile)) return;
+		Tile t(tile);
+		if (!IsAirportTile(t) || !IsModularAirportTileReservedBy(tile, v->index)) return;
+		ClearModularAirportTileReservation(tile);
 		released++;
-	}
+	};
+	for (TileIndex tile : v->taxi_reserved_tiles) release_if_unwanted(tile);
+	for (TileIndex tile : v->modular_runway_reservation) release_if_unwanted(tile);
 
 	std::erase_if(v->taxi_reserved_tiles, [&](TileIndex tile) { return !ContainsSortedTile(sorted_keep, tile); });
 	std::erase_if(v->modular_runway_reservation, [&](TileIndex tile) { return !ContainsSortedTile(sorted_keep, tile); });
@@ -3861,7 +3868,8 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v, true);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
-			if (v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
+			if (_debug_misc_level >= 1 && v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
+				/* Diagnostic A* only when someone is listening — gate on debug level. */
 				AirportGroundPath dbg_path = FindAirportGroundPath(st, v->tile, v->ground_path_goal, v);
 				Debug(misc, 1,
 					"[ModAp] V{} unit#{} stuck(no-path) wait={} state={} tile={} goal={} tgt={} path_found={} cost={}",

@@ -125,6 +125,8 @@ reintroduce logic that treats "owns continuation tile" as "can safely halt".
 
 `SetTaxiReservation` blindly overwrites the map-level reserver bit; the caller must have already verified that no other vehicle owns the tile. Likewise, the reconciler edits both the map bits and the vehicle vectors — divergence between vector and map state usually means something wrote map state without going through `SetTaxiReservation`, or vice versa.
 
+The reconciler now *relies* on the vectors being authoritative: its release pass walks `taxi_reserved_tiles` + `modular_runway_reservation` (not the whole airport) to find map bits to clear, so per-step reconcile is O(reserved) not O(tiles). Every map-bit setter (`SetTaxiReservation`, `TryReserveContiguousModularRunway`, `TryReserveRunwayResourcesAtomic`) records into one of these vectors — if you add a new setter, it **must** track here or its bit can leak (the reconciler will never see it).
+
 The `owned-reservations` log line reads map state; `tracked-runway` reads `modular_runway_reservation`. A mismatch is a useful red flag. See `skills/stuck_plane_debugging.md`.
 
 ### Pitfall 4: Runway deny is sticky if you already own the resource
