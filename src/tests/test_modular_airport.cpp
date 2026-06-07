@@ -742,3 +742,80 @@ TEST_CASE("ModularAirportLandingChain")
 		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 	}
 }
+
+TEST_CASE("ModularAirportTransitRunwayContract")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Layout: aircraft taxis +Y across a transit runway to a stand.
+	 *   Row 1: APRON(2,1)            <- start
+	 *   Row 2: RWY_END RWY_5 RWY_END <- transit runway (single resource)
+	 *   Row 3: APRON(2,3)            <- transit grass on the far side (NOT a safe stop)
+	 *   Row 4: STAND(2,4)            <- goal (the only far-side safe stop)
+	 * Path: (2,1) -> (2,2)[RWY] -> (2,3)[APRON] -> (2,4)[STAND]. */
+	AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+	AddModularTile(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(2, 4), APT_STAND, 0);
+
+	const TileIndex start = base + TileDiffXY(2, 1);
+	const TileIndex goal = base + TileDiffXY(2, 4);
+
+	auto setup_aircraft_on_path = [&](VehicleID id) -> Aircraft * {
+		Aircraft *v = CreateAircraft(id);
+		v->targetairport = st->index;
+		v->tile = start;
+		v->ground_path_goal = goal;
+		TaxiPath path = BuildTaxiPath(st, start, goal, v, true);
+		REQUIRE(path.valid);
+		REQUIRE_FALSE(path.segments.empty());
+		v->taxi_path = std::make_unique<TaxiPath>(std::move(path));
+		v->taxi_path_index = 0;
+		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
+		return v;
+	};
+
+	auto runway_segment = [&](Aircraft *v) -> uint8_t {
+		for (uint8_t s = 0; s < v->taxi_path->segments.size(); s++) {
+			if (v->taxi_path->segments[s].type == TaxiSegmentType::RUNWAY) return s;
+		}
+		FAIL("no runway segment on path");
+		return 0;
+	};
+
+	SECTION("Reserves the full crossing chain to the far-side safe stop") {
+		SetupAircraftPool();
+		Aircraft *v = setup_aircraft_on_path(VehicleID(10));
+		REQUIRE(TryReserveTaxiSegment(v, st, runway_segment(v)));
+
+		/* Whole transit runway atomically reserved. */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
+		}
+		/* Far-side transit grass reserved (would have been a strand point before). */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
+		/* Goal stand reserved — chain reached the safe stop. */
+		CHECK(IsModularAirportTileReservedBy(goal, v->index));
+	}
+
+	SECTION("Denies runway entry when the far side is blocked; runway untouched") {
+		SetupAircraftPool();
+		Aircraft *v = setup_aircraft_on_path(VehicleID(10));
+		/* Block the transit grass past the runway: there is no reserved safe stop
+		 * beyond, so the aircraft must wait BEFORE the runway, not strand on grass. */
+		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(2, 3));
+
+		CHECK_FALSE(TryReserveTaxiSegment(v, st, runway_segment(v)));
+
+		/* No half-commit: the runway resource was never taken. */
+		for (int i = 0; i < 3; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
+		}
+		CHECK(v->modular_runway_reservation.empty());
+		/* Blocker's reservation untouched. */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), VehicleID(11)));
+	}
+}

@@ -77,9 +77,9 @@ Repeated deny/grant oscillation for the same vehicle/runway is a strong signal f
 grep 'runway-transit-' /tmp/openttd.log | tail -50
 ```
 Important patterns:
-- `runway-transit-deny` — runway-transit entry denied because continuation chain could not be acquired.
+- `runway-transit-deny` — runway-transit entry denied because the full crossing chain to the next safe stop could not be reserved (runway resource, transit grass, or the far-side safe stop was blocked). The aircraft correctly waits *before* the runway.
 - `runway-transit-debug` — emitted from stuck(reserve) context for runway segments; shows `terminal=<bool>` and continuation state.
-- `runway-transit-invariant: missing continuation ownership` — hard contract violation signal; should be rare/zero in healthy runs.
+- `runway-transit-invariant: missing exit ownership` — hard contract violation signal (aircraft about to step onto a transit runway without owning the tile just past it); should be rare/zero in healthy runs.
 
 ### Takeoff retarget caveat
 `TryRetargetModularGroundGoal` does not retarget `MGT_RUNWAY_TAKEOFF`. If takeoff-side movement stalls, focus on reservation contention and segment progression, not alternate-goal retarget.
@@ -171,7 +171,7 @@ grep 'V{id}.*runway-transit-invariant' /tmp/openttd.log | tail -20
 grep 'V{id}.*freemove-deny: exit runway tile' /tmp/openttd.log | tail -20
 ```
 - `terminal=true` means runway is treated as the destination segment (takeoff/rollout flow).
-- `terminal=false` means runway is transit; continuation tile must be owned before entry.
+- `terminal=false` means runway is transit; the full chain across it to the next safe stop (ONE_WAY tile / stand / hangar / helipad / goal) must be reservable before entry, otherwise the aircraft waits before the runway.
 - Repeated `freemove-deny: exit runway tile=...` with `runway-reserve denied` usually indicates runway contention, not a reservation leak.
 
 ### Takeoff failures

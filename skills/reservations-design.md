@@ -54,14 +54,9 @@ Hangar tiles are non-blocking (multi-capacity).
 Two modes, distinguished by `IsRunwaySegmentTerminalGoal`:
 
 - **Terminal runway** (takeoff goal, or path destination is on this runway): atomically reserve the contiguous runway resource via `TryReserveRunwayResourcesAtomic`.
-- **Transit runway** (using runway as a taxiway bridge): all-or-nothing pre-entry reservation of:
-  - the runway resource(s),
-  - the current tile (hold tile), and
-  - a continuation tile past the runway (from `FindRunwayTransitContinuationTile`).
+- **Transit runway** (using runway as a taxiway bridge): all-or-nothing pre-entry reservation of the *full crossing chain* — every runway resource crossed, plus every tile up to and including the **first safe stop** on the far side (a ONE_WAY queue tile, a stand/hangar/helipad, or the path goal). The chain is fully validated first; nothing is committed unless the whole chain is free. If no safe stop is reachable past the runway, or any tile/resource is blocked, entry is denied and the aircraft waits *before* the runway (on its prior safe stop).
 
-  If continuation can't be derived or any piece is blocked, runway entry is denied.
-
-**Caveat:** The continuation tile is just the *first non-runway, non-service-style* tile after the runway. It is **not** guaranteed to be a safe stop on its own — it's typically grass. Safety is restored only because the next FREE_MOVE entry must atomically reserve the rest of its segment (see Pitfall 1 below).
+This makes runway entry self-sufficient for every aircraft class: stepping onto a transit runway guarantees a reserved path off it to a place where the aircraft can wait indefinitely. It never halts on the runway or on transit grass/apron. The walk lives in the `RUNWAY` branch of `TryReserveTaxiSegment`; `IsModularSafeStopTile` decides where the chain may stop.
 
 ## 4. Reserve-then-reconcile (Reservation V2)
 
@@ -101,23 +96,30 @@ The computed path is stored in `landing_chain_path` and reused after touchdown w
 
 ## 8. Common pitfalls
 
-### Pitfall 1: Segment-boundary entry skipping atomic re-validation
+### Pitfall 1: Transit-runway entry must guarantee a safe stop beyond (resolved)
 
-When advancing between segments in `AirportMoveModular`, the per-tile entry decision is roughly:
+Entering a transit runway reserves the entire crossing chain to the first safe
+stop (see §3 `RUNWAY`), so an aircraft never steps onto a runway — or off it
+onto unreserved grass — without owning a chain to a place it can wait. This is
+enforced uniformly for fixed-wing and helicopters inside the `RUNWAY` branch of
+`TryReserveTaxiSegment`; there is **no** vehicle-class special case at the
+`AirportMoveModular` segment boundary anymore.
 
-```cpp
-need_reserve = (next_type == ONE_WAY) || !already_owned(next_tile);
-if (next_type == RUNWAY && !next_is_terminal_runway) need_reserve = true;
-if (next_type == FREE_MOVE && next_segment != taxi_current_segment) need_reserve = true;  // helicopter only currently
-```
+History: this used to pin only the first continuation tile, leaving the rest of
+the downstream `FREE_MOVE` segment unreserved, so fixed-wing could strand on
+grass. A helicopter-only revalidation at the segment boundary patched the
+symptom; the full-chain transit contract removed the root cause and let the
+special case be deleted. Tightening the fixed-wing contract cost ~2% on the
+`mass6-inair.sav` baseline (floor lowered 9200 → 9000) — the price of the
+provable safe-stop guarantee.
 
-Without that last clause, a runway-transit pre-commit (which only pins the *first* continuation tile) lets an aircraft step into a `FREE_MOVE` segment owning just the entry tile — the rest of the segment is unreserved. If a downstream tile is blocked, the aircraft stops on grass/apron, violating the safe-stop invariant.
+### Pitfall 2: `FindRunwayTransitContinuationTile` is informational only
 
-The current fix is helicopter-only because forcing re-validation for fixed-wing introduced a small throughput drop in the regression baseline (`mass6-inair.sav`). If you change segment-boundary semantics for fixed-wing, re-run `scripts/regression_test.sh` and expect to update the committed minimum.
-
-### Pitfall 2: Continuation tile is not a safe stop
-
-`FindRunwayTransitContinuationTile` returns the first non-runway, non-service-style tile after a transit runway — usually a grass tile. It is *not* a safe stop. Don't add logic that treats "owns continuation tile" as "can safely halt"; the safety guarantee comes from the FREE_MOVE atomic-segment contract that fires *after* the aircraft steps onto the continuation tile.
+It returns the first non-runway, non-service-style tile after a transit runway —
+usually grass, which is *not* a safe stop. It is now used only for keep-set
+hints and debug logging. Reservation safety comes from the full-chain transit
+contract (§3), which reserves *past* this tile to a real safe stop. Don't
+reintroduce logic that treats "owns continuation tile" as "can safely halt".
 
 ### Pitfall 3: `taxi_reserved_tiles` vs map state
 
