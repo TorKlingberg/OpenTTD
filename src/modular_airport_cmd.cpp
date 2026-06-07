@@ -771,13 +771,16 @@ void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<con
 	}
 }
 
-bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile)
+bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile, bool append_to_existing)
 {
 	std::vector<TileIndex> runway_tiles;
 	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) return false;
 	SortAndUniqueTiles(runway_tiles);
 
 	const auto clear_if_stale = [&]() {
+		/* In append mode (e.g. landing chain acquiring rollout + transit runways),
+		 * the caller owns rollback so we must not touch pre-existing tracking. */
+		if (append_to_existing) return;
 		if (v->modular_runway_reservation.empty()) return;
 		std::vector<TileIndex> tracked = v->modular_runway_reservation;
 		SortAndUniqueTiles(tracked);
@@ -826,7 +829,7 @@ bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex
 	}
 
 	const bool reservation_changed = (v->modular_runway_reservation != runway_tiles);
-	if (reservation_changed) {
+	if (reservation_changed && !append_to_existing) {
 		ClearModularRunwayReservation(v);
 	}
 
@@ -1045,9 +1048,12 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		return true;
 	}
 
+	/* Planning is purely topology + cost (the stand pass-through penalty already
+	 * steers paths away from stands when alternatives exist). Dynamic occupancy
+	 * is enforced by the walk below — no need to filter neighbors at plan time. */
 	TaxiPath path = BuildTaxiPath(st, chain_origin, ground_goal, nullptr);
 	if (!path.valid || path.tiles.empty() || path.segments.empty()) {
-		if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
+		ClearTaxiPathReservation(v, INVALID_TILE, true, false);
 		ClearModularRunwayReservation(v);
 		return log_chain_fail("path_invalid");
 	}
@@ -1056,47 +1062,55 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	while (seg_idx < path.segments.size() && path.segments[seg_idx].type == TaxiSegmentType::RUNWAY) seg_idx++;
 	if (seg_idx >= path.segments.size()) return true;
 
-	const TaxiSegment &seg = path.segments[seg_idx];
-	std::vector<TileIndex> tmp_reserved;
-	tmp_reserved.reserve(seg.end_index - seg.start_index + 2);
-	if (!touchdown_on_runway) tmp_reserved.push_back(runway_tile);
+	const auto rollback = [&]() {
+		ClearTaxiPathReservation(v, INVALID_TILE, true, false);
+		ClearModularRunwayReservation(v);
+	};
 
-	if (seg.type == TaxiSegmentType::ONE_WAY) {
-		TileIndex entry = path.tiles[seg.start_index];
-		if (blocked_by_other(entry)) {
-			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
-			ClearModularRunwayReservation(v);
-			return log_chain_fail("one_way_entry_blocked", entry);
+	/* Walk segments after rollout. Reserve every tile so the post-touchdown
+	 * route is committed end-to-end, with one exception: a ONE_WAY segment is
+	 * a safe stop — reserve only its entry tile and leave the rest of the
+	 * path for taxi-time queueing. Transit runways are reserved atomically
+	 * by resource. Anything blocked before the stop or before the goal
+	 * triggers a full rollback so landing stays a transactional commit. */
+	for (uint8_t s = seg_idx; s < path.segments.size(); s++) {
+		const TaxiSegment &seg = path.segments[s];
+
+		if (seg.type == TaxiSegmentType::RUNWAY) {
+			TileIndex first_runway_tile = path.tiles[seg.start_index];
+			/* append_to_existing: do not disturb the rollout runway tracking. */
+			if (!TryReserveContiguousModularRunway(v, st, first_runway_tile, true)) {
+				rollback();
+				return log_chain_fail("transit_runway_busy", first_runway_tile);
+			}
+			continue;
 		}
-		for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
-		SetTaxiReservation(v, entry);
-		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
-		return true;
-	}
 
-	for (uint16_t i = seg.start_index; i <= seg.end_index; ++i) {
-		TileIndex tile = path.tiles[i];
-		if (blocked_by_other(tile)) {
-			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
-			ClearTaxiPathReservation(v, INVALID_TILE);
-			ClearModularRunwayReservation(v);
-			return log_chain_fail("segment_blocked", tile);
+		if (seg.type == TaxiSegmentType::ONE_WAY) {
+			TileIndex entry = path.tiles[seg.start_index];
+			if (blocked_by_other(entry)) {
+				rollback();
+				return log_chain_fail("one_way_entry_blocked", entry);
+			}
+			SetTaxiReservation(v, entry);
+			v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
+			if (ShouldLogModularRateLimited(v->index, 44, 16)) {
+				LogModularVehicleReservationState(st, v, "landing chain reserved");
+			}
+			return true;
 		}
-		tmp_reserved.push_back(tile);
-	}
 
-	if (seg.end_index + 1 < path.tiles.size()) {
-		TileIndex exit_tile = path.tiles[seg.end_index + 1];
-		if (blocked_by_other(exit_tile)) {
-			if (!touchdown_on_runway) ClearTaxiPathReservation(v, INVALID_TILE, true, false);
-			ClearTaxiPathReservation(v, INVALID_TILE);
-			ClearModularRunwayReservation(v);
-			return log_chain_fail("exit_blocked", exit_tile);
+		/* FREE_MOVE: reserve every tile in the segment. Hangars are
+		 * multi-capacity, so they don't participate in the blocked check. */
+		for (uint16_t i = seg.start_index; i <= seg.end_index; ++i) {
+			TileIndex tile = path.tiles[i];
+			if (!IsModularHangarTile(st, tile) && blocked_by_other(tile)) {
+				rollback();
+				return log_chain_fail("segment_blocked", tile);
+			}
+			SetTaxiReservation(v, tile);
 		}
-		tmp_reserved.push_back(exit_tile);
 	}
-
-	for (TileIndex tile : tmp_reserved) SetTaxiReservation(v, tile);
 
 	v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
 

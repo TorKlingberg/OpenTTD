@@ -220,7 +220,7 @@ void SetModularAirportTileReservationOwner(TileIndex tile, VehicleID vid);
 void ClearModularAirportTileReservation(TileIndex tile);
 bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interval_ticks);
 bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, VehicleID self);
-bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile);
+bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile, bool append_to_existing = false);
 bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker = nullptr);

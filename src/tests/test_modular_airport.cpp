@@ -580,9 +580,165 @@ TEST_CASE("ModularAirportMovementHelpers")
 		CHECK(DirectionsWithin45(DIR_N, DIR_NW));
 		CHECK_FALSE(DirectionsWithin45(DIR_N, DIR_E));
 		CHECK_FALSE(DirectionsWithin45(DIR_N, DIR_S));
-		
+
 		// Wrap around
 		CHECK(DirectionsWithin45(DIR_NW, DIR_N));
 		CHECK(DirectionsWithin45(DIR_NW, DIR_W));
+	}
+}
+
+/* Mark a tile as occupied by another aircraft for landing-chain validation tests.
+ * Must register the tile in the blocker's taxi_reserved_tiles so that
+ * TryClearStaleModularReservation does not auto-clear it. */
+static Aircraft *CreateBlockerOnTile(Station *st, VehicleID blocker_id, TileIndex tile)
+{
+	Aircraft *blocker = CreateAircraft(blocker_id);
+	blocker->targetairport = st->index;
+	blocker->tile = tile;
+	SetModularAirportTileReservationOwner(tile, blocker->index);
+	blocker->taxi_reserved_tiles.push_back(tile);
+	return blocker;
+}
+
+TEST_CASE("ModularAirportLandingChain")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	SECTION("Rejects path through occupied stand") {
+		/* Layout (rotation 0, runway extends East along X):
+		 *   Row 0: RWY_END  RWY_5    RWY_END     (rollout runway, tiles only)
+		 *   Row 1:                   STAND_BLK   (sole exit from runway end)
+		 *   Row 2:                   STAND_GOAL  (only reachable via STAND_BLK)
+		 * Touchdown at (0,0), rollout at (2,0). Goal at (2,2).
+		 * Planner returns path (2,0) → (2,1) → (2,2); the walk's blocked_by_other
+		 * on (2,1) must reject the chain. */
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_STAND, 0);   // blocker sits here
+		AddModularTile(st, base + TileDiffXY(2, 2), APT_STAND, 0);   // goal
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+
+		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(2, 1));
+
+		TileIndex touchdown = base;
+		TileIndex goal = base + TileDiffXY(2, 2);
+
+		CHECK_FALSE(TryReserveLandingChain(v, st, touchdown, goal));
+		/* Full rollback: rollout runway released. */
+		for (int i = 0; i < 3; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(v->modular_runway_reservation.empty());
+	}
+
+	SECTION("Reserves transit runway end-to-end") {
+		/* Layout:
+		 *   Row 0 (rollout runway):  RWY_END RWY_5 RWY_END
+		 *   Row 1:                   APRON   APRON APRON
+		 *   Row 2 (transit runway):  RWY_END RWY_5 RWY_END
+		 *   Row 3:                   APRON   APRON STAND_GOAL
+		 * Touchdown at (0,0), rollout (2,0). Goal at (2,3).
+		 * Path: rollout → apron(2,1) → transit_runway(2,2) → STAND_GOAL(2,3). */
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(0, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+
+		TileIndex touchdown = base;
+		TileIndex goal = base + TileDiffXY(2, 3);
+		REQUIRE(TryReserveLandingChain(v, st, touchdown, goal));
+
+		/* Rollout runway atomically reserved. */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		/* Transit runway atomically reserved too (full row 2). */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
+		}
+		/* Goal stand reserved (end-to-end walk reaches the goal). */
+		CHECK(IsModularAirportTileReservedBy(goal, v->index));
+	}
+
+	SECTION("Fails when transit runway is held; rollout fully rolled back") {
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(0, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+
+		/* Pre-occupy the transit runway. */
+		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(0, 2));
+
+		TileIndex touchdown = base;
+		TileIndex goal = base + TileDiffXY(2, 3);
+		CHECK_FALSE(TryReserveLandingChain(v, st, touchdown, goal));
+
+		/* Rollout runway released — no half-commit. */
+		for (int i = 0; i < 3; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(v->modular_runway_reservation.empty());
+		/* Blocker's reservation on the transit runway untouched. */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(0, 2), VehicleID(11)));
+	}
+
+	SECTION("Stops at first ONE_WAY tile") {
+		/* Layout:
+		 *   Row 0: RWY_END RWY_5 RWY_END         (rollout runway)
+		 *   Row 1: APRON   APRON APRON           (FREE_MOVE)
+		 *   Row 2: APRON   APRON APRON_ONEWAY    (ONE_WAY tile at (2,2))
+		 *   Row 3: APRON   APRON STAND_GOAL
+		 * Path: rollout(2,0) → (2,1) → (2,2)[ONE_WAY] → (2,3)[goal].
+		 * Walk reserves up to and including (2,2), then stops. (2,3) is NOT reserved. */
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(0, 2), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 2), APT_APRON, 0);
+		ModularAirportTileData *one_way = AddModularTileWithData(st, base + TileDiffXY(2, 2), APT_APRON, 0);
+		one_way->one_way_taxi = true;
+		one_way->user_taxi_dir_mask = 0x04; // allow entry from (2,1) i.e. South (going down +Y)
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+
+		TileIndex touchdown = base;
+		TileIndex goal = base + TileDiffXY(2, 3);
+		REQUIRE(TryReserveLandingChain(v, st, touchdown, goal));
+
+		/* Rollout runway reserved. */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		/* (2,1) FREE_MOVE reserved (segment before ONE_WAY). */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 1), v->index));
+		/* (2,2) ONE_WAY entry reserved — the safe stop. */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
+		/* (2,3) goal NOT reserved — walk stopped at ONE_WAY. */
+		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 	}
 }
