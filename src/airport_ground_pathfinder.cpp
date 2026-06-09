@@ -187,7 +187,7 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
  * @param to Destination tile.
  * @return True if connection is allowed.
  */
-static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
+static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const ModularAirportTileData *from_data, const ModularAirportTileData *to_data, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	/* Must be orthogonally adjacent */
 	int dx = TileX(to) - TileX(from);
@@ -201,8 +201,8 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	if (dy == +1) dir_bit = 0x04; // South
 	if (dx == -1) dir_bit = 0x08; // West
 
-	/* Get tile data for 'from' */
-	const ModularAirportTileData *from_data = st->airport.GetModularTileData(from);
+	/* Tile data for 'from' / 'to' is supplied by the caller (the A* node
+	 * expansion already has it), avoiding redundant per-edge index lookups. */
 	if (from_data == nullptr) return false;
 
 	/* Get effective taxi directions */
@@ -214,8 +214,6 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	bool from_ok = (from_dirs & dir_bit) != 0;
 
-	/* Get tile data for 'to' */
-	const ModularAirportTileData *to_data = st->airport.GetModularTileData(to);
 	if (to_data == nullptr) return false;
 	const bool from_is_runway = IsModularRunwayPiece(from_data->piece_type);
 	const bool to_is_runway = IsModularRunwayPiece(to_data->piece_type);
@@ -302,17 +300,19 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
  * @param tile Current tile.
  * @return Vector of reachable neighbor tiles.
  */
-static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
+static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
-	std::vector<TileIndex> neighbors;
+	std::vector<std::pair<TileIndex, const ModularAirportTileData *>> neighbors;
 
-	/* Check if this is a hangar for extra logging */
+	/* One index lookup for the current tile; reused for every edge check below. */
 	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
-	bool is_hangar = (tile_data &&
+
+	/* is_hangar drives only verbose (level 4) tracing — don't pay for it otherwise. */
+	const bool is_hangar = (_debug_misc_level >= 4) && tile_data != nullptr &&
 			(tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_DEPOT_SW ||
 			 tile_data->piece_type == APT_DEPOT_NW || tile_data->piece_type == APT_DEPOT_NE ||
 			 tile_data->piece_type == APT_SMALL_DEPOT_SE || tile_data->piece_type == APT_SMALL_DEPOT_SW ||
-			 tile_data->piece_type == APT_SMALL_DEPOT_NW || tile_data->piece_type == APT_SMALL_DEPOT_NE));
+			 tile_data->piece_type == APT_SMALL_DEPOT_NW || tile_data->piece_type == APT_SMALL_DEPOT_NE);
 
 	/* Check all 4 orthogonal directions */
 	static const int dx[] = {0, 1, 0, -1};  // N, E, S, W
@@ -343,8 +343,9 @@ static std::vector<TileIndex> GetReachableNeighbors(const Station *st, TileIndex
 			continue;
 		}
 
-		if (CanTilesConnect(st, tile, neighbor, v, goal, allow_runway_crossing)) {
-			neighbors.push_back(neighbor);
+		const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
+		if (CanTilesConnect(st, tile, neighbor, tile_data, nb_data, v, goal, allow_runway_crossing)) {
+			neighbors.emplace_back(neighbor, nb_data);
 			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CONNECTED!");
 		} else {
 			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CanTilesConnect failed");
@@ -438,10 +439,9 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 				return result;
 			}
 
-			std::vector<TileIndex> neighbors = GetReachableNeighbors(st, current.tile, v, goal, allow_runway_crossing);
-			for (TileIndex neighbor : neighbors) {
+			auto neighbors = GetReachableNeighbors(st, current.tile, v, goal, allow_runway_crossing);
+			for (const auto &[neighbor, nb_data] : neighbors) {
 				int move_cost = 1;
-				const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
 				if (nb_data != nullptr) {
 					switch (nb_data->piece_type) {
 						case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
