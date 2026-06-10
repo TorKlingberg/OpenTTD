@@ -301,6 +301,12 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
 
+/* Defined in aircraft_cmd.cpp; mirrors stock MaybeCrashAirplane for a plane
+ * braking on a modular runway (short-strip overrun + the general "Plane crashes"
+ * setting). Pass whether the airport fails the large-aircraft safety
+ * requirements (see ModularAirportSupportsLargeAircraft). True if it crashed. */
+bool MaybeCrashModularAircraft(Aircraft *v, bool airport_unsafe_for_large);
+
 /** Requirements for a modular airport to be safe for large aircraft. */
 enum ModularAirportSafetyRequirement : uint8_t {
 	MASR_NONE           = 0,

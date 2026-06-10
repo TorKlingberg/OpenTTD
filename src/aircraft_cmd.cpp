@@ -1508,6 +1508,57 @@ static void MaybeCrashAirplane(Aircraft *v)
 }
 
 /**
+ * Crash roll for an aircraft braking on a modular-airport runway, mirroring the
+ * stock MaybeCrashAirplane logic.
+ *
+ * Modular aircraft never reach MaybeCrashAirplane (it is only called from the
+ * classic FTA movement path), so the stock crash mechanics — both the elevated
+ * short-strip overrun for fast jets and the general random crash governed by the
+ * "Plane crashes" setting — would otherwise never apply on modular airports.
+ * This replicates both. The stock ShortStrip airport flag is replaced by an
+ * argument set when the airport is missing the large-aircraft safety
+ * requirements (6-tile landing+takeoff runway, control tower, big terminal),
+ * since a modular AT_SMALL airport always carries ShortStrip regardless of how
+ * it is actually built. Helicopters are excluded (no high-speed runway rollout).
+ * Intended to be called once per brake tick while rolling out, exactly like the
+ * stock check, so the per-landing risk matches a stock airport.
+ * @param v Aircraft braking on a modular runway.
+ * @param airport_unsafe_for_large True if the airport fails the large-aircraft
+ *        safety requirements (see ModularAirportSupportsLargeAircraft).
+ * @return true if the aircraft crashed.
+ */
+bool MaybeCrashModularAircraft(Aircraft *v, bool airport_unsafe_for_large)
+{
+	if (v->subtype == AIR_HELICOPTER) return false;
+
+	uint32_t prob;
+	if (airport_unsafe_for_large &&
+			(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0 &&
+			!_cheats.no_jetcrash.value) {
+		/* Elevated short-strip overrun chance — gated only by the no-jetcrash
+		 * cheat, ignoring the "Plane crashes" setting, exactly like stock. */
+		prob = 3276;
+	} else {
+		/* General random crash, governed by the "Plane crashes" setting
+		 * (0 = none, 1 = reduced, 2 = normal). */
+		if (_settings_game.vehicle.plane_crashes == 0) return false;
+		prob = (0x4000 << _settings_game.vehicle.plane_crashes) / 1500;
+	}
+
+	if (GB(Random(), 0, 22) > prob) return false;
+
+	/* Crash the airplane. Remove all goods stored at the station. */
+	Station *st = Station::Get(v->targetairport);
+	for (GoodsEntry &ge : st->goods) {
+		ge.rating = 1;
+		if (ge.HasData()) ge.GetData().cargo.Truncate();
+	}
+
+	CrashAirplane(v);
+	return true;
+}
+
+/**
  * Aircraft arrives at a terminal. If it is the first aircraft, throw a party.
  * Start loading cargo.
  * @param v Aircraft that arrived.

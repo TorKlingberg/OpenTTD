@@ -3861,6 +3861,18 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		v->modular_takeoff_progress = 0;
 	}
 
+	/* Stock-parity crash roll: the classic FTA path rolls MaybeCrashAirplane on
+	 * every brake tick while decelerating on the runway after landing. Mirror
+	 * that here during runway rollout so the per-landing crash risk equals a
+	 * stock airport. A fast jet landing at an airport that lacks the
+	 * large-aircraft safety requirements gets the elevated short-strip overrun
+	 * chance; every other plane gets the general "Plane crashes" chance. (Takeoff
+	 * never brakes, so — like stock — there is no takeoff crash.) */
+	if (rollout_on_runway && v->cur_speed > scaled_taxi_limit &&
+			MaybeCrashModularAircraft(v, !ModularAirportSupportsLargeAircraft(st))) {
+		return false;
+	}
+
 	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
 		ClearTaxiPathState(v);
 		return false;
