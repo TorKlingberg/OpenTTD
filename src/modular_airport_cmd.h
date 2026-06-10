@@ -59,6 +59,19 @@ inline bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+/** Runway end pieces — the only valid landing/takeoff target tiles. */
+inline bool IsModularRunwayEndPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
 inline bool IsLegacySmallRunwayPiece(uint8_t piece_type)
 {
 	switch (piece_type) {
@@ -303,9 +316,9 @@ bool ModularAirportSupportsLargeAircraft(const Station *st);
 
 /* Defined in aircraft_cmd.cpp; mirrors stock MaybeCrashAirplane for a plane
  * braking on a modular runway (short-strip overrun + the general "Plane crashes"
- * setting). Pass whether the airport fails the large-aircraft safety
- * requirements (see ModularAirportSupportsLargeAircraft). True if it crashed. */
-bool MaybeCrashModularAircraft(Aircraft *v, bool airport_unsafe_for_large);
+ * setting). Pass the airport the plane is physically rolling out on. True if it
+ * crashed. */
+bool MaybeCrashModularAircraft(Aircraft *v, const Station *st);
 
 /** Requirements for a modular airport to be safe for large aircraft. */
 enum ModularAirportSafetyRequirement : uint8_t {

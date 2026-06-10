@@ -1149,8 +1149,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 		/* Only consider runway ends as valid landing targets */
 		if (is_runway) {
 			candidates_total++;
-			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_end) {
+			if (!IsModularRunwayEndPiece(data.piece_type)) {
 				rejected_not_end++;
 				continue;
 			}
@@ -1184,9 +1183,10 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 			/* This end is a directionally-valid landing target. Record whether a
 			 * large-safe runway exists for this direction before any occupancy checks,
-			 * so a busy good runway still suppresses the short-runway fallback. */
-			const bool large_safe = IsRunwaySafeForLarge(st, data.tile);
-			if (is_large_plane && large_safe) good_runway_exists_for_direction = true;
+			 * so a busy good runway still suppresses the short-runway fallback.
+			 * Only large planes care, so skip the runway walk for everything else. */
+			const bool large_safe = is_large_plane && IsRunwaySafeForLarge(st, data.tile);
+			if (large_safe) good_runway_exists_for_direction = true;
 
 			/* Avoid converging all arrivals onto one runway:
 			 * if this runway is currently reserved by another aircraft,
@@ -1263,7 +1263,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	/* Large aircraft fall back to a small runway only when NO large-safe runway exists
 	 * for this direction. If a good runway exists but is currently busy, best_tile stays
 	 * INVALID and the aircraft keeps holding until one frees. */
-	if (best_tile == INVALID_TILE && !is_heli && !good_runway_exists_for_direction &&
+	if (best_tile == INVALID_TILE && is_large_plane && !good_runway_exists_for_direction &&
 			best_small_runway != INVALID_TILE) {
 		Debug(misc, 2, "[ModAp] V{} landing-small-runway: no large-safe runway for direction, using small runway {}", v->index, best_small_runway.base());
 		best_tile = best_small_runway;
@@ -1667,8 +1667,7 @@ static void GatherAndSortGates(const Station *st, std::vector<GateInfo> &gates)
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
-		const bool is_end = data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END;
-		if (!is_end) continue;
+		if (!IsModularRunwayEndPiece(data.piece_type)) continue;
 
 		/* Skip runways that are too short to be usable. */
 		{
@@ -1853,10 +1852,7 @@ static void ComputeModularHeliTiles(const Station *st)
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularRunwayPiece(data.piece_type)) continue;
 
-		bool is_end = (data.piece_type == APT_RUNWAY_END ||
-		               data.piece_type == APT_RUNWAY_SMALL_NEAR_END ||
-		               data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-		if (!is_end) continue;
+		if (!IsModularRunwayEndPiece(data.piece_type)) continue;
 
 		/* Check minimum runway length. */
 		std::vector<TileIndex> rwy;
@@ -2861,8 +2857,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	bool good_takeoff_runway_exists = false;
 	if (large_takeoff_required) {
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_end) continue;
+			if (!IsModularRunwayEndPiece(data.piece_type)) continue;
 			std::vector<TileIndex> rwy;
 			if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
 			const uint8_t flags = GetRunwayFlags(st, data.tile);
@@ -2888,8 +2883,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		int best_blocked_score = INT_MAX;
 
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_end) continue;
+			if (!IsModularRunwayEndPiece(data.piece_type)) continue;
 
 			/* Skip runways that are too short to be usable. */
 			{
@@ -3800,8 +3794,7 @@ void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v)
 	if (st != nullptr && st->airport.modular_tile_data != nullptr) {
 		const bool can_ground_route = CanUseModularGroundRouting(st, v);
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			const bool is_end = (data.piece_type == APT_RUNWAY_END || data.piece_type == APT_RUNWAY_SMALL_NEAR_END || data.piece_type == APT_RUNWAY_SMALL_FAR_END);
-			if (!is_end) continue;
+			if (!IsModularRunwayEndPiece(data.piece_type)) continue;
 
 			const uint8_t flags = GetRunwayFlags(st, data.tile);
 			const bool mode_ok = (flags & RUF_TAKEOFF) != 0;
@@ -3869,7 +3862,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	 * chance; every other plane gets the general "Plane crashes" chance. (Takeoff
 	 * never brakes, so — like stock — there is no takeoff crash.) */
 	if (rollout_on_runway && v->cur_speed > scaled_taxi_limit &&
-			MaybeCrashModularAircraft(v, !ModularAirportSupportsLargeAircraft(st))) {
+			MaybeCrashModularAircraft(v, st)) {
 		return false;
 	}
 

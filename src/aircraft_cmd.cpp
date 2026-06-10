@@ -1478,25 +1478,25 @@ static void CrashAirplane(Aircraft *v)
 }
 
 /**
- * Decide whether aircraft \a v should crash.
+ * Roll the per-brake-tick crash check and crash the airplane on a hit.
  * @param v Aircraft to test.
+ * @param st Station whose stored goods are destroyed if the aircraft crashes.
+ * @param elevated_overrun_risk Use the elevated short-strip overrun probability,
+ *        which ignores the "Plane crashes" setting (callers gate it on AIR_FAST
+ *        and the no-jetcrash cheat).
+ * @return true if the aircraft crashed.
  */
-static void MaybeCrashAirplane(Aircraft *v)
+static bool RollAirplaneCrashCheck(Aircraft *v, Station *st, bool elevated_overrun_risk)
 {
-
-	Station *st = Station::Get(v->targetairport);
-
 	uint32_t prob;
-	if (st->airport.GetFTA()->flags.Test(AirportFTAClass::Flag::ShortStrip) &&
-			(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
-			!_cheats.no_jetcrash.value) {
+	if (elevated_overrun_risk) {
 		prob = 3276;
 	} else {
-		if (_settings_game.vehicle.plane_crashes == 0) return;
+		if (_settings_game.vehicle.plane_crashes == 0) return false;
 		prob = (0x4000 << _settings_game.vehicle.plane_crashes) / 1500;
 	}
 
-	if (GB(Random(), 0, 22) > prob) return;
+	if (GB(Random(), 0, 22) > prob) return false;
 
 	/* Crash the airplane. Remove all goods stored at the station. */
 	for (GoodsEntry &ge : st->goods) {
@@ -1505,6 +1505,21 @@ static void MaybeCrashAirplane(Aircraft *v)
 	}
 
 	CrashAirplane(v);
+	return true;
+}
+
+/**
+ * Decide whether aircraft \a v should crash.
+ * @param v Aircraft to test.
+ */
+static void MaybeCrashAirplane(Aircraft *v)
+{
+	Station *st = Station::Get(v->targetairport);
+
+	bool elevated_overrun_risk = st->airport.GetFTA()->flags.Test(AirportFTAClass::Flag::ShortStrip) &&
+			(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) &&
+			!_cheats.no_jetcrash.value;
+	RollAirplaneCrashCheck(v, st, elevated_overrun_risk);
 }
 
 /**
@@ -1515,47 +1530,31 @@ static void MaybeCrashAirplane(Aircraft *v)
  * classic FTA movement path), so the stock crash mechanics — both the elevated
  * short-strip overrun for fast jets and the general random crash governed by the
  * "Plane crashes" setting — would otherwise never apply on modular airports.
- * This replicates both. The stock ShortStrip airport flag is replaced by an
- * argument set when the airport is missing the large-aircraft safety
- * requirements (6-tile landing+takeoff runway, control tower, big terminal),
- * since a modular AT_SMALL airport always carries ShortStrip regardless of how
- * it is actually built. Helicopters are excluded (no high-speed runway rollout).
- * Intended to be called once per brake tick while rolling out, exactly like the
- * stock check, so the per-landing risk matches a stock airport.
+ * This replicates both. The stock ShortStrip airport flag is replaced by the
+ * large-aircraft safety requirements check (6-tile landing+takeoff runway,
+ * control tower, big terminal), since a modular AT_SMALL airport always carries
+ * ShortStrip regardless of how it is actually built. Helicopters are excluded
+ * (no high-speed runway rollout). Intended to be called once per brake tick
+ * while rolling out, exactly like the stock check, so the per-landing risk
+ * matches a stock airport.
  * @param v Aircraft braking on a modular runway.
- * @param airport_unsafe_for_large True if the airport fails the large-aircraft
- *        safety requirements (see ModularAirportSupportsLargeAircraft).
+ * @param st The modular airport the aircraft is rolling out on (the physical
+ *        station, which can differ from v->targetairport).
  * @return true if the aircraft crashed.
  */
-bool MaybeCrashModularAircraft(Aircraft *v, bool airport_unsafe_for_large)
+bool MaybeCrashModularAircraft(Aircraft *v, const Station *st)
 {
 	if (v->subtype == AIR_HELICOPTER) return false;
 
-	uint32_t prob;
-	if (airport_unsafe_for_large &&
-			(AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0 &&
-			!_cheats.no_jetcrash.value) {
-		/* Elevated short-strip overrun chance — gated only by the no-jetcrash
-		 * cheat, ignoring the "Plane crashes" setting, exactly like stock. */
-		prob = 3276;
-	} else {
-		/* General random crash, governed by the "Plane crashes" setting
-		 * (0 = none, 1 = reduced, 2 = normal). */
-		if (_settings_game.vehicle.plane_crashes == 0) return false;
-		prob = (0x4000 << _settings_game.vehicle.plane_crashes) / 1500;
-	}
+	/* Elevated short-strip overrun chance for a fast jet on an airport lacking the
+	 * large-aircraft safety requirements — gated only by the no-jetcrash cheat,
+	 * ignoring the "Plane crashes" setting, exactly like stock. The safety scan is
+	 * the expensive part, so evaluate it last and only for fast jets. */
+	bool elevated_overrun_risk = (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0 &&
+			!_cheats.no_jetcrash.value &&
+			!ModularAirportSupportsLargeAircraft(st);
 
-	if (GB(Random(), 0, 22) > prob) return false;
-
-	/* Crash the airplane. Remove all goods stored at the station. */
-	Station *st = Station::Get(v->targetairport);
-	for (GoodsEntry &ge : st->goods) {
-		ge.rating = 1;
-		if (ge.HasData()) ge.GetData().cargo.Truncate();
-	}
-
-	CrashAirplane(v);
-	return true;
+	return RollAirplaneCrashCheck(v, Station::Get(st->index), elevated_overrun_risk);
 }
 
 /**
