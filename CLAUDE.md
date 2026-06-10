@@ -36,6 +36,8 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 ## Debugging
 
+The main runtime log is `/tmp/openttd.log`.
+
 Debugger/logging workflows are documented in the skills list below.
 
 ## Coordinate System
@@ -57,10 +59,10 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs two saves under headless 5-year simulations (take ~2 minutes) and compares total airport movements against committed minimums:
+`scripts/regression_test.sh` runs two saves under headless 5-year simulations (take ~2 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
 
-- `scripts/testdata/mass6-inair.sav` — minimum **9147** movements (mixed fixed-wing throughput)
-- `scripts/testdata/helis.sav` — minimum **9600** movements (helicopter-heavy stress)
+- `scripts/testdata/mass6-inair.sav` — mixed fixed-wing throughput
+- `scripts/testdata/helis.sav` — helicopter-heavy stress
 
 Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 
