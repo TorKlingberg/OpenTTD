@@ -320,6 +320,13 @@ bool ModularAirportSupportsLargeAircraft(const Station *st);
  * crashed. */
 bool MaybeCrashModularAircraft(Aircraft *v, const Station *st);
 
+/* Defined in aircraft_cmd.cpp. Pure predicate (no RNG, no side effects): whether
+ * a plane braking on modular airport \a st faces the elevated short-strip overrun
+ * crash risk. True only for a fast jet, with the no-jetcrash cheat off, on an
+ * airport that lacks the large-aircraft safety requirements. Helicopters and
+ * non-fast planes are never elevated. */
+bool ModularAircraftHasElevatedOverrunRisk(const Aircraft *v, const Station *st);
+
 /** Requirements for a modular airport to be safe for large aircraft. */
 enum ModularAirportSafetyRequirement : uint8_t {
 	MASR_NONE           = 0,

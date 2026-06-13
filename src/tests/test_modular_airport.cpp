@@ -18,6 +18,9 @@
 #include "../airport_ground_pathfinder.h"
 #include "mock_environment.h"
 #include "../vehicle_base.h"
+#include "../engine_base.h"
+#include "../cheat_type.h"
+#include "../settings_type.h"
 
 #include "../safeguards.h"
 
@@ -61,6 +64,16 @@ static Aircraft *CreateAircraft(VehicleID index)
 	Aircraft *v = Aircraft::CreateAtIndex(index);
 	v->subtype = AIR_AIRCRAFT;
 	return v;
+}
+
+/* Create an aircraft engine in the pool with the given AircraftVehicleInfo
+ * subtype bits (AIR_FAST marks a large/fast jet). Returns its EngineID for
+ * assigning to Aircraft::engine_type. */
+static EngineID CreateAircraftEngine(EngineID index, uint8_t subtype)
+{
+	Engine *e = Engine::CreateAtIndex(index, VEH_AIRCRAFT, 0xFFFF);
+	e->VehInfo<AircraftVehicleInfo>().subtype = subtype;
+	return index;
 }
 
 static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)
@@ -818,4 +831,116 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 		/* Blocker's reservation untouched. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), VehicleID(11)));
 	}
+}
+
+TEST_CASE("ModularAirportCrash")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	/* Engine 0 = fast jet (AIR_FAST); engine 1 = small/non-fast plane. */
+	const EngineID jet = CreateAircraftEngine(EngineID(0), AIR_FAST);
+	const EngineID prop = CreateAircraftEngine(EngineID(1), 0);
+
+	/* Save crash-related globals so this test cannot leak into others. */
+	const bool saved_nojetcrash = _cheats.no_jetcrash.value;
+	const uint8_t saved_plane_crashes = _settings_game.vehicle.plane_crashes;
+	_cheats.no_jetcrash.value = false;
+
+	/* Build a complete airport that satisfies the large-aircraft safety
+	 * requirements (tower + big terminal + 6-tile landing & takeoff runway). */
+	auto build_safe_airport = [&]() -> Station * {
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+		REQUIRE(ModularAirportSupportsLargeAircraft(st));
+		return st;
+	};
+
+	SECTION("Elevated overrun risk: fast jet only, on an unsafe airport") {
+		Station *unsafe = SetupModularAirport(base, 10, 10); // empty -> unsafe
+		REQUIRE(unsafe != nullptr);
+		REQUIRE_FALSE(ModularAirportSupportsLargeAircraft(unsafe));
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->engine_type = jet;
+
+		/* Fast jet on an unsafe airport -> elevated risk. */
+		CHECK(ModularAircraftHasElevatedOverrunRisk(v, unsafe));
+
+		/* Non-fast plane on the same airport -> never elevated. */
+		v->engine_type = prop;
+		CHECK_FALSE(ModularAircraftHasElevatedOverrunRisk(v, unsafe));
+
+		/* Helicopter -> never elevated (and engine is never dereferenced). */
+		v->subtype = AIR_HELICOPTER;
+		v->engine_type = jet;
+		CHECK_FALSE(ModularAircraftHasElevatedOverrunRisk(v, unsafe));
+	}
+
+	SECTION("No elevated risk on a safe airport, even for a fast jet") {
+		Station *safe = build_safe_airport();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->engine_type = jet;
+		CHECK_FALSE(ModularAircraftHasElevatedOverrunRisk(v, safe));
+	}
+
+	SECTION("no_jetcrash cheat suppresses the elevated risk") {
+		Station *unsafe = SetupModularAirport(base, 10, 10);
+		REQUIRE(unsafe != nullptr);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->engine_type = jet;
+
+		_cheats.no_jetcrash.value = true;
+		CHECK_FALSE(ModularAircraftHasElevatedOverrunRisk(v, unsafe));
+		_cheats.no_jetcrash.value = false;
+	}
+
+	SECTION("Helicopters never crash via the modular path") {
+		Station *unsafe = SetupModularAirport(base, 10, 10);
+		REQUIRE(unsafe != nullptr);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->subtype = AIR_HELICOPTER;
+		v->engine_type = jet;
+
+		/* Early return before any RNG roll, regardless of settings. */
+		_settings_game.vehicle.plane_crashes = 4;
+		CHECK_FALSE(MaybeCrashModularAircraft(v, unsafe));
+	}
+
+	SECTION("General crashes disabled: non-elevated planes never roll a crash") {
+		Station *unsafe = SetupModularAirport(base, 10, 10);
+		REQUIRE(unsafe != nullptr);
+
+		/* plane_crashes == 0 means a non-elevated plane returns false before the
+		 * RNG roll, so this is deterministic and never reaches CrashAirplane. */
+		_settings_game.vehicle.plane_crashes = 0;
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(0));
+
+		/* Non-fast plane: not elevated, general crashes off -> no crash. */
+		v->engine_type = prop;
+		CHECK_FALSE(MaybeCrashModularAircraft(v, unsafe));
+
+		/* Fast jet with the no_jetcrash cheat: not elevated either -> no crash. */
+		v->engine_type = jet;
+		_cheats.no_jetcrash.value = true;
+		CHECK_FALSE(MaybeCrashModularAircraft(v, unsafe));
+		_cheats.no_jetcrash.value = false;
+	}
+
+	_cheats.no_jetcrash.value = saved_nojetcrash;
+	_settings_game.vehicle.plane_crashes = saved_plane_crashes;
 }

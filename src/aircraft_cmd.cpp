@@ -1523,6 +1523,27 @@ static void MaybeCrashAirplane(Aircraft *v)
 }
 
 /**
+ * Pure predicate (no RNG, no side effects): whether a plane braking on modular
+ * airport \a st faces the elevated short-strip overrun crash risk.
+ *
+ * The safety scan is the expensive part, so it is evaluated last and only for
+ * fast jets. Helicopters and non-fast planes short-circuit to false.
+ * @param v  Aircraft braking on the runway.
+ * @param st The modular airport the aircraft is physically rolling out on.
+ * @return true if the elevated (short-strip overrun) probability applies.
+ */
+bool ModularAircraftHasElevatedOverrunRisk(const Aircraft *v, const Station *st)
+{
+	if (v->subtype == AIR_HELICOPTER) return false;
+
+	/* Gated only by the no-jetcrash cheat, ignoring the "Plane crashes" setting,
+	 * exactly like the stock short-strip overrun. */
+	return (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0 &&
+			!_cheats.no_jetcrash.value &&
+			!ModularAirportSupportsLargeAircraft(st);
+}
+
+/**
  * Crash roll for an aircraft braking on a modular-airport runway, mirroring the
  * stock MaybeCrashAirplane logic.
  *
@@ -1546,15 +1567,7 @@ bool MaybeCrashModularAircraft(Aircraft *v, const Station *st)
 {
 	if (v->subtype == AIR_HELICOPTER) return false;
 
-	/* Elevated short-strip overrun chance for a fast jet on an airport lacking the
-	 * large-aircraft safety requirements — gated only by the no-jetcrash cheat,
-	 * ignoring the "Plane crashes" setting, exactly like stock. The safety scan is
-	 * the expensive part, so evaluate it last and only for fast jets. */
-	bool elevated_overrun_risk = (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0 &&
-			!_cheats.no_jetcrash.value &&
-			!ModularAirportSupportsLargeAircraft(st);
-
-	return RollAirplaneCrashCheck(v, Station::Get(st->index), elevated_overrun_risk);
+	return RollAirplaneCrashCheck(v, Station::Get(st->index), ModularAircraftHasElevatedOverrunRisk(v, st));
 }
 
 /**
