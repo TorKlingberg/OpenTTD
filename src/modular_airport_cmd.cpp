@@ -2807,6 +2807,40 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	return true;
 }
 
+/** Why a runway-end tile is or isn't a usable takeoff end (occupancy/safety aside). */
+enum class ModularTakeoffEndStatus : uint8_t {
+	OK,         ///< Usable: a real end, long enough, takeoff-flagged, direction matches.
+	NOT_END,    ///< Not a runway-end piece.
+	TOO_SHORT,  ///< Runway shorter than MIN_RUNWAY_LENGTH_TILES.
+	NO_TAKEOFF, ///< RUF_TAKEOFF not set.
+	WRONG_DIR,  ///< Direction bits do not permit a takeoff roll toward the far end.
+};
+
+/**
+ * Classify a runway-end tile as a takeoff candidate, ignoring occupancy,
+ * reachability, and large-aircraft safety. Both the up-front "does a good takeoff
+ * runway exist" scan and the per-end selection loop in
+ * FindModularRunwayTileForTakeoff route through this single predicate so they
+ * cannot drift on what counts as a usable end. Direction bits are interpreted as
+ * travel direction: a takeoff from the low end travels toward the high end, and
+ * vice versa.
+ */
+static ModularTakeoffEndStatus ClassifyModularTakeoffEnd(const Station *st, TileIndex tile, uint8_t piece_type)
+{
+	if (!IsModularRunwayEndPiece(piece_type)) return ModularTakeoffEndStatus::NOT_END;
+
+	std::vector<TileIndex> rwy;
+	if (!GetContiguousModularRunwayTiles(st, tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) return ModularTakeoffEndStatus::TOO_SHORT;
+
+	const uint8_t flags = GetRunwayFlags(st, tile);
+	if ((flags & RUF_TAKEOFF) == 0) return ModularTakeoffEndStatus::NO_TAKEOFF;
+
+	const bool is_low = IsRunwayEndLow(st, tile);
+	if (is_low && (flags & RUF_DIR_HIGH) == 0) return ModularTakeoffEndStatus::WRONG_DIR;
+	if (!is_low && (flags & RUF_DIR_LOW) == 0) return ModularTakeoffEndStatus::WRONG_DIR;
+	return ModularTakeoffEndStatus::OK;
+}
+
 /**
  * Find a runway end tile suitable for takeoff, respecting runway usage flags.
  * Returns the end tile where the aircraft should start its takeoff roll.
@@ -2857,14 +2891,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	bool good_takeoff_runway_exists = false;
 	if (large_takeoff_required) {
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (!IsModularRunwayEndPiece(data.piece_type)) continue;
-			std::vector<TileIndex> rwy;
-			if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
-			const uint8_t flags = GetRunwayFlags(st, data.tile);
-			if ((flags & RUF_TAKEOFF) == 0) continue;
-			const bool is_low = IsRunwayEndLow(st, data.tile);
-			if (is_low && (flags & RUF_DIR_HIGH) == 0) continue;
-			if (!is_low && (flags & RUF_DIR_LOW) == 0) continue;
+			if (ClassifyModularTakeoffEnd(st, data.tile, data.piece_type) != ModularTakeoffEndStatus::OK) continue;
 			if (IsRunwaySafeForLarge(st, data.tile)) { good_takeoff_runway_exists = true; break; }
 		}
 	}
@@ -2883,29 +2910,10 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		int best_blocked_score = INT_MAX;
 
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (!IsModularRunwayEndPiece(data.piece_type)) continue;
-
-			/* Skip runways that are too short to be usable. */
-			{
-				std::vector<TileIndex> rwy;
-				if (!GetContiguousModularRunwayTiles(st, data.tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) continue;
-			}
-
-			const uint8_t flags = GetRunwayFlags(st, data.tile);
-			if ((flags & RUF_TAKEOFF) == 0) continue;
-
-			/* Direction bits are interpreted as travel direction.
-			 * Takeoff from low end travels toward high end, and vice versa. */
-			const bool is_low = IsRunwayEndLow(st, data.tile);
-			if (is_low && (flags & RUF_DIR_HIGH) == 0) {
-				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 40, 256)) {
-					Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
-				}
-				continue;
-			}
-			if (!is_low && (flags & RUF_DIR_LOW) == 0) {
-				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 41, 256)) {
-					Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), is_low, flags);
+			const ModularTakeoffEndStatus status = ClassifyModularTakeoffEnd(st, data.tile, data.piece_type);
+			if (status != ModularTakeoffEndStatus::OK) {
+				if (status == ModularTakeoffEndStatus::WRONG_DIR && v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 40, 256)) {
+					Debug(misc, 2, "[ModAp] V{} takeoff-skip dir: tile={} is_low={} flags={}", v->index, data.tile.base(), IsRunwayEndLow(st, data.tile), GetRunwayFlags(st, data.tile));
 				}
 				continue;
 			}
