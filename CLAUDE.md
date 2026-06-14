@@ -66,6 +66,10 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 
+The floors are partly **crash-randomness-dependent** (see Aircraft Crashes). A sim is deterministic for a fixed save + tick-count, so floors are reproducible, but a movement drop after a crash-path change may be attrition, not a routing regression — confirm before chasing pathfinding.
+
+Per-commit attribution: `scripts/airport_stats_history.sh <start_commit> <out_dir> <years>` checks out + rebuilds each commit in `<start>^..HEAD` and records movements to CSV (history mode runs **only** the default mass6 save). `--current <years> [save]` runs just the working tree. Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mass6-inair.sav).
+
 ## Unit Testing
 
 Modular airport logic is verified by unit tests in `src/tests/test_modular_airport.cpp`. These cover pure logic (classification, rotations), map-dependent helpers, ground pathfinding (including stand avoidance), and reservation invariants.
@@ -84,12 +88,12 @@ Run only modular airport tests:
 
 | File | Purpose |
 |------|---------|
-| `src/modular_airport_cmd.cpp` | All modular airport movement, reservation, holding-loop, and pathfinding logic (~2500 lines). |
+| `src/modular_airport_cmd.cpp` | All modular airport movement, reservation, holding-loop, and pathfinding logic (~4200 lines). |
 | `src/modular_airport_cmd.h` | Declarations + inline helpers (`IsModularRunwayPiece`, `IsRunwayPieceOnAxis`, MGT_* constants). |
 | `src/modular_airport_gui.cpp` | Modular airport builder UI (`BuildModularAirportWindow` + hangar/cosmetic pickers). |
 | `src/modular_airport_gui.h` | `ShowBuildModularAirportWindow` + shared GUI globals. |
 | `src/aircraft_cmd.cpp` | Classic FTA state machine, event handlers, shared mechanics (`UpdateAircraftSpeed`, etc.). |
-| `src/aircraft.h` | Aircraft struct. Modular fields at lines 87-101. |
+| `src/aircraft.h` | Aircraft struct. Modular fields are under the `Modular airport ground pathfinding` comment block. |
 | `src/airport_ground_pathfinder.cpp` | A* ground pathfinder + segment classification |
 | `src/airport_ground_pathfinder.h` | `TaxiPath`, `TaxiSegment`, `TaxiSegmentType`, `BuildTaxiPath` |
 | `src/base_station_base.h` | `ModularAirportTileData` struct (per-tile metadata) |
@@ -122,6 +126,12 @@ Notes:
 - Runway end fence variants (`APT_RUNWAY_END_FENCE_*`) are **not** in `IsModularRunwayPiece` — they're decorative. Only `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_NEAR_END`, `APT_RUNWAY_SMALL_FAR_END` are landing targets.
 - Hangars: `APT_DEPOT_SE/SW/NW/NE` (large) and `APT_SMALL_DEPOT_SE/SW/NW/NE` (small) — four rotations each. Hangars are multi-capacity (multiple aircraft can park in one).
 - One-way flags only apply to `IsTaxiwayPiece` types. Stands, hangars, and runways cannot be one-way.
+
+## Aircraft Crashes (modular)
+
+- `MaybeCrashModularAircraft(v, st)` (in `aircraft_cmd.cpp`) is the modular crash entry. It calls the pure predicate `ModularAircraftHasElevatedOverrunRisk(v, st)`, then `RollAirplaneCrashCheck`. Helicopters never crash via this path (early return).
+- **Elevated overrun risk** = `AIR_FAST` jet **and** `!_cheats.no_jetcrash.value` **and** airport is not large-safe (`!ModularAirportSupportsLargeAircraft(st)`). It ignores the "Plane crashes" setting, matching the stock short-strip overrun (prob 3276). Otherwise the general roll `(0x4000 << plane_crashes)/1500` applies — no crash when `plane_crashes == 0`.
+- The roll consumes the synced game `Random()` (not `_interactive_random`), so the RNG-consumption count must stay client-independent for MP determinism.
 
 ## Saveload
 
@@ -157,7 +167,7 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 - **Year-gated picker availability**: if year changes while builder/pickers are open (e.g. Sandbox year change), re-run gating and invalidate picker windows so disabled states update immediately.
 - **Sub-tile click position**: use `_tile_fract_coords.x/.y` (0–15 in world X/Y), set by the viewport on every click. Same mechanism as the autoroad tool. Do NOT use `InverseRemapCoords` — it doesn't give tile-relative positions.
 - **Widget `SetPIPRatio(left, mid, right)`**: controls how extra space is distributed. `(0,0,1)` = left-aligned, `(1,0,1)` = centered, `(1,0,0)` = right-aligned.
-- **Helicopter landing stage**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` sets `modular_landing_stage = 0` before `AirportMoveModularLanding` runs. Helipad-specific overrides (like skipping the FAF approach) must go in `aircraft_cmd.cpp` right after that assignment, not in the landing movement code.
+- **Helicopter landing commit**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` picks the modular landing target and sets `VehicleAirFlag::HelicopterDirectDescent` when `state == HELILANDING`. Helipad-specific overrides (like skipping the FAF approach) belong here at landing commit, not in the movement code (`AirportMoveModularLanding`). (`modular_landing_stage` is dead — kept only for saveload compat.)
 
 ## Holding Loop Pitfalls
 
