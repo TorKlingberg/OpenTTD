@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
 TEST_CASES=(
-	"scripts/testdata/mass6-inair.sav:scripts/testdata/mass6-inair.expected"
-	"scripts/testdata/helis.sav:scripts/testdata/helis.expected"
+	"scripts/testdata/mass7-inair.sav:scripts/testdata/mass7-inair.expected"
+	"scripts/testdata/helis2.sav:scripts/testdata/helis2.expected"
 )
 
 read_min_movements() {

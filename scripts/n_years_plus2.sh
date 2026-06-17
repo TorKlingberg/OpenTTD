@@ -2,7 +2,7 @@
 set -euo pipefail
 
 YEARS="${1:-1}"
-SAVE_FILE="${2:-scripts/testdata/mass6-inair.sav}"
+SAVE_FILE="${2:-scripts/testdata/mass7-inair.sav}"
 
 if ! [[ "${YEARS}" =~ ^[0-9]+$ ]]; then
 	echo "error: years must be a non-negative integer" >&2

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Quick build + per-save timing/movement check.
 # Usage: scripts/quick_test.sh [YEARS] [SAVE_FILE...]
-#   Default YEARS=1, default saves: mass6-inair.sav, helis.sav
+#   Default YEARS=1, default saves: mass7-inair.sav, helis2.sav
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -12,7 +12,7 @@ shift || true
 if [ "$#" -gt 0 ]; then
 	SAVES=("$@")
 else
-	SAVES=(scripts/testdata/mass6-inair.sav scripts/testdata/helis.sav)
+	SAVES=(scripts/testdata/mass7-inair.sav scripts/testdata/helis2.sav)
 fi
 
 scripts/build_and_sign.sh

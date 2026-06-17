@@ -61,14 +61,16 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 `scripts/regression_test.sh` runs two saves under headless 5-year simulations (take ~2 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
 
-- `scripts/testdata/mass6-inair.sav` — mixed fixed-wing throughput
-- `scripts/testdata/helis.sav` — helicopter-heavy stress
+- `scripts/testdata/mass7-inair.sav` — mixed fixed-wing throughput; every airport is large-safe
+- `scripts/testdata/helis2.sav` — helicopter-heavy stress; every airport is large-safe
+
+Both saves have all airports made large-safe, so the elevated short-strip jet-crash path never fires (only the basic crash rate remains) and throughput is flat year-to-year. The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the two saves count different calendar windows — that's expected.
 
 Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 
-The floors are partly **crash-randomness-dependent** (see Aircraft Crashes). A sim is deterministic for a fixed save + tick-count, so floors are reproducible, but a movement drop after a crash-path change may be attrition, not a routing regression — confirm before chasing pathfinding.
+A sim is deterministic for a fixed save + tick-count, so the floors are exact and reproducible. With the safe-airport saves a movement drop is almost always a real routing/throughput change rather than crash attrition — but see Aircraft Crashes before assuming, since the basic-rate roll still consumes synced RNG.
 
-Per-commit attribution: `scripts/airport_stats_history.sh <start_commit> <out_dir> <years>` checks out + rebuilds each commit in `<start>^..HEAD` and records movements to CSV (history mode runs **only** the default mass6 save). `--current <years> [save]` runs just the working tree. Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mass6-inair.sav).
+Per-commit attribution: `scripts/airport_stats_history.sh <start_commit> <out_dir> <years>` checks out + rebuilds each commit in `<start>^..HEAD` and records movements to CSV (history mode runs **only** the default save). `--current <years> [save]` runs just the working tree. Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mass7-inair.sav).
 
 ## Unit Testing
 

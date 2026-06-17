@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sample-profile a helis.sav run.
+# Sample-profile a helis2.sav run.
 # Usage: scripts/profile_helis.sh [DAYS]
 set -euo pipefail
 
@@ -11,7 +11,7 @@ TICKS=$((DAYS * DAY_TICKS))
 
 scripts/build_and_sign.sh > /dev/null
 
-./build/openttd -d misc=0 -x -g scripts/testdata/helis.sav -s null -m null -v null:ticks="$TICKS" > /tmp/openttd_prof.log 2>&1 &
+./build/openttd -d misc=0 -x -g scripts/testdata/helis2.sav -s null -m null -v null:ticks="$TICKS" > /tmp/openttd_prof.log 2>&1 &
 PID=$!
 echo "openttd PID=$PID, sampling for 30s..."
 sleep 5

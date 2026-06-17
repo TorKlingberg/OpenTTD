@@ -5,7 +5,7 @@ How to find hotspots in OpenTTD on macOS using the built-in `sample` profiler, p
 ## Tools
 
 - **`sample`** — macOS built-in sampling profiler (no install needed). Attaches to a PID, captures stack snapshots at intervals, prints a call tree with sample counts.
-- **`scripts/profile_helis.sh`** — wraps headless openttd + `sample` for a given save (defaults to `helis.sav`, 365 days).
+- **`scripts/profile_helis.sh`** — wraps headless openttd + `sample` for a given save (defaults to `helis2.sav`, 365 days).
 - **`scripts/quick_test.sh`** — build + headless run for N years on one or more saves, prints elapsed wall time and `[AirportStats]` movement counts. Use to confirm speedup without behavior regressions.
 - **`scripts/regression_test.sh`** — full suite, compares per-save movement counts against `*.expected` baselines (5-year run, slow).
 
@@ -28,7 +28,7 @@ Always rebuild with `scripts/build_and_sign.sh` first — codesign is required o
 ## Profiling workflow
 
 ```bash
-# 1. Identify hotspot (defaults: helis.sav, 365 game days, 25s sample window)
+# 1. Identify hotspot (defaults: helis2.sav, 365 game days, 25s sample window)
 scripts/profile_helis.sh
 
 # 2. Read the top-of-call-tree output it prints; full sample at:
@@ -49,7 +49,7 @@ After changing the hot path, two checks before declaring victory:
 ```bash
 # Speed + per-save movement count, ~1 minute per save
 scripts/quick_test.sh 1                      # 1 year, default saves
-scripts/quick_test.sh 5 scripts/testdata/helis.sav   # 5 years, single save
+scripts/quick_test.sh 5 scripts/testdata/helis2.sav   # 5 years, single save
 
 # Full regression suite (~5 minutes), final gate before commit
 bash scripts/regression_test.sh

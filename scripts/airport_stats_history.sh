@@ -4,7 +4,7 @@ set -euo pipefail
 ## --current mode: build + run once on the working tree, no git interaction.
 if [[ "${1:-}" == "--current" ]]; then
 	YEARS_TO_RUN="${2:-1}"
-	SAVE_FILE="${3:-scripts/testdata/mass6-inair.sav}"
+	SAVE_FILE="${3:-scripts/testdata/mass7-inair.sav}"
 	if ! [[ "${YEARS_TO_RUN}" =~ ^[0-9]+$ ]]; then
 		echo "error: years_to_run must be a non-negative integer" >&2
 		exit 1
@@ -14,16 +14,21 @@ if [[ "${1:-}" == "--current" ]]; then
 	echo "${run_output}"
 	landings_total=0
 	takeoffs_total=0
+	first_year=""
 	while IFS= read -r line; do
 		if [[ "${line}" =~ Year[[:space:]]([0-9]+)[[:space:]]totals:[[:space:]]landings=([0-9]+)[[:space:]]takeoffs=([0-9]+) ]]; then
 			year="${BASH_REMATCH[1]}"
-			if [[ "${year}" != "2016" ]]; then
-				landings_total=$((landings_total + BASH_REMATCH[2]))
-				takeoffs_total=$((takeoffs_total + BASH_REMATCH[3]))
+			# Skip the first reported year: it is a partial warmup year whose
+			# length depends on the save's start date, so it is not comparable.
+			if [[ -z "${first_year}" ]]; then
+				first_year="${year}"
+				continue
 			fi
+			landings_total=$((landings_total + BASH_REMATCH[2]))
+			takeoffs_total=$((takeoffs_total + BASH_REMATCH[3]))
 		fi
 	done <<< "${run_output}"
-	echo "Total (excl 2016): landings=${landings_total} takeoffs=${takeoffs_total} movements=$((landings_total + takeoffs_total))"
+	echo "Total (excl first year): landings=${landings_total} takeoffs=${takeoffs_total} movements=$((landings_total + takeoffs_total))"
 	exit 0
 fi
 
@@ -50,7 +55,7 @@ fi
 
 mkdir -p "${OUT_DIR}"
 
-echo "commit,subject,years_requested,landings_excl_2016,takeoffs_excl_2016,total_movements_excl_2016,status" > "${CSV_PATH}"
+echo "commit,subject,years_requested,landings_excl_first_year,takeoffs_excl_first_year,total_movements_excl_first_year,status" > "${CSV_PATH}"
 
 orig_commit="$(git rev-parse --verify HEAD)"
 orig_branch="$(git symbolic-ref -q --short HEAD || true)"
@@ -89,6 +94,7 @@ for i in "${!commits[@]}"; do
 	landings_total=0
 	takeoffs_total=0
 	movement_total=0
+	first_year=""
 
 	echo "[${step}/${total}] ${commit} ${subject}" | tee -a "${RUN_LOG}"
 	git checkout -q "${commit}"
@@ -104,7 +110,10 @@ for i in "${!commits[@]}"; do
 					year="${BASH_REMATCH[1]}"
 					landings="${BASH_REMATCH[2]}"
 					takeoffs="${BASH_REMATCH[3]}"
-					if [[ "${year}" != "2016" ]]; then
+					# Skip the first reported year (partial warmup year).
+					if [[ -z "${first_year}" ]]; then
+						first_year="${year}"
+					else
 						landings_total=$((landings_total + landings))
 						takeoffs_total=$((takeoffs_total + takeoffs))
 					fi
@@ -123,7 +132,7 @@ for i in "${!commits[@]}"; do
 	fi
 
 	if [[ "${status}" == "ok" ]]; then
-		summary="  -> ok landings(excl_2016)=${landings_total} takeoffs(excl_2016)=${takeoffs_total} total=${movement_total}"
+		summary="  -> ok landings(excl_first_year)=${landings_total} takeoffs(excl_first_year)=${takeoffs_total} total=${movement_total}"
 	else
 		summary="  -> ${status} (see ${commit_log})"
 	fi
