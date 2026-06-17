@@ -410,6 +410,102 @@ bool ModularAirportSupportsLargeAircraft(const Station *st)
 	return GetModularAirportSafetyStatus(st) == MASR_NONE;
 }
 
+/** Radar pieces, counted towards the large-hub catchment tier. */
+static bool IsRadarPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RADAR_GRASS_FENCE_SW:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Compute the catchment radius of a modular airport from the infrastructure it
+ * actually contains, rather than from a stored airport type. The tiers are
+ * cumulative — each one requires everything the lower tiers require:
+ *
+ *   4  any modular airport (the minimum).
+ *   5  safe for large/fast aircraft: a tower, a big terminal and a safe
+ *      (long, large-family) runway for both landing and takeoff. This is exactly
+ *      the ModularAirportSupportsLargeAircraft() contract, shared here.
+ *   6  + two paved runways of at least 6 tiles.
+ *   8  + two paved runways of at least 7 tiles, a helipad, a radar and three
+ *      big terminal buildings.
+ *  10  + four paved runways of at least 8 tiles.
+ *
+ * "Paved" means every tile of the runway is large-runway family (not the grass
+ * small-runway family). Both freeform and stock-template modular airports run
+ * through this, so an airport earns catchment by what it is built from.
+ */
+static uint ComputeModularAirportCatchmentRadius(const Station *st)
+{
+	constexpr uint CATCH_MIN = 4;
+	if (st->airport.modular_tile_data == nullptr) return CATCH_MIN;
+
+	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff runway). */
+	if (!ModularAirportSupportsLargeAircraft(st)) return CATCH_MIN;
+
+	/* Gather the tile lengths of each distinct fully-paved runway, and count the
+	 * helipad / radar / big-terminal pieces used by the higher tiers. */
+	std::vector<size_t> paved_runways;
+	uint helipads = 0;
+	uint radars = 0;
+	uint big_terminals = 0;
+	std::vector<TileIndex> tiles;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (IsModularHelipadPiece(data.piece_type)) helipads++;
+		if (IsRadarPiece(data.piece_type)) radars++;
+		if (IsBigTerminalPiece(data.piece_type)) big_terminals++;
+
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+		if (!GetContiguousModularRunwayTiles(st, data.tile, tiles) || tiles.empty()) continue;
+		/* GetContiguousModularRunwayTiles normalises to the same first tile from any
+		 * tile of the runway; count each runway exactly once at its canonical start. */
+		if (tiles.front() != data.tile) continue;
+
+		bool paved = true;
+		for (TileIndex t : tiles) {
+			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
+			if (td == nullptr || !IsLargeRunwayFamily(td->piece_type)) { paved = false; break; }
+		}
+		if (paved) paved_runways.push_back(tiles.size());
+	}
+
+	auto paved_at_least = [&paved_runways](size_t len) {
+		uint n = 0;
+		for (size_t l : paved_runways) if (l >= len) n++;
+		return n;
+	};
+
+	/* Tier 6: two paved runways of >= 6 tiles. */
+	if (paved_at_least(6) < 2) return 5;
+
+	/* Tier 8: two paved >= 7 tiles, plus a helipad, a radar and three big terminals. */
+	if (paved_at_least(7) >= 2 && helipads >= 1 && radars >= 1 && big_terminals >= 3) {
+		/* Tier 10: four paved runways of >= 8 tiles. */
+		if (paved_at_least(8) >= 4) return 10;
+		return 8;
+	}
+	return 6;
+}
+
+/**
+ * Catchment radius of a modular airport, cached until its tiles or runway flags
+ * change (see modular_catchment_dirty). @see ComputeModularAirportCatchmentRadius.
+ */
+uint GetModularAirportCatchmentRadius(const Station *st)
+{
+	if (st->airport.modular_catchment_dirty) {
+		st->airport.modular_catchment_cache = static_cast<uint8_t>(ComputeModularAirportCatchmentRadius(st));
+		st->airport.modular_catchment_dirty = false;
+	}
+	return st->airport.modular_catchment_cache;
+}
+
 void ClearModularRunwayReservation(Aircraft *v)
 {
 	for (TileIndex tile : v->modular_runway_reservation) {

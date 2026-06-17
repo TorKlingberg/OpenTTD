@@ -386,6 +386,8 @@ struct Airport : public TileArea {
 	mutable TileIndex modular_heli_landing_tile = INVALID_TILE; ///< Computed helicopter landing tile (no helipads)
 	mutable TileIndex modular_heli_takeoff_tile = INVALID_TILE; ///< Computed helicopter takeoff tile (no helipads)
 	mutable bool modular_heli_tiles_dirty = true; ///< Whether computed heli tiles need recompute
+	mutable uint8_t modular_catchment_cache = 0; ///< Cached catchment radius for modular airports
+	mutable bool modular_catchment_dirty = true; ///< Whether the modular catchment radius needs recompute
 
 	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there

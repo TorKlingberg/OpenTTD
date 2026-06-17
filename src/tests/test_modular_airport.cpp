@@ -84,6 +84,7 @@ static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint
 	data.rotation = rotation;
 	st->airport.modular_tile_data->push_back(data);
 	st->airport.modular_tile_index_dirty = true;
+	st->airport.modular_catchment_dirty = true;
 }
 
 static ModularAirportTileData *AddModularTileWithData(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)
@@ -943,4 +944,106 @@ TEST_CASE("ModularAirportCrash")
 
 	_cheats.no_jetcrash.value = saved_nojetcrash;
 	_settings_game.vehicle.plane_crashes = saved_plane_crashes;
+}
+
+TEST_CASE("ModularAirportCatchment")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(2, 2);
+
+	SECTION("Empty / unsafe airport gets the minimum radius (4)") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		CHECK(GetModularAirportCatchmentRadius(st) == 4);
+
+		/* Infrastructure that is not yet large-safe stays at the minimum. */
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		CHECK(GetModularAirportCatchmentRadius(st) == 4);
+	}
+
+	SECTION("Large-aircraft-safe airport gets radius 5") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		/* A single 6-tile paved runway, landing + takeoff (RUF_DEFAULT). */
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+
+		REQUIRE(ModularAirportSupportsLargeAircraft(st));
+		CHECK(GetModularAirportCatchmentRadius(st) == 5);
+	}
+
+	SECTION("Two 6-tile paved runways reach radius 6") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+		CHECK(GetModularAirportCatchmentRadius(st) == 5);
+
+		/* Second 6-tile runway, two rows down so it is a distinct segment. */
+		AddLargeRunway(st, base + TileDiffXY(0, 5), 6);
+		CHECK(GetModularAirportCatchmentRadius(st) == 6);
+	}
+
+	SECTION("Hub infrastructure reaches radius 8") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		/* Two 7-tile paved runways. */
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 7);
+		AddLargeRunway(st, base + TileDiffXY(0, 5), 7);
+		/* Three big terminals. */
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_BUILDING_1, 0);
+		AddModularTile(st, base + TileDiffXY(3, 0), APT_BUILDING_2, 0);
+
+		/* Still only 6 until the helipad + radar are present. */
+		CHECK(GetModularAirportCatchmentRadius(st) == 6);
+
+		AddModularTile(st, base + TileDiffXY(4, 0), APT_HELIPAD_1, 0);
+		CHECK(GetModularAirportCatchmentRadius(st) == 6);
+
+		AddModularTile(st, base + TileDiffXY(5, 0), APT_RADAR_FENCE_NE, 0);
+		CHECK(GetModularAirportCatchmentRadius(st) == 8);
+	}
+
+	SECTION("Four 8-tile paved runways reach radius 10") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_BUILDING_1, 0);
+		AddModularTile(st, base + TileDiffXY(3, 0), APT_BUILDING_2, 0);
+		AddModularTile(st, base + TileDiffXY(4, 0), APT_HELIPAD_1, 0);
+		AddModularTile(st, base + TileDiffXY(5, 0), APT_RADAR_FENCE_NE, 0);
+
+		/* Four 8-tile paved runways, each on its own row (two-row spacing). */
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 8);
+		AddLargeRunway(st, base + TileDiffXY(0, 5), 8);
+		CHECK(GetModularAirportCatchmentRadius(st) == 8);
+
+		AddLargeRunway(st, base + TileDiffXY(0, 7), 8);
+		CHECK(GetModularAirportCatchmentRadius(st) == 8);
+
+		AddLargeRunway(st, base + TileDiffXY(0, 9), 8);
+		CHECK(GetModularAirportCatchmentRadius(st) == 10);
+	}
+
+	SECTION("Grass (small-family) runways are not paved and do not raise the tier") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+		CHECK(GetModularAirportCatchmentRadius(st) == 5);
+
+		/* A small grass runway is not large-family, so it does not count as a
+		 * second paved runway: the radius stays at 5. */
+		for (uint i = 0; i < 6; i++) {
+			AddModularTile(st, base + TileDiffXY(i, 5), APT_RUNWAY_SMALL_MIDDLE, 0);
+		}
+		CHECK(GetModularAirportCatchmentRadius(st) == 5);
+	}
 }

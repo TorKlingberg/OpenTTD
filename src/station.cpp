@@ -27,6 +27,7 @@
 #include "core/random_func.hpp"
 #include "linkgraph/linkgraph.h"
 #include "linkgraph/linkgraphschedule.h"
+#include "modular_airport_cmd.h"
 
 #include "table/strings.h"
 
@@ -319,7 +320,9 @@ static uint GetTileCatchmentRadius(TileIndex tile, const Station *st)
 		switch (GetStationType(tile)) {
 			case StationType::Rail:    return CA_TRAIN;
 			case StationType::Oilrig:  return CA_UNMODIFIED;
-			case StationType::Airport: return st->airport.GetSpec()->catchment;
+			case StationType::Airport:
+				if (st->airport.blocks.Test(AirportBlock::Modular)) return GetModularAirportCatchmentRadius(st);
+				return st->airport.GetSpec()->catchment;
 			case StationType::Truck:   return CA_TRUCK;
 			case StationType::Bus:     return CA_BUS;
 			case StationType::Dock:    return CA_DOCK;
@@ -352,7 +355,10 @@ uint Station::GetCatchmentRadius() const
 		if (this->truck_stops        != nullptr)      ret = std::max<uint>(ret, CA_TRUCK);
 		if (this->train_station.tile != INVALID_TILE) ret = std::max<uint>(ret, CA_TRAIN);
 		if (this->ship_station.tile  != INVALID_TILE) ret = std::max<uint>(ret, CA_DOCK);
-		if (this->airport.tile       != INVALID_TILE) ret = std::max<uint>(ret, this->airport.GetSpec()->catchment);
+		if (this->airport.tile       != INVALID_TILE) {
+			uint air_catchment = this->airport.blocks.Test(AirportBlock::Modular) ? GetModularAirportCatchmentRadius(this) : this->airport.GetSpec()->catchment;
+			ret = std::max<uint>(ret, air_catchment);
+		}
 	} else {
 		if (this->bus_stops != nullptr || this->truck_stops != nullptr || this->train_station.tile != INVALID_TILE || this->ship_station.tile != INVALID_TILE || this->airport.tile != INVALID_TILE) {
 			ret = CA_UNMODIFIED;

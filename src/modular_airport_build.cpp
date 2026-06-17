@@ -490,6 +490,7 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.modular_holding_loop_dirty = true;
 			st->airport.modular_heli_tiles_dirty = true;
+			st->airport.modular_catchment_dirty = true;
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 
 			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
@@ -539,6 +540,7 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			st->airport.modular_holding_loop = nullptr;
 			st->airport.modular_holding_loop_dirty = true;
 			st->airport.modular_heli_tiles_dirty = true;
+			st->airport.modular_catchment_dirty = true;
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
@@ -633,6 +635,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.modular_holding_loop_dirty = true;
 			st->airport.modular_heli_tiles_dirty = true;
+			st->airport.modular_catchment_dirty = true;
 
 			MarkTileDirtyByTile(t, 0, 8);
 			if (TileX(t) > 0 && TileY(t) > 0) MarkTileDirtyByTile(t - TileDiffXY(1, 1));
@@ -952,6 +955,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, To
 	st->airport.modular_tile_index_dirty = true;
 	st->airport.modular_holding_loop_dirty = true;
 	st->airport.modular_heli_tiles_dirty = true;
+	st->airport.modular_catchment_dirty = true;
 	if (_show_holding_overlay) MarkWholeScreenDirty();
 
 	/* Normalize runway end/middle visuals for the segment this tile belongs to. */
@@ -1222,6 +1226,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.modular_holding_loop_dirty = true;
 		st->airport.modular_heli_tiles_dirty = true;
+		st->airport.modular_catchment_dirty = true;
 
 		/* Trigger animations */
 		for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {

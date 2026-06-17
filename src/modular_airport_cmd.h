@@ -313,6 +313,7 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
+uint GetModularAirportCatchmentRadius(const Station *st);
 
 /* Defined in aircraft_cmd.cpp; mirrors stock MaybeCrashAirplane for a plane
  * braking on a modular runway (short-strip overrun + the general "Plane crashes"
