@@ -167,11 +167,9 @@ void SetRunwayFlags_Apply(TileIndex tile, uint8_t runway_flags, Station *st)
 		if (next == current) break; /* Shouldn't happen, but safety */
 		current = next;
 	}
-	st->airport.modular_holding_loop_dirty = true;
-	st->airport.modular_heli_tiles_dirty = true;
 	/* Landing/takeoff flags gate the large-aircraft-safe catchment tier, so the
-	 * catchment radius may change. Invalidate the cache and recompute. */
-	st->airport.modular_catchment_dirty = true;
+	 * catchment radius may change; MarkLayoutDirty invalidates it and we recompute. */
+	st->airport.MarkLayoutDirty();
 	st->RecomputeCatchment();
 	if (_show_holding_overlay) MarkWholeScreenDirty();
 }

@@ -84,7 +84,7 @@ static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint
 	data.rotation = rotation;
 	st->airport.modular_tile_data->push_back(data);
 	st->airport.modular_tile_index_dirty = true;
-	st->airport.modular_catchment_dirty = true;
+	st->airport.MarkLayoutDirty();
 }
 
 static ModularAirportTileData *AddModularTileWithData(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)

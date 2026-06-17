@@ -390,6 +390,19 @@ struct Airport : public TileArea {
 	mutable bool modular_catchment_dirty = true; ///< Whether the modular catchment radius needs recompute
 
 	/**
+	 * Invalidate every cache derived from the modular tile layout. Call this from
+	 * any site that adds, removes or retypes a modular tile, or changes runway
+	 * flags. Keeping the invalidation in one place avoids silently stale caches
+	 * when a new mutation site forgets one of the individual dirty flags.
+	 */
+	void MarkLayoutDirty() const
+	{
+		this->modular_holding_loop_dirty = true;
+		this->modular_heli_tiles_dirty = true;
+		this->modular_catchment_dirty = true;
+	}
+
+	/**
 	 * Get the AirportSpec that from the airport type of this airport. If there
 	 * is no airport (\c tile == INVALID_TILE) then return the dummy AirportSpec.
 	 * @return The AirportSpec for this airport.
