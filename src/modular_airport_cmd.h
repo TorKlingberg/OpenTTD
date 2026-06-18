@@ -257,6 +257,7 @@ const ModularHoldingLoop &GetModularHoldingLoop(const Station *st);
 void ComputeModularHoldingLoop(const Station *st, ModularHoldingLoop &loop);
 uint32_t GetNearestModularHoldingWaypoint(const Aircraft *v, const ModularHoldingLoop &loop);
 void GetModularHoldingWaypointTarget(Aircraft *v, const Station *st, int *target_x, int *target_y, uint32_t *wp_index = nullptr);
+void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, int *target_y);
 bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp);
 bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
