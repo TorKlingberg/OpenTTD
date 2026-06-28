@@ -261,7 +261,6 @@ void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, 
 bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp);
 bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile);
-TileIndex FindNearestModularRunwayExitTile(const Station *st, const Aircraft *v, TileIndex runway_tile);
 TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, TileIndex start_tile);
 TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, TileIndex runway_end);

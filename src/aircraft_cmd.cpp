@@ -1854,28 +1854,14 @@ static void AircraftEventHandler_InHangar(Aircraft *v, const AirportFTAClass *ap
 static void HandleModularTerminal(Aircraft *v, const Station *st)
 {
 	if (v->modular_ground_target != MGT_NONE) {
-		/* Post-rollout fallback: keep trying to acquire a proper service goal
-		 * instead of idling forever on apron/one-way holding tiles. */
+		/* Idle after rollout/taxi with a modular target but no active path: re-poll
+		 * for a now-free stand/hangar/helipad and resume taxiing as soon as one
+		 * opens. No relocation is needed here — a landed aircraft is always parked
+		 * on a safe stop (the landing chain reserves runway → an adjacent one-way
+		 * buffer or the goal stand, and the rollout-completion handler taxis it
+		 * there), which is a legal place to wait indefinitely. */
 		if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
-			if (TryRetargetModularGroundGoal(v, st)) return;
-			if (v->modular_ground_target == MGT_ROLLOUT) {
-				/* A safe stop is a tile we may wait on indefinitely: a stand/hangar/helipad
-				 * or a one-way taxiway queue tile. If we are already on one, hold position
-				 * and keep retrying the retarget. Only relocate when we are NOT on a safe
-				 * stop (still on the runway or on a free-move apron) — and then only to
-				 * another safe stop, never deeper into a shared free-move section. */
-				TileIndex holding = IsModularSafeStopTile(st, v->tile)
-						? INVALID_TILE
-						: FindModularRolloutHoldingTile(st, v, v->tile);
-				if (holding != INVALID_TILE && holding != v->tile) {
-					v->ground_path_goal = holding;
-					v->state = TERM1;
-					if (ShouldLogModularRateLimited(v->index, 34, 64)) {
-						Debug(misc, 2, "[ModAp] Vehicle {} rollout keepalive: move to holding tile {}", v->index, holding.base());
-					}
-					return;
-				}
-			}
+			TryRetargetModularGroundGoal(v, st);
 		}
 		return;
 	}

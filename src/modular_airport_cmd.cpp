@@ -1810,69 +1810,6 @@ TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_til
 	return GetRunwayOtherEnd(st, landing_tile);
 }
 
-TileIndex FindNearestModularRunwayExitTile(const Station *st, const Aircraft *v, TileIndex runway_tile)
-{
-	const ModularAirportTileData *td = st->airport.GetModularTileData(runway_tile);
-	if (td == nullptr || !IsModularRunwayPiece(td->piece_type)) return INVALID_TILE;
-
-	const auto has_onward_route = [&](TileIndex from_tile) -> bool {
-		if (st->airport.modular_tile_data == nullptr) return false;
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			const bool is_service = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1 ||
-					IsModularHangarPiece(data.piece_type) ||
-					IsModularHelipadPiece(data.piece_type));
-			if (!is_service) continue;
-			AirportGroundPath p = FindAirportGroundPath(st, from_tile, data.tile, nullptr);
-			if (p.found) return true;
-		}
-		return false;
-	};
-
-	std::vector<TileIndex> runway_tiles;
-	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles) || runway_tiles.empty()) return INVALID_TILE;
-
-	auto it = std::find(runway_tiles.begin(), runway_tiles.end(), runway_tile);
-	if (it == runway_tiles.end()) return INVALID_TILE;
-	const size_t idx = static_cast<size_t>(it - runway_tiles.begin());
-
-	static const TileIndexDiff kNeighbours[] = {
-		TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1),
-	};
-
-	for (size_t step = 0; step < runway_tiles.size(); ++step) {
-		const size_t cand[2] = {
-			(idx >= step) ? (idx - step) : runway_tiles.size(),
-			(idx + step < runway_tiles.size()) ? (idx + step) : runway_tiles.size(),
-		};
-
-		for (size_t ci = 0; ci < 2; ++ci) {
-			if (cand[ci] >= runway_tiles.size()) continue;
-			TileIndex rt = runway_tiles[cand[ci]];
-
-			for (TileIndexDiff d : kNeighbours) {
-				TileIndex n = rt + d;
-				const ModularAirportTileData *nd = st->airport.GetModularTileData(n);
-				if (nd == nullptr || IsModularRunwayPiece(nd->piece_type)) continue;
-
-				/* The vacate target must itself be a safe stop (one-way taxiway or
-				 * service tile). A plain free-move apron neighbour is transit-only;
-				 * stopping there pins the section. Such layouts fall through to the
-				 * path-based FindModularRolloutHoldingTile instead. */
-				if (!IsModularSafeStopTile(st, n)) continue;
-
-				Tile nt(n);
-				if (!IsAirportTile(nt)) continue;
-				if (HasModularAirportTileReservation(n) && GetModularAirportTileReservationOwner(n) != v->index) continue;
-				if (IsModularTileOccupiedByOtherAircraft(st, n, v->index)) continue;
-				if (!has_onward_route(n)) continue;
-				return n;
-			}
-		}
-	}
-
-	return INVALID_TILE;
-}
-
 TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, TileIndex start_tile)
 {
 	if (!IsValidTile(start_tile) || st->airport.modular_tile_data == nullptr) return INVALID_TILE;
@@ -2919,11 +2856,13 @@ void HandleModularGroundArrival(Aircraft *v)
 						v->taxi_wait_counter = 0;
 						SetTaxiReservation(v, v->tile);
 					}
-				} else {
-					/* No immediate service destination from rollout completion:
-					 * first vacate runway to the nearest non-runway airport tile. */
-					TileIndex exit_tile = FindNearestModularRunwayExitTile(st, v, v->tile);
-					TileIndex holding_tile = (exit_tile != INVALID_TILE) ? exit_tile : FindModularRolloutHoldingTile(st, v, v->tile);
+				} else if (!IsModularSafeStopTile(st, v->tile)) {
+					/* No service tile free yet and we are not on a safe stop (still on
+					 * the runway): vacate to the nearest reachable safe stop. The landing
+					 * chain guaranteed one exists by reserving an adjacent one-way buffer
+					 * before touchdown. Once parked there the keepalive re-polls for a
+					 * stand. */
+					TileIndex holding_tile = FindModularRolloutHoldingTile(st, v, v->tile);
 					if (holding_tile != INVALID_TILE && holding_tile != v->tile) {
 						v->ground_path_goal = holding_tile;
 						v->modular_ground_target = MGT_ROLLOUT;
@@ -2941,6 +2880,8 @@ void HandleModularGroundArrival(Aircraft *v)
 						}
 					}
 				}
+				/* else: already parked on a safe stop with no service tile free — stay
+				 * idle in MGT_ROLLOUT and let the keepalive re-poll for a stand. */
 
 				/* Discard any remaining landing chain path — either installed above or no longer needed. */
 				v->landing_chain_path.reset();
