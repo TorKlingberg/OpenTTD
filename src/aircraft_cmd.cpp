@@ -1859,7 +1859,14 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 		if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
 			if (TryRetargetModularGroundGoal(v, st)) return;
 			if (v->modular_ground_target == MGT_ROLLOUT) {
-				TileIndex holding = FindModularRolloutHoldingTile(st, v, v->tile);
+				/* A safe stop is a tile we may wait on indefinitely: a stand/hangar/helipad
+				 * or a one-way taxiway queue tile. If we are already on one, hold position
+				 * and keep retrying the retarget. Only relocate when we are NOT on a safe
+				 * stop (still on the runway or on a free-move apron) — and then only to
+				 * another safe stop, never deeper into a shared free-move section. */
+				TileIndex holding = IsModularSafeStopTile(st, v->tile)
+						? INVALID_TILE
+						: FindModularRolloutHoldingTile(st, v, v->tile);
 				if (holding != INVALID_TILE && holding != v->tile) {
 					v->ground_path_goal = holding;
 					v->state = TERM1;

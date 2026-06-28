@@ -689,6 +689,18 @@ static bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex g
 	return false;
 }
 
+/* Goal-independent safe-stop test: a tile an aircraft may wait on indefinitely
+ * without pinning a shared transit resource (stand/hangar/helipad or a one-way
+ * taxiway queue tile). Free-move apron/grass and runways are never safe stops. */
+bool IsModularSafeStopTile(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
+	if (td == nullptr) return false;
+	if (IsServiceStyleGroundPiece(td->piece_type)) return true;
+	if (IsTaxiwayPiece(td->piece_type) && td->one_way_taxi) return true;
+	return false;
+}
+
 static TileIndex FindRunwayTransitContinuationTile(const Aircraft *v, const Station *st, const TaxiPath *path, const TaxiSegment &seg)
 {
 	if (v == nullptr || st == nullptr || path == nullptr || path->tiles.empty()) return INVALID_TILE;
@@ -1842,6 +1854,12 @@ TileIndex FindNearestModularRunwayExitTile(const Station *st, const Aircraft *v,
 				const ModularAirportTileData *nd = st->airport.GetModularTileData(n);
 				if (nd == nullptr || IsModularRunwayPiece(nd->piece_type)) continue;
 
+				/* The vacate target must itself be a safe stop (one-way taxiway or
+				 * service tile). A plain free-move apron neighbour is transit-only;
+				 * stopping there pins the section. Such layouts fall through to the
+				 * path-based FindModularRolloutHoldingTile instead. */
+				if (!IsModularSafeStopTile(st, n)) continue;
+
 				Tile nt(n);
 				if (!IsAirportTile(nt)) continue;
 				if (HasModularAirportTileReservation(n) && GetModularAirportTileReservationOwner(n) != v->index) continue;
@@ -1878,20 +1896,13 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 	TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr);
 	if (!path.valid || path.tiles.size() < 2 || path.segments.empty()) return INVALID_TILE;
 
-	for (const TaxiSegment &seg : path.segments) {
-		if (seg.type != TaxiSegmentType::FREE_MOVE) continue;
-		TileIndex tile = path.tiles[seg.start_index];
-		Tile t(tile);
-		if (!IsAirportTile(t)) continue;
-		if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
-		if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
-		return tile;
-	}
-
-	/* Fallback: any first non-runway step that is currently clear. */
-	for (const TaxiSegment &seg : path.segments) {
-		if (seg.type == TaxiSegmentType::RUNWAY) continue;
-		TileIndex tile = path.tiles[seg.start_index];
+	/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
+	 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
+	 * stop on a free-move apron/grass tile: that pins a shared transit section. If
+	 * no safe stop is reachable and clear, return INVALID and let the caller hold. */
+	for (TileIndex tile : path.tiles) {
+		if (tile == start_tile) continue;
+		if (!IsModularSafeStopTile(st, tile)) continue;
 		Tile t(tile);
 		if (!IsAirportTile(t)) continue;
 		if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
