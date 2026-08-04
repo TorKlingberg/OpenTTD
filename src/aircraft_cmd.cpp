@@ -2089,6 +2089,68 @@ static void AircraftEventHandler_HeliTakeOff(Aircraft *v, const AirportFTAClass 
 	}
 }
 
+/**
+ * Try to commit an aircraft to landing on one candidate touchdown tile.
+ *
+ * The attempt is transactional: on failure TryReserveLandingChain has rolled back
+ * everything it reserved, so the caller may immediately try another candidate in the
+ * same tick instead of sending the aircraft around the holding loop again.
+ *
+ * @param v Aircraft, still in FLYING state.
+ * @param st Target station (modular airport).
+ * @param runway_tile Candidate touchdown tile (runway end, helipad or computed apron).
+ * @return true when the aircraft is committed and its state has been set to LANDING/HELILANDING.
+ */
+static bool TryCommitModularLanding(Aircraft *v, Station *st, TileIndex runway_tile)
+{
+	if (v->subtype == AIR_HELICOPTER) {
+		const int target_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+		const int target_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
+		const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
+		if (dist_tiles >= 50) return false;
+	}
+
+	TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+	/* For helicopter landing on a computed apron tile, rollout is INVALID_TILE;
+	 * use the landing tile itself as the pathfinder origin. */
+	TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway_tile;
+	TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
+	v->modular_landing_goal = landing_goal;
+
+	/* Helicopters must have a concrete ground destination (terminal,
+	 * helipad, or hangar) before committing to land.  They can circle
+	 * indefinitely, so there is no reason to land without one. */
+	if (v->subtype == AIR_HELICOPTER && landing_goal == INVALID_TILE) {
+		v->modular_landing_goal = INVALID_TILE;
+		return false;
+	}
+
+	if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
+		/* Never commit landing without a reserved post-touchdown chain. */
+		if (ShouldLogModularRateLimited(v->index, 42, 128)) {
+			Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
+				v->index, runway_tile.base(),
+				landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
+				rollout == INVALID_TILE ? 0 : rollout.base(),
+				IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
+		}
+		v->modular_landing_goal = INVALID_TILE;
+		return false;
+	}
+
+	/* Start landing sequence */
+	uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
+	v->modular_landing_tile = runway_tile;
+	v->modular_holding_wp_index = UINT32_MAX; // reset; next FLYING entry reinitialises from ghost phase
+	v->state = landingtype; // LANDING / HELILANDING
+	if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
+	if (ShouldLogModularRateLimited(v->index, 21, 64)) {
+		Debug(misc, 3, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
+	}
+	/* Don't set v->pos for modular airports - not used */
+	return true;
+}
+
 static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 {
 	Station *st = Station::Get(v->targetairport);
@@ -2104,9 +2166,10 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 		/* For modular airports, handle landing differently */
 		if (st->airport.blocks.Test(AirportBlock::Modular)) {
 			v->modular_landing_goal = INVALID_TILE;
-			TileIndex runway_tile = INVALID_TILE;
 
 			if (v->subtype == AIR_HELICOPTER) {
+				TileIndex runway_tile = INVALID_TILE;
+
 				/* Helicopter landing: computed tile (no helipads) or helipad. */
 				EnsureModularHeliTilesValid(st);
 				if (st->airport.modular_heli_landing_tile != INVALID_TILE) {
@@ -2125,6 +2188,8 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 						runway_tile = INVALID_TILE;
 					}
 				}
+
+				if (runway_tile != INVALID_TILE && TryCommitModularLanding(v, st, runway_tile)) return;
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
@@ -2152,64 +2217,14 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 					if (IsContiguousModularRunwayReservedByOther(v, st, gate.runway_tile)) continue;
 					if (IsContiguousModularRunwayQueuedForTakeoffByOther(v, st, gate.runway_tile)) continue;
 
-					runway_tile = gate.runway_tile;
-					break;
+					/* Committing is transactional, so a runway whose post-touchdown chain
+					 * cannot be reserved is just another rejected candidate: fall through
+					 * to the remaining gates instead of flying a whole extra lap.  Gates
+					 * that share a waypoint (parallel colocated runways) are all live at
+					 * the same moment, so this is what actually makes the second runway
+					 * of such a pair usable. */
+					if (TryCommitModularLanding(v, st, gate.runway_tile)) return;
 				}
-			}
-
-			if (runway_tile != INVALID_TILE) {
-				if (v->subtype == AIR_HELICOPTER) {
-					const int target_x = TileX(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
-					const int target_y = TileY(runway_tile) * TILE_SIZE + TILE_SIZE / 2;
-					const int dist_tiles = (abs(v->x_pos - target_x) + abs(v->y_pos - target_y)) / TILE_SIZE;
-					if (dist_tiles >= 50) {
-						v->state = FLYING;
-						return;
-					}
-				}
-
-				TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
-				/* For helicopter landing on a computed apron tile, rollout is INVALID_TILE;
-				 * use the landing tile itself as the pathfinder origin. */
-				TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway_tile;
-				TileIndex landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
-				v->modular_landing_goal = landing_goal;
-
-				/* Helicopters must have a concrete ground destination (terminal,
-				 * helipad, or hangar) before committing to land.  They can circle
-				 * indefinitely, so there is no reason to land without one. */
-				if (v->subtype == AIR_HELICOPTER && landing_goal == INVALID_TILE) {
-					v->modular_landing_goal = INVALID_TILE;
-					v->state = FLYING;
-					return;
-				}
-
-				if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
-					/* Never commit landing without a reserved post-touchdown chain. */
-					if (ShouldLogModularRateLimited(v->index, 42, 128)) {
-						const TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
-						Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
-							v->index, runway_tile.base(),
-							landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
-							rollout == INVALID_TILE ? 0 : rollout.base(),
-							IsValidTile(v->tile) ? v->tile.base() : 0, v->direction);
-					}
-					v->modular_landing_goal = INVALID_TILE;
-					v->state = FLYING;
-					return;
-				}
-
-				/* Start landing sequence */
-				uint8_t landingtype = (v->subtype == AIR_HELICOPTER) ? HELILANDING : LANDING;
-				v->modular_landing_tile = runway_tile;
-				v->modular_holding_wp_index = UINT32_MAX; // reset; next FLYING entry reinitialises from ghost phase
-				v->state = landingtype; // LANDING / HELILANDING
-				if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
-				if (ShouldLogModularRateLimited(v->index, 21, 64)) {
-					Debug(misc, 3, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
-				}
-				/* Don't set v->pos for modular airports - not used */
-				return;
 			}
 
 			v->state = FLYING;
