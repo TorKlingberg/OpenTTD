@@ -451,12 +451,21 @@ static void ComputeModularHeliTiles(const Station *st)
 	int center_x = (min_x + max_x) / 2;
 	int center_y = (min_y + max_y) / 2;
 
-	/* Step 2: Find best apron/taxiway tile not adjacent to any building. */
+	/* Step 2: Find best apron/taxiway tile that is one-way free and not adjacent to
+	 * any building.
+	 *
+	 * One-way tiles can never be used as a helicopter pad.  A one-way tile is a
+	 * queueing corridor: a helicopter parked on one blocks every aircraft behind
+	 * it, and cannot leave except along the corridor's flow direction — which
+	 * typically feeds a runway rather than a stand, so a helicopter heading for a
+	 * terminal has no legal move at all.  That deadlocks the corridor permanently
+	 * rather than merely slowing it down. */
 	TileIndex best_apron = INVALID_TILE;
 	int best_apron_dist = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsApronOrTaxiwayPiece(data.piece_type)) continue;
+		if (data.one_way_taxi) continue;
 
 		/* Check 8-directional adjacency for buildings. */
 		bool adjacent_to_building = false;
@@ -472,6 +481,7 @@ static void ComputeModularHeliTiles(const Station *st)
 				break;
 			}
 		}
+
 		if (adjacent_to_building) continue;
 
 		int tx = static_cast<int>(TileX(data.tile));
