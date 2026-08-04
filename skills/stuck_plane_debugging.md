@@ -21,6 +21,27 @@ scripts/build_and_sign.sh && ./build/openttd -d misc=1 -x -g ~/Documents/OpenTTD
 
 ## Quick Triage
 
+### Rule out a user-stopped plane first
+
+`AircraftEventHandler` returns early on `VehState::Stopped` (`aircraft_cmd.cpp`), so a plane
+the player stopped never runs movement or reservation logic. It keeps its tile reservation and
+physically occupies its tile **forever**, and it emits *no* log lines at all. On a modular
+airport `TERM1` covers the whole taxi phase, so a plane can legally be stopped mid-taxiway —
+park one on a chokepoint and the entire airport wedges with no diagnostic trail.
+
+Check the head of the jam before anything else. In game: open the vehicle and look for the
+stopped indicator. From a running process, dump `vehstatus` (see
+`skills/lldb_game_state_inspection.md`); bit 1 = `Stopped`, so `0xa` = `Stopped+DefaultPalette`.
+
+Tell-tale field combination on a stopped plane that has survived a save/load:
+`taxi_path == nullptr` together with a **non-zero** `taxi_path_index`/`taxi_wait_counter`.
+`ClearTaxiPathState` always zeroes those two, and `taxi_path` is not saved while they are — so
+that combination means the aircraft has not been ticked since load, not that pathfinding failed.
+
+The blocked planes behind it show the normal `stuck(reserve)` chain, and their
+`taxi_wait_counter` values are all *identical* — one simultaneous stall, not independent
+failures. Divergent counters point at real contention instead.
+
 ### Planes circling, not landing
 ```bash
 grep 'landing-chain fail' /tmp/openttd.log | tail -20
@@ -296,6 +317,9 @@ Check each tile along the expected path for:
 - **Save/reload**: Clears all in-memory reservation state (taxi_reserved_tiles, taxi_path, etc. are not saved). If save/reload fixes the problem, it's a reservation state bug.
 
 ## Common Root Causes
+
+0. **A plane stopped by the player** (see Quick Triage above). Not a code fault — but it looks
+   exactly like a reservation deadlock, and it produces no log output, so eliminate it first.
 
 1. **Stale reservations after takeoff**: Aircraft takes off but preserved landing chain tiles aren't cleared. Fixed by `force_clear_all=true` on takeoff transitions.
 
