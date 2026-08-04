@@ -108,6 +108,7 @@ Run only modular airport tests:
 ## Skills (Brief)
 
 - `skills/lldb_debugging.md` — LLDB attach/run workflows and modular runtime log commands.
+- `skills/lldb_game_state_inspection.md` — read live game state (pools, towns, stations) from a running game via batch LLDB + Python, no rebuild needed.
 - `skills/stuck_plane_debugging.md` — detailed stuck-plane diagnosis playbook.
 - `skills/crash_debugging.md` — crash log and stacktrace triage steps.
 - `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.

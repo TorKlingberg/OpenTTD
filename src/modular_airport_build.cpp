@@ -686,9 +686,6 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
 	}
 
-	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
-	if (ret.Failed()) return ret;
-
 	int allowed_z = -1;
 
 	/* Check if we're replacing an allowed modular airport tile.
@@ -715,6 +712,14 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	};
 	is_modular_replace = IsReplaceableTile(tile, static_cast<uint8_t>(gfx));
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
+
+	/* Replacing a piece within an existing modular airport takes no new land,
+	 * so the town authority has no say; only builds onto new tiles are gated. */
+	CommandCost ret;
+	if (!is_modular_replace) {
+		ret = CheckIfAuthorityAllowsNewStation(tile, flags);
+		if (ret.Failed()) return ret;
+	}
 
 	if (is_modular_replace) {
 		ret = EnsureNoVehicleOnGround(tile);

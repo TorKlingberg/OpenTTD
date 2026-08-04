@@ -49,5 +49,6 @@ thread backtrace all
 
 ## When to Use Other Skills
 
+- to read game state (town ratings, station flags, pools) from a running game: `skills/lldb_game_state_inspection.md`
 - for stuck taxi/landing/takeoff behavior: `skills/stuck_plane_debugging.md`
 - for crash log triage workflow: `skills/crash_debugging.md`

@@ -412,8 +412,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
-	ret = CheckIfAuthorityAllowsNewStation(abs_tiles[0], flags);
-	if (ret.Failed()) return ret;
+	/* No whole-template authority check here: the per-tile
+	 * BuildModularAirportTile_Check below runs it for every tile that takes
+	 * new land, and exempts in-place replacements of existing modular tiles. */
 
 	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
 	Town *nearest = nullptr;
