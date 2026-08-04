@@ -583,6 +583,16 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		v->modular_takeoff_progress = 0;
 		v->modular_holding_wp_index = UINT32_MAX;
 
+		/* Clear airborne-transient flags: the aircraft is parked in a hangar now.
+		 * HelicopterDirectDescent matters most — CmdStartStopVehicle reads it as a
+		 * second "is in flight" condition independent of state, so a helicopter
+		 * teleported mid-descent would be left permanently impossible to start.
+		 * DestinationTooFar is deliberately left alone: it describes the order
+		 * rather than the position, and is re-evaluated with its news item. */
+		v->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
+		v->flags.Reset(VehicleAirFlag::InMaximumHeightCorrection);
+		v->flags.Reset(VehicleAirFlag::InMinimumHeightCorrection);
+
 		/* Move to hangar tile. */
 		int hx = TileX(hangar) * TILE_SIZE + TILE_SIZE / 2;
 		int hy = TileY(hangar) * TILE_SIZE + TILE_SIZE / 2;
