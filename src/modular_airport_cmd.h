@@ -296,6 +296,16 @@ TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileInde
 bool ModularAirportHasHelipad(const Station *st);
 TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);
 TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);
+/**
+ * Pick somewhere else to park for an aircraft that has arrived on a tile another
+ * aircraft already occupies. Unlike ordinary parking selection this may hand a
+ * helicopter a stand at an airport that has helipads: stacking two aircraft on one
+ * tile is the worse outcome.
+ *
+ * @param[out] target Ground target matching the returned tile; untouched on failure.
+ * @return Tile to re-target to, or INVALID_TILE when nothing is free.
+ */
+TileIndex FindModularUnstackParkingTile(const Station *st, const Aircraft *v, uint8_t *target = nullptr);
 bool CanUseModularGroundRouting(const Station *st, const Aircraft *v);
 bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
 void HandleModularGroundArrival(Aircraft *v);

@@ -2169,6 +2169,31 @@ TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v, TileIndex 
 	return best_fallback_tile;
 }
 
+TileIndex FindModularUnstackParkingTile(const Station *st, const Aircraft *v, uint8_t *target)
+{
+	/* A helicopter looks for a pad whichever target it arrived on. It can legitimately
+	 * be standing here on MGT_TERMINAL: both HandleModularEndLanding and the helipad
+	 * fallback in HandleModularGroundArrival hand a helicopter a stand at an airport
+	 * that also has helipads. */
+	const bool prefer_helipad = (v->modular_ground_target == MGT_HELIPAD) || (v->subtype == AIR_HELICOPTER);
+	TileIndex goal = prefer_helipad ? FindFreeModularHelipad(st, v) : INVALID_TILE;
+	uint8_t tgt = MGT_HELIPAD;
+
+	if (goal == INVALID_TILE) {
+		/* Unstacking beats parking policy: two aircraft on one tile is worse than a
+		 * helicopter on a stand, so the stand is allowed even where helipads exist.
+		 * Without that override a helicopter on MGT_TERMINAL would be refused every
+		 * stand and the caller would fall through to stacking — the exact outcome
+		 * this whole path exists to prevent. */
+		goal = FindFreeModularTerminal(st, v, INVALID_TILE, true);
+		tgt = MGT_TERMINAL;
+	}
+
+	if (goal == INVALID_TILE) return INVALID_TILE;
+	if (target != nullptr) *target = tgt;
+	return goal;
+}
+
 bool IsModularHangarPiece(uint8_t piece_type)
 {
 	switch (piece_type) {
@@ -3093,16 +3118,11 @@ void HandleModularGroundArrival(Aircraft *v)
 					IsModularTileOccupiedByOtherAircraft(st, v->tile, v->index)) {
 				/* Reservation desync safety: if another aircraft is already on this stand or pad,
 				 * re-target to a different one instead of stacking aircraft on one tile. */
-				TileIndex goal = (v->modular_ground_target == MGT_HELIPAD) ? FindFreeModularHelipad(st, v) : FindFreeModularTerminal(st, v);
-				if (goal == INVALID_TILE && v->modular_ground_target == MGT_HELIPAD) {
-					/* Helicopter couldn't find a helipad. Unstacking beats parking policy:
-					 * two aircraft on one tile is worse than a helicopter on a stand, so
-					 * allow the stand here even at an airport that has helipads. */
-					goal = FindFreeModularTerminal(st, v, INVALID_TILE, true);
-					if (goal != INVALID_TILE) v->modular_ground_target = MGT_TERMINAL;
-				}
+				uint8_t goal_target = MGT_NONE;
+				TileIndex goal = FindModularUnstackParkingTile(st, v, &goal_target);
 				if (goal != INVALID_TILE && goal != v->tile) {
 					v->ground_path_goal = goal;
+					v->modular_ground_target = goal_target;
 					v->state = TERM1;
 					return;
 				}

@@ -1308,3 +1308,83 @@ TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
 		CHECK(std::find(keep_set.begin(), keep_set.end(), other) == keep_set.end());
 	}
 }
+
+TEST_CASE("ModularAirportUnstackParking")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* An airport that has a helipad, so the stock parking rule refuses stands to
+	 * helicopters everywhere except this unstacking path. `occupied` is where the
+	 * arriving aircraft finds itself stacked; `free_stand` is the way out. */
+	const TileIndex occupied = base + TileDiffXY(2, 1);
+	const TileIndex free_stand = base + TileDiffXY(2, 2);
+	const TileIndex pad = base + TileDiffXY(2, 3);
+	AddModularTile(st, occupied, APT_STAND, 0);
+	AddModularTile(st, free_stand, APT_STAND, 0);
+	AddModularTile(st, pad, APT_HELIPAD_2, 0);
+	REQUIRE(ModularAirportHasHelipad(st));
+
+	/* Park a squatter on `occupied` so the arriving aircraft cannot simply stay. */
+	auto squat = [&](VehicleID id, TileIndex tile, uint8_t subtype) {
+		Aircraft *other = CreateAircraft(id);
+		other->targetairport = st->index;
+		other->subtype = subtype;
+		other->tile = tile;
+		SetTaxiReservation(other, tile);
+	};
+
+	auto arriving = [&](uint8_t subtype) -> Aircraft * {
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->subtype = subtype;
+		v->tile = occupied;
+		v->modular_ground_target = MGT_TERMINAL;
+		return v;
+	};
+
+	SECTION("A helicopter on MGT_TERMINAL is unstacked onto a stand") {
+		SetupAircraftPool();
+		squat(VehicleID(11), occupied, AIR_AIRCRAFT);
+		squat(VehicleID(12), pad, AIR_HELICOPTER);
+
+		/* Regression: MGT_TERMINAL took the plain lookup, which refuses a stand to a
+		 * helicopter wherever helipads exist. Nothing was then free, so the caller fell
+		 * through and stacked two aircraft on one tile — while HandleModularEndLanding
+		 * and the helipad fallback both legitimately produce this exact state. */
+		uint8_t target = MGT_NONE;
+		CHECK(FindModularUnstackParkingTile(st, arriving(AIR_HELICOPTER), &target) == free_stand);
+		CHECK(target == MGT_TERMINAL);
+	}
+
+	SECTION("A free helipad is preferred over a stand") {
+		SetupAircraftPool();
+		squat(VehicleID(11), occupied, AIR_AIRCRAFT);
+
+		uint8_t target = MGT_NONE;
+		CHECK(FindModularUnstackParkingTile(st, arriving(AIR_HELICOPTER), &target) == pad);
+		CHECK(target == MGT_HELIPAD);
+	}
+
+	SECTION("A fixed-wing aircraft never gets a helipad") {
+		SetupAircraftPool();
+		squat(VehicleID(11), occupied, AIR_HELICOPTER);
+
+		uint8_t target = MGT_NONE;
+		CHECK(FindModularUnstackParkingTile(st, arriving(AIR_AIRCRAFT), &target) == free_stand);
+		CHECK(target == MGT_TERMINAL);
+	}
+
+	SECTION("Nothing free yields INVALID_TILE and leaves the target alone") {
+		SetupAircraftPool();
+		squat(VehicleID(11), occupied, AIR_AIRCRAFT);
+		squat(VehicleID(12), pad, AIR_HELICOPTER);
+		squat(VehicleID(13), free_stand, AIR_AIRCRAFT);
+
+		uint8_t target = MGT_NONE;
+		CHECK(FindModularUnstackParkingTile(st, arriving(AIR_HELICOPTER), &target) == INVALID_TILE);
+		CHECK(target == MGT_NONE);
+	}
+}
