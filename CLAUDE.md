@@ -59,12 +59,17 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs two saves under headless 5-year simulations (take ~2 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
+`scripts/regression_test.sh` runs three saves under headless 5-year simulations (take ~3 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
 
 - `scripts/testdata/mass7-inair.sav` — mixed fixed-wing throughput; every airport is large-safe
 - `scripts/testdata/helis2.sav` — helicopter-heavy stress; every airport is large-safe
+- `scripts/testdata/T5j2.sav` — real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
 
-Both saves have all airports made large-safe, so the elevated short-strip jet-crash path never fires (only the basic crash rate remains) and throughput is flat year-to-year. The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the two saves count different calendar windows — that's expected.
+The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires (only the basic crash rate remains) and throughput is flat year-to-year — a drop is therefore attributable to routing rather than attrition. **`T5j2.sav` is not flat**: throughput declines a few percent across the window from fleet ageing (it has zero crashes, so this is not attrition). It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
+
+The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the saves count different calendar windows — that's expected.
+
+**Test saves must be saved unpaused.** A paused save still consumes the tick budget while the game loop does nothing, so the run finishes in seconds having simulated nothing. `airport_stats_history.sh` now fails loudly when a run reports no countable years, because the raw result of a paused save is `movements=0`, which parses fine and would otherwise read as a total throughput collapse (or pass silently against a low floor). Check with `_pause_mode` in a debugger if a new fixture behaves oddly; the committed saves all read 0.
 
 Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
 

@@ -7,6 +7,7 @@ cd "${SCRIPT_DIR}/.."
 TEST_CASES=(
 	"scripts/testdata/mass7-inair.sav:scripts/testdata/mass7-inair.expected"
 	"scripts/testdata/helis2.sav:scripts/testdata/helis2.expected"
+	"scripts/testdata/T5j2.sav:scripts/testdata/T5j2.expected"
 )
 
 read_min_movements() {

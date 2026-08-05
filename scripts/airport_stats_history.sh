@@ -15,6 +15,7 @@ if [[ "${1:-}" == "--current" ]]; then
 	landings_total=0
 	takeoffs_total=0
 	first_year=""
+	years_counted=0
 	while IFS= read -r line; do
 		if [[ "${line}" =~ Year[[:space:]]([0-9]+)[[:space:]]totals:[[:space:]]landings=([0-9]+)[[:space:]]takeoffs=([0-9]+) ]]; then
 			year="${BASH_REMATCH[1]}"
@@ -26,9 +27,24 @@ if [[ "${1:-}" == "--current" ]]; then
 			fi
 			landings_total=$((landings_total + BASH_REMATCH[2]))
 			takeoffs_total=$((takeoffs_total + BASH_REMATCH[3]))
+			years_counted=$((years_counted + 1))
 		fi
 	done <<< "${run_output}"
-	echo "Total (excl first year): landings=${landings_total} takeoffs=${takeoffs_total} movements=$((landings_total + takeoffs_total))"
+
+	# A run that reported no years at all did not simulate anything, which is a
+	# broken fixture rather than a throughput result. Distinguish it explicitly:
+	# "movements=0" parses just fine downstream and would otherwise be read as a
+	# catastrophic regression, or silently pass against a zero floor.
+	if [[ "${years_counted}" -eq 0 ]]; then
+		echo "error: ${SAVE_FILE} produced no countable [AirportStats] years." >&2
+		echo "       The simulation did not advance. The usual cause is a savegame that was" >&2
+		echo "       paused when it was saved: the tick budget is consumed while the game loop" >&2
+		echo "       does nothing, so the run finishes in seconds with no output." >&2
+		echo "       Load it, unpause, and re-save. Regression fixtures must be unpaused." >&2
+		exit 1
+	fi
+
+	echo "Total (excl first year): landings=${landings_total} takeoffs=${takeoffs_total} movements=$((landings_total + takeoffs_total)) years=${years_counted}"
 	exit 0
 fi
 
