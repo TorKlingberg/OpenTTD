@@ -2923,6 +2923,8 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 {
 	TileIndex alt_goal = INVALID_TILE;
 	uint8_t alt_target = v->modular_ground_target;
+	/* Applied only once the retarget is committed, so a refused one leaves nothing behind. */
+	TileIndex alt_takeoff_tile = INVALID_TILE;
 
 	switch (v->modular_ground_target) {
 		case MGT_TERMINAL:
@@ -2956,7 +2958,10 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 				 * order to leave, so this ladder always terminates. */
 				alt_goal = FindModularRunwayTileForTakeoff(st, v);
 				if (alt_goal != INVALID_TILE) {
-					v->modular_takeoff_tile = alt_goal;
+					/* Staged rather than written: the shared failure check below can still
+					 * reject this goal, and a takeoff tile left behind by a retarget that
+					 * did not happen is state no longer backed by a matching target. */
+					alt_takeoff_tile = alt_goal;
 					alt_target = MGT_RUNWAY_TAKEOFF;
 				} else if (v->subtype == AIR_HELICOPTER && !st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
 					Debug(misc, 2, "[ModAp] V{} unit#{} retarget-heli-takeoff: no computed tile or runway, departing vertically from tile={}",
@@ -2993,6 +2998,7 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 
 	v->ground_path_goal = alt_goal;
 	v->modular_ground_target = alt_target;
+	if (alt_takeoff_tile != INVALID_TILE) v->modular_takeoff_tile = alt_takeoff_tile;
 	ClearTaxiPathState(v, v->tile);
 	v->taxi_wait_counter = 0;
 	return true;
