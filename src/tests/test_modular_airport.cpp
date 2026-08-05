@@ -1250,3 +1250,61 @@ TEST_CASE("ModularAirportHelicopterParkingPolicy")
 		CHECK(FindFreeModularTerminal(st, heli) == stand);
 	}
 }
+
+TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* A runway with a one-way queueing tile beyond it — the shape a no-ground-goal
+	 * landing commits against: reserve the runway, reserve the buffer to queue on. */
+	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+	ModularAirportTileData *oneway = AddModularTileWithData(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+	oneway->one_way_taxi = true;
+	oneway->user_taxi_dir_mask = 0x04;
+	AddModularTile(st, base + TileDiffXY(2, 4), APT_STAND, 0);
+
+	const TileIndex rollout = base + TileDiffXY(2, 2);
+	const TileIndex buffer = base + TileDiffXY(2, 3);
+	REQUIRE(IsModularSafeStopTile(st, buffer));
+
+	SECTION("A safe stop reserved from a runway survives reconciliation") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->tile = rollout;
+
+		/* No taxi_path and no landing_chain_path — exactly what the no-ground-goal
+		 * landing branch leaves behind. Nothing else justifies keeping the buffer. */
+		SetTaxiReservation(v, buffer);
+		REQUIRE(v->taxi_path == nullptr);
+		REQUIRE(v->landing_chain_path == nullptr);
+
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+
+		/* Regression: the buffer used to fall out of the keep set, so the reconciler
+		 * released the very reservation the landing was permitted against, stranding
+		 * the aircraft on the runway owning nothing. */
+		CHECK(std::find(keep_set.begin(), keep_set.end(), buffer) != keep_set.end());
+	}
+
+	SECTION("The rule does not apply once the aircraft is on a safe stop") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->tile = buffer;
+
+		TileIndex other = base + TileDiffXY(2, 4);
+		SetTaxiReservation(v, other);
+
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+
+		/* Standing somewhere it may wait indefinitely, normal reconciliation applies
+		 * and an unjustified claim is released rather than pinned. */
+		CHECK(std::find(keep_set.begin(), keep_set.end(), other) == keep_set.end());
+	}
+}

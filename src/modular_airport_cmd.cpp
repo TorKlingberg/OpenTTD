@@ -847,6 +847,25 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 
 	if (IsValidTile(v->tile) && st->TileBelongsToAirport(v->tile)) keep_set.push_back(v->tile);
 
+	/* An aircraft standing somewhere it may not wait keeps everything it holds.
+	 *
+	 * Retention is otherwise justified by a path — the active taxi_path or the stored
+	 * landing_chain_path. A landing committed through the no-ground-goal branch has
+	 * neither: it reserves a runway plus a one-way buffer to queue on and deliberately
+	 * resets the path. Nothing then justified the buffer, so the very next reconcile
+	 * released it, and the aircraft arrived at the rollout end owning nothing — on a
+	 * runway, with the guarantee that permitted the landing already thrown away.
+	 *
+	 * Landing is only allowed against a reserved route to a safe stop, so until the
+	 * aircraft is actually standing on one, that route is what makes its position
+	 * legal and it is never ours to reclaim. Normal reconciliation resumes the moment
+	 * it reaches a safe stop. */
+	if (IsValidTile(v->tile) && st->TileBelongsToAirport(v->tile) && IsPathTileRunwayPiece(st, v->tile)) {
+		for (TileIndex tile : v->taxi_reserved_tiles) {
+			if (IsValidTile(tile) && IsModularSafeStopTile(st, tile)) keep_set.push_back(tile);
+		}
+	}
+
 	auto path_has_future_tile = [&](const TaxiPath *path, TileIndex tile, uint16_t start_idx) -> bool {
 		if (path == nullptr || path->tiles.empty()) return false;
 		if (start_idx >= path->tiles.size()) return false;
@@ -3016,6 +3035,24 @@ void HandleModularGroundArrival(Aircraft *v)
 						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 						v->taxi_wait_counter = 0;
 						SetTaxiReservation(v, v->tile);
+					} else if (!IsModularSafeStopTile(st, v->tile)) {
+						/* The precomputed path could not be installed and the aircraft is
+						 * standing where it may not wait — in practice the rollout end, on the
+						 * runway. That is only a contract violation if it also no longer owns
+						 * a reserved route to somewhere it *can* wait. A missing path object
+						 * is not itself the test: the no-ground-goal landing branch reserves
+						 * a runway plus a one-way buffer and resets the path deliberately, and
+						 * that aircraft is perfectly safe — it owns its queueing tile. */
+						const bool owns_safe_stop = std::any_of(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(),
+							[&](TileIndex t) { return IsValidTile(t) && (t == goal || IsModularSafeStopTile(st, t)); });
+						if (!owns_safe_stop) {
+							Debug(misc, 1,
+								"[ModAp] V{} unit#{} landing-chain-invariant: off a safe stop with no reserved route to one tile={} goal={} owned={}",
+								v->index, v->unitnumber,
+								IsValidTile(v->tile) ? v->tile.base() : 0,
+								IsValidTile(goal) ? goal.base() : 0,
+								v->taxi_reserved_tiles.size());
+						}
 					}
 				} else if (!IsModularSafeStopTile(st, v->tile)) {
 					/* No service tile free yet and we are not on a safe stop (still on
@@ -3467,6 +3504,21 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				TaxiReserveFailureName(reserve_result.reason),
 				IsValidTile(reserve_result.tile) ? reserve_result.tile.base() : 0,
 				reserve_result.blocker == VehicleID::Invalid() ? 0 : reserve_result.blocker.base());
+
+			/* Waiting on a tile the aircraft may not hold. The entry contracts are built so
+			 * this cannot be reached by taxiing into it — only by already being there when
+			 * the route was lost, i.e. after a landing rollout. Distinct from ordinary
+			 * contention: the aircraft is pinning a shared resource while it waits. */
+			if (!IsModularSafeStopTile(st, v->tile) && IsPathTileRunwayPiece(st, v->tile)) {
+				Debug(misc, 1,
+					"[ModAp] V{} unit#{} runway-rest-invariant: waiting on runway tile={} wait={} goal={} tgt={} deny={} deny_tile={}",
+					v->index, v->unitnumber,
+					IsValidTile(v->tile) ? v->tile.base() : 0, v->taxi_wait_counter,
+					IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
+					v->modular_ground_target,
+					TaxiReserveFailureName(reserve_result.reason),
+					IsValidTile(reserve_result.tile) ? reserve_result.tile.base() : 0);
+			}
 
 				if (next_type == TaxiSegmentType::RUNWAY) {
 					const bool terminal_runway = next_is_terminal_runway;

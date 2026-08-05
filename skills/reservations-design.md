@@ -149,7 +149,28 @@ Two smells to watch for when touching this area:
   and the log will confidently print the wrong one's answer while the other denies
   entry. That is exactly how this bug hid in plain sight.
 
-### Pitfall 3: `taxi_reserved_tiles` vs map state
+### Pitfall 3: A reservation off a safe stop is not the reconciler's to reclaim
+
+Retention is normally justified by a path — the active `taxi_path` or the stored
+`landing_chain_path`. A landing committed through the **no-ground-goal** branch
+of `TryReserveLandingChain` has neither: it reserves the runway plus a one-way
+buffer to queue on, then deliberately resets the path. Nothing justified the
+buffer, so the next reconcile released it, and the aircraft reached the rollout
+end owning nothing — standing on a runway with the guarantee that permitted its
+landing already thrown away.
+
+`BuildReservationKeepSet` therefore keeps reserved **safe-stop** tiles whenever
+the aircraft is standing on a runway. Landing is only allowed against a reserved
+route to a safe stop (§5), so until it is on one, that claim is what makes its
+position legal.
+
+Keep the condition narrow. Retaining *everything* an aircraft holds while off a
+safe stop costs ~10% throughput on `mass7-inair`, and retaining safe stops from
+any non-safe-stop tile still costs ~4%; restricting it to aircraft standing on a
+runway fixes the invariant and *gains* throughput, because it targets the landing
+case instead of every apron transit. Measure before widening it.
+
+### Pitfall 4: `taxi_reserved_tiles` vs map state
 
 `SetTaxiReservation` blindly overwrites the map-level reserver bit; the caller must have already verified that no other vehicle owns the tile. Likewise, the reconciler edits both the map bits and the vehicle vectors — divergence between vector and map state usually means something wrote map state without going through `SetTaxiReservation`, or vice versa.
 
@@ -157,23 +178,23 @@ The reconciler now *relies* on the vectors being authoritative: its release pass
 
 The `owned-reservations` log line reads map state; `tracked-runway` reads `modular_runway_reservation`. A mismatch is a useful red flag. See `skills/stuck_plane_debugging.md`.
 
-### Pitfall 4: Runway deny is sticky if you already own the resource
+### Pitfall 5: Runway deny is sticky if you already own the resource
 
 `TryReserveContiguousModularRunway` does not clear runway ownership on deny if the aircraft already owns the exact requested contiguous runway. Deny clears happen only when existing runway ownership is stale or mismatched. Don't write recovery code that assumes a deny implies a clean slate.
 
-### Pitfall 5: Reservation clears are rendering invalidation events
+### Pitfall 6: Reservation clears are rendering invalidation events
 
 The reservation overlay is drawn from map-level reservation bits, but changing those bits does not automatically repaint the viewport. Modular airport code that clears a reservation (`SetAirportTileReservation(t, false)`) must also dirty the affected tile, otherwise the colored overlay line can remain visible until some later redraw happens.
 
 Use the local reservation-clear helper in `src/modular_airport_cmd.cpp` for modular airport cleanup paths instead of calling `SetAirportTileReservation(..., false)` directly. This applies to normal reconciliation, taxi/runway transition cleanup, and stale-reservation fallback cleanup.
 
-### Pitfall 6: Per-tick targeting that reads shared-resource state without claiming it
+### Pitfall 7: Per-tick targeting that reads shared-resource state without claiming it
 
 If a per-tick movement function (`AirportMoveModular*`) sets its target based on "is the shared resource free?" while the actual reservation happens later in a separate handler (e.g. `AircraftEventHandler_Flying` → `TryReserveLandingChain`), then in the window between one aircraft freeing the resource and the next aircraft committing, **every** pre-commit aircraft simultaneously sees "available" and redirects to the same point. Visible as synchronized convergence at state transitions — a cluster of holding helicopters all flying to the landing tile in unison, scattering back to holding once one of them commits.
 
 Cure: don't let movement read the shared-resource bit unless movement also reserves. Keep movement targeting on a private waypoint (holding pattern, current path) until the commit handler claims the resource and changes state — after which a different movement function takes over off the committed state. Helicopters in `AirportMoveModularFlying` now always target the holding waypoint; commit happens in `AircraftEventHandler_Flying`, and post-commit movement runs in `AirportMoveModularLanding` driven by `HELILANDING` state.
 
-### Pitfall 7: Never park an aircraft on a `ONE_WAY` tile
+### Pitfall 8: Never park an aircraft on a `ONE_WAY` tile
 
 A one-way tile is a queueing corridor, not a parking space. Holding an aircraft
 there (computed heli pad, fallback holding spot, giving up mid-corridor) is a

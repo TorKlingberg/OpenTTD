@@ -221,6 +221,24 @@ aircraft; always read `deny_tile`, and treat `next` as route context only.
 `deny=no_safe_stop` is a contract violation rather than traffic — see
 `runway-transit-invariant` above.
 
+### Safe-stop invariants after landing
+
+```bash
+grep -c 'landing-chain-invariant' /tmp/openttd.log   # expect 0
+grep -c 'runway-rest-invariant'   /tmp/openttd.log   # small and self-clearing
+```
+
+- `landing-chain-invariant: off a safe stop with no reserved route to one` — the
+  aircraft is standing where it may not wait (in practice a rollout end) and owns
+  no reserved safe stop. Landing is only permitted against such a route, so this
+  means the route was thrown away after commit. **Expect zero.**
+- `runway-rest-invariant: waiting on runway` — the aircraft is waiting on a runway
+  tile. Unlike the above it still holds a route to a safe stop; it is losing the
+  race for the next runway resource (`deny=runway_busy`). Ordinary contention at
+  a busy airport, and it self-clears — a rollout end is physically on the runway,
+  so some of this is unavoidable. Worth investigating only if a single vehicle
+  stays there indefinitely, or if the count climbs sharply after a change.
+
 For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
 
 When runway is involved, also inspect:
