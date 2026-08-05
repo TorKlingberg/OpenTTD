@@ -204,11 +204,22 @@ These list the exact tiles reserved by and tracked for this vehicle.
 - `path_found` — whether pathfinder found any route (0=no, 1=yes but blocked)
 
 ```
-[ModAp] V74 unit#33 stuck(reserve) wait=32 state=2 tile=16811 next=16812 seg=1 goal=16556 tgt=4 reserved_by_other=1 reserver=V82 occupied_by_other=0 runway_busy=0
+[ModAp] V74 unit#33 stuck(reserve) wait=32 state=2 tile=16811 next=16812 seg=1 goal=16556 tgt=4 deny=reserved_by_other deny_tile=16814 deny_by=V82
 ```
-- `next` — the tile it can't enter
-- `reserver` — who holds the reservation on that tile
-- `reserved_by_other` / `occupied_by_other` / `runway_busy` — why it can't proceed
+- `next` — the next tile on the path (**not** necessarily what blocked)
+- `deny` — why the reservation was refused: `reserved_by_other`, `occupied_by_other`, `runway_busy`, `runway_resource_error`, `no_path`, `no_safe_stop`
+- `deny_tile` — **the tile that actually blocked**, reported by the reservation attempt itself
+- `deny_by` — who holds it, where known
+
+**`deny_tile` is usually not `next`.** A segment claims far more than one tile — a whole
+FREE_MOVE run, or a crossing chain spanning several runways — so the aircraft can be
+solidly blocked while the tile immediately ahead is free. On a busy save this is the
+common case, not the exception (63% of stuck reports in one T5j2 run). The old form of
+this line re-derived blockers from `next` and so printed all-clear for genuinely blocked
+aircraft; always read `deny_tile`, and treat `next` as route context only.
+
+`deny=no_safe_stop` is a contract violation rather than traffic — see
+`runway-transit-invariant` above.
 
 For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
 

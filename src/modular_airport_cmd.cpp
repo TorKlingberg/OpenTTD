@@ -2678,9 +2678,31 @@ void SetTaxiReservation(Aircraft *v, TileIndex tile)
 	}
 }
 
-bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
+std::string_view TaxiReserveFailureName(TaxiReserveFailure reason)
 {
-	if (v->taxi_path == nullptr || segment_idx >= v->taxi_path->segments.size()) return false;
+	switch (reason) {
+		case TaxiReserveFailure::NONE: return "none";
+		case TaxiReserveFailure::NO_PATH: return "no_path";
+		case TaxiReserveFailure::RESERVED_BY_OTHER: return "reserved_by_other";
+		case TaxiReserveFailure::OCCUPIED_BY_OTHER: return "occupied_by_other";
+		case TaxiReserveFailure::RUNWAY_BUSY: return "runway_busy";
+		case TaxiReserveFailure::RUNWAY_RESOURCE_ERROR: return "runway_resource_error";
+		case TaxiReserveFailure::NO_SAFE_STOP: return "no_safe_stop";
+		default: return "?";
+	}
+}
+
+bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out)
+{
+	/* Record why the claim was refused so callers report the blocking tile instead of
+	 * re-deriving one. Every `return false` below goes through this. */
+	const auto fail = [&](TaxiReserveFailure reason, TileIndex tile = INVALID_TILE, VehicleID blocker = VehicleID::Invalid()) {
+		if (out != nullptr) *out = TaxiReserveResult{reason, tile, blocker};
+		return false;
+	};
+	if (out != nullptr) *out = TaxiReserveResult{};
+
+	if (v->taxi_path == nullptr || segment_idx >= v->taxi_path->segments.size()) return fail(TaxiReserveFailure::NO_PATH);
 	const TaxiSegment &seg = v->taxi_path->segments[segment_idx];
 	const auto &tiles = v->taxi_path->tiles;
 
@@ -2691,10 +2713,15 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 			std::set<TileIndex> resource_keys;
 			for (uint16_t i = seg.start_index; i <= seg.end_index && i < tiles.size(); ++i) {
 				if (!IsPathTileRunwayPiece(st, tiles[i])) continue;
-				if (!AddRunwayCrossingResource(st, tiles[i], resource_keys, resources)) return false;
+				if (!AddRunwayCrossingResource(st, tiles[i], resource_keys, resources)) {
+					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[i]);
+				}
 			}
-			if (resources.empty()) return false;
-			return TryReserveRunwayResourcesAtomic(v, st, resources, true);
+			if (resources.empty()) return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[seg.start_index]);
+			if (!TryReserveRunwayResourcesAtomic(v, st, resources, true)) {
+				return fail(TaxiReserveFailure::RUNWAY_BUSY, resources.front().front());
+			}
+			return true;
 		}
 
 		/* Transit runway contract: entry is allowed only if the whole crossing chain
@@ -2737,12 +2764,23 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 				case RunwayChainStatus::OK:
 					NOT_REACHED();
 			}
-			return false;
+
+			switch (status) {
+				case RunwayChainStatus::BLOCKED:
+					return fail(chain.blocked_by == VehicleID::Invalid() ? TaxiReserveFailure::OCCUPIED_BY_OTHER : TaxiReserveFailure::RESERVED_BY_OTHER,
+						chain.blocker, chain.blocked_by);
+				case RunwayChainStatus::NO_SAFE_STOP:
+					return fail(TaxiReserveFailure::NO_SAFE_STOP, IsValidTile(v->ground_path_goal) ? v->ground_path_goal : INVALID_TILE);
+				default:
+					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[seg.start_index]);
+			}
 		}
 
 		/* Atomically acquire every runway resource in the chain, then commit the
 		 * already-validated continuation tiles. */
-		if (!TryReserveRunwayResourcesAtomic(v, st, chain.resources, true)) return false;
+		if (!TryReserveRunwayResourcesAtomic(v, st, chain.resources, true)) {
+			return fail(TaxiReserveFailure::RUNWAY_BUSY, chain.resources.front().front());
+		}
 
 		SetTaxiReservation(v, v->tile);
 		for (TileIndex tile : chain.continuation_tiles) SetTaxiReservation(v, tile);
@@ -2760,8 +2798,9 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 		 * runway it was only crossing to reach its takeoff runway. */
 		if (IsPathTileRunwayPiece(st, next)) {
 			const uint8_t runway_seg = FindTaxiSegmentIndex(v->taxi_path.get(), v->taxi_path_index + 1);
-			if (runway_seg >= v->taxi_path->segments.size()) return false;
-			return TryReserveTaxiSegment(v, st, runway_seg);
+			if (runway_seg >= v->taxi_path->segments.size()) return fail(TaxiReserveFailure::NO_PATH, next);
+			/* Pass `out` straight through: the runway branch's own reason is the real one. */
+			return TryReserveTaxiSegment(v, st, runway_seg, out);
 		}
 
 		/* Hangars are multi-capacity: track intent but do not map-reserve. */
@@ -2770,8 +2809,11 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 			return true;
 		}
 
-		if (IsTaxiTileReservedByOther(st, next, v->index)) return false;
-		if (IsModularTileOccupiedByOtherAircraft(st, next, v->index)) return false;
+		if (IsTaxiTileReservedByOther(st, next, v->index)) {
+			return fail(TaxiReserveFailure::RESERVED_BY_OTHER, next,
+				HasModularAirportTileReservation(next) ? GetModularAirportTileReservationOwner(next) : VehicleID::Invalid());
+		}
+		if (IsModularTileOccupiedByOtherAircraft(st, next, v->index)) return fail(TaxiReserveFailure::OCCUPIED_BY_OTHER, next);
 		SetTaxiReservation(v, next);
 		return true;
 	}
@@ -2789,24 +2831,19 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 		reserve_start = std::max<uint16_t>(seg.start_index, static_cast<uint16_t>(v->taxi_path_index + 1));
 	}
 
+	/* The per-branch deny logging that used to live here is gone: the refusal reason
+	 * now travels back with the result, so the caller's one summary line reports the
+	 * real blocking tile. Two lines that could disagree about the same refusal are
+	 * exactly what made these stalls hard to read. */
 	for (uint16_t i = reserve_start; i <= seg.end_index; ++i) {
 		TileIndex tile = tiles[i];
 		if (!IsModularHangarTile(st, tile)) {
 			if (IsTaxiTileReservedByOther(st, tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 55, 128)) {
-					Debug(misc, 1, "[ModAp] V{} freemove-deny: reserved tile={} by V{} seg_i={} path_idx={} seg={}",
-						v->index, tile.base(),
-						HasModularAirportTileReservation(tile) ? GetModularAirportTileReservationOwner(tile).base() : 0,
-						i, v->taxi_path_index, segment_idx);
-				}
-				return false;
+				return fail(TaxiReserveFailure::RESERVED_BY_OTHER, tile,
+					HasModularAirportTileReservation(tile) ? GetModularAirportTileReservationOwner(tile) : VehicleID::Invalid());
 			}
 			if (tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 56, 128)) {
-					Debug(misc, 1, "[ModAp] V{} freemove-deny: occupied tile={} seg_i={} path_idx={} seg={}",
-						v->index, tile.base(), i, v->taxi_path_index, segment_idx);
-				}
-				return false;
+				return fail(TaxiReserveFailure::OCCUPIED_BY_OTHER, tile);
 			}
 		}
 		to_reserve.push_back(tile);
@@ -2817,28 +2854,16 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx)
 		const uint8_t next_seg = segment_idx + 1;
 		if (next_seg < v->taxi_path->segments.size() && v->taxi_path->segments[next_seg].type == TaxiSegmentType::RUNWAY) {
 			/* Entering a free-move segment that leads into runway must satisfy
-			 * the runway segment's own contract (terminal vs transit). */
-			if (!TryReserveTaxiSegment(v, st, next_seg)) {
-				if (ShouldLogModularRateLimited(v->index, 62, 128)) {
-					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit runway tile={} seg={}", v->index, exit_tile.base(), segment_idx);
-				}
-				return false;
-			}
+			 * the runway segment's own contract (terminal vs transit). Its reason is
+			 * the real one, so let it propagate untouched. */
+			if (!TryReserveTaxiSegment(v, st, next_seg, out)) return false;
 		} else if (!IsModularHangarTile(st, exit_tile)) {
 			if (IsTaxiTileReservedByOther(st, exit_tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 63, 128)) {
-					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit reserved tile={} by V{} seg={}",
-						v->index, exit_tile.base(),
-						HasModularAirportTileReservation(exit_tile) ? GetModularAirportTileReservationOwner(exit_tile).base() : 0,
-						segment_idx);
-				}
-				return false;
+				return fail(TaxiReserveFailure::RESERVED_BY_OTHER, exit_tile,
+					HasModularAirportTileReservation(exit_tile) ? GetModularAirportTileReservationOwner(exit_tile) : VehicleID::Invalid());
 			}
 			if (IsModularTileOccupiedByOtherAircraft(st, exit_tile, v->index)) {
-				if (ShouldLogModularRateLimited(v->index, 64, 128)) {
-					Debug(misc, 1, "[ModAp] V{} freemove-deny: exit occupied tile={} seg={}", v->index, exit_tile.base(), segment_idx);
-				}
-				return false;
+				return fail(TaxiReserveFailure::OCCUPIED_BY_OTHER, exit_tile);
 			}
 			to_reserve.push_back(exit_tile);
 		} else {
@@ -3422,26 +3447,26 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	 * This holds for every aircraft, so the old helicopter-only revalidation of the
 	 * post-runway FREE_MOVE segment is no longer needed. */
 	if (next_type == TaxiSegmentType::RUNWAY && !next_is_terminal_runway) need_reserve = true;
-	if (need_reserve && !TryReserveTaxiSegment(v, st, next_segment)) {
+	TaxiReserveResult reserve_result;
+	if (need_reserve && !TryReserveTaxiSegment(v, st, next_segment, &reserve_result)) {
 		v->taxi_wait_counter++;
 		if (v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
-			Tile t(next_tile);
-			const bool reserved_by_other = IsAirportTile(t) && HasModularAirportTileReservation(next_tile) && GetModularAirportTileReservationOwner(next_tile) != v->index;
-			const VehicleID reserver = reserved_by_other ? GetModularAirportTileReservationOwner(next_tile) : VehicleID::Invalid();
-			const bool occupied_by_other = IsModularTileOccupiedByOtherAircraft(st, next_tile, v->index);
-			const bool runway_busy = (next_type == TaxiSegmentType::RUNWAY) && IsContiguousModularRunwayBusyByOther(v, st, next_tile);
+			/* Report what the reservation actually refused, not what the next tile looks
+			 * like. A segment claims more than one tile — a whole FREE_MOVE run, or a
+			 * crossing chain spanning several runways — so "next is free" and "the claim
+			 * failed" are routinely both true, and re-deriving blockers from `next` used
+			 * to print all-clear for a genuinely blocked aircraft. */
 			Debug(misc, 1,
-				"[ModAp] V{} unit#{} stuck(reserve) wait={} state={} tile={} next={} seg={} goal={} tgt={} reserved_by_other={} reserver={} occupied_by_other={} runway_busy={}",
+				"[ModAp] V{} unit#{} stuck(reserve) wait={} state={} tile={} next={} seg={} goal={} tgt={} deny={} deny_tile={} deny_by=V{}",
 				v->index, v->unitnumber, v->taxi_wait_counter, v->state,
 				IsValidTile(v->tile) ? v->tile.base() : 0,
 				IsValidTile(next_tile) ? next_tile.base() : 0,
 				static_cast<uint8_t>(next_type),
 				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 				v->modular_ground_target,
-				reserved_by_other,
-				reserved_by_other ? reserver.base() : 0,
-				occupied_by_other,
-				runway_busy);
+				TaxiReserveFailureName(reserve_result.reason),
+				IsValidTile(reserve_result.tile) ? reserve_result.tile.base() : 0,
+				reserve_result.blocker == VehicleID::Invalid() ? 0 : reserve_result.blocker.base());
 
 				if (next_type == TaxiSegmentType::RUNWAY) {
 					const bool terminal_runway = next_is_terminal_runway;

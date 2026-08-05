@@ -246,7 +246,32 @@ void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile = INVALID_TILE);
 void SetTaxiReservation(Aircraft *v, TileIndex tile);
 bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid);
 uint8_t FindTaxiSegmentIndex(const TaxiPath *path, uint16_t tile_index);
-bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx);
+/** Why a segment reservation attempt was refused. */
+enum class TaxiReserveFailure : uint8_t {
+	NONE,                  ///< The attempt succeeded.
+	NO_PATH,               ///< No usable taxi path or segment index.
+	RESERVED_BY_OTHER,     ///< A tile in the claim is reserved by another aircraft.
+	OCCUPIED_BY_OTHER,     ///< A tile in the claim is physically occupied by another aircraft.
+	RUNWAY_BUSY,           ///< A runway resource could not be acquired atomically.
+	RUNWAY_RESOURCE_ERROR, ///< A runway's contiguous extent could not be resolved.
+	NO_SAFE_STOP,          ///< A crossing chain reached no terminator (contract violation).
+};
+
+/**
+ * Detail of a refused reservation, so diagnostics can report the tile that actually
+ * blocked rather than re-deriving a guess from the next path tile. The claim a
+ * segment makes is frequently wider than one tile — a whole FREE_MOVE segment, or a
+ * crossing chain spanning several runways — so "the next tile looks free" and "the
+ * reservation failed" are routinely both true at once.
+ */
+struct TaxiReserveResult {
+	TaxiReserveFailure reason = TaxiReserveFailure::NONE;
+	TileIndex tile = INVALID_TILE;            ///< The tile that could not be claimed.
+	VehicleID blocker = VehicleID::Invalid(); ///< Who holds it, where known.
+};
+
+std::string_view TaxiReserveFailureName(TaxiReserveFailure reason);
+bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out = nullptr);
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr, TileIndex rollout_tile = INVALID_TILE);
 bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_tile, TileIndex ground_goal);
 TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v);
