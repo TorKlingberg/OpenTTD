@@ -251,11 +251,21 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
-	/* Stands are parking endpoints — avoid routing through occupied ones.
-	 * Empty stands are allowed so small airports without separate taxiways still work. */
+	/* Stands are parking endpoints — avoid routing through ones another aircraft has
+	 * claimed. Unclaimed stands are allowed so small airports without separate
+	 * taxiways still work.
+	 *
+	 * The ownership test matters: a stand this aircraft already holds is not an
+	 * obstacle to itself. Reservations outlive the taxi path that created them, so
+	 * asking only "is this reserved?" let an aircraft whose sole exit was a stand it
+	 * had reserved block its own route — permanently, since it then never moved and
+	 * so never released the tile. */
 	if (v != nullptr && IsParkingOnlyTile(to_data->piece_type) && to != v->tile && to != v->ground_path_goal) {
 		Tile t(to);
-		if (IsAirportTile(t) && HasAirportTileReservation(t)) return false;
+		if (IsAirportTile(t) && HasAirportTileReservation(t) &&
+				GetModularAirportTileReservationOwner(to) != v->index) {
+			return false;
+		}
 	}
 
 	/* Determine reverse direction (from 'to' back to 'from') */

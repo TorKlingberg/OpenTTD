@@ -1142,3 +1142,58 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 		CheckReservedBy({goal}, v->index);
 	}
 }
+
+TEST_CASE("ModularAirportSelfReservedStandRouting")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Gretown-shaped layout: a helipad whose only non-runway exit is a stand.
+	 *   (2,0) HANGAR  <- goal (service)
+	 *   (2,1) APRON
+	 *   (2,2) STAND   <- the only way off the helipad
+	 *   (2,3) HELIPAD <- aircraft parks here
+	 * Everything else is left out of the layout, so there is no alternative route. */
+	AddModularTile(st, base + TileDiffXY(2, 0), APT_DEPOT_SE, 0);
+	AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(2, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(2, 3), APT_HELIPAD_2, 0);
+
+	const TileIndex helipad = base + TileDiffXY(2, 3);
+	const TileIndex stand = base + TileDiffXY(2, 2);
+	const TileIndex hangar = base + TileDiffXY(2, 0);
+
+	SECTION("A stand reserved by the aircraft itself does not block its own route") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->tile = helipad;
+		v->ground_path_goal = hangar;
+
+		/* Reservations outlive the path that created them: the aircraft still holds
+		 * the pass-through stand from an earlier, now-discarded path. */
+		SetTaxiReservation(v, stand);
+		REQUIRE(IsModularAirportTileReservedBy(stand, v->index));
+
+		const AirportGroundPath path = FindAirportGroundPath(st, helipad, hangar, v, false, false);
+		CHECK(path.found);
+	}
+
+	SECTION("A stand reserved by another aircraft still blocks the route") {
+		SetupAircraftPool();
+		Aircraft *other = CreateAircraft(VehicleID(11));
+		other->targetairport = st->index;
+		other->tile = stand;
+		SetTaxiReservation(other, stand);
+
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->tile = helipad;
+		v->ground_path_goal = hangar;
+
+		const AirportGroundPath path = FindAirportGroundPath(st, helipad, hangar, v, false, false);
+		CHECK_FALSE(path.found);
+	}
+}
