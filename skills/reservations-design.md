@@ -53,10 +53,23 @@ Hangar tiles are non-blocking (multi-capacity).
 
 Two modes, distinguished by `IsRunwaySegmentTerminalGoal`:
 
-- **Terminal runway** (takeoff goal, or path destination is on this runway): atomically reserve the contiguous runway resource via `TryReserveRunwayResourcesAtomic`.
+- **Terminal runway** (the tile ground movement ends on lies on this segment): atomically reserve the contiguous runway resource via `TryReserveRunwayResourcesAtomic`. A takeoff *target* does not make every runway on the path terminal — a takeoff path may cross one runway to reach another, and the crossed one is transit.
 - **Transit runway** (using runway as a taxiway bridge): all-or-nothing pre-entry reservation of the *full crossing chain* — every runway resource crossed, plus every tile up to and including the **first safe stop** on the far side (a ONE_WAY queue tile, a stand/hangar/helipad, or the path goal). The chain is fully validated first; nothing is committed unless the whole chain is free. If no safe stop is reachable past the runway, or any tile/resource is blocked, entry is denied and the aircraft waits *before* the runway (on its prior safe stop).
 
-This makes runway entry self-sufficient for every aircraft class: stepping onto a transit runway guarantees a reserved path off it to a place where the aircraft can wait indefinitely. It never halts on the runway or on transit grass/apron. The walk lives in the `RUNWAY` branch of `TryReserveTaxiSegment`; `IsModularSafeStopTile` decides where the chain may stop.
+This makes runway entry self-sufficient for every aircraft class: stepping onto a transit runway guarantees a reserved path off it to a place where the aircraft can wait indefinitely. It never halts on the runway or on transit grass/apron.
+
+The walk is `BuildRunwayCrossingChain`, and it is the **single** implementation — the entry decision, keep-set retention, and the stuck diagnostics all call it, so they cannot drift apart. `IsModularSafeStopTile` decides which *tiles* may end a chain; the aircraft's own goal is tested separately by the walker.
+
+#### Termination invariant (why the contract is always satisfiable)
+
+**The chain walk always reaches a terminator, because the goal test precedes every piece-type test and the goal is the last tile of the path.** Two consequences:
+
+- A goal that is *itself a runway tile* — a computed helicopter pad or takeoff tile that fell back to a runway end — terminates the chain like any other goal. Its runway resource folds into the atomic acquisition, and the aircraft may stop there because that is exactly where its ground movement ends and it departs.
+- `NO_SAFE_STOP` therefore cannot be a traffic state. It means the path does not end at `ground_path_goal`, which is an internal inconsistency, and it is logged as `runway-transit-invariant`, not as a deny.
+
+The walker's loop body deliberately contains **no `continue`**: every tile is classified and then tested for termination. That structure is the guarantee — any classification branch that skips the terminator test reintroduces a permanently unsatisfiable contract, i.e. an aircraft that waits forever on a completely empty airport. That is precisely the bug this shape exists to prevent; see Pitfall 2.
+
+Combined with all-or-nothing acquisition (`TryReserveRunwayResourcesAtomic` validates every resource before mutating any, and continuation tiles are validated before any `SetTaxiReservation`), a denied attempt leaves the aircraft holding exactly what it held before. No hold-and-wait on runway resources, so blocked aircraft cannot form a circular wait over them.
 
 ## 4. Reserve-then-reconcile (Reservation V2)
 
@@ -113,13 +126,28 @@ special case be deleted. Tightening the fixed-wing contract cost ~2% on the
 `mass6-inair.sav` baseline (floor lowered 9200 → 9000) — the price of the
 provable safe-stop guarantee.
 
-### Pitfall 2: `FindRunwayTransitContinuationTile` is informational only
+### Pitfall 2: Never classify a tile before asking whether it ends the chain
 
-It returns the first non-runway, non-service-style tile after a transit runway —
-usually grass, which is *not* a safe stop. It is now used only for keep-set
-hints and debug logging. Reservation safety comes from the full-chain transit
-contract (§3), which reserves *past* this tile to a real safe stop. Don't
-reintroduce logic that treats "owns continuation tile" as "can safely halt".
+The crossing walk must test "is this the goal / a safe stop?" *before* any
+piece-type dispatch, and must never `continue` past a tile it has not tested.
+
+This has now caused the same permanent deadlock twice. `FindRunwayTransitContinuationTile`
+(deleted) skipped runway tiles before its goal check; that was latent, because it
+only ever produced a hint. `a7346e86c8` copied the ordering into the real
+full-chain walk, where it became fatal: a helicopter whose computed pad had
+fallen back to a runway end could never satisfy the contract, and waited forever
+on an *empty* airport with every blocker reading false. `BuildRunwayCrossingChain`
+now has one code path, no `continue`, and the goal tested first.
+
+Two smells to watch for when touching this area:
+
+- A predicate that silently folds the aircraft's goal into a tile-property test
+  (the old three-argument `IsModularSafeStopTile(st, tile, goal)`). It hides the
+  goal behind a piece-type check that an earlier branch can skip. The goal is a
+  property of the *aircraft*, not of the tile — keep it at the call site.
+- Two functions that both answer "what is past this runway". They will disagree,
+  and the log will confidently print the wrong one's answer while the other denies
+  entry. That is exactly how this bug hid in plain sight.
 
 ### Pitfall 3: `taxi_reserved_tiles` vs map state
 

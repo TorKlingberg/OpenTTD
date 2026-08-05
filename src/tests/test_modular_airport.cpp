@@ -1047,3 +1047,98 @@ TEST_CASE("ModularAirportCatchment")
 		CHECK(GetModularAirportCatchmentRadius(st) == 5);
 	}
 }
+
+TEST_CASE("ModularAirportRunwayGoalCrossing")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Bardingbury-shaped layout: the aircraft's goal is itself a runway tile,
+	 * reachable only by crossing a second runway.
+	 *   Row 1: APRON(2,1)            <- start (a stand would be the real safe stop)
+	 *   Row 2: RWY_END RWY_5 RWY_END <- runway A, crossed in transit
+	 *   Row 3: APRON(2,3)            <- transit apron, not a safe stop
+	 *   Row 4: RWY_END RWY_5 RWY_END <- runway B; (2,4) is the goal
+	 * There is no stand, hangar, helipad or one-way tile anywhere past runway A,
+	 * so the goal is the only thing that can terminate the crossing chain. */
+	AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+	AddModularTile(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+	AddLargeRunway(st, base + TileDiffXY(0, 4), 3, 0, RUF_DEFAULT);
+
+	const TileIndex start = base + TileDiffXY(2, 1);
+	const TileIndex goal = base + TileDiffXY(2, 4);
+
+	auto setup_aircraft = [&](VehicleID id, uint8_t ground_target) -> Aircraft * {
+		Aircraft *v = CreateAircraft(id);
+		v->targetairport = st->index;
+		v->tile = start;
+		v->ground_path_goal = goal;
+		v->modular_ground_target = ground_target;
+		TaxiPath path = BuildTaxiPath(st, start, goal, v, true);
+		REQUIRE(path.valid);
+		REQUIRE(path.tiles.back() == goal);
+		v->taxi_path = std::make_unique<TaxiPath>(std::move(path));
+		v->taxi_path_index = 0;
+		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
+		return v;
+	};
+
+	/* First runway segment on the path = runway A, the one being crossed. */
+	auto transit_runway_segment = [&](Aircraft *v) -> uint8_t {
+		for (uint8_t s = 0; s < v->taxi_path->segments.size(); s++) {
+			if (v->taxi_path->segments[s].type == TaxiSegmentType::RUNWAY) return s;
+		}
+		FAIL("no runway segment on path");
+		return 0;
+	};
+
+	SECTION("A goal on a runway terminates the crossing chain") {
+		SetupAircraftPool();
+		Aircraft *v = setup_aircraft(VehicleID(10), MGT_HELI_TAKEOFF_TILE);
+
+		/* Regression: this used to be denied forever on a completely empty airport,
+		 * because the chain walk skipped runway tiles before testing them for being
+		 * the goal, and the goal was a runway tile. */
+		REQUIRE(TryReserveTaxiSegment(v, st, transit_runway_segment(v)));
+
+		/* Runway A held atomically. */
+		CheckReservedBy({base + TileDiffXY(0, 2), base + TileDiffXY(1, 2), base + TileDiffXY(2, 2)}, v->index);
+		/* The transit apron between the runways. */
+		CheckReservedBy({base + TileDiffXY(2, 3)}, v->index);
+		/* Runway B held atomically too — the goal's own runway folds into the chain. */
+		CheckReservedBy({base + TileDiffXY(0, 4), base + TileDiffXY(1, 4), goal}, v->index);
+	}
+
+	SECTION("A blocked chain past a runway goal denies entry without half-committing") {
+		SetupAircraftPool();
+		Aircraft *blocker = CreateAircraft(VehicleID(11));
+		blocker->targetairport = st->index;
+		blocker->tile = base + TileDiffXY(2, 3);
+		SetTaxiReservation(blocker, base + TileDiffXY(2, 3));
+
+		Aircraft *v = setup_aircraft(VehicleID(10), MGT_HELI_TAKEOFF_TILE);
+		CHECK_FALSE(TryReserveTaxiSegment(v, st, transit_runway_segment(v)));
+
+		/* Nothing taken: the aircraft waits before runway A. */
+		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(0, 2), v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(goal, v->index));
+	}
+
+	SECTION("A runway crossed on the way to a takeoff runway is transit, not terminal") {
+		SetupAircraftPool();
+		Aircraft *v = setup_aircraft(VehicleID(10), MGT_RUNWAY_TAKEOFF);
+		v->modular_takeoff_tile = goal;
+
+		REQUIRE(TryReserveTaxiSegment(v, st, transit_runway_segment(v)));
+
+		/* Runway A must not be entered on its own: a takeoff target used to make
+		 * every runway on the path "terminal", letting the aircraft halt on a
+		 * runway it was only crossing. The full chain past it is held instead. */
+		CheckReservedBy({base + TileDiffXY(2, 3)}, v->index);
+		CheckReservedBy({goal}, v->index);
+	}
+}

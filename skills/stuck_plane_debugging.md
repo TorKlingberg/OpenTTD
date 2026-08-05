@@ -120,9 +120,14 @@ Repeated deny/grant oscillation for the same vehicle/runway is a strong signal f
 grep 'runway-transit-' /tmp/openttd.log | tail -50
 ```
 Important patterns:
-- `runway-transit-deny` — runway-transit entry denied because the full crossing chain to the next safe stop could not be reserved (runway resource, transit grass, or the far-side safe stop was blocked). The aircraft correctly waits *before* the runway.
-- `runway-transit-debug` — emitted from stuck(reserve) context for runway segments; shows `terminal=<bool>` and continuation state.
-- `runway-transit-invariant: missing exit ownership` — hard contract violation signal (aircraft about to step onto a transit runway without owning the tile just past it); should be rare/zero in healthy runs.
+- `runway-transit-deny: continuation blocked` — the crossing chain to the next safe stop could not be reserved; `tile=` / `by V…` name the blocker. The aircraft correctly waits *before* the runway. Ordinary contention.
+- `runway-transit-deny: runway resource unresolved` — a crossed runway's contiguous extent could not be resolved. Layout/metadata problem, not traffic.
+- `runway-transit-debug` — emitted from stuck(reserve) context for runway segments. For transit runways it reports the chain exactly as the entry decision computes it: `status=` (0=OK, 1=RESOURCE_ERROR, 2=BLOCKED, 3=NO_SAFE_STOP), `safe_stop=`, `blocker=`, `resources=`, `chain_tiles=`.
+- `runway-transit-invariant` — hard contract violation; should be **zero** in healthy runs.
+  - `missing exit ownership` — aircraft about to step onto a transit runway without owning the tile just past it.
+  - `chain has no terminator` — the crossing walk ran off the end of the path without reaching the goal or a safe stop. The walk is constructed so this cannot happen from traffic (see `skills/reservations-design.md` §3); it means `taxi_path` does not end at `ground_path_goal`. Look upstream at path construction / retargeting, not at contention. Compare the logged `goal=` and `path_end=`.
+
+**Note:** a *permanently* stuck aircraft whose `stuck(reserve)` line shows every blocker false (`reserved_by_other=false occupied_by_other=false runway_busy=false`) is never contention. Check `runway-transit-debug status=` first — an unsatisfiable entry contract looks exactly like traffic otherwise, and the wait counter wraps at 16 bits so a huge `wait=` can cycle back to a small one.
 
 ### Takeoff retarget caveat
 `TryRetargetModularGroundGoal` does not retarget `MGT_RUNWAY_TAKEOFF`. If takeoff-side movement stalls, focus on reservation contention and segment progression, not alternate-goal retarget.
