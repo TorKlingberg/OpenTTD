@@ -342,6 +342,24 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		templ->GetRotatedDimensions(this->selected_rotation, w, h);
 		SetTileSelectSize(w, h);
 		UpdateSavedTemplatePreviewCache(templ, this->selected_rotation);
+
+		if (_settings_client.gui.station_show_coverage) {
+			int rad = this->GetSelectedCatchmentRadius();
+			SetTileSelectBigSize(-rad, -rad, 2 * rad, 2 * rad);
+		}
+	}
+
+	/**
+	 * Catchment radius of the selected template, as the airport built from it would have.
+	 * Falls back to the unmodified radius when the modified-catchment setting is off,
+	 * matching the stock airport picker.
+	 */
+	int GetSelectedCatchmentRadius() const
+	{
+		if (!_settings_game.station.modified_catchment) return (int)CA_UNMODIFIED;
+		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
+		if (templ == nullptr) return (int)CA_UNMODIFIED;
+		return templ->GetCatchmentRadius();
 	}
 
 	void UpdateCursor()
@@ -349,6 +367,7 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		this->updating_cursor = true;
 		if (this->mode == TemplateManagerMode::None) {
 			ResetSavedTemplateGuiState();
+			SetViewportCatchmentStation(nullptr, true);
 			if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 				ResetObjectToPlace();
 			}
@@ -364,7 +383,15 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		}
 		this->SetWidgetLoweredState(WID_TM_SAVE, this->mode == TemplateManagerMode::SavingPickAirport);
 		this->SetWidgetLoweredState(WID_TM_LOAD, this->mode == TemplateManagerMode::LoadingPlace);
+		this->UpdateCoverageSection();
 		this->updating_cursor = false;
+	}
+
+	/** The coverage switch and acceptance text only mean anything while placing, so hide them otherwise. */
+	void UpdateCoverageSection()
+	{
+		int plane = this->mode == TemplateManagerMode::LoadingPlace ? 0 : SZSP_NONE;
+		if (this->GetWidget<NWidgetStacked>(WID_TM_COVERAGE_SEL)->SetDisplayedPlane(plane)) this->ReInit();
 	}
 
 	bool RotateSelection(int delta)
@@ -454,7 +481,11 @@ public:
 		this->CreateNestedTree();
 		this->vscroll = this->GetScrollbar(WID_TM_SCROLLBAR);
 		this->vscroll->SetCapacity(6);
+		/* Starts in TemplateManagerMode::None, so the coverage section starts hidden. */
+		this->GetWidget<NWidgetStacked>(WID_TM_COVERAGE_SEL)->SetDisplayedPlane(SZSP_NONE);
 		this->FinishInitNested(0);
+		this->SetWidgetLoweredState(WID_TM_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
+		this->SetWidgetLoweredState(WID_TM_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
 		this->RefreshTemplateList();
 		this->UpdateCursor();
 	}
@@ -662,6 +693,31 @@ public:
 		}
 	}
 
+	void OnPaint() override
+	{
+		this->DrawWidgets();
+
+		/* Acceptance/production is only meaningful while we own the tile highlight and
+		 * it covers the template footprint; outside placement mode the whole coverage
+		 * section is hidden and its widget rect is not laid out. */
+		if (this->mode != TemplateManagerMode::LoadingPlace) return;
+		if (GetAirportTemplateByIndex(this->selected_template_index) == nullptr) return;
+
+		Rect r = this->GetWidget<NWidgetBase>(WID_TM_ACCEPTANCE)->GetCurrentRect();
+		const int bottom = r.bottom;
+		r.bottom = INT_MAX; // Allow overflow as we want to know the required height.
+
+		int rad = this->GetSelectedCatchmentRadius();
+		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, false) + WidgetDimensions::scaled.vsep_normal;
+		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, true);
+
+		/* Resize background if the window is too small.
+		 * Never make the window smaller to avoid oscillating if the size change affects the acceptance. */
+		if (r.top > bottom) {
+			ResizeWindow(this, 0, r.top - bottom, false);
+		}
+	}
+
 	void OnClick(Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
 	{
 		switch (widget) {
@@ -704,6 +760,16 @@ public:
 				);
 				break;
 			}
+
+			case WID_TM_BTN_DONTHILIGHT: case WID_TM_BTN_DOHILIGHT:
+				_settings_client.gui.station_show_coverage = (widget != WID_TM_BTN_DONTHILIGHT);
+				this->SetWidgetLoweredState(WID_TM_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
+				this->SetWidgetLoweredState(WID_TM_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
+				this->SetDirty();
+				SndClickBeep();
+				this->UpdateLoadingPlacementPreview();
+				SetViewportCatchmentStation(nullptr, true);
+				break;
 
 			case WID_TM_ROTATE_LEFT:
 				this->RotateSelection(-1);
@@ -783,6 +849,8 @@ public:
 		this->SetWidgetLoweredState(WID_TM_SAVE, false);
 		this->SetWidgetLoweredState(WID_TM_LOAD, false);
 		ResetSavedTemplateGuiState();
+		SetViewportCatchmentStation(nullptr, true);
+		this->UpdateCoverageSection();
 		this->SetDirty();
 	}
 
@@ -836,6 +904,11 @@ public:
 		this->RefreshTemplateList(saved_stem);
 	}
 
+	void OnRealtimeTick([[maybe_unused]] uint delta_ms) override
+	{
+		if (this->mode == TemplateManagerMode::LoadingPlace) CheckRedrawStationCoverage(this);
+	}
+
 	EventState OnHotkey(int hotkey) override
 	{
 		switch (hotkey) {
@@ -880,6 +953,20 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_templa
 				NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_TM_ROTATE_RIGHT), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_INCREASE),
 			EndContainer(),
 			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_INFO), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
+			NWidget(NWID_SELECTION, INVALID_COLOUR, WID_TM_COVERAGE_SEL),
+				NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+					NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_COVERAGE_AREA_TITLE), SetFill(1, 0),
+					NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
+						NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
+							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_BTN_DONTHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
+														SetStringTip(STR_STATION_BUILD_COVERAGE_OFF, STR_STATION_BUILD_COVERAGE_AREA_OFF_TOOLTIP),
+							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_BTN_DOHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
+														SetStringTip(STR_STATION_BUILD_COVERAGE_ON, STR_STATION_BUILD_COVERAGE_AREA_ON_TOOLTIP),
+						EndContainer(),
+					EndContainer(),
+					NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
+				EndContainer(),
+			EndContainer(),
 		EndContainer(),
 	EndContainer(),
 };

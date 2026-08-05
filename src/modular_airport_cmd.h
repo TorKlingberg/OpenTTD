@@ -353,6 +353,21 @@ bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
 uint GetModularAirportCatchmentRadius(const Station *st);
 
+/**
+ * One modular airport piece placed on an abstract integer grid. Lets the
+ * catchment tiers be computed both for a built airport (grid = tile X/Y) and
+ * for a saved template that has not been placed yet (grid = template dx/dy).
+ */
+struct ModularCatchmentPiece {
+	int x; ///< Grid X coordinate.
+	int y; ///< Grid Y coordinate.
+	uint8_t piece_type;
+	uint8_t rotation;
+	uint8_t runway_flags;
+};
+
+uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchmentPiece> pieces);
+
 /* Defined in aircraft_cmd.cpp; mirrors stock MaybeCrashAirplane for a plane
  * braking on a modular runway (short-strip overrun + the general "Plane crashes"
  * setting). Pass the airport the plane is physically rolling out on. True if it

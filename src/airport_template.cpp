@@ -121,6 +121,16 @@ void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t templa
 	this->edge_block_mask = new_mask;
 }
 
+uint AirportTemplate::GetCatchmentRadius() const
+{
+	std::vector<ModularCatchmentPiece> pieces;
+	pieces.reserve(this->tiles.size());
+	for (const AirportTemplateTile &t : this->tiles) {
+		pieces.push_back({static_cast<int>(t.dx), static_cast<int>(t.dy), t.piece_type, t.rotation, t.runway_flags});
+	}
+	return GetModularAirportCatchmentRadiusFromPieces(pieces);
+}
+
 bool AirportTemplate::HasNonRotatablePieces() const
 {
 	for (const auto &tile : this->tiles) {

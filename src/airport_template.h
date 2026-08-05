@@ -66,6 +66,10 @@ struct AirportTemplate {
 		}
 	}
 
+	/** Catchment radius the airport built from this template would have.
+	 * Rotation-independent, so it needs no rotation argument. */
+	uint GetCatchmentRadius() const;
+
 	/** Check whether this template contains non-rotatable compound pieces
 	 * (e.g. the 3-tile small terminal building). */
 	bool HasNonRotatablePieces() const;

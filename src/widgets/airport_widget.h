@@ -83,6 +83,10 @@ enum ModularAirportTemplateManagerWidgets : WidgetID {
 	WID_TM_ROTATION,
 	WID_TM_ROTATE_RIGHT,
 	WID_TM_INFO,
+	WID_TM_COVERAGE_SEL,    ///< Selection wrapper hiding the coverage section outside placement mode.
+	WID_TM_BTN_DONTHILIGHT, ///< Don't show the coverage button.
+	WID_TM_BTN_DOHILIGHT,   ///< Show the coverage button.
+	WID_TM_ACCEPTANCE,      ///< Acceptance/supply info for the highlighted location.
 };
 
 /** Widgets of the #BuildModularHangarPickerWindow class. */

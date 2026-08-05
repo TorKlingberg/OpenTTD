@@ -440,39 +440,98 @@ static bool IsRadarPiece(uint8_t piece_type)
  * "Paved" means every tile of the runway is large-runway family (not the grass
  * small-runway family). Both freeform and stock-template modular airports run
  * through this, so an airport earns catchment by what it is built from.
+ *
+ * This works on an abstract grid so a saved template can be measured before it
+ * is placed; @see GetModularAirportCatchmentRadius for the built-airport entry.
  */
-static uint ComputeModularAirportCatchmentRadius(const Station *st)
+uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchmentPiece> pieces)
 {
 	constexpr uint CATCH_MIN = 4;
-	if (st->airport.modular_tile_data == nullptr) return CATCH_MIN;
+	if (pieces.empty()) return CATCH_MIN;
 
-	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff runway). */
-	if (!ModularAirportSupportsLargeAircraft(st)) return CATCH_MIN;
+	std::map<std::pair<int, int>, const ModularCatchmentPiece *> grid;
+	for (const ModularCatchmentPiece &p : pieces) grid[{p.x, p.y}] = &p;
 
-	/* Gather the tile lengths of each distinct fully-paved runway, and count the
-	 * helipad / radar / big-terminal pieces used by the higher tiers. */
-	std::vector<size_t> paved_runways;
+	auto at = [&grid](int x, int y) -> const ModularCatchmentPiece * {
+		auto it = grid.find({x, y});
+		return it == grid.end() ? nullptr : it->second;
+	};
+	auto on_axis = [](const ModularCatchmentPiece *p, bool horizontal) {
+		return p != nullptr && IsModularRunwayPiece(p->piece_type) && (((p->rotation % 2) == 0) == horizontal);
+	};
+
+	/* Collect the whole contiguous runway containing \a start, walking back to its
+	 * first tile first so any tile of a runway yields the same canonical list. */
+	auto collect_runway = [&](const ModularCatchmentPiece &start, std::vector<const ModularCatchmentPiece *> &out) {
+		out.clear();
+		if (!IsModularRunwayPiece(start.piece_type)) return false;
+
+		const bool horizontal = (start.rotation % 2) == 0;
+		const int dx = horizontal ? 1 : 0;
+		const int dy = horizontal ? 0 : 1;
+
+		int fx = start.x;
+		int fy = start.y;
+		while (on_axis(at(fx - dx, fy - dy), horizontal)) {
+			fx -= dx;
+			fy -= dy;
+		}
+
+		int cx = fx;
+		int cy = fy;
+		while (true) {
+			const ModularCatchmentPiece *cur = at(cx, cy);
+			if (!on_axis(cur, horizontal)) break;
+			out.push_back(cur);
+			if (!on_axis(at(cx + dx, cy + dy), horizontal)) break;
+			cx += dx;
+			cy += dy;
+		}
+		return !out.empty();
+	};
+
+	auto is_paved = [](const std::vector<const ModularCatchmentPiece *> &tiles) {
+		return std::all_of(tiles.begin(), tiles.end(), [](const ModularCatchmentPiece *p) { return IsLargeRunwayFamily(p->piece_type); });
+	};
+
+	/* Count the pieces the tiers care about. */
+	bool has_tower = false;
 	uint helipads = 0;
 	uint radars = 0;
 	uint big_terminals = 0;
-	std::vector<TileIndex> tiles;
-	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (IsModularHelipadPiece(data.piece_type)) helipads++;
-		if (IsRadarPiece(data.piece_type)) radars++;
-		if (IsBigTerminalPiece(data.piece_type)) big_terminals++;
+	for (const ModularCatchmentPiece &p : pieces) {
+		if (p.piece_type == APT_TOWER || p.piece_type == APT_TOWER_FENCE_SW) has_tower = true;
+		if (IsModularHelipadPiece(p.piece_type)) helipads++;
+		if (IsRadarPiece(p.piece_type)) radars++;
+		if (IsBigTerminalPiece(p.piece_type)) big_terminals++;
+	}
 
-		if (!IsModularRunwayPiece(data.piece_type)) continue;
-		if (!GetContiguousModularRunwayTiles(st, data.tile, tiles) || tiles.empty()) continue;
-		/* GetContiguousModularRunwayTiles normalises to the same first tile from any
-		 * tile of the runway; count each runway exactly once at its canonical start. */
-		if (tiles.front() != data.tile) continue;
+	std::vector<const ModularCatchmentPiece *> tiles;
 
-		bool paved = true;
-		for (TileIndex t : tiles) {
-			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-			if (td == nullptr || !IsLargeRunwayFamily(td->piece_type)) { paved = false; break; }
+	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff runway).
+	 * Mirrors GetModularAirportSafetyStatus()/IsRunwaySafeForLarge(). */
+	auto has_safe_runway_for = [&](bool landing) {
+		for (const ModularCatchmentPiece &p : pieces) {
+			if (p.piece_type != APT_RUNWAY_END) continue;
+			if ((p.runway_flags & (landing ? RUF_LANDING : RUF_TAKEOFF)) == 0) continue;
+			if (!collect_runway(p, tiles) || tiles.size() < 6) continue;
+			if (is_paved(tiles)) return true;
 		}
-		if (paved) paved_runways.push_back(tiles.size());
+		return false;
+	};
+
+	if (!has_tower || big_terminals == 0) return CATCH_MIN;
+	if (!has_safe_runway_for(true) || !has_safe_runway_for(false)) return CATCH_MIN;
+
+	/* Gather the tile lengths of each distinct fully-paved runway. */
+	std::vector<size_t> paved_runways;
+	for (const ModularCatchmentPiece &p : pieces) {
+		if (!IsModularRunwayPiece(p.piece_type)) continue;
+		if (!collect_runway(p, tiles) || tiles.empty()) continue;
+		/* collect_runway normalises to the same first tile from any tile of the
+		 * runway; count each runway exactly once at its canonical start. */
+		if (tiles.front() != &p) continue;
+		if (is_paved(tiles)) paved_runways.push_back(tiles.size());
 	}
 
 	auto paved_at_least = [&paved_runways](size_t len) {
@@ -495,12 +554,19 @@ static uint ComputeModularAirportCatchmentRadius(const Station *st)
 
 /**
  * Catchment radius of a modular airport, cached until its tiles or runway flags
- * change (see modular_catchment_dirty). @see ComputeModularAirportCatchmentRadius.
+ * change (see modular_catchment_dirty). @see GetModularAirportCatchmentRadiusFromPieces.
  */
 uint GetModularAirportCatchmentRadius(const Station *st)
 {
 	if (st->airport.modular_catchment_dirty) {
-		st->airport.modular_catchment_cache = static_cast<uint8_t>(ComputeModularAirportCatchmentRadius(st));
+		std::vector<ModularCatchmentPiece> pieces;
+		if (st->airport.modular_tile_data != nullptr) {
+			pieces.reserve(st->airport.modular_tile_data->size());
+			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+				pieces.push_back({static_cast<int>(TileX(data.tile)), static_cast<int>(TileY(data.tile)), data.piece_type, data.rotation, data.runway_flags});
+			}
+		}
+		st->airport.modular_catchment_cache = static_cast<uint8_t>(GetModularAirportCatchmentRadiusFromPieces(pieces));
 		st->airport.modular_catchment_dirty = false;
 	}
 	return st->airport.modular_catchment_cache;

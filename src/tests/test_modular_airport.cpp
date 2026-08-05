@@ -11,6 +11,7 @@
 #include "../3rdparty/catch2/catch.hpp"
 
 #include "../modular_airport_cmd.h"
+#include "../airport_template.h"
 #include "../table/airporttile_ids.h"
 #include "../map_func.h"
 #include "../station_base.h"
@@ -1050,6 +1051,84 @@ TEST_CASE("ModularAirportCatchment")
 			AddModularTile(st, base + TileDiffXY(i, 5), APT_RUNWAY_SMALL_MIDDLE, 0);
 		}
 		CHECK(GetModularAirportCatchmentRadius(st) == 5);
+	}
+}
+
+/**
+ * The template manager shows the catchment of a template before it is placed, so
+ * a template must report exactly what the airport it was saved from reports.
+ */
+TEST_CASE("ModularAirportTemplateCatchment")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(2, 2);
+
+	auto TemplateFromStation = [](const Station *st) {
+		AirportTemplate templ;
+		uint min_x = UINT_MAX;
+		uint min_y = UINT_MAX;
+		for (const ModularAirportTileData &d : *st->airport.modular_tile_data) {
+			min_x = std::min<uint>(min_x, TileX(d.tile));
+			min_y = std::min<uint>(min_y, TileY(d.tile));
+		}
+		for (const ModularAirportTileData &d : *st->airport.modular_tile_data) {
+			AirportTemplateTile t{};
+			t.dx = ClampTo<uint16_t>(TileX(d.tile) - min_x);
+			t.dy = ClampTo<uint16_t>(TileY(d.tile) - min_y);
+			t.piece_type = d.piece_type;
+			t.rotation = d.rotation;
+			t.runway_flags = IsModularRunwayPiece(d.piece_type) ? d.runway_flags : 0;
+			templ.tiles.push_back(t);
+		}
+		return templ;
+	};
+
+	SECTION("An unsafe layout reports the minimum radius") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == GetModularAirportCatchmentRadius(st));
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == 4);
+	}
+
+	SECTION("Radius matches the source airport across every tier") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base, APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == 5);
+
+		AddLargeRunway(st, base + TileDiffXY(0, 5), 6);
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == 6);
+
+		/* Grow both runways to 7 and add the remaining hub pieces. */
+		Station *hub = SetupModularAirport(base, 30, 30);
+		REQUIRE(hub != nullptr);
+		AddModularTile(hub, base, APT_TOWER, 0);
+		AddLargeRunway(hub, base + TileDiffXY(0, 3), 7);
+		AddLargeRunway(hub, base + TileDiffXY(0, 5), 7);
+		AddModularTile(hub, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+		AddModularTile(hub, base + TileDiffXY(2, 0), APT_BUILDING_1, 0);
+		AddModularTile(hub, base + TileDiffXY(3, 0), APT_BUILDING_2, 0);
+		AddModularTile(hub, base + TileDiffXY(4, 0), APT_HELIPAD_1, 0);
+		AddModularTile(hub, base + TileDiffXY(5, 0), APT_RADAR_FENCE_NE, 0);
+		CHECK(TemplateFromStation(hub).GetCatchmentRadius() == GetModularAirportCatchmentRadius(hub));
+		CHECK(TemplateFromStation(hub).GetCatchmentRadius() == 8);
+	}
+
+	SECTION("Vertical runways are measured on their own axis") {
+		Station *st = SetupModularAirport(base, 30, 30);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, base + TileDiffXY(9, 0), APT_TOWER, 0);
+		AddModularTile(st, base + TileDiffXY(9, 1), APT_ROUND_TERMINAL, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 0), 6, 1);
+		AddLargeRunway(st, base + TileDiffXY(2, 0), 6, 1);
+
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == GetModularAirportCatchmentRadius(st));
+		CHECK(TemplateFromStation(st).GetCatchmentRadius() == 6);
 	}
 }
 

@@ -1134,6 +1134,12 @@ static void DrawTileSelection(const TileInfo *ti)
 	/* No tile selection active? */
 	if ((_thd.drawstyle & HT_DRAG_MASK) == HT_NONE) return;
 
+	/* A gap inside the bounding box of an airport template preview: the template
+	 * does not occupy the tile, so it gets no footprint highlight — but it is still
+	 * inside the coverage area, so fall through to the outer rect below instead of
+	 * leaving a hole in the coverage highlight. */
+	bool template_gap = false;
+
 	if (_thd.diagonal) { // We're drawing a 45 degrees rotated (diagonal) rectangle
 		if (IsInsideRotatedRectangle((int)ti->x, (int)ti->y)) goto draw_inner;
 		return;
@@ -1148,6 +1154,8 @@ draw_inner:
 				if (IsSavedTemplatePlacementPreviewActive()) {
 					if (ShouldDrawSavedTemplatePreviewAtTile(ti->tile)) {
 						DrawTileSelectionRect(ti, PAL_NONE);
+					} else {
+						template_gap = true;
 					}
 				} else {
 					DrawTileSelectionRect(ti, _thd.make_square_red ? PALETTE_SEL_TILE_RED : PAL_NONE);
@@ -1189,7 +1197,7 @@ draw_inner:
 
 			DrawAutorailSelection(ti, _autorail_type[dir][side]);
 		}
-		return;
+		if (!template_gap) return;
 	}
 
 	/* Check if it's inside the outer area? */
