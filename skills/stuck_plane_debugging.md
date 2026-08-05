@@ -51,6 +51,28 @@ Look at the `detail=TILE` field — that's the tile blocking the landing chain. 
 grep 'TILE_NUMBER' /tmp/openttd.log | head -20
 ```
 
+### One runway is never used, while a parallel one is
+
+Confirm the split, then get the rejection reason for the unused runway:
+
+```bash
+grep -o "starting landing on tile [0-9]*" /tmp/openttd.log | sort | uniq -c | sort -rn
+grep -E "landing-chain (reject|fail).*runway=29289" /tmp/openttd.log | tail
+```
+
+`GatherAndSortGates` colocates parallel same-direction gates (within 5 tiles
+lateral / 3 along) onto one shared `wp_index` — two yellow overlay lines meeting
+at one waypoint square. Colocated gates are live simultaneously and every filter
+answers identically for them, so distance is rarely the discriminator
+(`MODULAR_LANDING_GATE_MAX_DIST_TILES` is 25). Gate order plus availability
+decides.
+
+`reason=no_goal_path_invalid` with `goal=0` means no free terminal *and* no path
+from that runway's rollout end to any stand — the runway is walled off. Check
+the rollout end's `edge_block_mask` and whether its neighbours are non-taxiable
+decoration or one-way tiles pointing the wrong way. Layout fault, not code
+fault.
+
 ### Plane stuck on the ground
 ```bash
 grep 'stuck(' /tmp/openttd.log | tail -20

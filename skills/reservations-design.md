@@ -145,6 +145,18 @@ If a per-tick movement function (`AirportMoveModular*`) sets its target based on
 
 Cure: don't let movement read the shared-resource bit unless movement also reserves. Keep movement targeting on a private waypoint (holding pattern, current path) until the commit handler claims the resource and changes state — after which a different movement function takes over off the committed state. Helicopters in `AirportMoveModularFlying` now always target the holding waypoint; commit happens in `AircraftEventHandler_Flying`, and post-commit movement runs in `AirportMoveModularLanding` driven by `HELILANDING` state.
 
+### Pitfall 7: Never park an aircraft on a `ONE_WAY` tile
+
+A one-way tile is a queueing corridor, not a parking space. Holding an aircraft
+there (computed heli pad, fallback holding spot, giving up mid-corridor) is a
+permanent deadlock: it blocks the corridor, and it can only move in the flow
+direction — so if that leads somewhere it can't use, it has no legal move at
+all. `ComputeModularHeliTiles` hit this and now skips `one_way_taxi` tiles.
+
+Note when touching that heuristic: making its building-adjacency filter a soft
+penalty (to get a central pad instead of a runway-end fallback) costs ~500
+movements on `helis2.sav`. Tried and reverted; re-measure before retrying.
+
 ## 9. Debugging policy
 
 When evaluating proposed fixes for stuck aircraft:
