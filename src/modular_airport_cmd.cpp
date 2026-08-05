@@ -2218,6 +2218,25 @@ bool IsModularHangarTile(const Station *st, TileIndex tile)
 	return td != nullptr && IsModularHangarPiece(td->piece_type);
 }
 
+/**
+ * Is this tile's reservation held by a vehicle that no longer exists, or by something
+ * that is not a real aircraft?
+ *
+ * Read-only counterpart to the first two clauses of TryClearStaleModularReservation,
+ * for callers that must not mutate map state. The ground pathfinder is the reason it
+ * exists: it runs speculatively, per neighbour, and sometimes with no aircraft at all,
+ * so clearing reservations from inside A* expansion is not something it may do.
+ */
+bool IsModularReservationOwnerGone(TileIndex tile)
+{
+	if (!HasModularAirportTileReservation(tile)) return false;
+	const VehicleID owner = GetModularAirportTileReservationOwner(tile);
+	if (owner == VehicleID::Invalid()) return true;
+	const Vehicle *veh = Vehicle::GetIfValid(owner);
+	if (veh == nullptr || veh->type != VEH_AIRCRAFT) return true;
+	return !Aircraft::From(veh)->IsNormalAircraft();
+}
+
 bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleID reserver)
 {
 	if (st == nullptr || !IsValidTile(tile)) return false;

@@ -259,11 +259,18 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	 * obstacle to itself. Reservations outlive the taxi path that created them, so
 	 * asking only "is this reserved?" let an aircraft whose sole exit was a stand it
 	 * had reserved block its own route — permanently, since it then never moved and
-	 * so never released the tile. */
+	 * so never released the tile.
+	 *
+	 * A reservation whose owner no longer exists is likewise not an obstacle. Elsewhere
+	 * that case is handled by IsTaxiTileReservedByOther, which clears it; the pathfinder
+	 * may not mutate map state, so it reads the same condition and routes past. Without
+	 * this a stand reserved by a since-removed aircraft would block every route through
+	 * it for good, with nothing left to release it. */
 	if (v != nullptr && IsParkingOnlyTile(to_data->piece_type) && to != v->tile && to != v->ground_path_goal) {
 		Tile t(to);
 		if (IsAirportTile(t) && HasAirportTileReservation(t) &&
-				GetModularAirportTileReservationOwner(to) != v->index) {
+				GetModularAirportTileReservationOwner(to) != v->index &&
+				!IsModularReservationOwnerGone(to)) {
 			return false;
 		}
 	}

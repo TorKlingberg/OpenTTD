@@ -229,6 +229,7 @@ void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, 
 bool HasModularAirportTileReservation(TileIndex tile);
 VehicleID GetModularAirportTileReservationOwner(TileIndex tile);
 bool IsModularAirportTileReservedBy(TileIndex tile, VehicleID vid);
+bool IsModularReservationOwnerGone(TileIndex tile);
 void SetModularAirportTileReservationOwner(TileIndex tile, VehicleID vid);
 void ClearModularAirportTileReservation(TileIndex tile);
 bool ShouldLogModularRateLimited(VehicleID vid, uint8_t channel, uint32_t interval_ticks);

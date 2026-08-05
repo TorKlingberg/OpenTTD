@@ -264,7 +264,12 @@ TEST_CASE("ModularAirportPathfinding")
 		Aircraft *self = CreateAircraft(VehicleID(3));
 		self->tile = base;
 		self->ground_path_goal = base + TileDiffXY(2, 0);
-		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), VehicleID(4));
+
+		/* The owner has to actually exist: a reservation held by a vehicle that does
+		 * not is a dead claim, and the pathfinder deliberately routes past those. */
+		Aircraft *other = CreateAircraft(VehicleID(4));
+		other->tile = base + TileDiffXY(1, 0);
+		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), other->index);
 
 		AirportGroundPath path = FindAirportGroundPath(st, base, base + TileDiffXY(2, 0), self);
 		CHECK_FALSE(path.found);
@@ -1195,6 +1200,28 @@ TEST_CASE("ModularAirportSelfReservedStandRouting")
 
 		const AirportGroundPath path = FindAirportGroundPath(st, helipad, hangar, v, false, false);
 		CHECK_FALSE(path.found);
+	}
+
+	SECTION("A stand reserved by a vehicle that no longer exists does not block") {
+		SetupAircraftPool();
+		Aircraft *other = CreateAircraft(VehicleID(11));
+		other->targetairport = st->index;
+		other->tile = stand;
+		SetTaxiReservation(other, stand);
+		/* Hand the reservation to a vehicle that was never allocated: the state left
+		 * behind when the owner is gone and nothing remains to release the tile. */
+		SetModularAirportTileReservationOwner(stand, VehicleID(99));
+
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->tile = helipad;
+		v->ground_path_goal = hangar;
+
+		/* The reservation code clears this case (IsTaxiTileReservedByOther); the
+		 * pathfinder may not mutate, so it must at least route past it rather than
+		 * treat a dead claim as a permanent wall. */
+		const AirportGroundPath path = FindAirportGroundPath(st, helipad, hangar, v, false, false);
+		CHECK(path.found);
 	}
 }
 
