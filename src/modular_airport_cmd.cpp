@@ -2769,6 +2769,12 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, 
 	const TaxiSegment &seg = v->taxi_path->segments[segment_idx];
 	const auto &tiles = v->taxi_path->tiles;
 
+	/* Segment bounds lying inside the tile list is an invariant, and the reservation
+	 * loops below still assert it by construction. This is for the failure detail only:
+	 * a corrupt segment should keep producing a clean refusal, not turn a diagnostic
+	 * into an out-of-bounds read. */
+	const TileIndex seg_start_tile = (seg.start_index < tiles.size()) ? tiles[seg.start_index] : INVALID_TILE;
+
 	if (seg.type == TaxiSegmentType::RUNWAY) {
 		if (IsRunwaySegmentTerminalGoal(v, v->taxi_path.get(), seg)) {
 			/* Ground movement ends on this runway: reserve it alone. */
@@ -2780,7 +2786,7 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, 
 					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[i]);
 				}
 			}
-			if (resources.empty()) return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[seg.start_index]);
+			if (resources.empty()) return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, seg_start_tile);
 			if (!TryReserveRunwayResourcesAtomic(v, st, resources, true)) {
 				return fail(TaxiReserveFailure::RUNWAY_BUSY, resources.front().front());
 			}
@@ -2835,7 +2841,7 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, 
 				case RunwayChainStatus::NO_SAFE_STOP:
 					return fail(TaxiReserveFailure::NO_SAFE_STOP, IsValidTile(v->ground_path_goal) ? v->ground_path_goal : INVALID_TILE);
 				default:
-					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, tiles[seg.start_index]);
+					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, seg_start_tile);
 			}
 		}
 
