@@ -23,9 +23,10 @@ extern std::vector<Point> _saved_template_preview_offsets;
 extern bool _saved_template_preview_active;
 
 const AirportTemplate *GetAirportTemplateByIndex(int index);
-void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotation);
+void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotation, int rad);
 void ResetSavedTemplateGuiState();
 bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile);
+bool IsSavedTemplateCoverageTileInternal(TileIndex tile);
 
 void ShowBuildAirportTemplateManagerWindow(Window *parent);
 

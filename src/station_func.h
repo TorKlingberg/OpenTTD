@@ -26,8 +26,17 @@ void ShowStationViewWindow(StationID station);
 void UpdateAllStationVirtCoords();
 void ClearAllStationCachedNames();
 
-CargoArray GetProductionAroundTiles(TileIndex tile, int w, int h, int rad);
-CargoArray GetAcceptanceAroundTiles(TileIndex tile, int w, int h, int rad, CargoTypes *always_accepted = nullptr);
+/**
+ * Optional per-tile filter narrowing a rectangular catchment scan to the tiles a
+ * station will actually cover. Needed where the catchment is not the scanned
+ * rectangle — a station's real catchment is the union of a square around each of
+ * its tiles, which differs once the station's own footprint is not a solid
+ * rectangle. nullptr means "the whole rectangle", the historic behaviour.
+ */
+using CatchmentTileFilter = bool (*)(TileIndex);
+
+CargoArray GetProductionAroundTiles(TileIndex tile, int w, int h, int rad, CatchmentTileFilter filter = nullptr);
+CargoArray GetAcceptanceAroundTiles(TileIndex tile, int w, int h, int rad, CargoTypes *always_accepted = nullptr, CatchmentTileFilter filter = nullptr);
 
 void UpdateStationAcceptance(Station *st, bool show_msg);
 CargoTypes GetAcceptanceMask(const Station *st);

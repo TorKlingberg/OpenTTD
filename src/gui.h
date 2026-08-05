@@ -37,6 +37,7 @@ Window *ShowBuildDocksScenToolbar();
 Window *ShowBuildAirToolbar();
 bool ShouldDrawSavedTemplatePreviewAtTile(TileIndex tile);
 bool IsSavedTemplatePlacementPreviewActive();
+bool IsSavedTemplateCoverageTile(TileIndex tile);
 
 /* tgp_gui.cpp */
 void ShowGenerateLandscape();

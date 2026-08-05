@@ -553,8 +553,9 @@ static void ShowRejectOrAcceptNews(const Station *st, CargoTypes cargoes, bool r
  * @param w X extent of the area
  * @param h Y extent of the area
  * @param rad Search radius in addition to the given area
+ * @param filter Optional per-tile filter; tiles it rejects are not part of the catchment
  */
-CargoArray GetProductionAroundTiles(TileIndex north_tile, int w, int h, int rad)
+CargoArray GetProductionAroundTiles(TileIndex north_tile, int w, int h, int rad, CatchmentTileFilter filter)
 {
 	CargoArray produced{};
 	FlatSet<IndustryID> industries;
@@ -563,6 +564,7 @@ CargoArray GetProductionAroundTiles(TileIndex north_tile, int w, int h, int rad)
 	/* Loop over all tiles to get the produced cargo of
 	 * everything except industries */
 	for (TileIndex tile : ta) {
+		if (filter != nullptr && !filter(tile)) continue;
 		if (IsTileType(tile, TileType::Industry)) industries.insert(GetIndustryIndex(tile));
 		AddProducedCargo(tile, produced);
 	}
@@ -590,9 +592,10 @@ CargoArray GetProductionAroundTiles(TileIndex north_tile, int w, int h, int rad)
  * @param h Y extent of area
  * @param rad Search radius in addition to given area
  * @param always_accepted bitmask of cargo accepted by houses and headquarters; can be nullptr
+ * @param filter Optional per-tile filter; tiles it rejects are not part of the catchment
  * @param ind Industry associated with neutral station (e.g. oil rig) or nullptr
  */
-CargoArray GetAcceptanceAroundTiles(TileIndex center_tile, int w, int h, int rad, CargoTypes *always_accepted)
+CargoArray GetAcceptanceAroundTiles(TileIndex center_tile, int w, int h, int rad, CargoTypes *always_accepted, CatchmentTileFilter filter)
 {
 	CargoArray acceptance{};
 	if (always_accepted != nullptr) *always_accepted = 0;
@@ -600,6 +603,8 @@ CargoArray GetAcceptanceAroundTiles(TileIndex center_tile, int w, int h, int rad
 	TileArea ta = TileArea(center_tile, w, h).Expand(rad);
 
 	for (TileIndex tile : ta) {
+		if (filter != nullptr && !filter(tile)) continue;
+
 		/* Ignore industry if it has a neutral station. */
 		if (!_settings_game.station.serve_neutral_industries && IsTileType(tile, TileType::Industry) && Industry::GetByTile(tile)->neutral_station != nullptr) continue;
 

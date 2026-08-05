@@ -52,6 +52,44 @@
 std::vector<Point> _saved_template_preview_offsets;
 bool _saved_template_preview_active = false;
 
+/**
+ * Tiles the template's catchment will cover, as offsets from the placement anchor.
+ *
+ * A built station's catchment is the union of a square of the catchment radius
+ * around each of its tiles (see Station::RecomputeCatchment), not its bounding
+ * box. For a solid rectangular airport those are the same shape, but a template
+ * may be L-shaped or have gaps, and then the bounding box overstates the
+ * coverage near its empty corners. Kept as a bitmap over the template's bounding
+ * box grown by the radius, so it can be rebuilt once per template/rotation/radius
+ * instead of per mouse move.
+ */
+struct SavedTemplateCoverage {
+	bool active = false;
+	int min_dx = 0; ///< Offset of the bitmap origin from the anchor tile.
+	int min_dy = 0;
+	int width = 0;
+	int height = 0;
+	std::vector<bool> covered;
+
+	void Clear()
+	{
+		this->active = false;
+		this->covered.clear();
+		this->width = 0;
+		this->height = 0;
+	}
+
+	bool Test(int dx, int dy) const
+	{
+		const int x = dx - this->min_dx;
+		const int y = dy - this->min_dy;
+		if (x < 0 || y < 0 || x >= this->width || y >= this->height) return false;
+		return this->covered[static_cast<size_t>(y) * this->width + x];
+	}
+};
+
+static SavedTemplateCoverage _saved_template_coverage;
+
 static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
 
@@ -62,10 +100,11 @@ const AirportTemplate *GetAirportTemplateByIndex(int index)
 	return templates[index].get();
 }
 
-void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotation)
+void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotation, int rad)
 {
 	_saved_template_preview_offsets.clear();
 	_saved_template_preview_active = false;
+	_saved_template_coverage.Clear();
 
 	if (templ == nullptr || !templ->is_available) return;
 
@@ -75,12 +114,44 @@ void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotat
 		_saved_template_preview_offsets.push_back({static_cast<int>(t.dx), static_cast<int>(t.dy)});
 	}
 	_saved_template_preview_active = !_saved_template_preview_offsets.empty();
+	if (!_saved_template_preview_active || rad <= 0) return;
+
+	/* Union of a (2*rad+1) square around each piece — the same shape the built
+	 * station will end up with. */
+	int max_dx = INT_MIN;
+	int max_dy = INT_MIN;
+	int min_dx = INT_MAX;
+	int min_dy = INT_MAX;
+	for (const Point &p : _saved_template_preview_offsets) {
+		min_dx = std::min(min_dx, p.x);
+		min_dy = std::min(min_dy, p.y);
+		max_dx = std::max(max_dx, p.x);
+		max_dy = std::max(max_dy, p.y);
+	}
+
+	_saved_template_coverage.min_dx = min_dx - rad;
+	_saved_template_coverage.min_dy = min_dy - rad;
+	_saved_template_coverage.width = (max_dx - min_dx + 1) + 2 * rad;
+	_saved_template_coverage.height = (max_dy - min_dy + 1) + 2 * rad;
+	_saved_template_coverage.covered.assign(static_cast<size_t>(_saved_template_coverage.width) * _saved_template_coverage.height, false);
+
+	for (const Point &p : _saved_template_preview_offsets) {
+		for (int dy = -rad; dy <= rad; dy++) {
+			const int y = p.y + dy - _saved_template_coverage.min_dy;
+			const size_t row = static_cast<size_t>(y) * _saved_template_coverage.width;
+			for (int dx = -rad; dx <= rad; dx++) {
+				_saved_template_coverage.covered[row + (p.x + dx - _saved_template_coverage.min_dx)] = true;
+			}
+		}
+	}
+	_saved_template_coverage.active = true;
 }
 
 void ResetSavedTemplateGuiState()
 {
 	_saved_template_preview_active = false;
 	_saved_template_preview_offsets.clear();
+	_saved_template_coverage.Clear();
 }
 
 bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile)
@@ -95,6 +166,15 @@ bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile)
 		if (p.x == dx && p.y == dy) return true;
 	}
 	return false;
+}
+
+bool IsSavedTemplateCoverageTileInternal(TileIndex tile)
+{
+	if (!_saved_template_coverage.active) return false;
+	if ((_thd.drawstyle & HT_DRAG_MASK) == HT_NONE) return false;
+
+	TileIndex anchor = TileVirtXY(_thd.pos.x, _thd.pos.y);
+	return _saved_template_coverage.Test(TileX(tile) - TileX(anchor), TileY(tile) - TileY(anchor));
 }
 
 static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
@@ -341,12 +421,15 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		uint16_t w, h;
 		templ->GetRotatedDimensions(this->selected_rotation, w, h);
 		SetTileSelectSize(w, h);
-		UpdateSavedTemplatePreviewCache(templ, this->selected_rotation);
 
-		if (_settings_client.gui.station_show_coverage) {
-			int rad = this->GetSelectedCatchmentRadius();
-			SetTileSelectBigSize(-rad, -rad, 2 * rad, 2 * rad);
-		}
+		/* The covered-tile set drives the accepts/supplies text as well as the map
+		 * highlight, so build it whether or not the highlight is switched on. */
+		const int rad = this->GetSelectedCatchmentRadius();
+		UpdateSavedTemplatePreviewCache(templ, this->selected_rotation, rad);
+
+		/* The bounding rect stays the highlight's redraw region even though the real
+		 * catchment is a smaller union of squares; the drawing code masks it down. */
+		if (_settings_client.gui.station_show_coverage) SetTileSelectBigSize(-rad, -rad, 2 * rad, 2 * rad);
 	}
 
 	/**
@@ -707,9 +790,12 @@ public:
 		const int bottom = r.bottom;
 		r.bottom = INT_MAX; // Allow overflow as we want to know the required height.
 
+		/* Count only the tiles the template will really cover, so a non-rectangular
+		 * one does not claim cargo near the empty corners of its bounding box. */
 		int rad = this->GetSelectedCatchmentRadius();
-		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, false) + WidgetDimensions::scaled.vsep_normal;
-		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, true);
+		CatchmentTileFilter filter = _saved_template_coverage.active ? &IsSavedTemplateCoverageTileInternal : nullptr;
+		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, false, filter) + WidgetDimensions::scaled.vsep_normal;
+		r.top = DrawStationCoverageAreaText(r, SCT_ALL, rad, true, filter);
 
 		/* Resize background if the window is too small.
 		 * Never make the window smaller to avoid oscillating if the size change affects the acceptance. */

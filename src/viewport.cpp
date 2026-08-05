@@ -1204,6 +1204,11 @@ draw_inner:
 	if (!is_redsq && (tht == THT_NONE || tht == THT_RED) && _thd.outersize.x > 0 &&
 			IsInsideBS(ti->x, _thd.pos.x + _thd.offs.x, _thd.size.x + _thd.outersize.x) &&
 			IsInsideBS(ti->y, _thd.pos.y + _thd.offs.y, _thd.size.y + _thd.outersize.y)) {
+		/* An airport template's catchment is the union of a square around each of its
+		 * pieces, so for a non-rectangular template it is smaller than the outer rect.
+		 * The rect stays the redraw region; mask the paint down to the covered tiles. */
+		if (IsSavedTemplatePlacementPreviewActive() && !IsSavedTemplateCoverageTile(ti->tile)) return;
+
 		/* Draw a blue rect. */
 		DrawTileSelectionRect(ti, PALETTE_SEL_TILE_BLUE);
 		return;

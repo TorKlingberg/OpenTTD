@@ -75,16 +75,16 @@ using RoadWaypointTypeFilter = GenericWaypointTypeFilter<true, TileType::Road>;
  * @param supplies if supplied cargoes should be drawn, else accepted cargoes
  * @return Returns the y value below the string that was drawn
  */
-int DrawStationCoverageAreaText(const Rect &r, StationCoverageType sct, int rad, bool supplies)
+int DrawStationCoverageAreaText(const Rect &r, StationCoverageType sct, int rad, bool supplies, CatchmentTileFilter filter)
 {
 	TileIndex tile = TileVirtXY(_thd.pos.x, _thd.pos.y);
 	CargoTypes cargo_mask = 0;
 	if (_thd.drawstyle == HT_RECT && tile < Map::Size()) {
 		CargoArray cargoes;
 		if (supplies) {
-			cargoes = GetProductionAroundTiles(tile, _thd.size.x / TILE_SIZE, _thd.size.y / TILE_SIZE, rad);
+			cargoes = GetProductionAroundTiles(tile, _thd.size.x / TILE_SIZE, _thd.size.y / TILE_SIZE, rad, filter);
 		} else {
-			cargoes = GetAcceptanceAroundTiles(tile, _thd.size.x / TILE_SIZE, _thd.size.y / TILE_SIZE, rad);
+			cargoes = GetAcceptanceAroundTiles(tile, _thd.size.x / TILE_SIZE, _thd.size.y / TILE_SIZE, rad, nullptr, filter);
 		}
 
 		/* Convert cargo counts to a set of cargo bits, and draw the result. */

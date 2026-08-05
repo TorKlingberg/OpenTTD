@@ -15,6 +15,7 @@
 #include "tilearea_type.h"
 #include "window_type.h"
 #include "station_type.h"
+#include "station_func.h"
 
 
 /** Types of cargo to display for station coverage. */
@@ -24,7 +25,7 @@ enum StationCoverageType : uint8_t {
 	SCT_ALL,                 ///< Draw all cargoes.
 };
 
-int DrawStationCoverageAreaText(const Rect &r, StationCoverageType sct, int rad, bool supplies);
+int DrawStationCoverageAreaText(const Rect &r, StationCoverageType sct, int rad, bool supplies, CatchmentTileFilter filter = nullptr);
 void CheckRedrawStationCoverage(const Window *w);
 void CheckRedrawRailWaypointCoverage(const Window *w);
 void CheckRedrawRoadWaypointCoverage(const Window *w);

@@ -765,6 +765,11 @@ bool IsSavedTemplatePlacementPreviewActive()
 	return _saved_template_preview_active;
 }
 
+bool IsSavedTemplateCoverageTile(TileIndex tile)
+{
+	return IsSavedTemplateCoverageTileInternal(tile);
+}
+
 
 void InitializeAirportGui()
 {
