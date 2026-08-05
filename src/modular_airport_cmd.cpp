@@ -1980,9 +1980,29 @@ bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, Veh
 	});
 }
 
-TileIndex FindFreeModularTerminal(const Station *st, [[maybe_unused]] const Aircraft *v, TileIndex from_tile)
+bool ModularAirportHasHelipad(const Station *st)
+{
+	if (st->airport.modular_tile_data == nullptr) return false;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (IsModularHelipadPiece(data.piece_type)) return true;
+	}
+	return false;
+}
+
+TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile, bool allow_helicopter)
 {
 	if (st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+
+	/* Stock parity: a helicopter uses stands only at airports with no helipads at all
+	 * (AirportFindFreeHelipad falls back to terminals exactly when num_helipads == 0).
+	 * Where helipads exist but are momentarily taken, the helicopter waits — circling
+	 * if airborne — rather than occupying a stand a fixed-wing aircraft needs.
+	 *
+	 * @p allow_helicopter overrides this for callers where the aircraft is already on
+	 * the ground and refusing would strand it or leave two aircraft stacked on a tile. */
+	if (!allow_helicopter && v != nullptr && v->subtype == AIR_HELICOPTER && ModularAirportHasHelipad(st)) {
+		return INVALID_TILE;
+	}
 	const bool can_ground_route = (from_tile != INVALID_TILE && st->TileBelongsToAirport(from_tile)) || CanUseModularGroundRouting(st, v);
 	const TileIndex origin = (from_tile != INVALID_TILE) ? from_tile : (v != nullptr ? v->tile : INVALID_TILE);
 	TileIndex best_tile = INVALID_TILE;
@@ -2855,15 +2875,45 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 			EnsureModularHeliTilesValid(st);
 			alt_goal = st->airport.modular_heli_takeoff_tile;
 			alt_target = MGT_HELI_TAKEOFF_TILE;
+			if (alt_goal == INVALID_TILE) {
+				/* The computed takeoff tile is gone — the airport gained a helipad (which
+				 * makes ComputeModularHeliTiles yield nothing), or the tile it pointed at
+				 * stopped qualifying. The goal is saved on the vehicle, so without this it
+				 * would keep a destination that can never be reached, forever and silently.
+				 *
+				 * Re-run the departure ladder instead of just re-reading the cache: a
+				 * takeoff runway if one is usable, otherwise lift off vertically from where
+				 * we stand. A helicopter is never obliged to reach a particular tile in
+				 * order to leave, so this ladder always terminates. */
+				alt_goal = FindModularRunwayTileForTakeoff(st, v);
+				if (alt_goal != INVALID_TILE) {
+					v->modular_takeoff_tile = alt_goal;
+					alt_target = MGT_RUNWAY_TAKEOFF;
+				} else if (v->subtype == AIR_HELICOPTER && !st->airport.blocks.Test(AirportBlock::Zeppeliner)) {
+					Debug(misc, 2, "[ModAp] V{} unit#{} retarget-heli-takeoff: no computed tile or runway, departing vertically from tile={}",
+						v->index, v->unitnumber, IsValidTile(v->tile) ? v->tile.base() : 0);
+					ClearTaxiPathReservation(v, v->tile, true, false);
+					ClearTaxiPathState(v, v->tile);
+					v->ground_path_goal = INVALID_TILE;
+					v->modular_ground_target = MGT_NONE;
+					v->taxi_wait_counter = 0;
+					v->state = HELITAKEOFF;
+					return true;
+				}
+			}
 			break;
 		default:
 			return false;
 	}
 
 	if (alt_goal == INVALID_TILE || alt_goal == v->ground_path_goal) {
-		if (v->modular_ground_target == MGT_HANGAR && ShouldLogModularRateLimited(v->index, 47, 128)) {
-			Debug(misc, 2, "[ModAp] V{} unit#{} retarget-hangar failed: tile={} goal={} alt={} wait={}",
-				v->index, v->unitnumber,
+		/* Common and benign under contention ("every stand is busy right now"), so this
+		 * is rate-limited chatter rather than a fault. What it must never do is repeat
+		 * forever for the same vehicle: that means the goal is unreachable rather than
+		 * merely taken, and no amount of waiting will fix it. */
+		if (ShouldLogModularRateLimited(v->index, 47, 128)) {
+			Debug(misc, 2, "[ModAp] V{} unit#{} retarget failed: tgt={} tile={} goal={} alt={} wait={}",
+				v->index, v->unitnumber, v->modular_ground_target,
 				IsValidTile(v->tile) ? v->tile.base() : 0,
 				IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
 				IsValidTile(alt_goal) ? alt_goal.base() : 0,
@@ -2983,8 +3033,10 @@ void HandleModularGroundArrival(Aircraft *v)
 				 * re-target to a different one instead of stacking aircraft on one tile. */
 				TileIndex goal = (v->modular_ground_target == MGT_HELIPAD) ? FindFreeModularHelipad(st, v) : FindFreeModularTerminal(st, v);
 				if (goal == INVALID_TILE && v->modular_ground_target == MGT_HELIPAD) {
-					/* Helicopter couldn't find a helipad, try a stand as fallback. */
-					goal = FindFreeModularTerminal(st, v);
+					/* Helicopter couldn't find a helipad. Unstacking beats parking policy:
+					 * two aircraft on one tile is worse than a helicopter on a stand, so
+					 * allow the stand here even at an airport that has helipads. */
+					goal = FindFreeModularTerminal(st, v, INVALID_TILE, true);
 					if (goal != INVALID_TILE) v->modular_ground_target = MGT_TERMINAL;
 				}
 				if (goal != INVALID_TILE && goal != v->tile) {

@@ -232,6 +232,10 @@ void SetTaxiwayFlags_Apply(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_t
 	data->one_way_taxi = one_way_taxi;
 	data->user_taxi_dir_mask = one_way_taxi ? (taxi_dir_mask & 0x0F) : 0x0F;
 	MarkTileDirtyByTile(tile);
+	/* One-way flags feed the layout-derived caches: ComputeModularHeliTiles refuses to
+	 * put a helicopter pad on a one-way tile, so a tile turned one-way after the pad was
+	 * computed leaves the cache pointing at a tile that is now illegal. */
+	st->airport.MarkLayoutDirty();
 }
 
 CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi)
@@ -297,6 +301,10 @@ void SetEdgeFence_Apply(TileIndex tile, uint8_t edge_bit, bool set, Station *st)
 			MarkTileDirtyByTile(nb);
 		}
 	}
+
+	/* Edge fences change which tiles can reach which, so every layout-derived cache
+	 * (heli pads, holding loop, catchment) may now be wrong. */
+	st->airport.MarkLayoutDirty();
 }
 
 CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set)

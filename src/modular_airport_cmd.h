@@ -267,7 +267,8 @@ TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, Tile
 bool IsModularHangarPiece(uint8_t piece_type);
 bool IsModularHangarTile(const Station *st, TileIndex tile);
 bool IsModularSafeStopTile(const Station *st, TileIndex tile);
-TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);
+TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE, bool allow_helicopter = false);
+bool ModularAirportHasHelipad(const Station *st);
 TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);
 TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);
 bool CanUseModularGroundRouting(const Station *st, const Aircraft *v);

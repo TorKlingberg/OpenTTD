@@ -1197,3 +1197,56 @@ TEST_CASE("ModularAirportSelfReservedStandRouting")
 		CHECK_FALSE(path.found);
 	}
 }
+
+TEST_CASE("ModularAirportHelicopterParkingPolicy")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+
+	const TileIndex stand = base + TileDiffXY(2, 1);
+	const TileIndex pad = base + TileDiffXY(2, 2);
+
+	SECTION("Helicopter takes no stand at an airport that has helipads") {
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, stand, APT_STAND, 0);
+		AddModularTile(st, pad, APT_HELIPAD_2, 0);
+		REQUIRE(ModularAirportHasHelipad(st));
+
+		SetupAircraftPool();
+		Aircraft *heli = CreateAircraft(VehicleID(10));
+		heli->targetairport = st->index;
+		heli->subtype = AIR_HELICOPTER;
+		heli->tile = pad;
+
+		/* Stock parity: with helipads present the helicopter waits for one rather than
+		 * occupying a stand, even while the stand sits empty. */
+		CHECK(FindFreeModularTerminal(st, heli) == INVALID_TILE);
+
+		/* ...unless the caller is a ground-safety path that must not strand it. */
+		CHECK(FindFreeModularTerminal(st, heli, INVALID_TILE, true) == stand);
+
+		/* Fixed-wing aircraft are unaffected. */
+		Aircraft *plane = CreateAircraft(VehicleID(11));
+		plane->targetairport = st->index;
+		plane->subtype = AIR_AIRCRAFT;
+		plane->tile = stand;
+		CHECK(FindFreeModularTerminal(st, plane) == stand);
+	}
+
+	SECTION("Helicopter uses a stand at an airport with no helipads") {
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+		AddModularTile(st, stand, APT_STAND, 0);
+		AddModularTile(st, pad, APT_APRON, 0);
+		REQUIRE_FALSE(ModularAirportHasHelipad(st));
+
+		SetupAircraftPool();
+		Aircraft *heli = CreateAircraft(VehicleID(10));
+		heli->targetairport = st->index;
+		heli->subtype = AIR_HELICOPTER;
+		heli->tile = pad;
+
+		CHECK(FindFreeModularTerminal(st, heli) == stand);
+	}
+}

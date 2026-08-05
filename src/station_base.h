@@ -392,8 +392,14 @@ struct Airport : public TileArea {
 	/**
 	 * Invalidate every cache derived from the modular tile layout. Call this from
 	 * any site that adds, removes or retypes a modular tile, or changes runway
-	 * flags. Keeping the invalidation in one place avoids silently stale caches
-	 * when a new mutation site forgets one of the individual dirty flags.
+	 * flags, one-way taxi flags or edge fences. Keeping the invalidation in one
+	 * place avoids silently stale caches when a new mutation site forgets one of
+	 * the individual dirty flags.
+	 *
+	 * "Derived from the layout" is broader than it looks: the computed helicopter
+	 * pad depends on one-way flags and on building adjacency, and the holding loop
+	 * and catchment depend on the tile set. If a mutation can change the answer to
+	 * "where may a helicopter park" or "how big is this airport", it belongs here.
 	 */
 	void MarkLayoutDirty() const
 	{

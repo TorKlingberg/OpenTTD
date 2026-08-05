@@ -2320,7 +2320,11 @@ static void HandleModularEndLanding(Aircraft *v, const Station *st)
 	}
 
 	if (goal == INVALID_TILE) {
-		goal = FindFreeModularTerminal(st, v);
+		/* Already on the ground: a helicopter that found neither helipad nor hangar has
+		 * to park somewhere, so the stock "helipads exist, so wait" rule is overridden
+		 * here. It applies where the aircraft still has the option of waiting — airborne
+		 * (it keeps circling) or sitting in a hangar. */
+		goal = FindFreeModularTerminal(st, v, INVALID_TILE, true);
 		target = MGT_TERMINAL;
 	}
 
