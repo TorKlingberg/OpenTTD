@@ -2801,48 +2801,39 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, 
 		RunwayCrossingChain chain;
 		const RunwayChainStatus status = BuildRunwayCrossingChain(v, st, v->taxi_path.get(), seg, true, chain);
 
-		if (status != RunwayChainStatus::OK) {
-			switch (status) {
-				case RunwayChainStatus::BLOCKED:
-					if (ShouldLogModularRateLimited(v->index, 58, 128)) {
-						Debug(misc, 1, "[ModAp] V{} runway-transit-deny: continuation blocked tile={} by V{} seg={}",
-							v->index, chain.blocker.base(), chain.blocked_by.base(), segment_idx);
-					}
-					break;
+		/* Log and report the same refusal in one place: a status that grows a new case
+		 * cannot then be described one way and returned another. */
+		switch (status) {
+			case RunwayChainStatus::OK:
+				break;
 
-				case RunwayChainStatus::NO_SAFE_STOP:
-					/* The chain walk is guaranteed to terminate at the path goal, so this
-					 * means the path does not end at ground_path_goal. Report it as a
-					 * contract violation, not as contention — denying entry is still the
-					 * safe response, but the cause is upstream in path construction. */
-					if (ShouldLogModularRateLimited(v->index, 57, 128)) {
-						Debug(misc, 1, "[ModAp] V{} runway-transit-invariant: chain has no terminator seg={} tile={} goal={} path_end={}",
-							v->index, segment_idx, IsValidTile(v->tile) ? v->tile.base() : 0,
-							IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
-							tiles.empty() ? 0 : tiles.back().base());
-					}
-					break;
+			case RunwayChainStatus::BLOCKED:
+				if (ShouldLogModularRateLimited(v->index, 58, 128)) {
+					Debug(misc, 1, "[ModAp] V{} runway-transit-deny: continuation blocked tile={} by V{} seg={}",
+						v->index, chain.blocker.base(), chain.blocked_by.base(), segment_idx);
+				}
+				return fail(chain.blocked_by == VehicleID::Invalid() ? TaxiReserveFailure::OCCUPIED_BY_OTHER : TaxiReserveFailure::RESERVED_BY_OTHER,
+					chain.blocker, chain.blocked_by);
 
-				case RunwayChainStatus::RESOURCE_ERROR:
-					if (ShouldLogModularRateLimited(v->index, 57, 128)) {
-						Debug(misc, 1, "[ModAp] V{} runway-transit-deny: runway resource unresolved seg={} tile={}",
-							v->index, segment_idx, IsValidTile(v->tile) ? v->tile.base() : 0);
-					}
-					break;
+			case RunwayChainStatus::NO_SAFE_STOP:
+				/* The chain walk is guaranteed to terminate at the path goal, so this
+				 * means the path does not end at ground_path_goal. Report it as a
+				 * contract violation, not as contention — denying entry is still the
+				 * safe response, but the cause is upstream in path construction. */
+				if (ShouldLogModularRateLimited(v->index, 57, 128)) {
+					Debug(misc, 1, "[ModAp] V{} runway-transit-invariant: chain has no terminator seg={} tile={} goal={} path_end={}",
+						v->index, segment_idx, IsValidTile(v->tile) ? v->tile.base() : 0,
+						IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
+						tiles.empty() ? 0 : tiles.back().base());
+				}
+				return fail(TaxiReserveFailure::NO_SAFE_STOP, IsValidTile(v->ground_path_goal) ? v->ground_path_goal : INVALID_TILE);
 
-				case RunwayChainStatus::OK:
-					NOT_REACHED();
-			}
-
-			switch (status) {
-				case RunwayChainStatus::BLOCKED:
-					return fail(chain.blocked_by == VehicleID::Invalid() ? TaxiReserveFailure::OCCUPIED_BY_OTHER : TaxiReserveFailure::RESERVED_BY_OTHER,
-						chain.blocker, chain.blocked_by);
-				case RunwayChainStatus::NO_SAFE_STOP:
-					return fail(TaxiReserveFailure::NO_SAFE_STOP, IsValidTile(v->ground_path_goal) ? v->ground_path_goal : INVALID_TILE);
-				default:
-					return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, seg_start_tile);
-			}
+			case RunwayChainStatus::RESOURCE_ERROR:
+				if (ShouldLogModularRateLimited(v->index, 57, 128)) {
+					Debug(misc, 1, "[ModAp] V{} runway-transit-deny: runway resource unresolved seg={} tile={}",
+						v->index, segment_idx, IsValidTile(v->tile) ? v->tile.base() : 0);
+				}
+				return fail(TaxiReserveFailure::RUNWAY_RESOURCE_ERROR, seg_start_tile);
 		}
 
 		/* Atomically acquire every runway resource in the chain, then commit the
