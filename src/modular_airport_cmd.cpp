@@ -3232,6 +3232,16 @@ void HandleModularGroundArrival(Aircraft *v)
 				SetTaxiReservation(v, v->tile);
 			}
 			AircraftEntersTerminal(v);
+			{
+				/* Stock parity for the "service helicopters at helipads" setting. The stock
+				 * check reads AirportFTAClass::num_helipads, which on a modular airport
+				 * describes the preset the airport type was seeded from and not the layout
+				 * the player actually built — so read the tile we parked on instead. This
+				 * is also the arrival that matters: for modular airports v->pos never
+				 * moves, so the FTA's own "just arrived at a terminal" branch never runs. */
+				const ModularAirportTileData *parked_on = st->airport.GetModularTileData(v->tile);
+				MaybeServiceAircraftAtHelipad(v, parked_on != nullptr && IsModularHelipadPiece(parked_on->piece_type));
+			}
 			v->state = (v->subtype == AIR_HELICOPTER) ? HELIPAD1 : TERM1;
 			v->modular_ground_target = MGT_NONE;
 			break;

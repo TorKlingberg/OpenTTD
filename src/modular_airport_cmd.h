@@ -36,6 +36,7 @@ inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this
 
 int UpdateAircraftSpeed(Aircraft *v, uint speed_limit = UINT16_MAX, bool hard_limit = true);
 void AircraftEntersTerminal(Aircraft *v);
+void MaybeServiceAircraftAtHelipad(Aircraft *v, bool at_helipad);
 void PlayAircraftSound(const Vehicle *v);
 Direction GetModularHangarExitDirection(const Station *st, TileIndex tile);
 void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *apc);

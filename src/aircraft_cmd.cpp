@@ -1976,24 +1976,34 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 	LogModularTakeoffRunwayUnavailable(st, v);
 }
 
+/**
+ * Apply the "service helicopters at helipads" setting to an aircraft that has just
+ * parked: on an airport with helipads a helicopter always lands on one, and gets
+ * serviced there rather than having to visit a hangar.
+ *
+ * @param v Aircraft that has just arrived at its parking tile.
+ * @param at_helipad Whether that parking tile is a helipad.
+ */
+void MaybeServiceAircraftAtHelipad(Aircraft *v, bool at_helipad)
+{
+	if (!_settings_game.order.serviceathelipad) return;
+	if (v->subtype != AIR_HELICOPTER || !at_helipad) return;
+
+	/* an excerpt of ServiceAircraft, without the invisibility stuff */
+	v->date_of_last_service = TimerGameEconomy::date;
+	v->date_of_last_service_newgrf = TimerGameCalendar::date;
+	v->breakdowns_since_last_service = 0;
+	v->reliability = v->GetEngine()->reliability;
+	SetWindowDirty(WC_VEHICLE_DETAILS, v->index);
+}
+
 /** At one of the Airport's Terminals */
 static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *apc)
 {
 	/* if we just arrived, execute EnterTerminal first */
 	if (v->previous_pos != v->pos) {
 		AircraftEventHandler_EnterTerminal(v, apc);
-		/* on an airport with helipads, a helicopter will always land there
-		 * and get serviced at the same time - setting */
-		if (_settings_game.order.serviceathelipad) {
-			if (v->subtype == AIR_HELICOPTER && apc->num_helipads > 0) {
-				/* an excerpt of ServiceAircraft, without the invisibility stuff */
-				v->date_of_last_service = TimerGameEconomy::date;
-				v->date_of_last_service_newgrf = TimerGameCalendar::date;
-				v->breakdowns_since_last_service = 0;
-				v->reliability = v->GetEngine()->reliability;
-				SetWindowDirty(WC_VEHICLE_DETAILS, v->index);
-			}
-		}
+		MaybeServiceAircraftAtHelipad(v, apc->num_helipads > 0);
 		return;
 	}
 

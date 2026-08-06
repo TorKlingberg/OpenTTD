@@ -1575,3 +1575,89 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		CHECK(FindModularLandingTarget(st, heli) == far_apron);
 	}
 }
+
+TEST_CASE("ModularAirportHelipadServicing")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	const TileIndex pad = base + TileDiffXY(2, 2);
+	const TileIndex stand = base + TileDiffXY(2, 3);
+	AddModularTile(st, pad, APT_HELIPAD_2, 0);
+	AddModularTile(st, stand, APT_STAND, 0);
+
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID eid = CreateAircraftEngine(EngineID(0), 0);
+	Engine::Get(eid)->reliability = 0x7000;
+
+	const bool saved_setting = _settings_game.order.serviceathelipad;
+
+	/* An aircraft due for service: stale service date, a breakdown on the clock and
+	 * reliability below the engine's. Servicing resets all three. */
+	auto due_for_service = [&](TileIndex tile, uint8_t subtype) -> Aircraft * {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->subtype = subtype;
+		v->engine_type = eid;
+		v->tile = tile;
+		v->date_of_last_service = TimerGameEconomy::Date(0);
+		v->breakdowns_since_last_service = 3;
+		v->reliability = 0x1000;
+		return v;
+	};
+
+	/* What the modular arrival path passes for `at_helipad`: the piece actually
+	 * parked on, not the stock airport type's helipad count. */
+	auto parked_on_helipad = [&](const Aircraft *v) {
+		const ModularAirportTileData *d = st->airport.GetModularTileData(v->tile);
+		return d != nullptr && IsModularHelipadPiece(d->piece_type);
+	};
+
+	SECTION("A helicopter parked on a modular helipad is serviced") {
+		_settings_game.order.serviceathelipad = true;
+		Aircraft *heli = due_for_service(pad, AIR_HELICOPTER);
+		REQUIRE(parked_on_helipad(heli));
+
+		MaybeServiceAircraftAtHelipad(heli, parked_on_helipad(heli));
+
+		CHECK(heli->breakdowns_since_last_service == 0);
+		CHECK(heli->reliability == 0x7000);
+	}
+
+	SECTION("A helicopter parked on a stand is not") {
+		_settings_game.order.serviceathelipad = true;
+		Aircraft *heli = due_for_service(stand, AIR_HELICOPTER);
+		REQUIRE_FALSE(parked_on_helipad(heli));
+
+		MaybeServiceAircraftAtHelipad(heli, parked_on_helipad(heli));
+
+		CHECK(heli->breakdowns_since_last_service == 3);
+		CHECK(heli->reliability == 0x1000);
+	}
+
+	SECTION("A fixed-wing aircraft is never serviced this way") {
+		_settings_game.order.serviceathelipad = true;
+		Aircraft *plane = due_for_service(pad, AIR_AIRCRAFT);
+
+		MaybeServiceAircraftAtHelipad(plane, parked_on_helipad(plane));
+
+		CHECK(plane->breakdowns_since_last_service == 3);
+		CHECK(plane->reliability == 0x1000);
+	}
+
+	SECTION("The setting still switches it off") {
+		_settings_game.order.serviceathelipad = false;
+		Aircraft *heli = due_for_service(pad, AIR_HELICOPTER);
+
+		MaybeServiceAircraftAtHelipad(heli, parked_on_helipad(heli));
+
+		CHECK(heli->breakdowns_since_last_service == 3);
+		CHECK(heli->reliability == 0x1000);
+	}
+
+	_settings_game.order.serviceathelipad = saved_setting;
+}
