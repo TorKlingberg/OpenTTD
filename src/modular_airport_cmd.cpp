@@ -1427,6 +1427,19 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 	bool is_heli = v->subtype == AIR_HELICOPTER;
 	const bool is_large_plane = !is_heli && (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0;
+
+	/* A helicopter heading for a hangar must touch down where it can taxi to one.
+	 * Where no helipad on this airport can reach one — a rooftop heliport has no
+	 * taxiable neighbour at all — landing on a pad strands it: it reaches neither
+	 * the hangar nor a runway, lifts off vertically, and picks the same pad again
+	 * on the next approach, forever. Treat the pads as absent for this trip and
+	 * use the precomputed service tile instead. */
+	if (is_heli && (v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing())) {
+		EnsureModularHeliTilesValid(st);
+		if (st->airport.modular_heli_service_tile != INVALID_TILE) {
+			return st->airport.modular_heli_service_tile;
+		}
+	}
 	int candidates_total = 0;
 	int rejected_not_end = 0;
 	int rejected_mode = 0;

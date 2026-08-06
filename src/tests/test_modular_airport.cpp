@@ -1494,3 +1494,84 @@ TEST_CASE("ModularAirportUnstackParking")
 		CHECK(target == MGT_NONE);
 	}
 }
+
+TEST_CASE("ModularAirportHeliServiceTile")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+
+	/* A rooftop heliport in the corner with no taxiable neighbour, and a hangar
+	 * reached over two apron tiles. `near_apron` touches the hangar and so is never
+	 * a parking candidate (hangars count as buildings); `far_apron` is the one a
+	 * helicopter may land on. The hangar faces +y, so its entrance is `near_apron`. */
+	const TileIndex heliport = base + TileDiffXY(0, 0);
+	const TileIndex hangar = base + TileDiffXY(5, 2);
+	const TileIndex near_apron = base + TileDiffXY(5, 3);
+	const TileIndex far_apron = base + TileDiffXY(5, 4);
+	const TileIndex pad = base + TileDiffXY(5, 5);
+
+	auto build = [&](bool with_heliport, bool with_hangar, bool with_connected_pad) {
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+		if (with_heliport) AddModularTile(st, heliport, APT_HELIPORT, 0);
+		if (with_hangar) AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		AddModularTile(st, near_apron, APT_APRON, 0);
+		AddModularTile(st, far_apron, APT_APRON, 0);
+		if (with_connected_pad) AddModularTile(st, pad, APT_HELIPAD_2, 0);
+		return st;
+	};
+
+	SECTION("A cut-off heliport yields a service tile that reaches the hangar") {
+		Station *st = build(true, true, false);
+		EnsureModularHeliTilesValid(st);
+
+		/* Landing on the heliport for service is a trap: no ground path off it at
+		 * all, so the helicopter lifts off and re-lands forever. */
+		REQUIRE_FALSE(FindAirportGroundPath(st, heliport, hangar, nullptr).found);
+		CHECK(st->airport.modular_heli_service_tile == far_apron);
+		CHECK(FindAirportGroundPath(st, far_apron, hangar, nullptr).found);
+	}
+
+	SECTION("A helipad that reaches the hangar leaves the normal flow alone") {
+		Station *st = build(true, true, true);
+		REQUIRE(FindAirportGroundPath(st, pad, hangar, nullptr).found);
+		EnsureModularHeliTilesValid(st);
+
+		CHECK(st->airport.modular_heli_service_tile == INVALID_TILE);
+	}
+
+	SECTION("No hangar means there is nothing to route to") {
+		Station *st = build(true, false, false);
+		EnsureModularHeliTilesValid(st);
+
+		CHECK(st->airport.modular_heli_service_tile == INVALID_TILE);
+	}
+
+	SECTION("Without helipads the ordinary computed heli tile already applies") {
+		Station *st = build(false, true, false);
+		EnsureModularHeliTilesValid(st);
+
+		CHECK(st->airport.modular_heli_service_tile == INVALID_TILE);
+		CHECK(st->airport.modular_heli_landing_tile != INVALID_TILE);
+	}
+
+	SECTION("A depot-bound helicopter is sent to the service tile, not the heliport") {
+		Station *st = build(true, true, false);
+		SetupAircraftPool();
+
+		Aircraft *heli = CreateAircraft(VehicleID(10));
+		heli->targetairport = st->index;
+		heli->subtype = AIR_HELICOPTER;
+		heli->x_pos = TileX(heliport) * TILE_SIZE;
+		heli->y_pos = TileY(heliport) * TILE_SIZE;
+		/* Keeps NeedsAutomaticServicing() off the Company lookup this bare-shell
+		 * aircraft has no owner for; the depot order below is what drives the test. */
+		heli->vehstatus.Set(VehState::Stopped);
+
+		/* Without a depot order the heliport is the only landing target, as before. */
+		CHECK(FindModularLandingTarget(st, heli) == heliport);
+
+		heli->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::Service);
+		CHECK(FindModularLandingTarget(st, heli) == far_apron);
+	}
+}

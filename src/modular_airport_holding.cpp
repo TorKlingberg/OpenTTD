@@ -21,6 +21,7 @@
 #include "station_map.h"
 #include "debug.h"
 #include "core/fixedpoint_func.hpp"
+#include "airport_ground_pathfinder.h"
 #include "modular_airport_cmd.h"
 
 #include "table/airporttile_ids.h"
@@ -420,6 +421,124 @@ const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
 }
 
 /**
+ * Whether @p data is a tile a helicopter may touch down on and park on: an
+ * apron/taxiway piece that is neither a one-way queueing corridor nor wedged
+ * against a building.
+ *
+ * One-way tiles can never be used as a helicopter pad.  A one-way tile is a
+ * queueing corridor: a helicopter parked on one blocks every aircraft behind
+ * it, and cannot leave except along the corridor's flow direction — which
+ * typically feeds a runway rather than a stand, so a helicopter heading for a
+ * terminal has no legal move at all.  That deadlocks the corridor permanently
+ * rather than merely slowing it down.
+ */
+static bool IsModularHeliParkableApron(const Station *st, const ModularAirportTileData &data)
+{
+	if (!IsApronOrTaxiwayPiece(data.piece_type)) return false;
+	if (data.one_way_taxi) return false;
+
+	/* Check 8-directional adjacency for buildings. */
+	static const TileIndexDiff neighbors[] = {
+		TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1),
+		TileDiffXY(1, 1), TileDiffXY(1, -1), TileDiffXY(-1, 1), TileDiffXY(-1, -1),
+	};
+	for (TileIndexDiff diff : neighbors) {
+		const ModularAirportTileData *nd = st->airport.GetModularTileData(data.tile + diff);
+		if (nd != nullptr && IsModularBuildingPiece(nd->piece_type)) return false;
+	}
+
+	return true;
+}
+
+/**
+ * Cheapest ground-path cost from @p from to any hangar on this airport.
+ * @return The cost, or -1 when no hangar is reachable by ground.
+ */
+static int ModularHangarPathCost(const Station *st, TileIndex from)
+{
+	int best = -1;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularHangarPiece(data.piece_type)) continue;
+		AirportGroundPath path = FindAirportGroundPath(st, from, data.tile, nullptr);
+		if (!path.found) continue;
+		if (best < 0 || path.cost < best) best = path.cost;
+	}
+	return best;
+}
+
+/**
+ * Compute where a helicopter heading for a hangar should touch down when the
+ * airport's helipads cannot get it to one.
+ *
+ * A rooftop heliport (`APT_HELIPORT`) has no taxiable neighbour at all, so a
+ * helicopter that lands on one for servicing is stranded: the terminal handler
+ * finds no reachable hangar, falls through to the departure ladder, finds no
+ * reachable runway either, and lifts off vertically — then picks the very same
+ * pad on the next approach, because helicopters only ever consider helipads.
+ * The result is a helicopter bobbing up and down over the pad forever.
+ *
+ * Where that is the case the pads are simply not usable for this trip, so
+ * precompute a touchdown tile that *can* reach a hangar: the apron closest to
+ * one by ground path, or failing that a stand. Layout-derived like the other
+ * computed heli tiles, so it rides the same dirty flag.
+ *
+ * Stays INVALID_TILE in every ordinary layout — no helipads (the plain computed
+ * heli tile already puts the helicopter on the taxi network), no hangar
+ * (nothing to reach), or at least one pad that reaches a hangar.
+ */
+static void ComputeModularHeliServiceTile(const Station *st)
+{
+	st->airport.modular_heli_service_tile = INVALID_TILE;
+
+	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return;
+
+	bool has_helipad = false;
+	bool has_hangar = false;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (IsModularHelipadPiece(data.piece_type)) has_helipad = true;
+		if (IsModularHangarPiece(data.piece_type)) has_hangar = true;
+	}
+	if (!has_helipad || !has_hangar) return;
+
+	/* One usable pad is enough: the ordinary helipad flow then works, and a
+	 * helicopter that lands on a cut-off pad can retarget to this one. */
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularHelipadPiece(data.piece_type)) continue;
+		if (ModularHangarPathCost(st, data.tile) >= 0) return;
+	}
+
+	TileIndex best_apron = INVALID_TILE;
+	int best_apron_cost = INT_MAX;
+	TileIndex best_stand = INVALID_TILE;
+	int best_stand_cost = INT_MAX;
+
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		/* Aprons before stands: the helicopter taxis straight off to the hangar,
+		 * so it need not consume a parking spot a fixed-wing aircraft wants. */
+		const bool is_stand = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1);
+		if (!is_stand && !IsModularHeliParkableApron(st, data)) continue;
+
+		const int cost = ModularHangarPathCost(st, data.tile);
+		if (cost < 0) continue;
+
+		if (is_stand) {
+			if (cost < best_stand_cost) {
+				best_stand_cost = cost;
+				best_stand = data.tile;
+			}
+		} else if (cost < best_apron_cost) {
+			best_apron_cost = cost;
+			best_apron = data.tile;
+		}
+	}
+
+	st->airport.modular_heli_service_tile = (best_apron != INVALID_TILE) ? best_apron : best_stand;
+	Debug(misc, 2, "[ModAp] Station {} heli service tile: {} (no helipad reaches a hangar)",
+		st->index,
+		st->airport.modular_heli_service_tile == INVALID_TILE ? 0 : st->airport.modular_heli_service_tile.base());
+}
+
+/**
  * Compute the best helicopter landing/takeoff tile for a modular airport without helipads.
  * If any helipad exists, both tiles are set to INVALID_TILE (use real helipads).
  * Otherwise, prefer an apron tile not adjacent to buildings, closest to airport center.
@@ -451,38 +570,12 @@ static void ComputeModularHeliTiles(const Station *st)
 	int center_x = (min_x + max_x) / 2;
 	int center_y = (min_y + max_y) / 2;
 
-	/* Step 2: Find best apron/taxiway tile that is one-way free and not adjacent to
-	 * any building.
-	 *
-	 * One-way tiles can never be used as a helicopter pad.  A one-way tile is a
-	 * queueing corridor: a helicopter parked on one blocks every aircraft behind
-	 * it, and cannot leave except along the corridor's flow direction — which
-	 * typically feeds a runway rather than a stand, so a helicopter heading for a
-	 * terminal has no legal move at all.  That deadlocks the corridor permanently
-	 * rather than merely slowing it down. */
+	/* Step 2: Find best apron/taxiway tile a helicopter may park on. */
 	TileIndex best_apron = INVALID_TILE;
 	int best_apron_dist = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-		if (!IsApronOrTaxiwayPiece(data.piece_type)) continue;
-		if (data.one_way_taxi) continue;
-
-		/* Check 8-directional adjacency for buildings. */
-		bool adjacent_to_building = false;
-		static const TileIndexDiff neighbors[] = {
-			TileDiffXY(1, 0), TileDiffXY(-1, 0), TileDiffXY(0, 1), TileDiffXY(0, -1),
-			TileDiffXY(1, 1), TileDiffXY(1, -1), TileDiffXY(-1, 1), TileDiffXY(-1, -1),
-		};
-		for (TileIndexDiff diff : neighbors) {
-			TileIndex neighbor = data.tile + diff;
-			const ModularAirportTileData *nd = st->airport.GetModularTileData(neighbor);
-			if (nd != nullptr && IsModularBuildingPiece(nd->piece_type)) {
-				adjacent_to_building = true;
-				break;
-			}
-		}
-
-		if (adjacent_to_building) continue;
+		if (!IsModularHeliParkableApron(st, data)) continue;
 
 		int tx = static_cast<int>(TileX(data.tile));
 		int ty = static_cast<int>(TileY(data.tile));
@@ -542,6 +635,7 @@ void EnsureModularHeliTilesValid(const Station *st)
 {
 	if (!st->airport.modular_heli_tiles_dirty) return;
 	ComputeModularHeliTiles(st);
+	ComputeModularHeliServiceTile(st);
 	st->airport.modular_heli_tiles_dirty = false;
 }
 
