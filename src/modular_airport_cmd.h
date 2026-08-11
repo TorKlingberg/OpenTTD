@@ -56,6 +56,13 @@ inline bool ModularAircraftWantsHangar(const Aircraft *v)
 	return v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
 }
 
+/**
+ * Whether @p tile is a helipad from which a hangar can be reached by ground — the only
+ * kind a depot-bound helicopter may land on. Reads the layout-derived cache, so it is
+ * cheap enough for the per-tick landing scan.
+ */
+bool IsModularPadWithHangarAccess(const Station *st, TileIndex tile);
+
 inline bool IsModularRunwayPiece(uint8_t gfx)
 {
 	switch (gfx) {

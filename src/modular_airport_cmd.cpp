@@ -1434,8 +1434,11 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	 * the hangar nor a runway, lifts off vertically, and picks the same pad again
 	 * on the next approach, forever. Treat the pads as absent for this trip and
 	 * use the precomputed service tile instead. */
-	if (is_heli && ModularAircraftWantsHangar(v)) {
+	const bool heli_wants_hangar = is_heli && ModularAircraftWantsHangar(v);
+	if (heli_wants_hangar) {
 		EnsureModularHeliTilesValid(st);
+		/* No pad here reaches a hangar at all: land off the pads entirely. Where some
+		 * pad does, the scan below keeps to those. */
 		if (st->airport.modular_heli_service_tile != INVALID_TILE) {
 			return st->airport.modular_heli_service_tile;
 		}
@@ -1461,6 +1464,13 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 
 		if (is_heli) {
 			if (is_runway) continue; /* Helicopters use helipads only; computed tile handles no-helipad airports */
+			/* A helicopter heading for a hangar may only touch down on a pad it can taxi
+			 * off toward one. Landing on a cut-off pad strands it: no route to the hangar,
+			 * none to a runway either, so it lifts off vertically and scores the very same
+			 * pad best again on the next approach. Filtering here rather than choosing one
+			 * precomputed pad keeps several depot-bound helicopters spread across the
+			 * usable ones. */
+			if (heli_wants_hangar && !IsModularPadWithHangarAccess(st, data.tile)) continue;
 			/* Skip helipads occupied or reserved by another aircraft so multiple helicopters
 			 * spread across free helipads instead of all targeting the same one. */
 			if (HasModularAirportTileReservation(data.tile) && GetModularAirportTileReservationOwner(data.tile) != v->index) continue;

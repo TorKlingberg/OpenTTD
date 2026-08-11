@@ -490,6 +490,13 @@ static int ModularNearestHangarDistance(const Station *st, TileIndex from)
 	return best;
 }
 
+bool IsModularPadWithHangarAccess(const Station *st, TileIndex tile)
+{
+	EnsureModularHeliTilesValid(st);
+	const std::vector<TileIndex> &pads = st->airport.modular_hangar_reachable_pads;
+	return std::find(pads.begin(), pads.end(), tile) != pads.end();
+}
+
 /**
  * Compute where a helicopter heading for a hangar should touch down when the
  * airport's helipads cannot get it to one.
@@ -514,6 +521,7 @@ static int ModularNearestHangarDistance(const Station *st, TileIndex from)
 static void ComputeModularHeliServiceTile(const Station *st)
 {
 	st->airport.modular_heli_service_tile = INVALID_TILE;
+	st->airport.modular_hangar_reachable_pads.clear();
 
 	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return;
 
@@ -525,14 +533,19 @@ static void ComputeModularHeliServiceTile(const Station *st)
 	}
 	if (!has_helipad || !has_hangar) return;
 
-	/* One usable pad and the ordinary helipad flow works, so no service tile is needed.
-	 * Note this leaves mixed layouts — one reachable pad plus one cut-off pad — still
-	 * able to strand a depot-bound helicopter, because the landing-target scan does not
-	 * filter pads on hangar reachability. */
+	/* Record which pads can actually get a helicopter to a hangar. The landing scan
+	 * cannot work this out for itself: it runs once per flying tick per aircraft, and an
+	 * A* per pad there is exactly the cost its cheap euclidean pad scoring exists to
+	 * avoid. Without the filter a depot-bound helicopter can pick a cut-off pad at an
+	 * airport that also has a connected one — it lands, cannot taxi to the hangar, lifts
+	 * off, and scores the same pad best again. */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularHelipadPiece(data.piece_type)) continue;
-		if (IsModularHangarReachableFrom(st, data.tile)) return;
+		if (IsModularHangarReachableFrom(st, data.tile)) st->airport.modular_hangar_reachable_pads.push_back(data.tile);
 	}
+
+	/* At least one usable pad, so the ordinary helipad flow works once filtered. */
+	if (!st->airport.modular_hangar_reachable_pads.empty()) return;
 
 	TileIndex best_apron = INVALID_TILE;
 	int best_apron_dist = INT_MAX;

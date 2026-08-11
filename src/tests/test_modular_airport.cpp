@@ -1595,6 +1595,51 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		CHECK(st->airport.modular_heli_landing_tile != INVALID_TILE);
 	}
 
+	SECTION("A mixed layout keeps depot-bound helicopters off the cut-off pad") {
+		/* One connected pad and one rooftop heliport. The heliport is the trap: a
+		 * depot-bound helicopter that lands there can reach neither the hangar nor a
+		 * runway, so it lifts off and picks it again — forever. */
+		Station *st = build(true, true, false);
+		const TileIndex good_pad = base + TileDiffXY(5, 5);
+		AddModularTile(st, good_pad, APT_HELIPAD_2, 0);
+
+		EnsureModularHeliTilesValid(st);
+		REQUIRE(FindAirportGroundPath(st, good_pad, hangar, nullptr).found);
+		REQUIRE_FALSE(FindAirportGroundPath(st, heliport, hangar, nullptr).found);
+
+		/* Some pad works, so no service tile is needed — the filter carries this case. */
+		CHECK(st->airport.modular_heli_service_tile == INVALID_TILE);
+		CHECK(IsModularPadWithHangarAccess(st, good_pad));
+		CHECK_FALSE(IsModularPadWithHangarAccess(st, heliport));
+
+		SetupAircraftPool();
+		Aircraft *heli = CreateAircraft(VehicleID(10));
+		heli->targetairport = st->index;
+		heli->subtype = AIR_HELICOPTER;
+		heli->vehstatus.Set(VehState::Stopped); // keeps NeedsAutomaticServicing off the Company lookup
+		/* Parked right over the heliport, so distance scoring prefers it outright. */
+		heli->x_pos = TileX(heliport) * TILE_SIZE;
+		heli->y_pos = TileY(heliport) * TILE_SIZE;
+
+		/* An ordinary flight still uses the nearest pad, cut off or not — it only has to
+		 * park there, and the heliport is a legal parking spot. */
+		CHECK(FindModularLandingTarget(st, heli) == heliport);
+
+		/* Heading for the hangar, it must give up the near pad for the reachable one. */
+		heli->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::Service);
+		CHECK(FindModularLandingTarget(st, heli) == good_pad);
+	}
+
+	SECTION("Every pad cut off falls back to the service tile") {
+		/* Same as above but the connected pad is gone, so no pad qualifies and the
+		 * apron fallback takes over. */
+		Station *st = build(true, true, false);
+		EnsureModularHeliTilesValid(st);
+
+		CHECK(st->airport.modular_hangar_reachable_pads.empty());
+		CHECK(st->airport.modular_heli_service_tile == far_apron);
+	}
+
 	SECTION("A depot-bound helicopter is sent to the service tile, not the heliport") {
 		Station *st = build(true, true, false);
 		SetupAircraftPool();
