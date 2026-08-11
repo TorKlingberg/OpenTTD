@@ -42,6 +42,20 @@ Direction GetModularHangarExitDirection(const Station *st, TileIndex tile);
 void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *apc);
 void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc);
 
+/**
+ * Whether this aircraft is heading for a hangar rather than a parking spot: it either
+ * holds a depot order or has become due for automatic servicing.
+ *
+ * Every modular goal-selection site must answer this the same way. They run at different
+ * moments of a single arrival — landing-target choice while still airborne, ground goal at
+ * landing commit, and again once rollout finishes — so a disagreement between them surfaces
+ * as an aircraft that lands somewhere it then refuses to taxi off.
+ */
+inline bool ModularAircraftWantsHangar(const Aircraft *v)
+{
+	return v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
+}
+
 inline bool IsModularRunwayPiece(uint8_t gfx)
 {
 	switch (gfx) {

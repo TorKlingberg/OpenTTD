@@ -2289,8 +2289,14 @@ void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *)
 	v->state = ENDLANDING;
 	AircraftLandAirplane(v);  // maybe crash airplane
 
-	/* check if the aircraft needs to be replaced or renewed and send it to a hangar if needed */
-	if (v->NeedsAutomaticServicing()) {
+	/* check if the aircraft needs to be replaced or renewed and send it to a hangar if needed.
+	 *
+	 * Never for a helicopter. In stock this handler is unreachable for one — helicopters land
+	 * through HELILANDING/AircraftEventHandler_HeliLanding, which has no service check, because
+	 * they are serviced on the helipad instead. Modular landing routes every aircraft through
+	 * here, so without this guard a modular helicopter would be serviced on its pad and then
+	 * dragged to a hangar regardless by the order issued below. */
+	if (v->subtype != AIR_HELICOPTER && v->NeedsAutomaticServicing()) {
 		Backup<CompanyID> cur_company(_current_company, v->owner);
 		Command<CMD_SEND_VEHICLE_TO_DEPOT>::Do(DoCommandFlag::Execute, v->index, DepotCommandFlag::Service, {});
 		cur_company.Restore();
@@ -2314,7 +2320,7 @@ static void AircraftEventHandler_HeliLanding(Aircraft *v, const AirportFTAClass 
  */
 static void HandleModularEndLanding(Aircraft *v, const Station *st)
 {
-	bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
+	const bool wants_depot = ModularAircraftWantsHangar(v);
 	TileIndex goal = INVALID_TILE;
 	uint8_t target = MGT_NONE;
 

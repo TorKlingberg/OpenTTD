@@ -1240,7 +1240,7 @@ TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uin
 	uint8_t tgt = MGT_NONE;
 
 	/* Only look for a hangar if the aircraft actually needs one (depot order / servicing). */
-	bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
+	const bool wants_depot = ModularAircraftWantsHangar(v);
 
 	if (wants_depot) {
 		goal = FindFreeModularHangar(st, v, rollout_tile);
@@ -1434,7 +1434,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	 * the hangar nor a runway, lifts off vertically, and picks the same pad again
 	 * on the next approach, forever. Treat the pads as absent for this trip and
 	 * use the precomputed service tile instead. */
-	if (is_heli && (v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing())) {
+	if (is_heli && ModularAircraftWantsHangar(v)) {
 		EnsureModularHeliTilesValid(st);
 		if (st->airport.modular_heli_service_tile != INVALID_TILE) {
 			return st->airport.modular_heli_service_tile;
@@ -3108,7 +3108,7 @@ void HandleModularGroundArrival(Aircraft *v)
 			/* Completed rollout along runway, now find a terminal */
 			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
 			{
-				bool wants_depot = v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
+				const bool wants_depot = ModularAircraftWantsHangar(v);
 				TileIndex goal = INVALID_TILE;
 				uint8_t target = MGT_NONE;
 
