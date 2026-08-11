@@ -1630,6 +1630,38 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		CHECK(FindModularLandingTarget(st, heli) == good_pad);
 	}
 
+	SECTION("Nothing reaches the hangar at all: still land, do not circle for good") {
+		/* An isolated hangar, so neither a pad nor any parkable apron or stand can reach
+		 * it — both the reachable-pad set and the service tile come up empty. There is
+		 * then nothing to filter down to, and filtering anyway would reject every pad and
+		 * strand the helicopter in the air permanently. Landing is strictly better:
+		 * arriving on a pad services it, which clears the condition that sent it looking
+		 * for a hangar. Reachable because IsModularHeliParkableApron excludes anything
+		 * next to a building and hangars are buildings, so a compact airport with no
+		 * stands has no candidate at all. */
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+		const TileIndex lone_pad = base + TileDiffXY(2, 2);
+		const TileIndex lone_hangar = base + TileDiffXY(8, 8);
+		AddModularTile(st, lone_pad, APT_HELIPAD_2, 0);
+		AddModularTile(st, lone_hangar, APT_DEPOT_SE, 0);
+
+		EnsureModularHeliTilesValid(st);
+		REQUIRE(st->airport.modular_hangar_reachable_pads.empty());
+		REQUIRE(st->airport.modular_heli_service_tile == INVALID_TILE);
+
+		SetupAircraftPool();
+		Aircraft *heli = CreateAircraft(VehicleID(10));
+		heli->targetairport = st->index;
+		heli->subtype = AIR_HELICOPTER;
+		heli->vehstatus.Set(VehState::Stopped);
+		heli->x_pos = TileX(lone_pad) * TILE_SIZE;
+		heli->y_pos = TileY(lone_pad) * TILE_SIZE;
+		heli->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::Service);
+
+		CHECK(FindModularLandingTarget(st, heli) == lone_pad);
+	}
+
 	SECTION("Every pad cut off falls back to the service tile") {
 		/* Same as above but the connected pad is gone, so no pad qualifies and the
 		 * apron fallback takes over. */
