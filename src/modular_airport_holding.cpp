@@ -451,17 +451,41 @@ static bool IsModularHeliParkableApron(const Station *st, const ModularAirportTi
 }
 
 /**
- * Cheapest ground-path cost from @p from to any hangar on this airport.
- * @return The cost, or -1 when no hangar is reachable by ground.
+ * Whether some hangar on this airport can be reached from @p from by ground.
+ *
+ * Answers yes/no only, and probes with update_cache=false, because the path *cost* is
+ * not usable for a layout-derived decision. FindAirportGroundPath consults the saved
+ * crossing-required cache, which live traffic mutates: once a pair is learned, that pair
+ * takes the crossing pass and reports a different cost for an unchanged layout. Ranking
+ * candidates by cost would therefore depend on when the computation happened, and this
+ * cache is recomputed lazily per client, so two clients could pick different tiles.
+ * Reachability is free of that — a hangar goal always falls through to the crossing pass,
+ * so "found" is the same either way. Writing is suppressed for the same reason the
+ * pathfinder's own probe convention suppresses it (see airport_ground_pathfinder.cpp):
+ * a probe must not insert keys into saved state that no aircraft ever asked for.
  */
-static int ModularHangarPathCost(const Station *st, TileIndex from)
+static bool IsModularHangarReachableFrom(const Station *st, TileIndex from)
 {
-	int best = -1;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularHangarPiece(data.piece_type)) continue;
-		AirportGroundPath path = FindAirportGroundPath(st, from, data.tile, nullptr);
-		if (!path.found) continue;
-		if (best < 0 || path.cost < best) best = path.cost;
+		if (FindAirportGroundPath(st, from, data.tile, nullptr, false, false).found) return true;
+	}
+	return false;
+}
+
+/**
+ * Manhattan distance in tiles from @p from to the nearest hangar on this airport.
+ * Pure layout, so it ranks candidates identically on every client and at every moment.
+ * @return The distance, or INT_MAX when the airport has no hangar.
+ */
+static int ModularNearestHangarDistance(const Station *st, TileIndex from)
+{
+	int best = INT_MAX;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (!IsModularHangarPiece(data.piece_type)) continue;
+		const int dist = abs(static_cast<int>(TileX(data.tile)) - static_cast<int>(TileX(from))) +
+		                 abs(static_cast<int>(TileY(data.tile)) - static_cast<int>(TileY(from)));
+		if (dist < best) best = dist;
 	}
 	return best;
 }
@@ -478,9 +502,10 @@ static int ModularHangarPathCost(const Station *st, TileIndex from)
  * The result is a helicopter bobbing up and down over the pad forever.
  *
  * Where that is the case the pads are simply not usable for this trip, so
- * precompute a touchdown tile that *can* reach a hangar: the apron closest to
- * one by ground path, or failing that a stand. Layout-derived like the other
- * computed heli tiles, so it rides the same dirty flag.
+ * precompute a touchdown tile that *can* reach a hangar: the apron nearest one,
+ * or failing that a stand. Layout-derived like the other computed heli tiles,
+ * so it rides the same dirty flag — which means every input must be layout-pure,
+ * see IsModularHangarReachableFrom for the trap there.
  *
  * Stays INVALID_TILE in every ordinary layout — no helipads (the plain computed
  * heli tile already puts the helicopter on the taxi network), no hangar
@@ -500,17 +525,19 @@ static void ComputeModularHeliServiceTile(const Station *st)
 	}
 	if (!has_helipad || !has_hangar) return;
 
-	/* One usable pad is enough: the ordinary helipad flow then works, and a
-	 * helicopter that lands on a cut-off pad can retarget to this one. */
+	/* One usable pad and the ordinary helipad flow works, so no service tile is needed.
+	 * Note this leaves mixed layouts — one reachable pad plus one cut-off pad — still
+	 * able to strand a depot-bound helicopter, because the landing-target scan does not
+	 * filter pads on hangar reachability. */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularHelipadPiece(data.piece_type)) continue;
-		if (ModularHangarPathCost(st, data.tile) >= 0) return;
+		if (IsModularHangarReachableFrom(st, data.tile)) return;
 	}
 
 	TileIndex best_apron = INVALID_TILE;
-	int best_apron_cost = INT_MAX;
+	int best_apron_dist = INT_MAX;
 	TileIndex best_stand = INVALID_TILE;
-	int best_stand_cost = INT_MAX;
+	int best_stand_dist = INT_MAX;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		/* Aprons before stands: the helicopter taxis straight off to the hangar,
@@ -518,16 +545,16 @@ static void ComputeModularHeliServiceTile(const Station *st)
 		const bool is_stand = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1);
 		if (!is_stand && !IsModularHeliParkableApron(st, data)) continue;
 
-		const int cost = ModularHangarPathCost(st, data.tile);
-		if (cost < 0) continue;
+		if (!IsModularHangarReachableFrom(st, data.tile)) continue;
+		const int dist = ModularNearestHangarDistance(st, data.tile);
 
 		if (is_stand) {
-			if (cost < best_stand_cost) {
-				best_stand_cost = cost;
+			if (dist < best_stand_dist) {
+				best_stand_dist = dist;
 				best_stand = data.tile;
 			}
-		} else if (cost < best_apron_cost) {
-			best_apron_cost = cost;
+		} else if (dist < best_apron_dist) {
+			best_apron_dist = dist;
 			best_apron = data.tile;
 		}
 	}

@@ -1532,6 +1532,46 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		CHECK(FindAirportGroundPath(st, far_apron, hangar, nullptr).found);
 	}
 
+	SECTION("The choice is layout-pure: nearest apron wins, crossing cache untouched") {
+		Station *st = build(true, true, false);
+		/* Two more parkable aprons, further from the hangar, so the ranking has
+		 * something to decide. Distances to the hangar at (5,2): far_apron 2, (5,5) 3,
+		 * distant_apron 4. */
+		const TileIndex distant_apron = base + TileDiffXY(5, 6);
+		AddModularTile(st, base + TileDiffXY(5, 5), APT_APRON, 0);
+		AddModularTile(st, distant_apron, APT_APRON, 0);
+
+		ClearModularAirportCrossingPathCache();
+		EnsureModularHeliTilesValid(st);
+		REQUIRE(FindAirportGroundPath(st, distant_apron, hangar, nullptr).found);
+		CHECK(st->airport.modular_heli_service_tile == far_apron);
+
+		/* The probe must not write to the crossing cache. That cache is saved, synced
+		 * state, and this computation runs lazily at a moment each client picks for
+		 * itself — so a probe that inserted keys would mutate shared state off a
+		 * client-local schedule. FindAirportGroundPath writes by default; the fix is
+		 * that this caller opts out. */
+		ClearModularAirportCrossingPathCache();
+		st->airport.MarkLayoutDirty();
+		EnsureModularHeliTilesValid(st);
+		CHECK(_modular_airport_crossing_required_path_cache.empty());
+
+		/* And the answer must not depend on what the cache already learned. A key here
+		 * sends that pair down the crossing pass, which reports a different cost for an
+		 * unchanged layout — ranking on cost would let the winner move. */
+		const auto crossing_key = [](TileIndex start, TileIndex goal) {
+			return (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
+		};
+		_modular_airport_crossing_required_path_cache.push_back(crossing_key(far_apron, hangar));
+		NormalizeModularAirportCrossingPathCache();
+
+		st->airport.MarkLayoutDirty();
+		EnsureModularHeliTilesValid(st);
+		CHECK(st->airport.modular_heli_service_tile == far_apron);
+
+		ClearModularAirportCrossingPathCache();
+	}
+
 	SECTION("A helipad that reaches the hangar leaves the normal flow alone") {
 		Station *st = build(true, true, true);
 		REQUIRE(FindAirportGroundPath(st, pad, hangar, nullptr).found);
