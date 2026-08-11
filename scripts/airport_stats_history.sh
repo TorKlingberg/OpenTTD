@@ -37,10 +37,15 @@ if [[ "${1:-}" == "--current" ]]; then
 	# catastrophic regression, or silently pass against a zero floor.
 	if [[ "${years_counted}" -eq 0 ]]; then
 		echo "error: ${SAVE_FILE} produced no countable [AirportStats] years." >&2
-		echo "       The simulation did not advance. The usual cause is a savegame that was" >&2
-		echo "       paused when it was saved: the tick budget is consumed while the game loop" >&2
-		echo "       does nothing, so the run finishes in seconds with no output." >&2
-		echo "       Load it, unpause, and re-save. Regression fixtures must be unpaused." >&2
+		echo "       Check the 'log:' path printed above before assuming a code regression." >&2
+		echo "       Two causes look identical here:" >&2
+		echo "       1. The savegame was paused when it was saved, so the tick budget is" >&2
+		echo "          consumed while the game loop does nothing and the run finishes in" >&2
+		echo "          seconds with no output. Load it, unpause, and re-save — regression" >&2
+		echo "          fixtures must be unpaused." >&2
+		echo "       2. Something else truncated or overwrote the log mid-run. If the log" >&2
+		echo "          holds lines from another savegame or another -d level, that is this." >&2
+		echo "          Set OPENTTD_REGRESSION_LOG to an unused path and re-run." >&2
 		exit 1
 	fi
 

@@ -15,6 +15,16 @@ SAFETY_DAYS=7
 TOTAL_DAYS=$((YEARS * 365 + EXTRA_MONTH_DAYS + SAFETY_DAYS))
 TOTAL_TICKS=$((TOTAL_DAYS * DAY_TICKS))
 
+# /tmp/openttd.log belongs to the interactive runners (build_and_run*.sh and the lldb
+# workflows), and a game started by one of those holds it open as its stdout for as long as
+# it runs. Truncating that path here does not move the live game's file offset, so the two
+# processes interleave and the [AirportStats] lines this run depends on are overwritten —
+# which surfaces much later as a regression "failure" with no countable years. Keep batch
+# runs on their own path. One log per fixture, overwritten each run, so repeated runs do not
+# accumulate multi-megabyte files in /tmp.
+LOG_FILE="${OPENTTD_REGRESSION_LOG:-/tmp/openttd_regression_$(basename "${SAVE_FILE}" .sav).log}"
+
 scripts/build_and_sign.sh
-./build/openttd -d misc=1 -x -g "${SAVE_FILE}" -s null -m null -v null:ticks="${TOTAL_TICKS}" > /tmp/openttd.log 2>&1
-rg "\[AirportStats\] Year [0-9]+ totals" /tmp/openttd.log || true
+./build/openttd -d misc=1 -x -g "${SAVE_FILE}" -s null -m null -v null:ticks="${TOTAL_TICKS}" > "${LOG_FILE}" 2>&1
+echo "log: ${LOG_FILE}"
+rg "\[AirportStats\] Year [0-9]+ totals" "${LOG_FILE}" || true
