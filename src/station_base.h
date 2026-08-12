@@ -368,6 +368,21 @@ private:
 	std::unique_ptr<GoodsEntryData> data = nullptr; ///< Optional cargo packet and flow data.
 };
 
+struct Airport;
+
+/**
+ * Whether a modular airport's layout contains a hangar piece.
+ *
+ * A modular airport borrows a preset AirportSpec — AT_SMALL when built tile by tile,
+ * the template's type otherwise — so the spec's depot list describes that preset and
+ * not the tiles the player laid down: a lone helipad claims a hangar it does not have.
+ * Every gate that keeps aircraft away from hangarless airports goes through
+ * Airport::HasHangar, so for modular airports that has to read the layout instead.
+ *
+ * Layout-derived and lazily cached, invalidated by Airport::MarkLayoutDirty.
+ */
+bool ModularAirportHasHangar(const Airport &ap);
+
 /** All airport-related information. Only valid if tile != INVALID_TILE. */
 struct Airport : public TileArea {
 	Airport() : TileArea(INVALID_TILE, 0, 0) {}
@@ -388,6 +403,8 @@ struct Airport : public TileArea {
 	mutable TileIndex modular_heli_service_tile = INVALID_TILE; ///< Touchdown tile for a depot-bound helicopter when no helipad can reach a hangar
 	mutable std::vector<TileIndex> modular_hangar_reachable_pads; ///< Helipads from which a hangar is reachable by ground; the only pads a depot-bound helicopter may land on
 	mutable bool modular_heli_tiles_dirty = true; ///< Whether computed heli tiles need recompute
+	mutable bool modular_has_hangar = false; ///< Whether the modular layout holds a hangar piece; only meaningful while !modular_has_hangar_dirty
+	mutable bool modular_has_hangar_dirty = true; ///< Whether modular_has_hangar needs recompute
 	mutable uint8_t modular_catchment_cache = 0; ///< Cached catchment radius for modular airports
 	mutable bool modular_catchment_dirty = true; ///< Whether the modular catchment radius needs recompute
 
@@ -408,6 +425,7 @@ struct Airport : public TileArea {
 		this->modular_holding_loop_dirty = true;
 		this->modular_heli_tiles_dirty = true;
 		this->modular_catchment_dirty = true;
+		this->modular_has_hangar_dirty = true;
 	}
 
 	/**
@@ -435,6 +453,9 @@ struct Airport : public TileArea {
 	/** Check if this airport has at least one hangar. */
 	inline bool HasHangar() const
 	{
+		/* A modular airport's spec is a borrowed preset, so its depot list says nothing
+		 * about what the player built. See ModularAirportHasHangar. */
+		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportHasHangar(*this);
 		return !this->GetSpec()->depots.empty();
 	}
 

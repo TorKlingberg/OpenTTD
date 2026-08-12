@@ -20,6 +20,7 @@
 #include "mock_environment.h"
 #include "../vehicle_base.h"
 #include "../engine_base.h"
+#include "../newgrf_airport.h"
 #include "../cheat_type.h"
 #include "../settings_type.h"
 
@@ -1737,6 +1738,104 @@ TEST_CASE("ModularAirportStaleHeliDescentFlag")
 		CHECK(IsStaleHeliDescentFlag(TERM8, true));
 		CHECK(IsStaleHeliDescentFlag(HELIPAD2, true));
 		CHECK_FALSE(IsStaleHeliDescentFlag(TAKEOFF, true));
+	}
+}
+
+TEST_CASE("ModularAirportHangarPresence")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+	/* Install the real presets: without them AirportSpec::specs is blank, every spec
+	 * looks hangarless, and these checks would pass on the unfixed code too. */
+	AirportSpec::ResetAirports();
+	/* What the tile-by-tile build path stamps on a modular airport. */
+	st->airport.type = AT_SMALL;
+
+	const TileIndex pad = base + TileDiffXY(2, 2);
+	const TileIndex hangar = base + TileDiffXY(2, 3);
+	AddModularTile(st, pad, APT_HELIPAD_2, 0);
+
+	SECTION("A pad-only airport has no hangar, whatever its borrowed preset claims") {
+		/* The preset a modular airport borrows really does carry a hangar. Reading the
+		 * spec instead of the layout is what let a lone helipad advertise one, which sent
+		 * depot-bound helicopters to an airport that could never serve them. */
+		REQUIRE_FALSE(AirportSpec::Get(AT_SMALL)->depots.empty());
+
+		CHECK_FALSE(st->airport.HasHangar());
+	}
+
+	SECTION("A hangar piece is what makes it true") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+
+		CHECK(st->airport.HasHangar());
+	}
+
+	SECTION("Losing the last hangar takes effect at once") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		REQUIRE(st->airport.HasHangar());
+
+		/* What the tile removal path does: drop the tile, then invalidate. The cache is
+		 * layout-derived, so it must ride MarkLayoutDirty like the rest. */
+		st->airport.modular_tile_data->pop_back();
+		st->airport.MarkLayoutDirty();
+
+		CHECK_FALSE(st->airport.HasHangar());
+	}
+
+	SECTION("An airport with no modular data at all has no hangar") {
+		st->airport.modular_tile_data->clear();
+		st->airport.MarkLayoutDirty();
+
+		CHECK_FALSE(st->airport.HasHangar());
+	}
+}
+
+TEST_CASE("ModularAirportWantsHangarNeedsOneToExist")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+	/* See ModularAirportHangarPresence: without the real presets the borrowed spec looks
+	 * hangarless on its own and the pad-only case proves nothing. */
+	AirportSpec::ResetAirports();
+	st->airport.type = AT_SMALL;
+
+	const TileIndex pad = base + TileDiffXY(2, 2);
+	const TileIndex hangar = base + TileDiffXY(2, 3);
+	AddModularTile(st, pad, APT_HELIPAD_2, 0);
+
+	SetupAircraftPool();
+	Aircraft *heli = CreateAircraft(VehicleID(10));
+	heli->subtype = AIR_HELICOPTER;
+	heli->targetairport = st->index;
+	heli->tile = pad;
+	/* No type flag: what "Send aircraft to hangar" issues. */
+	heli->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlags{});
+
+	SECTION("A depot order does not aim at a hangar the airport has not got") {
+		/* Wanting a hangar suppresses helipad and stand selection, so answering yes here
+		 * is what strands the helicopter: it lands, refuses every parking spot, lifts off
+		 * and picks the same airport again. */
+		CHECK_FALSE(ModularAircraftWantsHangar(heli, st));
+	}
+
+	SECTION("The same order does aim at one that exists") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+
+		CHECK(ModularAircraftWantsHangar(heli, st));
+	}
+
+	SECTION("With neither an order nor service due, a hangar is not wanted") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		heli->current_order.MakeDummy();
+		/* NeedsServicing bails on a stopped vehicle before it looks up the company,
+		 * which a bare-shell test aircraft does not have. */
+		heli->vehstatus.Set(VehState::Stopped);
+
+		CHECK_FALSE(ModularAircraftWantsHangar(heli, st));
 	}
 }
 

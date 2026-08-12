@@ -27,6 +27,7 @@
 #include "../roadveh.h"
 #include "../roadveh_cmd.h"
 #include "../train.h"
+#include "../order_func.h"
 #include "../station_base.h"
 #include "../waypoint_base.h"
 #include "../roadstop_base.h"
@@ -3422,6 +3423,19 @@ bool AfterLoadGame()
 	AfterLoadLinkGraphs();
 
 	CheckGroundVehiclesAtCorrectZ();
+
+	/* Restore the invariant that no aircraft holds a hangar order for an airport without
+	 * a hangar. Stock enforces it at every entry point, but a modular airport used to
+	 * claim its borrowed preset's hangar, so orders could be issued for airports that had
+	 * none — leaving the aircraft to land, find nothing it would park on, take off, and
+	 * repeat forever. Deliberately not version-gated: the game can no longer create such
+	 * an order, so this is a cheap invariant check rather than a one-shot migration, and
+	 * it repairs a save whatever wrote it. */
+	for (const Station *st : Station::Iterate()) {
+		if (!st->facilities.Test(StationFacility::Airport)) continue;
+		if (st->airport.HasHangar()) continue;
+		RemoveOrderFromAllVehicles(OT_GOTO_DEPOT, st->index, true);
+	}
 
 	/* Start the scripts. This MUST happen after everything else except
 	 * starting a new company. */

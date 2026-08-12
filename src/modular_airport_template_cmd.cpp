@@ -594,6 +594,11 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 				}
 			}
 		}
+
+		/* Once, on the finished layout. A template overbuilding an existing airport can
+		 * replace its hangar early and lay its own down later in placement_order, so the
+		 * intermediate states say nothing about the result. */
+		CancelModularHangarOrdersIfNoneLeft(st);
 	}
 
 	return total;

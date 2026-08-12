@@ -2320,7 +2320,7 @@ static void AircraftEventHandler_HeliLanding(Aircraft *v, const AirportFTAClass 
  */
 static void HandleModularEndLanding(Aircraft *v, const Station *st)
 {
-	const bool wants_depot = ModularAircraftWantsHangar(v);
+	const bool wants_depot = ModularAircraftWantsHangar(v, st);
 	TileIndex goal = INVALID_TILE;
 	uint8_t target = MGT_NONE;
 

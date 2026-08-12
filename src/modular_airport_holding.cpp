@@ -671,6 +671,31 @@ static void ComputeModularHeliTiles(const Station *st)
 		best_takeoff == INVALID_TILE ? 0 : best_takeoff.base());
 }
 
+/**
+ * Whether a modular airport's layout contains a hangar piece. See the declaration in
+ * station_base.h for why the spec cannot answer this.
+ *
+ * Deliberately takes the Airport rather than the Station: Airport::HasHangar is a hot
+ * inline with no Station to hand, and the answer needs nothing but the tile data.
+ */
+bool ModularAirportHasHangar(const Airport &ap)
+{
+	if (ap.modular_has_hangar_dirty) {
+		bool found = false;
+		if (ap.modular_tile_data != nullptr) {
+			for (const ModularAirportTileData &data : *ap.modular_tile_data) {
+				if (IsModularHangarPiece(data.piece_type)) {
+					found = true;
+					break;
+				}
+			}
+		}
+		ap.modular_has_hangar = found;
+		ap.modular_has_hangar_dirty = false;
+	}
+	return ap.modular_has_hangar;
+}
+
 void EnsureModularHeliTilesValid(const Station *st)
 {
 	if (!st->airport.modular_heli_tiles_dirty) return;

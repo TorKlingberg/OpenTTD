@@ -43,16 +43,25 @@ void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *apc);
 void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc);
 
 /**
- * Whether this aircraft is heading for a hangar rather than a parking spot: it either
- * holds a depot order or has become due for automatic servicing.
+ * Whether this aircraft is heading for a hangar at @p st rather than a parking spot: it
+ * either holds a depot order or has become due for automatic servicing, *and* the airport
+ * actually has a hangar to head for.
  *
  * Every modular goal-selection site must answer this the same way. They run at different
  * moments of a single arrival — landing-target choice while still airborne, ground goal at
  * landing commit, and again once rollout finishes — so a disagreement between them surfaces
  * as an aircraft that lands somewhere it then refuses to taxi off.
+ *
+ * The hangar test is what keeps a serviceable-looking arrival from becoming an infinite
+ * loop. Wanting a hangar suppresses helipad and stand selection, so at an airport with no
+ * hangar the aircraft lands, finds nothing it is willing to park on, leaves by the
+ * departure ladder, and picks the same airport again on the next approach — a helicopter
+ * bobbing over a pad forever. An airport that cannot service it is one it should simply
+ * park at.
  */
-inline bool ModularAircraftWantsHangar(const Aircraft *v)
+inline bool ModularAircraftWantsHangar(const Aircraft *v, const Station *st)
 {
+	if (!st->airport.HasHangar()) return false;
 	return v->current_order.IsType(OT_GOTO_DEPOT) || v->NeedsAutomaticServicing();
 }
 

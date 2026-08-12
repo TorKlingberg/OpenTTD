@@ -28,6 +28,7 @@
 #include "newgrf_airport.h"
 #include "newgrf_airporttiles.h"
 #include "newgrf_debug.h"
+#include "order_func.h"
 #include "station_cmd.h"
 #include "station_map.h"
 #include "timer/timer_game_calendar.h"
@@ -377,6 +378,29 @@ Money GetModularAirportPieceBuildCost(uint8_t piece_type)
 	}
 }
 
+/**
+ * Cancel every aircraft hangar order aimed at @p st once its last hangar is gone.
+ *
+ * Stock does this from UpdateAirplanesOnNewStation, which runs when an airport is rebuilt
+ * as one without a hangar. A modular airport instead loses its hangar a tile at a time, so
+ * the same cleanup has to hang off the tile mutation paths. Without it an order issued
+ * while the hangar still stood keeps sending the aircraft to an airport that can no longer
+ * serve it — it lands, finds no hangar, and leaves again on a loop.
+ *
+ * Call this once per command, on the finished layout — never from inside a per-tile loop.
+ * Building is not monotonic: a template that replaces the old hangar early and lays its own
+ * down later passes through a hangarless moment that says nothing about the result, and
+ * purging there would drop orders the finished airport can still serve. (Removal alone
+ * would be safe, since hangars only ever disappear, but there is no reason to special-case
+ * it.) A no-op while any hangar remains.
+ */
+void CancelModularHangarOrdersIfNoneLeft(const Station *st)
+{
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) return;
+	if (st->airport.HasHangar()) return;
+	RemoveOrderFromAllVehicles(OT_GOTO_DEPOT, st->index, true);
+}
+
 CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 {
 	Station *st = Station::GetByTile(tile);
@@ -489,6 +513,7 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 				}), tile_data_vec.end());
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.MarkLayoutDirty();
+			CancelModularHangarOrdersIfNoneLeft(st);
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 
 			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
@@ -647,6 +672,8 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 		for (StationID sid : affected_stations) {
 			Station *st = Station::GetIfValid(sid);
 			if (st == nullptr) continue;
+			/* An upgrade can have retyped the last hangar into something else. */
+			CancelModularHangarOrdersIfNoneLeft(st);
 			st->AfterStationTileSetChange(true, StationType::Airport);
 			InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
 		}
@@ -986,6 +1013,8 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		BuildModularAirportTile_Apply(tile, gfx, st, nearest, newnoise_level, is_modular_replace, rotation, taxi_dir_mask, one_way_taxi, auto_rotate_runway);
+		/* A replace can have overwritten the last hangar. */
+		CancelModularHangarOrdersIfNoneLeft(st);
 	}
 
 	return cost;
