@@ -1693,6 +1693,53 @@ TEST_CASE("ModularAirportHeliServiceTile")
 	}
 }
 
+TEST_CASE("ModularAirportStaleHeliDescentFlag")
+{
+	/* HelicopterDirectDescent blocks start/stop and autoreplace, so a leftover strands an
+	 * aircraft on the ground. The load repair has to tell a leftover from a live descent
+	 * using state plus airport, because state alone cannot: a stock helicopter takes its
+	 * heading state before it physically descends and keeps it all the way down. */
+
+	SECTION("Grounded at a modular airport, the flag can only be a leftover") {
+		/* Modular touchdown clears the flag, so one still set here predates that. */
+		CHECK(IsStaleHeliDescentFlag(HELIPAD1, true));
+		CHECK(IsStaleHeliDescentFlag(HELIPAD3, true));
+		CHECK(IsStaleHeliDescentFlag(HANGAR, true));
+		CHECK(IsStaleHeliDescentFlag(TERM1, true));
+	}
+
+	SECTION("The same states at a stock airport are a live descent") {
+		/* AircraftEventHandler_HeliEndLanding assigns HELIPAD1/2/3 or HANGAR before the
+		 * HeliLower descent runs, so the flag is real and clearing it would let the game
+		 * start or stop a helicopter hanging in mid-air. */
+		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD1, false));
+		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD2, false));
+		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD3, false));
+		CHECK_FALSE(IsStaleHeliDescentFlag(HANGAR, false));
+	}
+
+	SECTION("Inside the in-flight band the state test already covers it") {
+		for (bool modular : {true, false}) {
+			CHECK_FALSE(IsStaleHeliDescentFlag(TAKEOFF, modular));
+			CHECK_FALSE(IsStaleHeliDescentFlag(HELITAKEOFF, modular));
+			CHECK_FALSE(IsStaleHeliDescentFlag(FLYING, modular));
+			CHECK_FALSE(IsStaleHeliDescentFlag(HELILANDING, modular));
+			CHECK_FALSE(IsStaleHeliDescentFlag(HELIENDLANDING, modular));
+		}
+	}
+
+	SECTION("Both edges of the band are exact") {
+		/* HELIENDLANDING(18) is the last in-band state and TERM7(19) the first out of it,
+		 * so an off-by-one at the top would either strand parked aircraft or clear live
+		 * descents. The lower edge is HELIPAD2(9) against TAKEOFF(10). */
+		CHECK_FALSE(IsStaleHeliDescentFlag(HELIENDLANDING, true));
+		CHECK(IsStaleHeliDescentFlag(TERM7, true));
+		CHECK(IsStaleHeliDescentFlag(TERM8, true));
+		CHECK(IsStaleHeliDescentFlag(HELIPAD2, true));
+		CHECK_FALSE(IsStaleHeliDescentFlag(TAKEOFF, true));
+	}
+}
+
 TEST_CASE("ModularAirportHelipadServicing")
 {
 	Map::Allocate(64, 64);

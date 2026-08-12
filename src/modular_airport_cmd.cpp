@@ -1846,6 +1846,16 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		RecordAirportMovement(v->targetairport, true);
 		v->tile = v->modular_landing_tile;
 
+		/* Down, so no longer descending. CmdStartStopVehicle reads this flag as a second
+		 * "is in flight" condition independent of state, so a helicopter that keeps it
+		 * while parked refuses every manual start and stop, and fails autoreplace — which
+		 * stops and restarts the vehicle around the swap — with "Aircraft is in flight".
+		 * Its orders still run, which is what makes the symptom so confusing. Stock clears
+		 * the flag when the rotors reach full speed in AircraftController's HeliLower;
+		 * touchdown is the modular equivalent moment, and modular landing has no other
+		 * exit that leaves the aircraft on the ground. */
+		v->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
+
 		v->modular_landing_tile = INVALID_TILE;
 
 		AircraftEventHandler_Landing(v, st->airport.GetFTA());

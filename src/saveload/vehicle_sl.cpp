@@ -513,14 +513,22 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 
 					UpdateAircraftCache(Aircraft::From(v), true);
 
-					/* Repair a stale HelicopterDirectDescent. The flag means "descending
-					 * onto its pad right now", and CmdStartStopVehicle reads it as a
-					 * second in-flight condition independent of state — so an aircraft
-					 * parked in a hangar with the flag set can never be started again.
-					 * Saves written before modular tile removal cleared airborne flags
-					 * can carry one from a helicopter teleported mid-descent. */
+					/* Repair a stale HelicopterDirectDescent, which otherwise blocks
+					 * manual start/stop and autoreplace on a grounded aircraft. Saves
+					 * acquire one from a helicopter teleported mid-descent by modular tile
+					 * removal, and — until modular touchdown began clearing it — from
+					 * every helicopter that landed at a modular airport.
+					 *
+					 * The state band alone is not a safe test: a stock helicopter descends
+					 * while already in its heading state, so it holds the flag legitimately
+					 * in the very states a modular-parked one does. See
+					 * IsStaleHeliDescentFlag. */
 					Aircraft *a = Aircraft::From(v);
-					if (a->state == HANGAR) a->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
+					const Station *target = Station::GetIfValid(a->targetairport);
+					const bool target_is_modular = target == nullptr || target->airport.blocks.Test(AirportBlock::Modular);
+					if (IsStaleHeliDescentFlag(a->state, target_is_modular)) {
+						a->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
+					}
 				}
 				break;
 
