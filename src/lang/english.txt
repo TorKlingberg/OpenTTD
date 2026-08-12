@@ -3020,7 +3020,6 @@ STR_STATION_BUILD_AIRPORT_MODULAR_OFF_TOOLTIP                   :{BLACK}Build th
 STR_STATION_BUILD_AIRPORT_MODULAR_ON                            :{BLACK}On
 STR_STATION_BUILD_AIRPORT_MODULAR_ON_TOOLTIP                    :{BLACK}Build the airport as a modular airport that can be edited tile-by-tile
 STR_STATION_BUILD_MODULAR_AIRPORT_CAPTION                       :{WHITE}Modular Airport Builder
-STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP                       :{BLACK}Open modular airport builder
 STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_LABEL                  :{BLACK}Pieces
 STR_STATION_BUILD_MODULAR_AIRPORT_PIECES_TOOLTIP                :{BLACK}Select a modular airport piece
 STR_STATION_BUILD_MODULAR_AIRPORT_PREVIEW_LABEL                 :{BLACK}Preview

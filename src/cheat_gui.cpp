@@ -130,7 +130,6 @@ static int32_t ClickChangeDateCheat(int32_t new_value, int32_t)
 	CalendarEnginesMonthlyLoop();
 	SetWindowDirty(WC_STATUS_BAR, 0);
 	InvalidateWindowClassesData(WC_BUILD_STATION, 0);
-	InvalidateWindowClassesData(WC_BUILD_TOOLBAR, 0); // year-gated tools, e.g. the modular airport builder
 	InvalidateWindowClassesData(WC_BUS_STATION, 0);
 	InvalidateWindowClassesData(WC_TRUCK_STATION, 0);
 	InvalidateWindowClassesData(WC_BUILD_OBJECT, 0);

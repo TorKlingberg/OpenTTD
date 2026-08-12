@@ -281,6 +281,7 @@ public:
 		_show_holding_overlay = this->show_holding_loop;
 		_show_taxi_reservation_overlay = this->show_taxi_reservations;
 		MarkWholeScreenDirty();
+		if (_settings_client.gui.link_terraform_toolbar) ShowTerraformToolbar(this);
 	}
 
 	void StopPlacementFromClosedPicker(uint8_t picker_piece)
@@ -378,6 +379,7 @@ public:
 		if (_thd.window_class == this->window_class && _thd.window_number == this->window_number) {
 			ResetObjectToPlace();
 		}
+		if (_settings_client.gui.link_terraform_toolbar) CloseWindowById(WC_SCEN_LAND_GEN, 0, false);
 		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
 		CloseWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0);
 		CloseWindowByClass(WC_BUILD_DEPOT);
@@ -1081,8 +1083,14 @@ private:
 	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
 	{
 		if (!gui_scope) return;
-		/* The sandbox year cheat invalidates build toolbars rather than ticking the game,
-		 * so re-run the year gating here instead of waiting for OnGameTick. */
+		/* The airport dropdown only offers the builder while these hold; close if they stop
+		 * holding while we are open. Both gates invalidate (WC_BUILD_TOOLBAR, TRANSPORT_AIR):
+		 * the modular_airports setting from its post_cb, aircraft availability from engine.cpp.
+		 * Window::Close() only marks the window for deletion, so closing ourselves here is safe. */
+		if (!_settings_game.station.modular_airports || !CanBuildVehicleInfrastructure(VEH_AIRCRAFT)) {
+			this->Close();
+			return;
+		}
 		this->cached_year = TimerGameCalendar::year;
 		this->UpdateYearGating();
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0) != nullptr);
@@ -2050,6 +2058,8 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 
 void ShowBuildModularAirportWindow()
 {
+	if (!Company::IsValidID(_local_company)) return;
+
 	/* The builder is a construction toolbar in its own right: it replaces any other
 	 * construction toolbar (including a previous instance of itself), and has no parent. */
 	CloseWindowByClass(WC_BUILD_TOOLBAR);
