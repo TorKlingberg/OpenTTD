@@ -12,10 +12,8 @@
 
 /** Widgets of the #BuildAirToolbarWindow class. */
 enum AirportToolbarWidgets : WidgetID {
-	WID_AT_AIRPORT,      ///< Build airport button.
-	WID_AT_DEMOLISH,     ///< Demolish button.
-	WID_AT_MODULAR,      ///< Modular airport builder button (prototype).
-	WID_AT_MODULAR_SEL,  ///< Selection wrapper for modular button in toolbar.
+	WID_AT_AIRPORT,  ///< Build airport button.
+	WID_AT_DEMOLISH, ///< Demolish button.
 };
 
 /** Widgets of the #BuildAirportWindow class. */

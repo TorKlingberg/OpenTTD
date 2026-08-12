@@ -69,7 +69,6 @@ static bool _build_airport_as_modular = false; ///< whether to build stock airpo
 static void ShowBuildAirportPicker(Window *parent);
 
 SpriteID GetCustomAirportSprite(const AirportSpec *as, uint8_t layout);
-static const WindowNumber WN_BUILD_MODULAR_AIRPORT = WindowNumber{TRANSPORT_AIR};
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile)
 {
@@ -134,8 +133,6 @@ struct BuildAirToolbarWindow : Window {
 	{
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
 		if (_settings_client.gui.link_terraform_toolbar) CloseWindowById(WC_SCEN_LAND_GEN, 0, false);
-		CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);  // closes stock picker or modular window, whichever is open
-		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
 		this->Window::Close();
 	}
 
@@ -148,30 +145,15 @@ struct BuildAirToolbarWindow : Window {
 	{
 		if (!gui_scope) return;
 
-		/* Hide/show the modular button based on the setting, and re-layout if changed. */
-		if (this->GetWidget<NWidgetStacked>(WID_AT_MODULAR_SEL)->SetDisplayedPlane(_settings_game.station.modular_airports ? 0 : SZSP_NONE)) {
-			this->ReInit();
-		}
-		if (!_settings_game.station.modular_airports) this->RaiseWidget(WID_AT_MODULAR);
-
 		bool can_build = CanBuildVehicleInfrastructure(VEH_AIRCRAFT);
 		this->SetWidgetDisabledState(WID_AT_AIRPORT, !can_build);
-		if (_settings_game.station.modular_airports) this->SetWidgetDisabledState(WID_AT_MODULAR, !can_build);
 		if (!can_build) {
 			CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
-			CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
-			CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
 
 			/* Show in the tooltip why this button is disabled. */
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
-			if (_settings_game.station.modular_airports) {
-				this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_TOOLBAR_DISABLED_NO_VEHICLE_AVAILABLE);
-			}
 		} else {
 			this->GetWidget<NWidgetCore>(WID_AT_AIRPORT)->SetToolTip(STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP);
-			if (_settings_game.station.modular_airports) {
-				this->GetWidget<NWidgetCore>(WID_AT_MODULAR)->SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP);
-			}
 		}
 	}
 
@@ -179,41 +161,10 @@ struct BuildAirToolbarWindow : Window {
 	{
 		switch (widget) {
 			case WID_AT_AIRPORT:
-				if (this->IsWidgetLowered(WID_AT_AIRPORT)) {
-					/* Toggle off: close stock picker. */
-					SetViewportCatchmentStation(nullptr, true);
-					ResetObjectToPlace();
-					return;
-				}
-				/* Close modular window if open. */
-				if (this->IsWidgetLowered(WID_AT_MODULAR)) {
-					CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
-					this->RaiseWidget(WID_AT_MODULAR);
-				}
 				if (HandlePlacePushButton(this, WID_AT_AIRPORT, SPR_CURSOR_AIRPORT, HT_RECT)) {
 					ShowBuildAirportPicker(this);
 					this->last_user_action = widget;
 				}
-				break;
-
-			case WID_AT_MODULAR:
-				if (this->IsWidgetLowered(WID_AT_MODULAR)) {
-					/* Toggle off: close modular window. */
-					CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
-					this->RaiseWidget(WID_AT_MODULAR);
-					this->SetDirty();
-					return;
-				}
-				/* Close stock picker if open. */
-				if (this->IsWidgetLowered(WID_AT_AIRPORT)) {
-					SetViewportCatchmentStation(nullptr, true);
-					ResetObjectToPlace();
-					this->RaiseWidget(WID_AT_AIRPORT);
-				}
-				this->LowerWidget(WID_AT_MODULAR);
-				this->last_user_action = INVALID_WIDGET;
-				ShowBuildModularAirportWindow(this);
-				this->SetDirty();
 				break;
 
 			case WID_AT_DEMOLISH:
@@ -261,11 +212,10 @@ struct BuildAirToolbarWindow : Window {
 	void OnPlaceObjectAbort() override
 	{
 		if (this->IsWidgetLowered(WID_AT_AIRPORT)) SetViewportCatchmentStation(nullptr, true);
+
 		this->RaiseButtons();
-		ResetSavedTemplateGuiState();
-		if (this->last_user_action == WID_AT_AIRPORT) CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
-		CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
-		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
+
+		CloseWindowById(WC_BUILD_STATION, TRANSPORT_AIR);
 		CloseWindowById(WC_SELECT_STATION, 0);
 	}
 
@@ -296,9 +246,6 @@ static constexpr std::initializer_list<NWidgetPart> _nested_air_toolbar_widgets 
 	EndContainer(),
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_AIRPORT), SetFill(0, 1), SetToolbarMinimalSize(2), SetSpriteTip(SPR_IMG_AIRPORT, STR_TOOLBAR_AIRCRAFT_BUILD_AIRPORT_TOOLTIP),
-		NWidget(NWID_SELECTION, INVALID_COLOUR, WID_AT_MODULAR_SEL),
-			NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_MODULAR), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_AIRPORT, STR_STATION_BUILD_MODULAR_AIRPORT_TOOLTIP),
-		EndContainer(),
 		NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetToolbarSpacerMinimalSize(), SetFill(1, 1), EndContainer(),
 		NWidget(WWT_IMGBTN, COLOUR_DARK_GREEN, WID_AT_DEMOLISH), SetFill(0, 1), SetToolbarMinimalSize(1), SetSpriteTip(SPR_IMG_DYNAMITE, STR_TOOLTIP_DEMOLISH_BUILDINGS_ETC),
 	EndContainer(),
@@ -751,7 +698,6 @@ static WindowDesc _build_airport_desc(
 
 static void ShowBuildAirportPicker(Window *parent)
 {
-	CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
 	new BuildAirportWindow(_build_airport_desc, parent);
 }
 

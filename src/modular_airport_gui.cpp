@@ -362,6 +362,12 @@ public:
 		this->SetDirty();
 	}
 
+	Point OnInitialPosition(int16_t sm_width, [[maybe_unused]] int16_t sm_height, [[maybe_unused]] int window_number) override
+	{
+		/* Place it like the other construction toolbars: under the main toolbar. */
+		return AlignInitialConstructionToolbar(sm_width);
+	}
+
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		_show_runway_direction_overlay = false;
@@ -375,11 +381,6 @@ public:
 		CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
 		CloseWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0);
 		CloseWindowByClass(WC_BUILD_DEPOT);
-		/* Raise the modular button on the airport toolbar. */
-		if (this->parent != nullptr) {
-			this->parent->RaiseWidget(WID_AT_MODULAR);
-			this->parent->SetDirty();
-		}
 		/* Use Window::Close() instead of PickerWindowBase::Close() to avoid
 		 * an unconditional ResetObjectToPlace() — the guard above already
 		 * handles our own cursor, and we must not reset another window's cursor
@@ -1080,6 +1081,10 @@ private:
 	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
 	{
 		if (!gui_scope) return;
+		/* The sandbox year cheat invalidates build toolbars rather than ticking the game,
+		 * so re-run the year gating here instead of waiting for OnGameTick. */
+		this->cached_year = TimerGameCalendar::year;
+		this->UpdateYearGating();
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0) != nullptr);
 		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WC_MODULAR_AIRPORT_INFO_OVERLAY, 0) != nullptr);
 		this->SetDirty();
@@ -1170,7 +1175,7 @@ public:
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		if (this->parent != nullptr &&
-				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_class == WC_BUILD_TOOLBAR &&
 				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
 			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(4);
 		}
@@ -1252,7 +1257,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_hangar
 
 static WindowDesc _build_modular_hangar_picker_desc(
 	WDP_AUTO, {}, 0, 0,
-	WC_BUILD_DEPOT, WC_BUILD_STATION,
+	WC_BUILD_DEPOT, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_hangar_picker_widgets
 );
@@ -1300,7 +1305,7 @@ public:
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		if (this->parent != nullptr &&
-				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_class == WC_BUILD_TOOLBAR &&
 				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
 			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(3);
 		}
@@ -1516,7 +1521,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 
 static WindowDesc _build_modular_cosmetic_picker_desc(
 	WDP_AUTO, {}, 0, 0,
-	WC_BUILD_DEPOT, WC_BUILD_STATION,
+	WC_BUILD_DEPOT, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_cosmetic_picker_widgets
 );
@@ -1555,7 +1560,7 @@ public:
 	void Close([[maybe_unused]] int data = 0) override
 	{
 		if (this->parent != nullptr &&
-				this->parent->window_class == WC_BUILD_STATION &&
+				this->parent->window_class == WC_BUILD_TOOLBAR &&
 				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
 			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(6);
 		}
@@ -1635,7 +1640,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_helipa
 
 static WindowDesc _build_modular_helipad_picker_desc(
 	WDP_AUTO, {}, 0, 0,
-	WC_BUILD_DEPOT, WC_BUILD_STATION,
+	WC_BUILD_DEPOT, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_helipad_picker_widgets
 );
@@ -1766,7 +1771,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_info_o
 
 static WindowDesc _build_modular_info_overlay_desc(
 	WDP_AUTO, {}, 0, 0,
-	WC_MODULAR_AIRPORT_INFO_OVERLAY, WC_BUILD_STATION,
+	WC_MODULAR_AIRPORT_INFO_OVERLAY, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_info_overlay_widgets
 );
@@ -1807,8 +1812,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_airpor
 };
 
 static WindowDesc _build_modular_airport_desc(
-	WDP_AUTO, "build_modular_airport", 0, 0,
-	WC_BUILD_STATION, WC_BUILD_TOOLBAR,
+	WDP_MANUAL, "build_modular_airport", 0, 0,
+	WC_BUILD_TOOLBAR, WC_NONE,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_airport_widgets
 );
@@ -2043,8 +2048,10 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 	}
 }
 
-void ShowBuildModularAirportWindow(Window *parent)
+void ShowBuildModularAirportWindow()
 {
-	CloseWindowById(WC_BUILD_STATION, WN_BUILD_MODULAR_AIRPORT);
-	new BuildModularAirportWindow(_build_modular_airport_desc, parent);
+	/* The builder is a construction toolbar in its own right: it replaces any other
+	 * construction toolbar (including a previous instance of itself), and has no parent. */
+	CloseWindowByClass(WC_BUILD_TOOLBAR);
+	new BuildModularAirportWindow(_build_modular_airport_desc, nullptr);
 }

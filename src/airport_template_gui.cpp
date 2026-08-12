@@ -1059,7 +1059,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_templa
 
 static WindowDesc _build_modular_template_manager_desc(
 	WDP_AUTO, "build_modular_template_manager", 0, 0,
-	WC_AIRPORT_TEMPLATE_MANAGER, WC_BUILD_STATION,
+	WC_AIRPORT_TEMPLATE_MANAGER, WC_BUILD_TOOLBAR,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_template_manager_widgets,
 	&BuildModularTemplateManagerWindow::hotkeys

@@ -55,6 +55,7 @@
 #include "misc_cmd.h"
 #include "league_gui.h"
 #include "league_base.h"
+#include "modular_airport_gui.h"
 #include "timer/timer.h"
 #include "timer/timer_window.h"
 #include "timer/timer_game_calendar.h"
@@ -962,6 +963,12 @@ static CallBackFunction ToolbarBuildAirClick(Window *w)
 {
 	DropDownList list;
 	list.push_back(MakeDropDownListIconItem(SPR_IMG_AIRPORT, PAL_NONE, STR_AIRCRAFT_MENU_AIRPORT_CONSTRUCTION, 0));
+	if (_settings_game.station.modular_airports) {
+		/* The stock airport button disables itself when no aircraft infrastructure may be built;
+		 * the modular builder has no such button, so gate the menu entry instead. */
+		bool masked = !CanBuildVehicleInfrastructure(VEH_AIRCRAFT);
+		list.push_back(MakeDropDownListIconItem(SPR_IMG_AIRPORT, PAL_NONE, STR_AIRCRAFT_MENU_MODULAR_AIRPORT_CONSTRUCTION, 1, masked));
+	}
 	ShowDropDownList(w, std::move(list), 0, WID_TN_AIR, 140, GetToolbarDropDownOptions());
 	return CBF_NONE;
 }
@@ -969,11 +976,16 @@ static CallBackFunction ToolbarBuildAirClick(Window *w)
 /**
  * Handle click on the entry in the Build Air menu.
  *
+ * @param index 0 for the stock airport picker, 1 for the modular airport builder.
  * @return #CBF_NONE
  */
-static CallBackFunction MenuClickBuildAir(int)
+static CallBackFunction MenuClickBuildAir(int index)
 {
-	ShowBuildAirToolbar();
+	if (index == 1) {
+		ShowBuildModularAirportWindow();
+	} else {
+		ShowBuildAirToolbar();
+	}
 	return CBF_NONE;
 }
 

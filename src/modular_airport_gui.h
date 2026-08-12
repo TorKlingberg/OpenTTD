@@ -14,9 +14,7 @@
 #include "viewport_type.h"
 #include "gfx_type.h"
 
-struct Window;
-
-void ShowBuildModularAirportWindow(Window *parent);
+void ShowBuildModularAirportWindow();
 
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;

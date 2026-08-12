@@ -520,6 +520,7 @@ STR_WATERWAYS_MENU_WATERWAYS_CONSTRUCTION                       :Waterways const
 
 # Aairport construction menu
 STR_AIRCRAFT_MENU_AIRPORT_CONSTRUCTION                          :Airport construction
+STR_AIRCRAFT_MENU_MODULAR_AIRPORT_CONSTRUCTION                  :Modular airport construction
 
 # Landscaping menu
 STR_LANDSCAPING_MENU_LANDSCAPING                                :Landscaping
