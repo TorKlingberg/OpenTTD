@@ -421,6 +421,7 @@ bool ModularAirportSupportsLargeAircraft(const Station *st);
  * (no occupancy, no reachability) because CanVehicleUseStation calls them. */
 bool ModularAirportAcceptsPlanes(const Station *st);
 bool ModularAirportAcceptsHelicopters(const Station *st);
+TTDPAirportType GetModularAirportNewGRFType(const Station *st);
 
 struct ModularAirportCapabilityPiece {
 	uint8_t piece_type;

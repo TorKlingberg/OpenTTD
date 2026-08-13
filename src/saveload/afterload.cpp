@@ -2857,6 +2857,28 @@ bool AfterLoadGame()
 		}
 	}
 
+	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_TYPE)) {
+		std::set<StationID> retyped_airports;
+		for (Station *st : Station::Iterate()) {
+			if (!st->facilities.Test(StationFacility::Airport)) continue;
+			if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
+			st->airport.type = AT_MODULAR;
+			st->airport.layout = 0;
+			retyped_airports.insert(st->index);
+		}
+
+		/* From-stock modular airports used to retain the preset FSM position.
+		 * Intercontinental entry positions reach 46, while AT_MODULAR deliberately
+		 * uses the 22-position country FSM. Repair both saved indices in the same
+		 * pass as the retype, before any code can index the new FSM with an old pos. */
+		for (Aircraft *v : Aircraft::Iterate()) {
+			if (!v->IsNormalAircraft()) continue;
+			if (!retyped_airports.contains(v->targetairport)) continue;
+			v->pos = 0;
+			v->previous_pos = 0;
+		}
+	}
+
 	if (IsSavegameVersionBefore(SLV_161)) {
 		/* Before savegame version 161, persistent storages were not stored in a pool. */
 

@@ -10,6 +10,7 @@
 #include "stdafx.h"
 #include "debug.h"
 #include "station_base.h"
+#include "modular_airport_cmd.h"
 #include "waypoint_base.h"
 #include "roadstop_base.h"
 #include "newgrf_badge.h"
@@ -418,7 +419,9 @@ uint32_t Station::GetNewGRFVariable(const ResolverObject &object, uint8_t variab
 		}
 
 		case 0x8A: return this->had_vehicle_of_type;
-		case 0xF1: return (this->airport.tile != INVALID_TILE) ? this->airport.GetSpec()->ttd_airport_type : ATP_TTDP_LARGE;
+		case 0xF1:
+			if (this->airport.tile == INVALID_TILE) return ATP_TTDP_LARGE;
+			return this->airport.blocks.Test(AirportBlock::Modular) ? GetModularAirportNewGRFType(this) : this->airport.GetSpec()->ttd_airport_type;
 		case 0xF2: return (this->truck_stops != nullptr) ? this->truck_stops->status.base() : 0;
 		case 0xF3: return (this->bus_stops != nullptr)   ? this->bus_stops->status.base()   : 0;
 		case 0xF6: return this->airport.blocks.base();
@@ -1035,4 +1038,3 @@ void StationUpdateCachedTriggers(BaseStation *st)
 		st->cached_cargo_triggers |= sm.spec->cargo_triggers;
 	}
 }
-

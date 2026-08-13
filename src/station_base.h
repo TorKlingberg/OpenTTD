@@ -465,7 +465,7 @@ struct Airport : public TileArea {
 	/**
 	 * Get the finite-state machine for this airport or the finite-state machine
 	 * for the dummy airport in case this isn't an airport.
-	 * @pre this->type < NEW_AIRPORT_OFFSET.
+	 * @pre this->type < NUM_AIRPORTS.
 	 * @return The state machine for this airport.
 	 */
 	const AirportFTAClass *GetFTA() const
@@ -476,8 +476,7 @@ struct Airport : public TileArea {
 	/** Check if this airport has at least one hangar. */
 	inline bool HasHangar() const
 	{
-		/* A modular airport's spec is a borrowed preset, so its depot list says nothing
-		 * about what the player built. See ModularAirportHasHangar. */
+		/* A modular airport's hangars are layout data, not type-level data. */
 		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportHasHangar(*this);
 		return !this->GetSpec()->depots.empty();
 	}

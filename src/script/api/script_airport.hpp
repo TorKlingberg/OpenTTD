@@ -34,6 +34,7 @@ public:
 		AT_HELIPORT      = ::AT_HELIPORT,      ///< The heliport.
 		AT_HELISTATION   = ::AT_HELISTATION,   ///< The helistation.
 		AT_HELIDEPOT     = ::AT_HELIDEPOT,     ///< The helidepot.
+		AT_MODULAR       = ::AT_MODULAR,       ///< A layout-derived modular airport.
 		AT_INVALID       = ::AT_INVALID,       ///< Invalid airport.
 	};
 
@@ -58,9 +59,11 @@ public:
 	static bool IsValidAirportType(AirportType type);
 
 	/**
-	 * Can you get information on this airport type? As opposed to
-	 * IsValidAirportType this will return also return true when
-	 * an airport type is no longer buildable.
+	 * Can you get per-type information on this airport type? As opposed to
+	 * IsValidAirportType this also returns true for an airport type that is no
+	 * longer buildable. It returns false for AT_MODULAR because a modular
+	 * airport's size, coverage, noise, maintenance and helipads come from its
+	 * layout rather than from type-level data.
 	 * @param type The AirportType to check.
 	 * @return True if and only if the AirportType is valid.
 	 * @post return value == false -> IsValidAirportType returns false.

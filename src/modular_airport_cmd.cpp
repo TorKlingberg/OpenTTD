@@ -485,6 +485,12 @@ bool ModularAirportAcceptsHelicopters(const Station *st)
 	return st->airport.modular_accepts_helicopters;
 }
 
+TTDPAirportType GetModularAirportNewGRFType(const Station *st)
+{
+	if (!ModularAirportAcceptsPlanes(st) && ModularAirportHasHelipad(st)) return ATP_TTDP_HELIPORT;
+	return ModularAirportSupportsLargeAircraft(st) ? ATP_TTDP_LARGE : ATP_TTDP_SMALL;
+}
+
 static uint GetModularAirportPieceMaintenancePoints(uint8_t piece_type)
 {
 	switch (piece_type) {

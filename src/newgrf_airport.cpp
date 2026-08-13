@@ -119,6 +119,27 @@ void AirportSpec::ResetAirports()
 	auto insert = std::copy(std::begin(_origin_airport_specs), std::end(_origin_airport_specs), std::begin(AirportSpec::specs));
 	std::fill(insert, std::end(AirportSpec::specs), AirportSpec{});
 
+	const AirportSpec &country = AirportSpec::specs[AT_SMALL];
+	AirportSpec &modular = AirportSpec::specs[AT_MODULAR];
+	modular.class_index = APC_SMALL;
+	modular.index = 0;
+	modular.fsm = country.fsm;
+	modular.layouts = country.layouts;
+	modular.depots = {};
+	modular.size_x = country.size_x;
+	modular.size_y = country.size_y;
+	modular.noise_level = 0;
+	modular.catchment = 0;
+	modular.min_year = CalendarTime::MIN_YEAR;
+	modular.max_year = CalendarTime::MAX_YEAR;
+	modular.name = STR_AIRPORT_MODULAR;
+	modular.ttd_airport_type = ATP_TTDP_SMALL;
+	modular.preview_sprite = 0;
+	modular.maintenance_cost = 0;
+	modular.enabled = false;
+	modular.grf_prop = SubstituteGRFFileProps(AT_INVALID);
+	modular.badges.clear();
+
 	_airport_mngr.ResetOverride();
 }
 

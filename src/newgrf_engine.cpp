@@ -21,6 +21,7 @@
 #include "core/container_func.hpp"
 #include "aircraft.h"
 #include "station_base.h"
+#include "modular_airport_cmd.h"
 #include "company_base.h"
 #include "newgrf_railtype.h"
 #include "newgrf_roadtype.h"
@@ -511,7 +512,8 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 				const Station *st = GetTargetAirportIfValid(Aircraft::From(v));
 
 				if (st != nullptr && st->airport.tile != INVALID_TILE) {
-					airporttype = st->airport.GetSpec()->ttd_airport_type;
+					airporttype = st->airport.blocks.Test(AirportBlock::Modular) ?
+							GetModularAirportNewGRFType(st) : st->airport.GetSpec()->ttd_airport_type;
 				}
 
 				return (ClampTo<uint8_t>(altitude) << 8) | airporttype;

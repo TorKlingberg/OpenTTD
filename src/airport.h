@@ -39,9 +39,12 @@ enum AirportTypes : uint8_t {
 	NEW_AIRPORT_OFFSET =  10, ///< Number of the first newgrf airport.
 	NUM_AIRPORTS_PER_GRF = 128, ///< Maximal number of airports per NewGRF.
 	NUM_AIRPORTS       = 128, ///< Maximal number of airports in total.
+	AT_MODULAR         = 127, ///< Layout-derived modular airport; reserved from NewGRF allocation.
 	AT_INVALID         = 254, ///< Invalid airport.
 	AT_DUMMY           = 255, ///< Dummy airport.
 };
+
+static_assert(AT_MODULAR == NUM_AIRPORTS - 1);
 
 static constexpr uint16_t MODULAR_HOLDING_TICKS_PER_WP = 64;
 static constexpr int MODULAR_HOLDING_MARGIN_TILES = 12;

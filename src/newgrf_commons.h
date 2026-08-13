@@ -260,6 +260,10 @@ public:
 
 struct AirportSpec;
 class AirportOverrideManager : public OverrideManagerBase {
+protected:
+	/* Runtime airport ID 127 is reserved for modular airports. Keep the mapping
+	 * array 128 entries wide so AirportSpec::Get(127) remains in bounds. */
+	bool CheckValidNewID(uint16_t testid) override { return testid != 0x7F; }
 public:
 	AirportOverrideManager(uint16_t offset, uint16_t maximum, uint16_t invalid) :
 			OverrideManagerBase(offset, maximum, invalid) {}

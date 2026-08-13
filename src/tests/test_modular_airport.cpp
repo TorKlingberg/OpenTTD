@@ -27,6 +27,7 @@
 #include "../newgrf_airport.h"
 #include "../cheat_type.h"
 #include "../settings_type.h"
+#include "../table/strings.h"
 
 #include "../safeguards.h"
 
@@ -44,6 +45,7 @@ static Station *SetupModularAirport(TileIndex base_tile, uint size_x, uint size_
 	st->airport.h = size_y;
 	st->airport.EnsureModularDataExists();
 	st->airport.blocks.Set(AirportBlock::Modular);
+	st->airport.type = AT_MODULAR;
 	st->facilities |= StationFacility::Airport;
 	st->owner = OWNER_NONE;
 
@@ -162,6 +164,34 @@ TEST_CASE("ModularAirportLayoutAccountingMatchesStockCalibration")
 		CHECK(GetModularAirportMaintenancePointsFromPieces(pieces) == entry.maintenance * 8);
 		CHECK(GetModularAirportNoiseLevelFromPieces(pieces) == entry.noise);
 	}
+}
+
+TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
+{
+	AirportSpec::ResetAirports();
+	_airport_mngr.ResetMapping();
+
+	const AirportSpec *small = AirportSpec::Get(AT_SMALL);
+	const AirportSpec *modular = AirportSpec::Get(AT_MODULAR);
+	CHECK(modular == AirportSpec::GetWithoutOverride(AT_MODULAR));
+	CHECK_FALSE(modular->enabled);
+	CHECK(modular->fsm == small->fsm);
+	CHECK_FALSE(modular->layouts.empty());
+	CHECK(modular->depots.empty());
+	CHECK(modular->size_x == small->size_x);
+	CHECK(modular->size_y == small->size_y);
+	CHECK(modular->noise_level == 0);
+	CHECK(modular->catchment == 0);
+	CHECK(modular->maintenance_cost == 0);
+	CHECK(modular->name == STR_AIRPORT_MODULAR);
+	CHECK(modular->grf_prop.override_id == AT_INVALID);
+
+	for (uint16_t i = 0; i < 117; i++) {
+		CHECK(_airport_mngr.AddEntityID(i + 1, 0xA0000000U + i, AT_SMALL) == NEW_AIRPORT_OFFSET + i);
+	}
+	CHECK(_airport_mngr.AddEntityID(200, 0xB0000000U, AT_SMALL) == AT_INVALID);
+	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
+	_airport_mngr.ResetMapping();
 }
 
 TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
@@ -345,6 +375,7 @@ TEST_CASE("ModularAirportSafety")
 		AddLargeRunway(complete_st, base + TileDiffXY(0, 3), 6);
 		CHECK(GetModularAirportSafetyStatus(complete_st) == MASR_NONE);
 		CHECK(ModularAirportSupportsLargeAircraft(complete_st));
+		CHECK(GetModularAirportNewGRFType(complete_st) == ATP_TTDP_LARGE);
 	}
 }
 
@@ -1926,22 +1957,14 @@ TEST_CASE("ModularAirportHangarPresence")
 	const TileIndex base = TileXY(10, 10);
 	Station *st = SetupModularAirport(base, 10, 10);
 	REQUIRE(st != nullptr);
-	/* Install the real presets: without them AirportSpec::specs is blank, every spec
-	 * looks hangarless, and these checks would pass on the unfixed code too. */
 	AirportSpec::ResetAirports();
-	/* What the tile-by-tile build path stamps on a modular airport. */
-	st->airport.type = AT_SMALL;
+	st->airport.type = AT_MODULAR;
 
 	const TileIndex pad = base + TileDiffXY(2, 2);
 	const TileIndex hangar = base + TileDiffXY(2, 3);
 	AddModularTile(st, pad, APT_HELIPAD_2, 0);
 
-	SECTION("A pad-only airport has no hangar, whatever its borrowed preset claims") {
-		/* The preset a modular airport borrows really does carry a hangar. Reading the
-		 * spec instead of the layout is what let a lone helipad advertise one, which sent
-		 * depot-bound helicopters to an airport that could never serve them. */
-		REQUIRE_FALSE(AirportSpec::Get(AT_SMALL)->depots.empty());
-
+	SECTION("A pad-only airport has no hangar") {
 		CHECK_FALSE(st->airport.HasHangar());
 	}
 
@@ -1977,10 +2000,8 @@ TEST_CASE("ModularAirportWantsHangarNeedsOneToExist")
 	const TileIndex base = TileXY(10, 10);
 	Station *st = SetupModularAirport(base, 10, 10);
 	REQUIRE(st != nullptr);
-	/* See ModularAirportHangarPresence: without the real presets the borrowed spec looks
-	 * hangarless on its own and the pad-only case proves nothing. */
 	AirportSpec::ResetAirports();
-	st->airport.type = AT_SMALL;
+	st->airport.type = AT_MODULAR;
 
 	const TileIndex pad = base + TileDiffXY(2, 2);
 	const TileIndex hangar = base + TileDiffXY(2, 3);
@@ -2110,16 +2131,11 @@ TEST_CASE("ModularAirportHangarAccessors")
 	const TileIndex base = TileXY(10, 10);
 	Station *st = SetupModularAirport(base, 10, 10);
 	REQUIRE(st != nullptr);
-	/* Install the real presets, so the spec a modular airport borrows really does
-	 * carry a hangar table. Without them every spec looks hangarless and these
-	 * checks would pass on the unfixed code too. */
 	AirportSpec::ResetAirports();
-	st->airport.type = AT_SMALL;
+	st->airport.type = AT_MODULAR;
 
-	SECTION("No hangar tiles means no hangars, whatever the borrowed preset says") {
+	SECTION("No hangar tiles means no hangars") {
 		AddModularTile(st, base + TileDiffXY(2, 2), APT_APRON, 0);
-		REQUIRE_FALSE(AirportSpec::Get(AT_SMALL)->depots.empty());
-
 		CHECK(st->airport.GetNumHangars() == 0);
 	}
 
@@ -2205,10 +2221,10 @@ TEST_CASE("ModularAirportAircraftCapability")
 	Station *st = SetupModularAirport(base, 20, 20);
 	REQUIRE(st != nullptr);
 	AirportSpec::ResetAirports();
-	/* AT_SMALL's FTA sets both the Airplanes and Helicopters flags, which is exactly
-	 * why reading it let a pad-only modular airport accept plane orders. */
-	st->airport.type = AT_SMALL;
-	REQUIRE(AirportSpec::Get(AT_SMALL)->fsm->flags.Test(AirportFTAClass::Flag::Airplanes));
+	/* The modular spec deliberately clones the country FSM, whose broad flags are
+	 * still unsuitable for capability decisions; those remain layout-derived. */
+	st->airport.type = AT_MODULAR;
+	REQUIRE(AirportSpec::Get(AT_MODULAR)->fsm->flags.Test(AirportFTAClass::Flag::Airplanes));
 
 	SECTION("A pad-only layout takes helicopters and refuses planes") {
 		AddModularTile(st, base + TileDiffXY(2, 2), APT_HELIPAD_2, 0);
@@ -2216,6 +2232,7 @@ TEST_CASE("ModularAirportAircraftCapability")
 
 		CHECK_FALSE(ModularAirportAcceptsPlanes(st));
 		CHECK(ModularAirportAcceptsHelicopters(st));
+		CHECK(GetModularAirportNewGRFType(st) == ATP_TTDP_HELIPORT);
 	}
 
 	SECTION("A runway layout takes both") {
@@ -2225,6 +2242,7 @@ TEST_CASE("ModularAirportAircraftCapability")
 		CHECK(ModularAirportAcceptsPlanes(st));
 		/* No helipad, but the heli-tile machinery finds somewhere to put one down. */
 		CHECK(ModularAirportAcceptsHelicopters(st));
+		CHECK(GetModularAirportNewGRFType(st) == ATP_TTDP_SMALL);
 	}
 
 	SECTION("A mixed layout takes both") {

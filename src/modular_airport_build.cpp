@@ -54,7 +54,7 @@ static bool IsSmallRunwayFamily(uint8_t piece_type)
 
 static void InitializeNewModularAirport(Airport &airport)
 {
-	airport.type = AT_SMALL;
+	airport.type = AT_MODULAR;
 	airport.layout = 0;
 	airport.blocks = {};
 	airport.blocks.Set(AirportBlock::Modular);
