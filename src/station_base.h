@@ -383,6 +383,22 @@ struct Airport;
  */
 bool ModularAirportHasHangar(const Airport &ap);
 
+/**
+ * The hangar accessors for a modular airport, reading the tiles instead of the
+ * borrowed preset's depot table. Without these a script can see HasHangar() ==
+ * false next to GetNumHangars() == 1, and GetHangarTile(0) hands back a
+ * spec-offset tile that may well be a runway.
+ *
+ * Hangars are numbered by ascending TileIndex, deliberately *not* in
+ * modular_tile_data order: that vector is mutated by erase/push_back, so its
+ * order depends on build history. Hangar numbers reach saved orders, the script
+ * API and multiplayer clients, so they have to depend on the layout alone.
+ */
+uint ModularAirportGetNumHangars(const Airport &ap);
+TileIndex ModularAirportGetHangarTile(const Airport &ap, uint hangar_num);
+uint ModularAirportGetHangarNum(const Airport &ap, TileIndex tile);
+Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile);
+
 /** All airport-related information. Only valid if tile != INVALID_TILE. */
 struct Airport : public TileArea {
 	Airport() : TileArea(INVALID_TILE, 0, 0) {}
@@ -407,6 +423,9 @@ struct Airport : public TileArea {
 	mutable bool modular_has_hangar_dirty = true; ///< Whether modular_has_hangar needs recompute
 	mutable uint8_t modular_catchment_cache = 0; ///< Cached catchment radius for modular airports
 	mutable bool modular_catchment_dirty = true; ///< Whether the modular catchment radius needs recompute
+	mutable bool modular_accepts_planes = false; ///< Whether the layout can take fixed-wing aircraft; only meaningful while !modular_capability_dirty
+	mutable bool modular_accepts_helicopters = false; ///< Whether the layout can take helicopters; only meaningful while !modular_capability_dirty
+	mutable bool modular_capability_dirty = true; ///< Whether the accepts-planes/helicopters answers need recompute
 
 	/**
 	 * Invalidate every cache derived from the modular tile layout. Call this from
@@ -426,6 +445,7 @@ struct Airport : public TileArea {
 		this->modular_heli_tiles_dirty = true;
 		this->modular_catchment_dirty = true;
 		this->modular_has_hangar_dirty = true;
+		this->modular_capability_dirty = true;
 	}
 
 	/**
@@ -491,6 +511,7 @@ struct Airport : public TileArea {
 	 */
 	inline TileIndex GetHangarTile(uint hangar_num) const
 	{
+		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportGetHangarTile(*this, hangar_num);
 		for (const auto &depot : this->GetSpec()->depots) {
 			if (depot.hangar_num == hangar_num) {
 				return this->GetRotatedTileFromOffset(depot.ti);
@@ -507,6 +528,7 @@ struct Airport : public TileArea {
 	 */
 	inline Direction GetHangarExitDirection(TileIndex tile) const
 	{
+		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportGetHangarExitDirection(*this, tile);
 		const AirportSpec *as = this->GetSpec();
 		const HangarTileTable *htt = GetHangarDataByTile(tile);
 		return ChangeDir(htt->dir, DirDifference(this->rotation, as->layouts[0].rotation));
@@ -520,6 +542,7 @@ struct Airport : public TileArea {
 	 */
 	inline uint GetHangarNum(TileIndex tile) const
 	{
+		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportGetHangarNum(*this, tile);
 		const HangarTileTable *htt = GetHangarDataByTile(tile);
 		return htt->hangar_num;
 	}
@@ -527,6 +550,7 @@ struct Airport : public TileArea {
 	/** Get the number of hangars on this airport. */
 	inline uint GetNumHangars() const
 	{
+		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportGetNumHangars(*this);
 		uint num = 0;
 		uint counted = 0;
 		for (const auto &depot : this->GetSpec()->depots) {

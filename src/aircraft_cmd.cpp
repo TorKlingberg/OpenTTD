@@ -217,13 +217,21 @@ static StationID FindNearestHangar(const Aircraft *v)
 	for (const Station *st : Station::Iterate()) {
 		if (st->owner != v->owner || !st->facilities.Test(StationFacility::Airport) || !st->airport.HasHangar()) continue;
 
-		const AirportFTAClass *afc = st->airport.GetFTA();
+		/* Both gates below are spec-derived, and a modular airport's spec is a borrowed
+		 * preset. Left alone they make every hand-built modular airport — AT_SMALL, hence
+		 * ShortStrip — invisible to jets looking for a depot, however long its runways. */
+		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			if (!ModularAirportSupportsLargeAircraft(st) && (avi->subtype & AIR_FAST) && !_cheats.no_jetcrash.value) continue;
+			if (!ModularAirportAcceptsPlanes(st) && (avi->subtype & AIR_CTOL)) continue;
+		} else {
+			const AirportFTAClass *afc = st->airport.GetFTA();
 
-		/* don't crash the plane if we know it can't land at the airport */
-		if (afc->flags.Test(AirportFTAClass::Flag::ShortStrip) && (avi->subtype & AIR_FAST) && !_cheats.no_jetcrash.value) continue;
+			/* don't crash the plane if we know it can't land at the airport */
+			if (afc->flags.Test(AirportFTAClass::Flag::ShortStrip) && (avi->subtype & AIR_FAST) && !_cheats.no_jetcrash.value) continue;
 
-		/* the plane won't land at any helicopter station */
-		if (!afc->flags.Test(AirportFTAClass::Flag::Airplanes) && (avi->subtype & AIR_CTOL)) continue;
+			/* the plane won't land at any helicopter station */
+			if (!afc->flags.Test(AirportFTAClass::Flag::Airplanes) && (avi->subtype & AIR_CTOL)) continue;
+		}
 
 		/* Check if our last and next destinations can be reached from the depot airport. */
 		if (max_range != 0) {
@@ -1688,22 +1696,7 @@ static void AircraftEventHandler_EnterHangar(Aircraft *v, const AirportFTAClass 
 
 Direction GetModularHangarExitDirection(const Station *st, TileIndex tile)
 {
-	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data == nullptr) return DIR_SE; // Fallback
-
-	uint8_t hangar_rot = data->rotation % 4;
-	switch (data->piece_type) {
-		case APT_DEPOT_SW:
-		case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
-		case APT_DEPOT_NW:
-		case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-		case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
-		default: break;
-	}
-
-	/* Keep hangar exit direction consistent with hangar taxi-direction mapping. */
-	return (Direction)((DIR_SE + ((4 - hangar_rot) % 4) * 2) % 8);
+	return ModularAirportGetHangarExitDirection(st->airport, tile);
 }
 
 /**

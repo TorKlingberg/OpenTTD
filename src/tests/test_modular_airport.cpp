@@ -1924,3 +1924,166 @@ TEST_CASE("ModularAirportHelipadServicing")
 
 	_settings_game.order.serviceathelipad = saved_setting;
 }
+
+TEST_CASE("ModularAirportHangarAccessors")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+	/* Install the real presets, so the spec a modular airport borrows really does
+	 * carry a hangar table. Without them every spec looks hangarless and these
+	 * checks would pass on the unfixed code too. */
+	AirportSpec::ResetAirports();
+	st->airport.type = AT_SMALL;
+
+	SECTION("No hangar tiles means no hangars, whatever the borrowed preset says") {
+		AddModularTile(st, base + TileDiffXY(2, 2), APT_APRON, 0);
+		REQUIRE_FALSE(AirportSpec::Get(AT_SMALL)->depots.empty());
+
+		CHECK(st->airport.GetNumHangars() == 0);
+	}
+
+	SECTION("One hangar tile is one hangar, found at its own tile") {
+		const TileIndex hangar = base + TileDiffXY(4, 3);
+		AddModularTile(st, base + TileDiffXY(2, 2), APT_APRON, 0);
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+
+		CHECK(st->airport.GetNumHangars() == 1);
+		CHECK(st->airport.GetHangarTile(0) == hangar);
+		CHECK(st->airport.GetHangarNum(hangar) == 0);
+	}
+
+	SECTION("Several hangars are numbered by ascending TileIndex, not build order") {
+		/* Added deliberately out of order: modular_tile_data keeps build order, and
+		 * hangar numbers reach saved orders and the script API, so they must not. */
+		const TileIndex high = base + TileDiffXY(5, 5);
+		const TileIndex low = base + TileDiffXY(1, 1);
+		const TileIndex mid = base + TileDiffXY(3, 3);
+		AddModularTile(st, high, APT_DEPOT_SE, 0);
+		AddModularTile(st, low, APT_DEPOT_NE, 0);
+		AddModularTile(st, mid, APT_SMALL_DEPOT_SE, 0);
+		REQUIRE(low < mid);
+		REQUIRE(mid < high);
+
+		CHECK(st->airport.GetNumHangars() == 3);
+		CHECK(st->airport.GetHangarTile(0) == low);
+		CHECK(st->airport.GetHangarTile(1) == mid);
+		CHECK(st->airport.GetHangarTile(2) == high);
+		CHECK(st->airport.GetHangarNum(low) == 0);
+		CHECK(st->airport.GetHangarNum(mid) == 1);
+		CHECK(st->airport.GetHangarNum(high) == 2);
+
+		/* Rebuilding the middle hangar moves it to the back of modular_tile_data.
+		 * Its number must not move with it. */
+		const size_t before = st->airport.modular_tile_data->size();
+		std::erase_if(*st->airport.modular_tile_data,
+			[mid](const ModularAirportTileData &d) { return d.tile == mid; });
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.MarkLayoutDirty();
+		AddModularTile(st, mid, APT_DEPOT_SE, 0);
+		REQUIRE(st->airport.modular_tile_data->size() == before);
+		REQUIRE(st->airport.modular_tile_data->back().tile == mid);
+
+		CHECK(st->airport.GetHangarTile(1) == mid);
+		CHECK(st->airport.GetHangarNum(mid) == 1);
+		CHECK(st->airport.GetHangarNum(high) == 2);
+	}
+
+	SECTION("Exit direction comes from the piece, not the preset's layout rotation") {
+		const TileIndex hangar = base + TileDiffXY(4, 3);
+
+		/* Airport::GetHangarExitDirection used to run the preset's depot table through
+		 * the preset's layout rotation. Pin it to the piece-derived answer the modular
+		 * movement code has always used, so the two can no longer disagree. Each
+		 * directional variant fixes its own hangar rotation (0=SE, 1=NE, 2=NW, 3=SW)
+		 * regardless of the rotation stored on the tile. */
+		for (uint8_t piece : {APT_DEPOT_SE, APT_DEPOT_SW, APT_DEPOT_NW, APT_DEPOT_NE,
+				APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_SW, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_NE}) {
+			st->airport.modular_tile_data->clear();
+			st->airport.modular_tile_index_dirty = true;
+			st->airport.MarkLayoutDirty();
+			AddModularTile(st, hangar, piece, 0);
+
+			CHECK(st->airport.GetHangarExitDirection(hangar) == GetModularHangarExitDirection(st, hangar));
+		}
+
+		/* The generic SE piece is the one the stored rotation still speaks for. */
+		st->airport.modular_tile_data->clear();
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.MarkLayoutDirty();
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		CHECK(st->airport.GetHangarExitDirection(hangar) == DIR_SE);
+	}
+}
+
+TEST_CASE("ModularAirportAircraftCapability")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 20, 20);
+	REQUIRE(st != nullptr);
+	AirportSpec::ResetAirports();
+	/* AT_SMALL's FTA sets both the Airplanes and Helicopters flags, which is exactly
+	 * why reading it let a pad-only modular airport accept plane orders. */
+	st->airport.type = AT_SMALL;
+	REQUIRE(AirportSpec::Get(AT_SMALL)->fsm->flags.Test(AirportFTAClass::Flag::Airplanes));
+
+	SECTION("A pad-only layout takes helicopters and refuses planes") {
+		AddModularTile(st, base + TileDiffXY(2, 2), APT_HELIPAD_2, 0);
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+
+		CHECK_FALSE(ModularAirportAcceptsPlanes(st));
+		CHECK(ModularAirportAcceptsHelicopters(st));
+	}
+
+	SECTION("A runway layout takes both") {
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+
+		CHECK(ModularAirportAcceptsPlanes(st));
+		/* No helipad, but the heli-tile machinery finds somewhere to put one down. */
+		CHECK(ModularAirportAcceptsHelicopters(st));
+	}
+
+	SECTION("A mixed layout takes both") {
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_HELIPAD_2, 0);
+
+		CHECK(ModularAirportAcceptsPlanes(st));
+		CHECK(ModularAirportAcceptsHelicopters(st));
+	}
+
+	SECTION("A runway a plane cannot leave from is not enough") {
+		/* Landing but no takeoff: stranding the plane is worse than refusing it. */
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 6, 0, RUF_LANDING | RUF_DIR_LOW);
+		AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+
+		CHECK_FALSE(ModularAirportAcceptsPlanes(st));
+	}
+
+	SECTION("Landing and takeoff may live on different runways") {
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 6, 0, RUF_LANDING | RUF_DIR_LOW);
+		AddLargeRunway(st, base + TileDiffXY(1, 5), 6, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+
+		CHECK(ModularAirportAcceptsPlanes(st));
+	}
+
+	SECTION("A short runway still counts — length is a separate question") {
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 3, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+
+		CHECK(ModularAirportAcceptsPlanes(st));
+		CHECK_FALSE(ModularAirportSupportsLargeAircraft(st));
+	}
+
+	SECTION("The answer follows the runway flags") {
+		AddLargeRunway(st, base + TileDiffXY(1, 1), 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+		REQUIRE(ModularAirportAcceptsPlanes(st));
+
+		for (ModularAirportTileData &d : *st->airport.modular_tile_data) d.runway_flags = 0;
+		st->airport.MarkLayoutDirty();
+
+		CHECK_FALSE(ModularAirportAcceptsPlanes(st));
+	}
+}

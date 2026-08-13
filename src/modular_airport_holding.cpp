@@ -696,6 +696,86 @@ bool ModularAirportHasHangar(const Airport &ap)
 	return ap.modular_has_hangar;
 }
 
+/**
+ * Collect a modular airport's hangar tiles in ascending TileIndex order.
+ * @see the declarations in station_base.h for why the order is TileIndex and not
+ * modular_tile_data order.
+ */
+static std::vector<TileIndex> CollectModularHangarTiles(const Airport &ap)
+{
+	std::vector<TileIndex> tiles;
+	if (ap.modular_tile_data == nullptr) return tiles;
+
+	for (const ModularAirportTileData &data : *ap.modular_tile_data) {
+		if (IsModularHangarPiece(data.piece_type)) tiles.push_back(data.tile);
+	}
+	std::sort(tiles.begin(), tiles.end());
+	return tiles;
+}
+
+/** Number of hangar tiles in a modular airport's layout. */
+uint ModularAirportGetNumHangars(const Airport &ap)
+{
+	if (ap.modular_tile_data == nullptr) return 0;
+
+	uint num = 0;
+	for (const ModularAirportTileData &data : *ap.modular_tile_data) {
+		if (IsModularHangarPiece(data.piece_type)) num++;
+	}
+	return num;
+}
+
+/**
+ * Tile of the given hangar on a modular airport.
+ * @pre hangar_num < ModularAirportGetNumHangars(ap).
+ */
+TileIndex ModularAirportGetHangarTile(const Airport &ap, uint hangar_num)
+{
+	const std::vector<TileIndex> tiles = CollectModularHangarTiles(ap);
+	assert(hangar_num < tiles.size());
+	return tiles[hangar_num];
+}
+
+/**
+ * Hangar number of the hangar at the given tile of a modular airport.
+ * @pre \a tile is a hangar tile of \a ap.
+ */
+uint ModularAirportGetHangarNum(const Airport &ap, TileIndex tile)
+{
+	const std::vector<TileIndex> tiles = CollectModularHangarTiles(ap);
+	const auto it = std::lower_bound(tiles.begin(), tiles.end(), tile);
+	assert(it != tiles.end() && *it == tile);
+	return static_cast<uint>(it - tiles.begin());
+}
+
+/**
+ * Exit direction of the hangar at \a tile, from the piece's own rotation rather
+ * than the preset spec's layout rotation.
+ *
+ * The four directional depot variants (large and small alike) each fix a
+ * direction, so the stored rotation only speaks for the generic SE piece that
+ * has no variant of its own. Keep the 0=SE, 1=NE,
+ * 2=NW, 3=SW convention in step with the hangar taxi-direction mapping.
+ */
+Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile)
+{
+	const ModularAirportTileData *data = ap.GetModularTileData(tile);
+	if (data == nullptr) return DIR_SE; // Fallback
+
+	uint8_t hangar_rot = data->rotation % 4;
+	switch (data->piece_type) {
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
+		case APT_DEPOT_NW:
+		case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
+		default: break;
+	}
+
+	return (Direction)((DIR_SE + ((4 - hangar_rot) % 4) * 2) % 8);
+}
+
 void EnsureModularHeliTilesValid(const Station *st)
 {
 	if (!st->airport.modular_heli_tiles_dirty) return;

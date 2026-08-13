@@ -415,6 +415,13 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
+
+/* What a modular airport's layout can take, replacing the borrowed preset's FTA
+ * flags. Layout-derived, cached behind Airport::MarkLayoutDirty, topological
+ * (no occupancy, no reachability) because CanVehicleUseStation calls them. */
+bool ModularAirportAcceptsPlanes(const Station *st);
+bool ModularAirportAcceptsHelicopters(const Station *st);
+
 uint GetModularAirportCatchmentRadius(const Station *st);
 
 /**

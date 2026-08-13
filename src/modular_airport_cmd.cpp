@@ -410,6 +410,71 @@ bool ModularAirportSupportsLargeAircraft(const Station *st)
 	return GetModularAirportSafetyStatus(st) == MASR_NONE;
 }
 
+/**
+ * Recompute what kinds of aircraft this modular airport's layout can take.
+ *
+ * Deliberately topological: it asks what the player built, not whether a route
+ * through it is free right now. CanVehicleUseStation() runs this from order
+ * validation and from the build-vehicle list, so it must stay cheap and must not
+ * depend on transient occupancy — an airport does not stop accepting planes
+ * because its only stand happens to be taken.
+ *
+ * Planes need a runway they can both arrive on and leave from: at least one
+ * runway flagged RUF_LANDING and at least one flagged RUF_TAKEOFF, possibly the
+ * same one. Both halves are required, because an airport a plane can land on but
+ * never take off from strands it — worse than refusing the order outright.
+ * Runway length is not tested here; that is ModularAirportSupportsLargeAircraft's
+ * separate question, and a short runway is still a runway for a small plane.
+ *
+ * Flags are per-tile but CmdSetRunwayFlags propagates them across a whole
+ * contiguous runway, so scanning every runway tile answers the same question as
+ * walking each runway once, for less work.
+ */
+static void EnsureModularCapabilityValid(const Station *st)
+{
+	if (!st->airport.modular_capability_dirty) return;
+
+	bool has_landing = false;
+	bool has_takeoff = false;
+	if (st->airport.modular_tile_data != nullptr) {
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (!IsModularRunwayPiece(data.piece_type)) continue;
+			if (data.runway_flags & RUF_LANDING) has_landing = true;
+			if (data.runway_flags & RUF_TAKEOFF) has_takeoff = true;
+			if (has_landing && has_takeoff) break;
+		}
+	}
+	st->airport.modular_accepts_planes = has_landing && has_takeoff;
+
+	/* Helicopters take a real helipad, or — on a layout with none — the apron or
+	 * runway end the heli-tile machinery picks out for them. */
+	EnsureModularHeliTilesValid(st);
+	st->airport.modular_accepts_helicopters = ModularAirportHasHelipad(st) ||
+			st->airport.modular_heli_landing_tile != INVALID_TILE;
+
+	st->airport.modular_capability_dirty = false;
+}
+
+/**
+ * Whether a modular airport's layout can take fixed-wing aircraft.
+ * @see EnsureModularCapabilityValid for the definition and why it is topological.
+ */
+bool ModularAirportAcceptsPlanes(const Station *st)
+{
+	EnsureModularCapabilityValid(st);
+	return st->airport.modular_accepts_planes;
+}
+
+/**
+ * Whether a modular airport's layout can take helicopters.
+ * @see EnsureModularCapabilityValid.
+ */
+bool ModularAirportAcceptsHelicopters(const Station *st)
+{
+	EnsureModularCapabilityValid(st);
+	return st->airport.modular_accepts_helicopters;
+}
+
 /** Radar pieces, counted towards the large-hub catchment tier. */
 static bool IsRadarPiece(uint8_t piece_type)
 {
