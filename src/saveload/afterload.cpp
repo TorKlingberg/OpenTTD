@@ -800,39 +800,24 @@ bool AfterLoadGame()
 	}
 
 	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_TYPE)) {
-		std::array<bool, NUM_AIRPORTS> used_airport_ids{};
-		for (const Station *st : Station::Iterate()) {
-			if (!st->facilities.Test(StationFacility::Airport)) continue;
-			if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
-			if (st->airport.type < NUM_AIRPORTS) used_airport_ids[st->airport.type] = true;
-		}
-
 		/* ID 127 was a NewGRF slot before it became AT_MODULAR. Relocate that
 		 * mapping before GfxLoadSprites finalises airport specs, otherwise a GRF
-		 * can overwrite the modular spec. At the old 118-type limit, discard an
-		 * unused mapping to preserve every airport type that exists on the map. */
-		uint16_t relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
-		if (relocated_airport_id == AT_MODULAR && !used_airport_ids[AT_MODULAR]) {
-			_airport_mngr.mappings[AT_MODULAR] = {};
-			relocated_airport_id = AT_INVALID;
-		}
-		if (relocated_airport_id == AT_MODULAR) {
-			for (uint16_t id = NEW_AIRPORT_OFFSET; id < AT_MODULAR; id++) {
-				if (used_airport_ids[id]) continue;
-				_airport_mngr.mappings[id] = {};
-				relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
-				break;
-			}
-		}
-		if (relocated_airport_id == AT_MODULAR ||
-				(relocated_airport_id == AT_INVALID && used_airport_ids[AT_MODULAR])) {
-			SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
-		}
+		 * can overwrite the modular spec. A full mapping table cannot be reduced
+		 * safely: even a mapping with no directly typed station may override a
+		 * stock airport that is in use through its substitute ID. */
+		const uint16_t relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
+		if (relocated_airport_id == AT_MODULAR) SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
 		if (relocated_airport_id != AT_INVALID) {
 			for (Station *st : Station::Iterate()) {
 				if (!st->facilities.Test(StationFacility::Airport)) continue;
 				if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
 				if (st->airport.type == AT_MODULAR) st->airport.type = static_cast<uint8_t>(relocated_airport_id);
+			}
+		} else {
+			for (const Station *st : Station::Iterate()) {
+				if (!st->facilities.Test(StationFacility::Airport)) continue;
+				if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
+				if (st->airport.type == AT_MODULAR) SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
 			}
 		}
 
