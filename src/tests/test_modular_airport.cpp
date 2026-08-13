@@ -20,6 +20,7 @@
 #include "../station_map.h"
 #include "../town.h"
 #include "../airport_ground_pathfinder.h"
+#include "../airport_pathfinder.h"
 #include "mock_environment.h"
 #include "../vehicle_base.h"
 #include "../engine_base.h"
@@ -161,6 +162,92 @@ TEST_CASE("ModularAirportLayoutAccountingMatchesStockCalibration")
 		CHECK(GetModularAirportMaintenancePointsFromPieces(pieces) == entry.maintenance * 8);
 		CHECK(GetModularAirportNoiseLevelFromPieces(pieces) == entry.noise);
 	}
+}
+
+TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
+{
+	Map::Allocate(64, 64);
+	AirportSpec::ResetAirports();
+	const TileIndex base = TileXY(2, 2);
+
+	auto expected_runway_flags = [](uint8_t airport_type, int dy) -> uint8_t {
+		switch (airport_type) {
+			case AT_SMALL: return dy == 2 ? RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW : RUF_DEFAULT;
+			case AT_COMMUTER: return dy == 3 ? RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW : RUF_DEFAULT;
+			case AT_LARGE: return dy == 5 ? RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW : RUF_DEFAULT;
+			case AT_METROPOLITAN:
+				if (dy == 4) return RUF_TAKEOFF | RUF_DIR_LOW;
+				if (dy == 5) return RUF_LANDING | RUF_DIR_LOW;
+				return RUF_DEFAULT;
+			case AT_INTERNATIONAL:
+				if (dy == 0) return RUF_TAKEOFF | RUF_DIR_HIGH;
+				if (dy == 6) return RUF_LANDING | RUF_DIR_LOW;
+				return RUF_DEFAULT;
+			case AT_INTERCON:
+				if (dy == 0) return RUF_LANDING | RUF_DIR_HIGH;
+				if (dy == 1) return RUF_TAKEOFF | RUF_DIR_HIGH;
+				if (dy == 9) return RUF_TAKEOFF | RUF_DIR_LOW;
+				if (dy == 10) return RUF_LANDING | RUF_DIR_LOW;
+				return RUF_DEFAULT;
+			default: return RUF_DEFAULT;
+		}
+	};
+
+	for (uint8_t airport_type : {AT_SMALL, AT_LARGE, AT_HELIPORT, AT_METROPOLITAN,
+			AT_INTERNATIONAL, AT_COMMUTER, AT_HELIDEPOT, AT_INTERCON, AT_HELISTATION}) {
+		CAPTURE(airport_type);
+		const AirportSpec *as = AirportSpec::Get(airport_type);
+		std::vector<ModularAirportTileData> converted = ConvertStockAirportLayoutToModular(airport_type, 0, base);
+		std::vector<ModularAirportTileData> manual;
+
+		for (AirportTileTableIterator iter(as->layouts[0].tiles, base); iter != INVALID_TILE; ++iter) {
+			const TileIndex tile = iter;
+			const int dx = TileX(tile) - TileX(base);
+			const int dy = TileY(tile) - TileY(base);
+			const StationGfx stock_gfx = iter.GetStationGfx();
+			ModularAirportTileData data;
+			data.tile = tile;
+			data.piece_type = ApplyStockTileOverride(airport_type, dx, dy, MapStockGfxToModularPiece(stock_gfx));
+			data.rotation = 0;
+			data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(data.piece_type, 0);
+			data.one_way_taxi = false;
+			data.user_taxi_dir_mask = 0x0F;
+			if (IsModularRunwayPiece(data.piece_type)) data.runway_flags = expected_runway_flags(airport_type, dy);
+			data.edge_block_mask = GetStockFenceEdgeMask(stock_gfx);
+			manual.push_back(data);
+		}
+
+		static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } edges[] = {
+			{0, -1, 0x01, 0x04}, {1, 0, 0x02, 0x08}, {0, 1, 0x04, 0x01}, {-1, 0, 0x08, 0x02},
+		};
+		for (const ModularAirportTileData &data : std::as_const(manual)) {
+			for (const auto &edge : edges) {
+				if ((data.edge_block_mask & edge.bit) == 0) continue;
+				const TileIndex neighbour = TileAddXY(data.tile, edge.dx, edge.dy);
+				auto it = std::find_if(manual.begin(), manual.end(), [=](const ModularAirportTileData &candidate) { return candidate.tile == neighbour; });
+				if (it != manual.end()) it->edge_block_mask |= edge.opposite;
+			}
+		}
+
+		REQUIRE(converted.size() == manual.size());
+		for (size_t i = 0; i < manual.size(); i++) {
+			CHECK(converted[i].tile == manual[i].tile);
+			CHECK(converted[i].piece_type == manual[i].piece_type);
+			CHECK(converted[i].rotation == manual[i].rotation);
+			CHECK(converted[i].auto_taxi_dir_mask == manual[i].auto_taxi_dir_mask);
+			CHECK(converted[i].user_taxi_dir_mask == manual[i].user_taxi_dir_mask);
+			CHECK(converted[i].one_way_taxi == manual[i].one_way_taxi);
+			CHECK(converted[i].runway_flags == manual[i].runway_flags);
+			CHECK(converted[i].edge_block_mask == manual[i].edge_block_mask);
+			if (!IsModularRunwayPiece(converted[i].piece_type)) CHECK(converted[i].runway_flags == RUF_DEFAULT);
+		}
+	}
+}
+
+TEST_CASE("ModularAirportStockConversionRejectsNewGRFAirports")
+{
+	Map::Allocate(64, 64);
+	CHECK(CmdBuildModularAirportFromStock({}, TileXY(2, 2), NEW_AIRPORT_OFFSET, 0, NEW_STATION, false).Failed());
 }
 
 TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")

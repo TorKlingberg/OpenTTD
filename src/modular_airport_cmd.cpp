@@ -434,17 +434,14 @@ static void EnsureModularCapabilityValid(const Station *st)
 {
 	if (!st->airport.modular_capability_dirty) return;
 
-	bool has_landing = false;
-	bool has_takeoff = false;
+	std::vector<ModularAirportCapabilityPiece> pieces;
 	if (st->airport.modular_tile_data != nullptr) {
+		pieces.reserve(st->airport.modular_tile_data->size());
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (!IsModularRunwayPiece(data.piece_type)) continue;
-			if (data.runway_flags & RUF_LANDING) has_landing = true;
-			if (data.runway_flags & RUF_TAKEOFF) has_takeoff = true;
-			if (has_landing && has_takeoff) break;
+			pieces.push_back({data.piece_type, data.runway_flags});
 		}
 	}
-	st->airport.modular_accepts_planes = has_landing && has_takeoff;
+	st->airport.modular_accepts_planes = ModularAirportAcceptsPlanesFromPieces(pieces);
 
 	/* Helicopters take a real helipad, or — on a layout with none — the apron or
 	 * runway end the heli-tile machinery picks out for them. */
@@ -453,6 +450,19 @@ static void EnsureModularCapabilityValid(const Station *st)
 			st->airport.modular_heli_landing_tile != INVALID_TILE;
 
 	st->airport.modular_capability_dirty = false;
+}
+
+bool ModularAirportAcceptsPlanesFromPieces(std::span<const ModularAirportCapabilityPiece> pieces)
+{
+	bool has_landing = false;
+	bool has_takeoff = false;
+	for (const ModularAirportCapabilityPiece &piece : pieces) {
+		if (!IsModularRunwayPiece(piece.piece_type)) continue;
+		if (piece.runway_flags & RUF_LANDING) has_landing = true;
+		if (piece.runway_flags & RUF_TAKEOFF) has_takeoff = true;
+		if (has_landing && has_takeoff) return true;
+	}
+	return false;
 }
 
 /**

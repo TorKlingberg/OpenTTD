@@ -100,7 +100,7 @@ static void PlaceAirport(TileIndex tile)
 	uint8_t layout = _selected_airport_layout;
 
 	auto proc = [=](bool test, StationID to_join) -> bool {
-		if (_build_airport_as_modular) {
+		if (_build_airport_as_modular && airport_type < NEW_AIRPORT_OFFSET) {
 			if (test) {
 				return Command<CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK>()), tile, airport_type, layout, StationID::Invalid(), adjacent).Succeeded();
 			} else {
@@ -304,12 +304,6 @@ public:
 
 		this->SetWidgetLoweredState(WID_AP_BTN_DONTHILIGHT, !_settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_AP_BTN_DOHILIGHT, _settings_client.gui.station_show_coverage);
-		/* Hide modular toggle if the setting is off. */
-		this->GetWidget<NWidgetStacked>(WID_AP_MODULAR_SEL)->SetDisplayedPlane(_settings_game.station.modular_airports ? 0 : SZSP_NONE);
-		if (!_settings_game.station.modular_airports) _build_airport_as_modular = false;
-
-		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
-		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
 		this->OnInvalidateData();
 
 		/* Ensure airport class is valid (changing NewGRFs). */
@@ -333,6 +327,7 @@ public:
 		}
 
 		if (select_first_airport) this->SelectFirstAvailableAirport(true);
+		this->UpdateModularToggle();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
@@ -509,8 +504,20 @@ public:
 		_selected_airport_index = airport_index;
 		_selected_airport_layout = 0;
 
+		this->UpdateModularToggle();
 		this->UpdateSelectSize();
 		this->SetDirty();
+	}
+
+	void UpdateModularToggle()
+	{
+		const bool stock_airport = _selected_airport_index != -1 &&
+				AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index)->GetIndex() < NEW_AIRPORT_OFFSET;
+		const bool show = _settings_game.station.modular_airports && stock_airport;
+		this->GetWidget<NWidgetStacked>(WID_AP_MODULAR_SEL)->SetDisplayedPlane(show ? 0 : SZSP_NONE);
+		if (!show) _build_airport_as_modular = false;
+		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
+		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
 	}
 
 	void UpdateSelectSize()

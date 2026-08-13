@@ -52,6 +52,15 @@ static bool IsSmallRunwayFamily(uint8_t piece_type)
 	}
 }
 
+static void InitializeNewModularAirport(Airport &airport)
+{
+	airport.type = AT_SMALL;
+	airport.layout = 0;
+	airport.blocks = {};
+	airport.blocks.Set(AirportBlock::Modular);
+	airport.rotation = DIR_N;
+}
+
 static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDiff diff, bool horizontal, bool family_large, std::vector<TileIndex> &tiles)
 {
 	TileIndex cur = start;
@@ -862,7 +871,8 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		}
 	}
 
-	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
+	const StationNaming naming = IsModularRunwayPiece(static_cast<uint8_t>(gfx)) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
+	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
 	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
@@ -892,11 +902,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 
 	st->AddFacility(StationFacility::Airport, tile);
 	if (new_facility) {
-		st->airport.type = AT_SMALL;
-		st->airport.layout = 0;
-		st->airport.blocks = {};
-		st->airport.blocks.Set(AirportBlock::Modular);
-		st->airport.rotation = DIR_N;
+		InitializeNewModularAirport(st->airport);
 		Company::Get(st->owner)->infrastructure.airport++;
 	}
 	st->airport.blocks.Set(AirportBlock::Modular);
@@ -1061,6 +1067,95 @@ struct StockRunwayConfig {
 	uint8_t runway_flags;
 };
 
+static constexpr StockRunwayConfig _country_runways[] = {
+	{2, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+};
+static constexpr StockRunwayConfig _commuter_runways[] = {
+	{3, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+};
+static constexpr StockRunwayConfig _city_runways[] = {
+	{5, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
+};
+static constexpr StockRunwayConfig _metropolitan_runways[] = {
+	{4, RUF_TAKEOFF | RUF_DIR_LOW},
+	{5, RUF_LANDING | RUF_DIR_LOW},
+};
+static constexpr StockRunwayConfig _international_runways[] = {
+	{0, RUF_TAKEOFF | RUF_DIR_HIGH},
+	{6, RUF_LANDING | RUF_DIR_LOW},
+};
+static constexpr StockRunwayConfig _intercontinental_runways[] = {
+	{0, RUF_LANDING | RUF_DIR_HIGH},
+	{1, RUF_TAKEOFF | RUF_DIR_HIGH},
+	{9, RUF_TAKEOFF | RUF_DIR_LOW},
+	{10, RUF_LANDING | RUF_DIR_LOW},
+};
+
+static std::span<const StockRunwayConfig> GetStockRunwayConfigs(uint8_t airport_type)
+{
+	switch (airport_type) {
+		case AT_SMALL: return _country_runways;
+		case AT_COMMUTER: return _commuter_runways;
+		case AT_LARGE: return _city_runways;
+		case AT_METROPOLITAN: return _metropolitan_runways;
+		case AT_INTERNATIONAL: return _international_runways;
+		case AT_INTERCON: return _intercontinental_runways;
+		default: return {};
+	}
+}
+
+static uint8_t GetStockModularRunwayFlags(std::span<const StockRunwayConfig> configs, uint8_t piece_type, int dy)
+{
+	if (!IsModularRunwayPiece(piece_type)) return RUF_DEFAULT;
+	for (const StockRunwayConfig &config : configs) {
+		if (config.y_row == dy) return config.runway_flags;
+	}
+	return RUF_DEFAULT;
+}
+
+std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t airport_type, uint8_t layout, TileIndex base_tile)
+{
+	const AirportSpec *as = AirportSpec::Get(airport_type);
+	const std::span<const StockRunwayConfig> runway_configs = GetStockRunwayConfigs(airport_type);
+	std::vector<ModularAirportTileData> result;
+
+	for (AirportTileTableIterator iter(as->layouts[layout].tiles, base_tile); iter != INVALID_TILE; ++iter) {
+		const TileIndex tile = iter;
+		const int dx = TileX(tile) - TileX(base_tile);
+		const int dy = TileY(tile) - TileY(base_tile);
+		const StationGfx stock_gfx = iter.GetStationGfx();
+		const uint8_t piece_type = ApplyStockTileOverride(airport_type, dx, dy, MapStockGfxToModularPiece(stock_gfx));
+
+		ModularAirportTileData data;
+		data.tile = tile;
+		data.piece_type = piece_type;
+		data.rotation = 0;
+		data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(piece_type, 0);
+		data.one_way_taxi = false;
+		data.user_taxi_dir_mask = 0x0F;
+		data.runway_flags = GetStockModularRunwayFlags(runway_configs, piece_type, dy);
+		data.edge_block_mask = GetStockFenceEdgeMask(stock_gfx);
+		result.push_back(data);
+	}
+
+	static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } fence_edges[] = {
+		{  0, -1, 0x01, 0x04},
+		{ +1,  0, 0x02, 0x08},
+		{  0, +1, 0x04, 0x01},
+		{ -1,  0, 0x08, 0x02},
+	};
+	for (const ModularAirportTileData &data : result) {
+		for (const auto &edge : fence_edges) {
+			if ((data.edge_block_mask & edge.bit) == 0) continue;
+			const TileIndex neighbour = TileAddXY(data.tile, edge.dx, edge.dy);
+			auto it = std::find_if(result.begin(), result.end(), [=](const ModularAirportTileData &candidate) { return candidate.tile == neighbour; });
+			if (it != result.end()) it->edge_block_mask |= edge.opposite;
+		}
+	}
+
+	return result;
+}
+
 /**
  * Build a stock airport layout as a modular airport.
  * @param flags Command flags.
@@ -1079,7 +1174,9 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 	if (distant_join && (!_settings_game.station.distant_join_stations || !Station::IsValidID(station_to_join))) return CMD_ERROR;
 
-	if (airport_type >= NUM_AIRPORTS) return CMD_ERROR;
+	/* NewGRF layouts can contain rotated and GRF-defined tiles whose modular
+	 * movement semantics cannot currently be inferred from their FSM. */
+	if (airport_type >= NEW_AIRPORT_OFFSET) return CMD_ERROR;
 
 	CommandCost ret = CheckIfAuthorityAllowsNewStation(tile, flags);
 	if (ret.Failed()) return ret;
@@ -1102,13 +1199,12 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 	CommandCost cost = CheckFlatLandAirport(tile_iter, flags);
 	if (cost.Failed()) return cost;
 
+	const std::vector<ModularAirportTileData> converted_data = ConvertStockAirportLayoutToModular(airport_type, layout, tile);
 	std::vector<ModularAirportNoisePiece> future_noise_pieces;
-	for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
-		const TileIndex cur_tile = iter;
-		const int dx = TileX(cur_tile) - TileX(tile);
-		const int dy = TileY(cur_tile) - TileY(tile);
-		future_noise_pieces.push_back({cur_tile, ApplyStockTileOverride(airport_type, dx, dy,
-				MapStockGfxToModularPiece(iter.GetStationGfx()))});
+	std::vector<ModularAirportCapabilityPiece> future_capability_pieces;
+	for (const ModularAirportTileData &data : converted_data) {
+		future_noise_pieces.push_back({data.tile, data.piece_type});
+		future_capability_pieces.push_back({data.piece_type, data.runway_flags});
 	}
 	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
 
@@ -1140,158 +1236,40 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
-	ret = BuildStationPart(&st, flags, reuse, airport_area, GetAirport(airport_type)->flags.Test(AirportFTAClass::Flag::Airplanes) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT);
+	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
+	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
 	if (st != nullptr && st->airport.tile != INVALID_TILE) {
 		return CommandCost(STR_ERROR_TOO_CLOSE_TO_ANOTHER_AIRPORT);
 	}
 
-	for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
-		TileIndex cur_tile = iter;
-		int dx = TileX(cur_tile) - TileX(tile);
-		int dy = TileY(cur_tile) - TileY(tile);
-		uint8_t piece_type = MapStockGfxToModularPiece(iter.GetStationGfx());
-		piece_type = ApplyStockTileOverride(airport_type, dx, dy, piece_type);
-		cost.AddCost(GetModularAirportPieceBuildCost(piece_type));
-	}
+	for (const ModularAirportTileData &data : converted_data) cost.AddCost(GetModularAirportPieceBuildCost(data.piece_type));
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		/* Per-airport runway configs */
-		static const StockRunwayConfig country_runways[] = {
-			{2, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
-		};
-		static const StockRunwayConfig commuter_runways[] = {
-			{3, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
-		};
-		static const StockRunwayConfig city_runways[] = {
-			{5, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW},
-		};
-		static const StockRunwayConfig metropolitan_runways[] = {
-			{4, RUF_TAKEOFF | RUF_DIR_LOW},
-			{5, RUF_LANDING | RUF_DIR_LOW},
-		};
-		static const StockRunwayConfig international_runways[] = {
-			{0, RUF_TAKEOFF | RUF_DIR_HIGH},
-			{6, RUF_LANDING | RUF_DIR_LOW},
-		};
-		static const StockRunwayConfig intercontinental_runways[] = {
-			{0, RUF_LANDING | RUF_DIR_HIGH},
-			{1, RUF_TAKEOFF | RUF_DIR_HIGH},
-			{9, RUF_TAKEOFF | RUF_DIR_LOW},
-			{10, RUF_LANDING | RUF_DIR_LOW},
-		};
-
-		/* Select configs based on airport type */
-		std::span<const StockRunwayConfig> runway_configs;
-
-		switch (airport_type) {
-			case AT_SMALL:
-				runway_configs = country_runways;
-				break;
-			case AT_COMMUTER:
-				runway_configs = commuter_runways;
-				break;
-			case AT_LARGE:
-				runway_configs = city_runways;
-				break;
-			case AT_METROPOLITAN:
-				runway_configs = metropolitan_runways;
-				break;
-			case AT_INTERNATIONAL:
-				runway_configs = international_runways;
-				break;
-			case AT_INTERCON:
-				runway_configs = intercontinental_runways;
-				break;
-			default:
-				break;
-		}
-
 		st->AddFacility(StationFacility::Airport, tile);
-		st->airport.type = airport_type;
-		st->airport.layout = layout;
-		st->airport.blocks = {};
-		st->airport.blocks.Set(AirportBlock::Modular);
-		st->airport.rotation = rotation;
+		InitializeNewModularAirport(st->airport);
 
 		st->rect.BeforeAddRect(tile, w, h, StationRect::ADD_TRY);
 
 		st->airport.EnsureModularDataExists();
 		auto &tile_data_vec = *st->airport.modular_tile_data;
 
-		for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
-			TileIndex cur_tile = iter;
-			StationGfx stock_gfx = iter.GetStationGfx();
-
-			/* Compute (dx, dy) offset from base tile */
-			int dx = TileX(cur_tile) - TileX(tile);
-			int dy = TileY(cur_tile) - TileY(tile);
-
-			uint8_t piece_type = MapStockGfxToModularPiece(stock_gfx);
-			piece_type = ApplyStockTileOverride(airport_type, dx, dy, piece_type);
-
-			Tile t(cur_tile);
-			MakeAirport(t, st->owner, st->index, piece_type, WaterClass::Invalid);
+		for (const ModularAirportTileData &data : converted_data) {
+			Tile t(data.tile);
+			MakeAirport(t, st->owner, st->index, data.piece_type, WaterClass::Invalid);
 			SetStationTileRandomBits(t, GB(Random(), 0, 4));
-			st->airport.Add(cur_tile);
+			st->airport.Add(data.tile);
 
-			if (AirportTileSpec::Get(GetTranslatedAirportTileID(piece_type))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
-
-			ModularAirportTileData tile_data;
-			tile_data.tile = cur_tile;
-			tile_data.piece_type = piece_type;
-			tile_data.rotation = 0; /* Stock layout 0 = DIR_N; all horizontal runways */
-			tile_data.auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(piece_type, 0);
-			tile_data.one_way_taxi = false;
-			tile_data.user_taxi_dir_mask = 0x0F;
-			tile_data.runway_flags = 0;
-			tile_data.edge_block_mask = GetStockFenceEdgeMask(stock_gfx);
-
-			tile_data_vec.push_back(tile_data);
-		}
-
-		/* Runway flags post-pass: set flags on all runway tiles in the configured Y-rows */
-		for (const auto &rc : runway_configs) {
-			for (auto &td : tile_data_vec) {
-				if (!IsModularRunwayPiece(td.piece_type)) continue;
-				/* Compute Y offset of this tile from base */
-				int td_dy = TileY(td.tile) - TileY(tile);
-				if (td_dy == rc.y_row) {
-					td.runway_flags = rc.runway_flags;
-				}
-			}
-		}
-
-		/* Fence edge mirroring post-pass: for each edge fence, set the opposite
-		 * edge on the neighbor tile so the pathfinder sees fences from both sides. */
-		static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } kFenceEdges[] = {
-			{  0, -1, 0x01, 0x04 }, // NW edge → neighbor's SE
-			{ +1,  0, 0x02, 0x08 }, // SW edge → neighbor's NE
-			{  0, +1, 0x04, 0x01 }, // SE edge → neighbor's NW
-			{ -1,  0, 0x08, 0x02 }, // NE edge → neighbor's SW
-		};
-		for (const auto &td : tile_data_vec) {
-			if (td.edge_block_mask == 0) continue;
-			for (const auto &e : kFenceEdges) {
-				if ((td.edge_block_mask & e.bit) == 0) continue;
-				TileIndex nb = TileAddXY(td.tile, e.dx, e.dy);
-				for (auto &nb_td : tile_data_vec) {
-					if (nb_td.tile == nb) {
-						nb_td.edge_block_mask |= e.opposite;
-						break;
-					}
-				}
-			}
+			if (AirportTileSpec::Get(GetTranslatedAirportTileID(data.piece_type))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+			tile_data_vec.push_back(data);
 		}
 
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.MarkLayoutDirty();
 
 		/* Trigger animations */
-		for (AirportTileTableIterator iter(as->layouts[layout].tiles, tile); iter != INVALID_TILE; ++iter) {
-			TriggerAirportTileAnimation(st, iter, AirportAnimationTrigger::Built);
-		}
+		for (const ModularAirportTileData &data : converted_data) TriggerAirportTileAnimation(st, data.tile, AirportAnimationTrigger::Built);
 
 		UpdateAirplanesOnNewStation(st);
 

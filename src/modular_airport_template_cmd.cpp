@@ -423,18 +423,24 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
 	const ModularAirportNoiseSnapshot noise_before = will_create_airport_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
 	std::vector<ModularAirportNoisePiece> future_noise_pieces;
+	std::vector<ModularAirportCapabilityPiece> future_capability_pieces;
 	if (!will_create_airport_facility && st->airport.modular_tile_data != nullptr) {
 		future_noise_pieces.reserve(st->airport.modular_tile_data->size() + rotated_tiles.size());
+		future_capability_pieces.reserve(st->airport.modular_tile_data->size() + rotated_tiles.size());
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 			if (std::find(abs_tiles.begin(), abs_tiles.end(), data.tile) == abs_tiles.end()) {
 				future_noise_pieces.push_back({data.tile, data.piece_type});
+				future_capability_pieces.push_back({data.piece_type, data.runway_flags});
 			}
 		}
 	}
 	for (size_t i = 0; i < rotated_tiles.size(); i++) {
 		future_noise_pieces.push_back({abs_tiles[i], rotated_tiles[i].piece_type});
+		future_capability_pieces.push_back({rotated_tiles[i].piece_type,
+				IsModularRunwayPiece(rotated_tiles[i].piece_type) ? NormalizeTemplateRunwayFlags(rotated_tiles[i].runway_flags) : RUF_DEFAULT});
 	}
 	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
+	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
 	ret = CheckModularAirportNoiseChange(noise_before, noise_after);
 	if (ret.Failed()) return ret;
 
@@ -460,7 +466,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	}
 
 	/* Test station building/joining. Move execution to after the per-tile validation loop. */
-	ret = BuildStationPart(&st, DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), reuse, union_area, STATIONNAMING_AIRPORT);
+	ret = BuildStationPart(&st, DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), reuse, union_area, naming);
 	if (ret.Failed()) return ret;
 
 	/* Compute placement order. */
@@ -542,7 +548,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	if (flags.Test(DoCommandFlag::Execute)) {
 		const ModularAirportNoiseSnapshot execute_noise_before = st != nullptr ? GetModularAirportNoiseSnapshot(st) : ModularAirportNoiseSnapshot{};
 		/* Apply station creation/joining now that validation is complete. */
-		ret = BuildStationPart(&st, flags, reuse, union_area, STATIONNAMING_AIRPORT);
+		ret = BuildStationPart(&st, flags, reuse, union_area, naming);
 		assert(ret.Succeeded());
 
 		/* Step 3.C: Single execute block. */

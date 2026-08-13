@@ -422,6 +422,13 @@ bool ModularAirportSupportsLargeAircraft(const Station *st);
 bool ModularAirportAcceptsPlanes(const Station *st);
 bool ModularAirportAcceptsHelicopters(const Station *st);
 
+struct ModularAirportCapabilityPiece {
+	uint8_t piece_type;
+	uint8_t runway_flags;
+};
+
+bool ModularAirportAcceptsPlanesFromPieces(std::span<const ModularAirportCapabilityPiece> pieces);
+
 /** Maintenance numerator in eighths of a stock maintenance-cost point. */
 uint GetModularAirportMaintenancePointsFromPieces(std::span<const uint8_t> piece_types);
 uint GetModularAirportMaintenancePoints(const Station *st);
