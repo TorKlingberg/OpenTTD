@@ -73,4 +73,14 @@ inline Money StationMaintenanceCost(uint32_t num)
 
 Money AirportMaintenanceCost(Owner owner);
 
+/**
+ * Scale airport maintenance expressed in eighths of a maintenance factor.
+ * Stock factors use @c maintenance_cost * 8; modular layouts sum fractional
+ * per-piece factors directly.
+ */
+inline Money ScaleAirportMaintenanceCost(Money base, int64_t maintenance_eighth_points)
+{
+	return base * maintenance_eighth_points >> 6;
+}
+
 #endif /* STATION_FUNC_H */

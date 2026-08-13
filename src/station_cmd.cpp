@@ -2549,11 +2549,11 @@ CommandCost CmdRemoveFromRoadWaypoint(DoCommandFlags flags, TileIndex start, Til
  * @param distance minimum distance between town and airport
  * @return the noise that will be generated, according to distance
  */
-uint8_t GetAirportNoiseLevelForDistance(const AirportSpec *as, uint distance)
+uint8_t GetAirportNoiseLevelForDistance(uint8_t noise_level, uint distance)
 {
 	/* 0 cannot be accounted, and 1 is the lowest that can be reduced from town.
 	 * So no need to go any further*/
-	if (as->noise_level < 2) return as->noise_level;
+	if (noise_level < 2) return noise_level;
 
 	/* The steps for measuring noise reduction are based on the "magical" (and arbitrary) 8 base distance
 	 * adding the town_council_tolerance 4 times, as a way to graduate, depending of the tolerance.
@@ -2567,7 +2567,19 @@ uint8_t GetAirportNoiseLevelForDistance(const AirportSpec *as, uint distance)
 
 	/* If the noise reduction equals the airport noise itself, don't give it for free.
 	 * Otherwise, simply reduce the airport's level. */
-	return noise_reduction >= as->noise_level ? 1 : as->noise_level - noise_reduction;
+	return noise_reduction >= noise_level ? 1 : noise_level - noise_reduction;
+}
+
+uint8_t GetAirportNoiseLevelForDistance(const AirportSpec *as, uint distance)
+{
+	return GetAirportNoiseLevelForDistance(as->noise_level, distance);
+}
+
+uint8_t GetAirportNoiseLevelForDistance(const Station *st, uint distance)
+{
+	const uint8_t noise_level = st->airport.blocks.Test(AirportBlock::Modular) ?
+			GetModularAirportNoiseLevel(st) : st->airport.GetSpec()->noise_level;
+	return GetAirportNoiseLevelForDistance(noise_level, distance);
 }
 
 /**
@@ -2638,6 +2650,25 @@ static Town *AirportGetNearestTownFromTiles(TileIterator &&it, uint &mindist)
 	return nearest;
 }
 
+Town *AirportGetNearestTown(std::span<const TileIndex> tiles, uint &mindist)
+{
+	assert(Town::GetNumItems() > 0);
+
+	Town *nearest = nullptr;
+	mindist = UINT_MAX - 1;
+	for (TileIndex tile : tiles) {
+		Town *town = CalcClosestTownFromTile(tile, mindist + 1);
+		if (town == nullptr) continue;
+		const uint dist = DistanceManhattan(town->xy, tile);
+		if (dist == mindist && nearest != nullptr && town->index < nearest->index) nearest = town;
+		if (dist < mindist) {
+			nearest = town;
+			mindist = dist;
+		}
+	}
+	return nearest;
+}
+
 /**
  * Finds the town nearest to given existing airport. Based on minimal manhattan distance to any airport's tile.
  * If two towns have the same distance, town with lower index is returned.
@@ -2661,7 +2692,7 @@ void UpdateAirportsNoise()
 		if (st->airport.tile != INVALID_TILE && st->airport.type != AT_OILRIG) {
 			uint dist;
 			Town *nearest = AirportGetNearestTown(st, dist);
-			if (nearest != nullptr) nearest->noise_reached += GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
+			if (nearest != nullptr) nearest->noise_reached += GetAirportNoiseLevelForDistance(st, dist);
 		}
 	}
 }

@@ -725,11 +725,12 @@ Money AirportMaintenanceCost(Owner owner)
 
 	for (const Station *st : Station::Iterate()) {
 		if (st->owner == owner && st->facilities.Test(StationFacility::Airport)) {
-			total_cost += _price[Price::InfrastructureAirport] * st->airport.GetSpec()->maintenance_cost;
+			const int64_t maintenance_eighth_points = st->airport.blocks.Test(AirportBlock::Modular) ?
+					GetModularAirportMaintenancePoints(st) : st->airport.GetSpec()->maintenance_cost * 8;
+			total_cost += _price[Price::InfrastructureAirport] * maintenance_eighth_points;
 		}
 	}
-	/* 3 bits fraction for the maintenance cost factor. */
-	return total_cost >> 3;
+	return ScaleAirportMaintenanceCost(total_cost, 1);
 }
 
 bool StationCompare::operator() (const Station *lhs, const Station *rhs) const

@@ -58,7 +58,10 @@ struct ModularTemplatePlacementData {
 
 extern Town *AirportGetNearestTown(const struct AirportSpec *as, Direction rotation, TileIndex tile, TileIterator &&it, uint &mindist);
 extern Town *AirportGetNearestTown(const struct Station *st, uint &mindist);
+extern Town *AirportGetNearestTown(std::span<const TileIndex> tiles, uint &mindist);
+extern uint8_t GetAirportNoiseLevelForDistance(uint8_t noise_level, uint distance);
 extern uint8_t GetAirportNoiseLevelForDistance(const struct AirportSpec *as, uint distance);
+extern uint8_t GetAirportNoiseLevelForDistance(const struct Station *st, uint distance);
 
 CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airport_type, uint8_t layout, StationID station_to_join, bool allow_adjacent);
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);

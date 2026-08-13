@@ -16,13 +16,27 @@
 
 struct Town;
 
+struct ModularAirportNoisePiece {
+	TileIndex tile;
+	uint8_t piece_type;
+};
+
+struct ModularAirportNoiseSnapshot {
+	Town *town = nullptr;
+	uint8_t level = 0;
+};
+
 void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal);
 uint8_t GetStockFenceEdgeMask(uint8_t stock_gfx);
 uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx);
 uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type);
 Money GetModularAirportPieceBuildCost(uint8_t piece_type);
-CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, Town *&nearest, uint &newnoise_level, bool &new_facility, bool &is_modular_replace, CommandCost &cost);
-void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, Town *nearest, uint newnoise_level, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);
+ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(const Station *st);
+ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(std::span<const ModularAirportNoisePiece> pieces);
+CommandCost CheckModularAirportNoiseChange(const ModularAirportNoiseSnapshot &before, const ModularAirportNoiseSnapshot &after);
+void ApplyModularAirportNoiseChange(const Station *st, const ModularAirportNoiseSnapshot &before);
+CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, CommandCost &cost, bool check_noise = true);
+void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);
 CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags);
 void CancelModularHangarOrdersIfNoneLeft(const Station *st);
 

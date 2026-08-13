@@ -475,6 +475,209 @@ bool ModularAirportAcceptsHelicopters(const Station *st)
 	return st->airport.modular_accepts_helicopters;
 }
 
+static uint GetModularAirportPieceMaintenancePoints(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_RUNWAY_1:
+		case APT_RUNWAY_2:
+		case APT_RUNWAY_3:
+		case APT_RUNWAY_4:
+		case APT_RUNWAY_5:
+		case APT_RUNWAY_END:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return 8;
+
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return 5;
+
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_E:
+		case APT_APRON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_PIER_NW_NE:
+		case APT_PIER:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return 3;
+
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+			return 27;
+
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return 2;
+
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+			return 22;
+
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return 24;
+
+		case APT_HELIPORT:
+			return 32;
+
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+			return 9;
+
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+			return 2;
+
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+		case APT_TOWER:
+		case APT_TOWER_FENCE_SW:
+		case APT_RADAR_GRASS_FENCE_SW:
+		case APT_RADAR_FENCE_SW:
+		case APT_RADAR_FENCE_NE:
+		case APT_RADIO_TOWER_FENCE_NE:
+			return 4;
+
+		case APT_GRASS_FENCE_NE_FLAG_2:
+		case APT_EMPTY:
+		case APT_EMPTY_FENCE_NE:
+		case APT_GRASS_FENCE_SW:
+		case APT_GRASS_2:
+		case APT_GRASS_1:
+		case APT_GRASS_FENCE_NE_FLAG:
+			return 0;
+
+		default:
+			return 0;
+	}
+}
+
+uint GetModularAirportMaintenancePointsFromPieces(std::span<const uint8_t> piece_types)
+{
+	uint points = 0;
+	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceMaintenancePoints(piece_type);
+	return points;
+}
+
+uint GetModularAirportMaintenancePoints(const Station *st)
+{
+	uint points = 0;
+	if (st->airport.modular_tile_data == nullptr) return points;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		points += GetModularAirportPieceMaintenancePoints(data.piece_type);
+	}
+	return points;
+}
+
+static uint GetModularAirportPieceNoisePoints(uint8_t piece_type)
+{
+	if (IsModularRunwayPiece(piece_type)) return 9;
+
+	switch (piece_type) {
+		case APT_STAND:
+		case APT_STAND_1:
+		case APT_STAND_PIER_NE:
+			return 3;
+
+		case APT_APRON:
+		case APT_APRON_FENCE_NW:
+		case APT_APRON_FENCE_SW:
+		case APT_APRON_W:
+		case APT_APRON_S:
+		case APT_APRON_VER_CROSSING_S:
+		case APT_APRON_HOR_CROSSING_W:
+		case APT_APRON_VER_CROSSING_N:
+		case APT_APRON_HOR_CROSSING_E:
+		case APT_APRON_E:
+		case APT_APRON_N:
+		case APT_APRON_HOR:
+		case APT_APRON_N_FENCE_SW:
+		case APT_PIER_NW_NE:
+		case APT_PIER:
+		case APT_APRON_FENCE_NE:
+		case APT_APRON_FENCE_NE_SW:
+		case APT_APRON_FENCE_SE_SW:
+		case APT_APRON_FENCE_SE:
+		case APT_APRON_FENCE_NE_SE:
+		case APT_APRON_HALF_EAST:
+		case APT_APRON_HALF_WEST:
+			return 1;
+
+		case APT_DEPOT_SE:
+		case APT_DEPOT_SW:
+		case APT_DEPOT_NW:
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_SE:
+		case APT_SMALL_DEPOT_SW:
+		case APT_SMALL_DEPOT_NW:
+		case APT_SMALL_DEPOT_NE:
+			return 4;
+
+		case APT_HELIPORT:
+		case APT_HELIPAD_1:
+		case APT_HELIPAD_2_FENCE_NW:
+		case APT_HELIPAD_2:
+		case APT_HELIPAD_2_FENCE_NE_SE:
+		case APT_HELIPAD_3_FENCE_SE_SW:
+		case APT_HELIPAD_3_FENCE_NW_SW:
+		case APT_HELIPAD_3_FENCE_NW:
+			return 16;
+
+		default:
+			return 0;
+	}
+}
+
+uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_types)
+{
+	uint points = 0;
+	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceNoisePoints(piece_type);
+	return static_cast<uint8_t>((points + 8) / 16);
+}
+
+uint8_t GetModularAirportNoiseLevel(const Station *st)
+{
+	if (st->airport.modular_noise_dirty) {
+		uint points = 0;
+		if (st->airport.modular_tile_data != nullptr) {
+			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+				points += GetModularAirportPieceNoisePoints(data.piece_type);
+			}
+		}
+		st->airport.modular_noise_cache = static_cast<uint8_t>((points + 8) / 16);
+		st->airport.modular_noise_dirty = false;
+	}
+	return st->airport.modular_noise_cache;
+}
+
 /** Radar pieces, counted towards the large-hub catchment tier. */
 static bool IsRadarPiece(uint8_t piece_type)
 {

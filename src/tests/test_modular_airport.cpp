@@ -11,11 +11,14 @@
 #include "../3rdparty/catch2/catch.hpp"
 
 #include "../modular_airport_cmd.h"
+#include "../modular_airport_build.h"
 #include "../airport_template.h"
 #include "../table/airporttile_ids.h"
 #include "../map_func.h"
 #include "../station_base.h"
+#include "../station_cmd.h"
 #include "../station_map.h"
+#include "../town.h"
 #include "../airport_ground_pathfinder.h"
 #include "mock_environment.h"
 #include "../vehicle_base.h"
@@ -116,6 +119,95 @@ static void CheckUnreserved(const std::vector<TileIndex> &tiles)
 	for (TileIndex tile : tiles) {
 		CHECK_FALSE(HasModularAirportTileReservation(tile));
 	}
+}
+
+TEST_CASE("ModularAirportLayoutAccountingMatchesStockCalibration")
+{
+	Map::Allocate(64, 64);
+	AirportSpec::ResetAirports();
+
+	struct ExpectedAccounting {
+		uint8_t airport_type;
+		uint maintenance;
+		uint8_t noise;
+	};
+	static constexpr ExpectedAccounting expected[] = {
+		{AT_SMALL, 7, 3},
+		{AT_COMMUTER, 20, 6},
+		{AT_LARGE, 24, 5},
+		{AT_METROPOLITAN, 28, 8},
+		{AT_INTERNATIONAL, 42, 13},
+		{AT_INTERCON, 72, 25},
+		{AT_HELIPORT, 4, 1},
+		{AT_HELIDEPOT, 7, 1},
+		{AT_HELISTATION, 14, 3},
+	};
+
+	for (const ExpectedAccounting &entry : expected) {
+		CAPTURE(entry.airport_type);
+		const AirportSpec *as = AirportSpec::Get(entry.airport_type);
+		REQUIRE(as->layouts.size() == 1);
+
+		std::vector<uint8_t> pieces;
+		const TileIndex base = TileXY(1, 1);
+		for (AirportTileTableIterator iter(as->layouts[0].tiles, base); iter != INVALID_TILE; ++iter) {
+			const TileIndex tile = iter;
+			const int dx = TileX(tile) - TileX(base);
+			const int dy = TileY(tile) - TileY(base);
+			pieces.push_back(ApplyStockTileOverride(entry.airport_type, dx, dy,
+					MapStockGfxToModularPiece(iter.GetStationGfx())));
+		}
+
+		CHECK(GetModularAirportMaintenancePointsFromPieces(pieces) == entry.maintenance * 8);
+		CHECK(GetModularAirportNoiseLevelFromPieces(pieces) == entry.noise);
+	}
+}
+
+TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")
+{
+	Map::Allocate(64, 64);
+	MockEnvironment::Instance();
+	extern TownPool _town_pool;
+	_town_pool.CleanPool();
+	Town *town = Town::CreateAtIndex(TownID(0), TileXY(4, 4));
+	REQUIRE(town != nullptr);
+	town->cache.population = 10000;
+	RebuildTownKdtree();
+
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 8, 8);
+	REQUIRE(st != nullptr);
+
+	const std::array<std::pair<TileIndex, uint8_t>, 5> additions = {{
+		{base, APT_APRON},
+		{base + TileDiffXY(1, 0), APT_STAND},
+		{base + TileDiffXY(2, 0), APT_DEPOT_SE},
+		{base + TileDiffXY(3, 0), APT_RUNWAY_END},
+		{base + TileDiffXY(4, 0), APT_RUNWAY_5},
+	}};
+
+	UpdateAirportsNoise();
+	CHECK(town->noise_reached == 0);
+	for (const auto &[tile, piece_type] : additions) {
+		const ModularAirportNoiseSnapshot before = GetModularAirportNoiseSnapshot(st);
+		AddModularTile(st, tile, piece_type);
+		ApplyModularAirportNoiseChange(st, before);
+		const uint16_t incremental = town->noise_reached;
+		UpdateAirportsNoise();
+		CHECK(town->noise_reached == incremental);
+	}
+
+	for (auto it = additions.rbegin(); it != additions.rend(); ++it) {
+		const ModularAirportNoiseSnapshot before = GetModularAirportNoiseSnapshot(st);
+		std::erase_if(*st->airport.modular_tile_data, [&](const ModularAirportTileData &data) { return data.tile == it->first; });
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.MarkLayoutDirty();
+		ApplyModularAirportNoiseChange(st, before);
+		const uint16_t incremental = town->noise_reached;
+		UpdateAirportsNoise();
+		CHECK(town->noise_reached == incremental);
+	}
+	CHECK(town->noise_reached == 0);
 }
 
 TEST_CASE("ModularAirportSafety")

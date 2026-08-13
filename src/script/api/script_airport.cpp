@@ -11,6 +11,7 @@
 #include "script_airport.hpp"
 #include "script_station.hpp"
 #include "../../station_base.h"
+#include "../../station_func.h"
 #include "../../town.h"
 #include "../../landscape_cmd.h"
 #include "../../station_cmd.h"
@@ -170,7 +171,7 @@
 {
 	if (!IsAirportInformationAvailable(type)) return -1;
 
-	return (int64_t)GetMaintenanceCostFactor(type) * _price[Price::InfrastructureAirport] >> 3;
+	return ScaleAirportMaintenanceCost(_price[Price::InfrastructureAirport], GetMaintenanceCostFactor(type) * 8);
 }
 
 /* static */ SQInteger ScriptAirport::GetAirportNumHelipads(AirportType type)

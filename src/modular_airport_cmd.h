@@ -422,6 +422,14 @@ bool ModularAirportSupportsLargeAircraft(const Station *st);
 bool ModularAirportAcceptsPlanes(const Station *st);
 bool ModularAirportAcceptsHelicopters(const Station *st);
 
+/** Maintenance numerator in eighths of a stock maintenance-cost point. */
+uint GetModularAirportMaintenancePointsFromPieces(std::span<const uint8_t> piece_types);
+uint GetModularAirportMaintenancePoints(const Station *st);
+
+/** Noise level derived from the operating surfaces in a modular layout. */
+uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_types);
+uint8_t GetModularAirportNoiseLevel(const Station *st);
+
 uint GetModularAirportCatchmentRadius(const Station *st);
 
 /**

@@ -420,54 +420,34 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
-	/* No whole-template authority check here: the per-tile
-	 * BuildModularAirportTile_Check below runs it for every tile that takes
-	 * new land, and exempts in-place replacements of existing modular tiles. */
-
 	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
-	Town *nearest = nullptr;
-	uint newnoise_level = 0;
-	if (will_create_airport_facility) {
-		const AirportSpec *as = AirportSpec::Get(AT_SMALL);
-		/* Find nearest town across the actual template tile set. The AirportSpec-based
-		 * AirportGetNearestTown helper asserts every iterated tile fits within the spec's
-		 * size_x*size_y bounding box, which a multi-tile template can exceed. */
-		uint dist = UINT_MAX - 1;
-		for (TileIndex t : abs_tiles) {
-			Town *town = CalcClosestTownFromTile(t, dist + 1);
-			if (town == nullptr) continue;
-			uint d = DistanceManhattan(town->xy, t);
-			if (d == dist && nearest != nullptr && town->index < nearest->index) nearest = town;
-			if (d < dist) {
-				nearest = town;
-				dist = d;
+	const ModularAirportNoiseSnapshot noise_before = will_create_airport_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
+	std::vector<ModularAirportNoisePiece> future_noise_pieces;
+	if (!will_create_airport_facility && st->airport.modular_tile_data != nullptr) {
+		future_noise_pieces.reserve(st->airport.modular_tile_data->size() + rotated_tiles.size());
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (std::find(abs_tiles.begin(), abs_tiles.end(), data.tile) == abs_tiles.end()) {
+				future_noise_pieces.push_back({data.tile, data.piece_type});
 			}
 		}
-		newnoise_level = GetAirportNoiseLevelForDistance(as, dist);
+	}
+	for (size_t i = 0; i < rotated_tiles.size(); i++) {
+		future_noise_pieces.push_back({abs_tiles[i], rotated_tiles[i].piece_type});
+	}
+	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
+	ret = CheckModularAirportNoiseChange(noise_before, noise_after);
+	if (ret.Failed()) return ret;
 
-		StringID authority_refuse_message = STR_NULL;
-		Town *authority_refuse_town = nullptr;
-
-		if (_settings_game.economy.station_noise_level && nearest != nullptr) {
-			if ((nearest->noise_reached + newnoise_level) > nearest->MaxTownNoise()) {
-				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_NOISE;
-				authority_refuse_town = nearest;
-			}
-		} else if (_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
+	if (will_create_airport_facility && !_settings_game.economy.station_noise_level &&
+			_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
 			Town *t = ClosestTownFromTile(abs_tiles[0], UINT_MAX);
 			uint num = 0;
 			for (const Station *other : Station::Iterate()) {
 				if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
 			}
 			if (num >= 2) {
-				authority_refuse_message = STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT;
-				authority_refuse_town = t;
+				return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT, t->index);
 			}
-		}
-
-		if (authority_refuse_message != STR_NULL) {
-			return CommandCostWithParam(authority_refuse_message, authority_refuse_town->index);
-		}
 	}
 
 	/* Enforce same height level across the entire modular airport. */
@@ -524,12 +504,8 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		for (size_t i = 0; i < rotated_tiles.size(); i++) placement_order.push_back(i);
 	}
 
-	/* Step 3.B: Per-tile validation loop.
-	 * Only `is_replace` is per-tile. `nearest`/`newnoise`/`new_facility` from `_Check` are
-	 * computed against the dry-run (no facility yet) state for every tile in a greenfield
-	 * placement, so they would multiply-count if applied per tile. The whole-template
-	 * `nearest`/`newnoise_level` computed above are the correct values; `_Apply` derives
-	 * `new_facility` itself from live state at mutation time. */
+	/* Step 3.B: Per-tile validation loop. Noise was checked once above against
+	 * the finished layout; intermediate per-tile layouts are not meaningful. */
 	struct TileValidationResult {
 		bool is_replace;
 	};
@@ -539,12 +515,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		TileIndex t = abs_tiles[i];
 
 		Station *tile_st = st;
-		Town *tile_nearest = nullptr;
-		uint tile_newnoise = 0;
-		bool tile_new_facility = false;
 		TileValidationResult &res = validation_results[i];
 
-		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_nearest, tile_newnoise, tile_new_facility, res.is_replace, total);
+		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, res.is_replace, total, false);
 		if (ret.Failed()) return ret;
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
@@ -567,6 +540,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {
+		const ModularAirportNoiseSnapshot execute_noise_before = st != nullptr ? GetModularAirportNoiseSnapshot(st) : ModularAirportNoiseSnapshot{};
 		/* Apply station creation/joining now that validation is complete. */
 		ret = BuildStationPart(&st, flags, reuse, union_area, STATIONNAMING_AIRPORT);
 		assert(ret.Succeeded());
@@ -577,7 +551,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			TileIndex t = abs_tiles[i];
 			const TileValidationResult &res = validation_results[i];
 
-			BuildModularAirportTile_Apply(t, rt.piece_type, st, nearest, newnoise_level, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
+			BuildModularAirportTile_Apply(t, rt.piece_type, st, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
@@ -599,6 +573,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		 * replace its hangar early and lay its own down later in placement_order, so the
 		 * intermediate states say nothing about the result. */
 		CancelModularHangarOrdersIfNoneLeft(st);
+		ApplyModularAirportNoiseChange(st, execute_noise_before);
 	}
 
 	return total;
