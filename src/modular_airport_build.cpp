@@ -1138,6 +1138,38 @@ std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t a
 		result.push_back(data);
 	}
 
+	/* Tile-by-tile construction canonicalizes each completed runway to its
+	 * family-specific end/middle pieces. Do the same before from-stock state is
+	 * installed so identical layouts do not retain different saved piece IDs. */
+	auto find_data = [&](TileIndex tile) -> ModularAirportTileData * {
+		auto it = std::find_if(result.begin(), result.end(),
+				[=](const ModularAirportTileData &candidate) { return candidate.tile == tile; });
+		return it != result.end() ? &*it : nullptr;
+	};
+	for (ModularAirportTileData &data : result) {
+		if (!IsModularRunwayPiece(data.piece_type)) continue;
+		const bool large_family = IsLargeRunwayFamily(data.piece_type);
+		const ModularAirportTileData *previous = find_data(data.tile - TileDiffXY(1, 0));
+		if (previous != nullptr && IsModularRunwayPiece(previous->piece_type) &&
+				IsLargeRunwayFamily(previous->piece_type) == large_family) {
+			continue;
+		}
+
+		std::vector<ModularAirportTileData *> segment;
+		for (TileIndex tile = data.tile;; tile += TileDiffXY(1, 0)) {
+			ModularAirportTileData *candidate = find_data(tile);
+			if (candidate == nullptr || !IsModularRunwayPiece(candidate->piece_type) ||
+					IsLargeRunwayFamily(candidate->piece_type) != large_family) {
+				break;
+			}
+			segment.push_back(candidate);
+		}
+		for (size_t i = 0; i < segment.size(); i++) {
+			segment[i]->piece_type = GetCanonicalRunwaySegmentPiece(large_family, segment.size(), i);
+			segment[i]->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(segment[i]->piece_type, 0);
+		}
+	}
+
 	static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } fence_edges[] = {
 		{  0, -1, 0x01, 0x04},
 		{ +1,  0, 0x02, 0x08},

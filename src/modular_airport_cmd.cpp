@@ -676,7 +676,7 @@ uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_typ
 {
 	uint points = 0;
 	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceNoisePoints(piece_type);
-	return static_cast<uint8_t>((points + 8) / 16);
+	return static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
 }
 
 uint8_t GetModularAirportNoiseLevel(const Station *st)
@@ -688,7 +688,7 @@ uint8_t GetModularAirportNoiseLevel(const Station *st)
 				points += GetModularAirportPieceNoisePoints(data.piece_type);
 			}
 		}
-		st->airport.modular_noise_cache = static_cast<uint8_t>((points + 8) / 16);
+		st->airport.modular_noise_cache = static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
 		st->airport.modular_noise_dirty = false;
 	}
 	return st->airport.modular_noise_cache;

@@ -799,6 +799,64 @@ bool AfterLoadGame()
 		_settings_game.linkgraph.recalc_time     *= CalendarTime::SECONDS_PER_DAY;
 	}
 
+	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_TYPE)) {
+		std::array<bool, NUM_AIRPORTS> used_airport_ids{};
+		for (const Station *st : Station::Iterate()) {
+			if (!st->facilities.Test(StationFacility::Airport)) continue;
+			if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
+			if (st->airport.type < NUM_AIRPORTS) used_airport_ids[st->airport.type] = true;
+		}
+
+		/* ID 127 was a NewGRF slot before it became AT_MODULAR. Relocate that
+		 * mapping before GfxLoadSprites finalises airport specs, otherwise a GRF
+		 * can overwrite the modular spec. At the old 118-type limit, discard an
+		 * unused mapping to preserve every airport type that exists on the map. */
+		uint16_t relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
+		if (relocated_airport_id == AT_MODULAR && !used_airport_ids[AT_MODULAR]) {
+			_airport_mngr.mappings[AT_MODULAR] = {};
+			relocated_airport_id = AT_INVALID;
+		}
+		if (relocated_airport_id == AT_MODULAR) {
+			for (uint16_t id = NEW_AIRPORT_OFFSET; id < AT_MODULAR; id++) {
+				if (used_airport_ids[id]) continue;
+				_airport_mngr.mappings[id] = {};
+				relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
+				break;
+			}
+		}
+		if (relocated_airport_id == AT_MODULAR ||
+				(relocated_airport_id == AT_INVALID && used_airport_ids[AT_MODULAR])) {
+			SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
+		}
+		if (relocated_airport_id != AT_INVALID) {
+			for (Station *st : Station::Iterate()) {
+				if (!st->facilities.Test(StationFacility::Airport)) continue;
+				if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
+				if (st->airport.type == AT_MODULAR) st->airport.type = static_cast<uint8_t>(relocated_airport_id);
+			}
+		}
+
+		std::set<StationID> retyped_airports;
+		for (Station *st : Station::Iterate()) {
+			if (!st->facilities.Test(StationFacility::Airport)) continue;
+			if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
+			st->airport.type = AT_MODULAR;
+			st->airport.layout = 0;
+			retyped_airports.insert(st->index);
+		}
+
+		/* From-stock modular airports used to retain the preset FSM position.
+		 * Intercontinental entry positions reach 46, while AT_MODULAR deliberately
+		 * uses the 22-position country FSM. Repair both saved indices in the same
+		 * pass as the retype, before any code can index the new FSM with an old pos. */
+		for (Aircraft *v : Aircraft::Iterate()) {
+			if (!v->IsNormalAircraft()) continue;
+			if (!retyped_airports.contains(v->targetairport)) continue;
+			v->pos = 0;
+			v->previous_pos = 0;
+		}
+	}
+
 	/* Load the sprites */
 	GfxLoadSprites();
 	LoadStringWidthTable();
@@ -2854,28 +2912,6 @@ bool AfterLoadGame()
 		 * since a new option (minimal at position 1) has been added */
 		if (_settings_game.difficulty.industry_density > IndustryDensity::FundedOnly) {
 			_settings_game.difficulty.industry_density = static_cast<IndustryDensity>(to_underlying(_settings_game.difficulty.industry_density) + 1);
-		}
-	}
-
-	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_TYPE)) {
-		std::set<StationID> retyped_airports;
-		for (Station *st : Station::Iterate()) {
-			if (!st->facilities.Test(StationFacility::Airport)) continue;
-			if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
-			st->airport.type = AT_MODULAR;
-			st->airport.layout = 0;
-			retyped_airports.insert(st->index);
-		}
-
-		/* From-stock modular airports used to retain the preset FSM position.
-		 * Intercontinental entry positions reach 46, while AT_MODULAR deliberately
-		 * uses the 22-position country FSM. Repair both saved indices in the same
-		 * pass as the retype, before any code can index the new FSM with an old pos. */
-		for (Aircraft *v : Aircraft::Iterate()) {
-			if (!v->IsNormalAircraft()) continue;
-			if (!retyped_airports.contains(v->targetairport)) continue;
-			v->pos = 0;
-			v->previous_pos = 0;
 		}
 	}
 

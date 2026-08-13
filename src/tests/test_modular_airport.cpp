@@ -15,15 +15,20 @@
 #include "../airport_template.h"
 #include "../table/airporttile_ids.h"
 #include "../map_func.h"
+#include "../landscape.h"
 #include "../station_base.h"
 #include "../station_cmd.h"
 #include "../station_map.h"
+#include "../language.h"
 #include "../town.h"
 #include "../airport_ground_pathfinder.h"
 #include "../airport_pathfinder.h"
+#include "../viewport_kdtree.h"
 #include "mock_environment.h"
 #include "../vehicle_base.h"
 #include "../engine_base.h"
+#include "../company_base.h"
+#include "../company_func.h"
 #include "../newgrf_airport.h"
 #include "../cheat_type.h"
 #include "../settings_type.h"
@@ -195,12 +200,40 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 	CHECK(modular->grf_prop.override_id == AT_INVALID);
 	CHECK(modular->badges.empty());
 
+	_airport_mngr.mappings[AT_MODULAR] = {0xAABBCCDD, 17, AT_SMALL};
+	CHECK(_airport_mngr.RelocateLegacyModularID() == NEW_AIRPORT_OFFSET);
+	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].grfid == 0xAABBCCDD);
+	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].entity_id == 17);
+	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
+	_airport_mngr.ResetMapping();
+
 	for (uint16_t i = 0; i < 117; i++) {
 		CHECK(_airport_mngr.AddEntityID(i + 1, 0xA0000000U + i, AT_SMALL) == NEW_AIRPORT_OFFSET + i);
 	}
 	CHECK(_airport_mngr.AddEntityID(200, 0xB0000000U, AT_SMALL) == AT_INVALID);
 	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
+	_airport_mngr.mappings[AT_MODULAR] = {0xAABBCCDD, 17, AT_SMALL};
+	CHECK(_airport_mngr.RelocateLegacyModularID() == AT_MODULAR);
 	_airport_mngr.ResetMapping();
+}
+
+TEST_CASE("ModularAirportNoiseSaturatesAtStorageLimit")
+{
+	std::vector<uint8_t> pieces(256, APT_HELIPORT);
+	CHECK(GetModularAirportNoiseLevelFromPieces(pieces) == UINT8_MAX);
+
+	Map::Allocate(64, 64);
+	Station *st = SetupModularAirport(TileXY(2, 2), 16, 16);
+	REQUIRE(st != nullptr);
+	st->airport.modular_tile_data->clear();
+	for (uint i = 0; i < 256; i++) {
+		ModularAirportTileData data;
+		data.tile = TileXY(2 + i % 16, 2 + i / 16);
+		data.piece_type = APT_HELIPORT;
+		st->airport.modular_tile_data->push_back(data);
+	}
+	st->airport.MarkLayoutDirty();
+	CHECK(GetModularAirportNoiseLevel(st) == UINT8_MAX);
 }
 
 TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
@@ -256,6 +289,35 @@ TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
 			manual.push_back(data);
 		}
 
+		for (ModularAirportTileData &data : manual) {
+			if (!IsModularRunwayPiece(data.piece_type)) continue;
+			const bool large_family = IsLargeRunwayFamily(data.piece_type);
+			auto find_data = [&](TileIndex tile) -> ModularAirportTileData * {
+				auto it = std::find_if(manual.begin(), manual.end(),
+						[=](const ModularAirportTileData &candidate) { return candidate.tile == tile; });
+				return it != manual.end() ? &*it : nullptr;
+			};
+			const ModularAirportTileData *previous = find_data(data.tile - TileDiffXY(1, 0));
+			if (previous != nullptr && IsModularRunwayPiece(previous->piece_type) &&
+					IsLargeRunwayFamily(previous->piece_type) == large_family) {
+				continue;
+			}
+
+			std::vector<ModularAirportTileData *> segment;
+			for (TileIndex tile = data.tile;; tile += TileDiffXY(1, 0)) {
+				ModularAirportTileData *candidate = find_data(tile);
+				if (candidate == nullptr || !IsModularRunwayPiece(candidate->piece_type) ||
+						IsLargeRunwayFamily(candidate->piece_type) != large_family) {
+					break;
+				}
+				segment.push_back(candidate);
+			}
+			for (size_t i = 0; i < segment.size(); i++) {
+				segment[i]->piece_type = GetCanonicalRunwaySegmentPiece(large_family, segment.size(), i);
+				segment[i]->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(segment[i]->piece_type, 0);
+			}
+		}
+
 		static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } edges[] = {
 			{0, -1, 0x01, 0x04}, {1, 0, 0x02, 0x08}, {0, 1, 0x04, 0x01}, {-1, 0, 0x08, 0x02},
 		};
@@ -287,6 +349,129 @@ TEST_CASE("ModularAirportStockConversionRejectsNewGRFAirports")
 {
 	Map::Allocate(64, 64);
 	CHECK(CmdBuildModularAirportFromStock({}, TileXY(2, 2), NEW_AIRPORT_OFFSET, 0, NEW_STATION, false).Failed());
+}
+
+TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+	const CompanyID saved_company = _current_company;
+	const bool saved_distant_join = _settings_game.station.distant_join_stations;
+	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const uint8_t saved_station_spread = _settings_game.station.station_spread;
+	const bool saved_noise = _settings_game.economy.station_noise_level;
+	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+
+	_settings_game.station.distant_join_stations = true;
+	_settings_game.station.never_expire_airports = true;
+	_settings_game.station.station_spread = 64;
+	_settings_game.economy.station_noise_level = false;
+	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	for (uint8_t airport_type : {AT_SMALL, AT_LARGE, AT_HELIPORT, AT_METROPOLITAN,
+			AT_INTERNATIONAL, AT_COMMUTER, AT_HELIDEPOT, AT_INTERCON, AT_HELISTATION}) {
+		CAPTURE(airport_type);
+		Map::Allocate(64, 64);
+		extern StationPool _station_pool;
+		extern TownPool _town_pool;
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		_company_pool.CleanPool();
+		RebuildStationKdtree();
+		RebuildViewportKdtree();
+		AirportSpec::ResetAirports();
+
+		Company *company = Company::CreateAtIndex(CompanyID(0));
+		REQUIRE(company != nullptr);
+		company->money = INT64_MAX;
+		company->clear_limit = UINT32_MAX;
+		_current_company = company->index;
+
+		Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+
+		const TileIndex stock_base = TileXY(2, 2);
+		const TileIndex manual_base = TileXY(24, 2);
+		const CommandCost stock_build = CmdBuildModularAirportFromStock(DoCommandFlag::Execute,
+				stock_base, airport_type, 0, NEW_STATION, false);
+		CAPTURE(stock_build.GetErrorMessage(), stock_build.GetExtraErrorMessage());
+		REQUIRE(stock_build.Succeeded());
+		Station *stock = Station::GetByTile(stock_base);
+		REQUIRE(stock != nullptr);
+
+		const std::vector<ModularAirportTileData> desired =
+				ConvertStockAirportLayoutToModular(airport_type, 0, manual_base);
+		Station *manual = nullptr;
+		for (const ModularAirportTileData &data : desired) {
+			const StationID join = manual == nullptr ? NEW_STATION : manual->index;
+			REQUIRE(CmdBuildModularAirportTile(DoCommandFlag::Execute, data.tile,
+					data.piece_type, join, false, data.rotation, data.user_taxi_dir_mask,
+					data.one_way_taxi, false).Succeeded());
+			if (manual == nullptr) manual = Station::GetByTile(data.tile);
+			REQUIRE(manual != nullptr);
+		}
+
+		for (const ModularAirportTileData &data : desired) {
+			if (IsModularRunwayPiece(data.piece_type)) {
+				REQUIRE(CmdSetRunwayFlags(DoCommandFlag::Execute, data.tile, data.runway_flags).Succeeded());
+			}
+			for (uint8_t edge_bit : {uint8_t{0x01}, uint8_t{0x02}, uint8_t{0x04}, uint8_t{0x08}}) {
+				if ((data.edge_block_mask & edge_bit) == 0) continue;
+				REQUIRE(CmdSetModularAirportEdgeFence(DoCommandFlag::Execute, data.tile, edge_bit, true).Succeeded());
+			}
+		}
+
+		REQUIRE(manual != nullptr);
+		CHECK(stock->airport.type == manual->airport.type);
+		CHECK(stock->airport.layout == manual->airport.layout);
+		CHECK(stock->airport.rotation == manual->airport.rotation);
+		CHECK(stock->airport.w == manual->airport.w);
+		CHECK(stock->airport.h == manual->airport.h);
+		CHECK(stock->airport.blocks == manual->airport.blocks);
+		REQUIRE(stock->airport.modular_tile_data != nullptr);
+		REQUIRE(manual->airport.modular_tile_data != nullptr);
+		REQUIRE(stock->airport.modular_tile_data->size() == manual->airport.modular_tile_data->size());
+
+		for (const ModularAirportTileData &stock_data : *stock->airport.modular_tile_data) {
+			const int dx = TileX(stock_data.tile) - TileX(stock_base);
+			const int dy = TileY(stock_data.tile) - TileY(stock_base);
+			const ModularAirportTileData *manual_data = manual->airport.GetModularTileData(
+					TileAddXY(manual_base, dx, dy));
+			REQUIRE(manual_data != nullptr);
+			CHECK(stock_data.piece_type == manual_data->piece_type);
+			CHECK(stock_data.rotation == manual_data->rotation);
+			CHECK(stock_data.auto_taxi_dir_mask == manual_data->auto_taxi_dir_mask);
+			CHECK(stock_data.user_taxi_dir_mask == manual_data->user_taxi_dir_mask);
+			CHECK(stock_data.one_way_taxi == manual_data->one_way_taxi);
+			CHECK(stock_data.runway_flags == manual_data->runway_flags);
+			CHECK(stock_data.edge_block_mask == manual_data->edge_block_mask);
+		}
+	}
+
+	_current_company = saved_company;
+	_settings_game.station.distant_join_stations = saved_distant_join;
+	_settings_game.station.never_expire_airports = saved_never_expire;
+	_settings_game.station.station_spread = saved_station_spread;
+	_settings_game.economy.station_noise_level = saved_noise;
+	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	TimerGameCalendar::year = saved_year;
+
+	extern StationPool _station_pool;
+	extern TownPool _town_pool;
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
 }
 
 TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")
@@ -334,6 +519,57 @@ TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")
 		CHECK(town->noise_reached == incremental);
 	}
 	CHECK(town->noise_reached == 0);
+}
+
+TEST_CASE("ModularAirportIncrementalNoiseMovesBetweenNearestTowns")
+{
+	Map::Allocate(64, 64);
+	MockEnvironment::Instance();
+	extern TownPool _town_pool;
+	_town_pool.CleanPool();
+	Town *left_town = Town::CreateAtIndex(TownID(0), TileXY(4, 4));
+	Town *right_town = Town::CreateAtIndex(TownID(1), TileXY(50, 4));
+	REQUIRE(left_town != nullptr);
+	REQUIRE(right_town != nullptr);
+	left_town->cache.population = 10000;
+	right_town->cache.population = 10000;
+	RebuildTownKdtree();
+
+	const TileIndex left_tile = TileXY(6, 4);
+	const TileIndex right_tile = TileXY(50, 5);
+	Station *st = SetupModularAirport(left_tile, 1, 1);
+	REQUIRE(st != nullptr);
+	AddModularTile(st, left_tile, APT_HELIPORT);
+	UpdateAirportsNoise();
+	CHECK(left_town->noise_reached == 1);
+	CHECK(right_town->noise_reached == 0);
+
+	const ModularAirportNoiseSnapshot before_add = GetModularAirportNoiseSnapshot(st);
+	MakeStation(right_tile, st->owner, st->index, StationType::Airport, 0);
+	st->airport.Add(right_tile);
+	AddModularTile(st, right_tile, APT_HELIPORT);
+	ApplyModularAirportNoiseChange(st, before_add);
+	CHECK(left_town->noise_reached == 0);
+	CHECK(right_town->noise_reached == 2);
+	UpdateAirportsNoise();
+	CHECK(left_town->noise_reached == 0);
+	CHECK(right_town->noise_reached == 2);
+
+	const ModularAirportNoiseSnapshot before_remove = GetModularAirportNoiseSnapshot(st);
+	std::erase_if(*st->airport.modular_tile_data,
+			[&](const ModularAirportTileData &data) { return data.tile == right_tile; });
+	DoClearSquare(right_tile);
+	st->airport.tile = left_tile;
+	st->airport.w = 1;
+	st->airport.h = 1;
+	st->airport.modular_tile_index_dirty = true;
+	st->airport.MarkLayoutDirty();
+	ApplyModularAirportNoiseChange(st, before_remove);
+	CHECK(left_town->noise_reached == 1);
+	CHECK(right_town->noise_reached == 0);
+	UpdateAirportsNoise();
+	CHECK(left_town->noise_reached == 1);
+	CHECK(right_town->noise_reached == 0);
 }
 
 TEST_CASE("ModularAirportSafety")
@@ -2294,4 +2530,36 @@ TEST_CASE("ModularAirportAircraftCapability")
 
 		CHECK_FALSE(ModularAirportAcceptsPlanes(st));
 	}
+}
+
+TEST_CASE("ModularAirportNearestHangarRespectsHelicopterCapability")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 12, 12);
+	REQUIRE(st != nullptr);
+	AddModularTile(st, base + TileDiffXY(1, 1), APT_DEPOT_SE, 0);
+	REQUIRE(st->airport.HasHangar());
+	REQUIRE_FALSE(ModularAirportAcceptsHelicopters(st));
+
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID helicopter_engine = CreateAircraftEngine(EngineID(0), 0);
+	SetupAircraftPool();
+	Aircraft *heli = CreateAircraft(VehicleID(0));
+	heli->subtype = AIR_HELICOPTER;
+	heli->engine_type = helicopter_engine;
+	heli->owner = OWNER_NONE;
+	heli->targetairport = StationID::Invalid();
+	heli->x_pos = TileX(base) * TILE_SIZE;
+	heli->y_pos = TileY(base) * TILE_SIZE;
+
+	CHECK_FALSE(heli->FindClosestDepot().found);
+
+	const TileIndex landing_tile = base + TileDiffXY(8, 8);
+	AddModularTile(st, landing_tile, APT_APRON, 0);
+	REQUIRE(ModularAirportAcceptsHelicopters(st));
+	const ClosestDepot depot = heli->FindClosestDepot();
+	CHECK(depot.found);
+	CHECK(depot.location == st->xy);
 }

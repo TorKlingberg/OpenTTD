@@ -154,6 +154,22 @@ void BindAirportSpecs()
 	}
 }
 
+uint16_t AirportOverrideManager::RelocateLegacyModularID()
+{
+	EntityIDMapping &legacy = this->mappings[AT_MODULAR];
+	if (legacy.grfid == 0 && legacy.entity_id == 0) return AT_INVALID;
+
+	for (uint16_t id = NEW_AIRPORT_OFFSET; id < AT_MODULAR; id++) {
+		EntityIDMapping &candidate = this->mappings[id];
+		if (candidate.grfid != 0 || candidate.entity_id != 0) continue;
+		candidate = legacy;
+		legacy = {};
+		return id;
+	}
+
+	return AT_MODULAR;
+}
+
 
 void AirportOverrideManager::SetEntitySpec(AirportSpec &&as)
 {

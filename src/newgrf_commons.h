@@ -268,6 +268,11 @@ public:
 	AirportOverrideManager(uint16_t offset, uint16_t maximum, uint16_t invalid) :
 			OverrideManagerBase(offset, maximum, invalid) {}
 
+	/**
+	 * Move a pre-AT_MODULAR mapping out of runtime ID 127.
+	 * @return Replacement ID, AT_INVALID when no mapping exists, or AT_MODULAR when no slot is free.
+	 */
+	uint16_t RelocateLegacyModularID();
 	void SetEntitySpec(AirportSpec &&inds);
 };
 

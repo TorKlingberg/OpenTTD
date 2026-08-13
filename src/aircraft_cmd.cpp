@@ -220,8 +220,9 @@ static StationID FindNearestHangar(const Aircraft *v)
 		/* The AT_MODULAR FTA is generic movement-state data. Its ShortStrip and
 		 * Airplanes flags cannot answer whether the player-built layout is usable. */
 		if (st->airport.blocks.Test(AirportBlock::Modular)) {
+			const bool ctol = (avi->subtype & AIR_CTOL) != 0;
+			if (ctol ? !ModularAirportAcceptsPlanes(st) : !ModularAirportAcceptsHelicopters(st)) continue;
 			if (!ModularAirportSupportsLargeAircraft(st) && (avi->subtype & AIR_FAST) && !_cheats.no_jetcrash.value) continue;
-			if (!ModularAirportAcceptsPlanes(st) && (avi->subtype & AIR_CTOL)) continue;
 		} else {
 			const AirportFTAClass *afc = st->airport.GetFTA();
 
