@@ -302,7 +302,7 @@ struct DepotWindow : Window {
 			case VEH_TRAIN:    return IsRailDepotTile(tile);
 			case VEH_ROAD:     return IsRoadDepotTile(tile);
 			case VEH_SHIP:     return IsShipDepotTile(tile);
-			case VEH_AIRCRAFT: return IsTileType(tile, TileType::Station) && IsAirport(tile);
+			case VEH_AIRCRAFT: return IsHangarTile(tile);
 			default:           return false;
 		}
 	}
