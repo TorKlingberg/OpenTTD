@@ -3447,9 +3447,10 @@ bool AfterLoadGame()
 	CheckGroundVehiclesAtCorrectZ();
 
 	/* Restore the invariant that no aircraft holds a hangar order for an airport without
-	 * a hangar. Stock enforces it at every entry point, but a modular airport used to
-	 * claim its borrowed preset's hangar, so orders could be issued for airports that had
-	 * none — leaving the aircraft to land, find nothing it would park on, take off, and
+	 * a hangar. Stock enforces it at every entry point, but modular airports used to
+	 * derive hangar presence from their preset type, so orders could be issued for
+	 * airports that had none — leaving the aircraft to land, find nothing it would
+	 * park on, take off, and
 	 * repeat forever. Deliberately not version-gated: the game can no longer create such
 	 * an order, so this is a cheap invariant check rather than a one-shot migration, and
 	 * it repairs a save whatever wrote it. */

@@ -174,17 +174,26 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 	const AirportSpec *small = AirportSpec::Get(AT_SMALL);
 	const AirportSpec *modular = AirportSpec::Get(AT_MODULAR);
 	CHECK(modular == AirportSpec::GetWithoutOverride(AT_MODULAR));
+	CHECK(modular->class_index == APC_SMALL);
+	CHECK(modular->index == 0);
 	CHECK_FALSE(modular->enabled);
 	CHECK(modular->fsm == small->fsm);
 	CHECK_FALSE(modular->layouts.empty());
+	CHECK(modular->layouts.size() == small->layouts.size());
 	CHECK(modular->depots.empty());
 	CHECK(modular->size_x == small->size_x);
 	CHECK(modular->size_y == small->size_y);
 	CHECK(modular->noise_level == 0);
 	CHECK(modular->catchment == 0);
+	CHECK(modular->min_year == CalendarTime::MIN_YEAR);
+	CHECK(modular->max_year == CalendarTime::MAX_YEAR);
 	CHECK(modular->maintenance_cost == 0);
 	CHECK(modular->name == STR_AIRPORT_MODULAR);
+	CHECK(modular->ttd_airport_type == ATP_TTDP_SMALL);
+	CHECK(modular->preview_sprite == 0);
+	CHECK(modular->grf_prop.subst_id == AT_INVALID);
 	CHECK(modular->grf_prop.override_id == AT_INVALID);
+	CHECK(modular->badges.empty());
 
 	for (uint16_t i = 0; i < 117; i++) {
 		CHECK(_airport_mngr.AddEntityID(i + 1, 0xA0000000U + i, AT_SMALL) == NEW_AIRPORT_OFFSET + i);

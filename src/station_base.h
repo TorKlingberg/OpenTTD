@@ -373,21 +373,17 @@ struct Airport;
 /**
  * Whether a modular airport's layout contains a hangar piece.
  *
- * A modular airport borrows a preset AirportSpec — AT_SMALL when built tile by tile,
- * the template's type otherwise — so the spec's depot list describes that preset and
- * not the tiles the player laid down: a lone helipad claims a hangar it does not have.
- * Every gate that keeps aircraft away from hangarless airports goes through
- * Airport::HasHangar, so for modular airports that has to read the layout instead.
+ * The AT_MODULAR spec has no depots because hangars belong to the player-built layout,
+ * not to the airport type. Every gate that keeps aircraft away from hangarless airports
+ * goes through Airport::HasHangar, so modular airports read that layout instead.
  *
  * Layout-derived and lazily cached, invalidated by Airport::MarkLayoutDirty.
  */
 bool ModularAirportHasHangar(const Airport &ap);
 
 /**
- * The hangar accessors for a modular airport, reading the tiles instead of the
- * borrowed preset's depot table. Without these a script can see HasHangar() ==
- * false next to GetNumHangars() == 1, and GetHangarTile(0) hands back a
- * spec-offset tile that may well be a runway.
+ * The hangar accessors for a modular airport read its tiles because the AT_MODULAR
+ * spec deliberately has no type-level depot table.
  *
  * Hangars are numbered by ascending TileIndex, deliberately *not* in
  * modular_tile_data order: that vector is mutated by erase/push_back, so its

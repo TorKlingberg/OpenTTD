@@ -3105,10 +3105,8 @@ bool CanVehicleUseStation(EngineID engine_type, const Station *st)
 		case VEH_AIRCRAFT: {
 			if (!st->facilities.Test(StationFacility::Airport)) return false;
 			const bool ctol = (e->VehInfo<AircraftVehicleInfo>().subtype & AIR_CTOL) != 0;
-			/* A modular airport's FTA is a borrowed preset, so its Airplanes/Helicopters
-			 * flags describe a layout the player never built: AT_SMALL sets both, so a
-			 * lone helipad would accept plane orders, while a heliport preset built as
-			 * modular refuses planes however many runways are added to it. Ask the tiles. */
+			/* AT_MODULAR uses a generic FTA for movement-state compatibility, so its
+			 * broad Airplanes/Helicopters flags cannot describe the player-built layout. */
 			if (st->airport.blocks.Test(AirportBlock::Modular)) {
 				return ctol ? ModularAirportAcceptsPlanes(st) : ModularAirportAcceptsHelicopters(st);
 			}

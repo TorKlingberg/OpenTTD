@@ -217,9 +217,8 @@ static StationID FindNearestHangar(const Aircraft *v)
 	for (const Station *st : Station::Iterate()) {
 		if (st->owner != v->owner || !st->facilities.Test(StationFacility::Airport) || !st->airport.HasHangar()) continue;
 
-		/* Both gates below are spec-derived, and a modular airport's spec is a borrowed
-		 * preset. Left alone they make every hand-built modular airport — AT_SMALL, hence
-		 * ShortStrip — invisible to jets looking for a depot, however long its runways. */
+		/* The AT_MODULAR FTA is generic movement-state data. Its ShortStrip and
+		 * Airplanes flags cannot answer whether the player-built layout is usable. */
 		if (st->airport.blocks.Test(AirportBlock::Modular)) {
 			if (!ModularAirportSupportsLargeAircraft(st) && (avi->subtype & AIR_FAST) && !_cheats.no_jetcrash.value) continue;
 			if (!ModularAirportAcceptsPlanes(st) && (avi->subtype & AIR_CTOL)) continue;
@@ -1561,8 +1560,9 @@ bool ModularAircraftHasElevatedOverrunRisk(const Aircraft *v, const Station *st)
  * "Plane crashes" setting — would otherwise never apply on modular airports.
  * This replicates both. The stock ShortStrip airport flag is replaced by the
  * large-aircraft safety requirements check (6-tile landing+takeoff runway,
- * control tower, big terminal), since a modular AT_SMALL airport always carries
- * ShortStrip regardless of how it is actually built. Helicopters are excluded
+ * control tower, big terminal), since the generic AT_MODULAR FTA always carries
+ * ShortStrip regardless of how the airport is actually built. Helicopters are
+ * excluded
  * (no high-speed runway rollout). Intended to be called once per brake tick
  * while rolling out, exactly like the stock check, so the per-landing risk
  * matches a stock airport.
