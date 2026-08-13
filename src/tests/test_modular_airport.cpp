@@ -1996,8 +1996,9 @@ TEST_CASE("ModularAirportHangarAccessors")
 		/* Airport::GetHangarExitDirection used to run the preset's depot table through
 		 * the preset's layout rotation. Pin it to the piece-derived answer the modular
 		 * movement code has always used, so the two can no longer disagree. Each
-		 * directional variant fixes its own hangar rotation (0=SE, 1=NE, 2=NW, 3=SW)
-		 * regardless of the rotation stored on the tile. */
+		 * directional variant fixes its own hangar rotation regardless of the rotation
+		 * stored on the tile; the suffixes are graphic-orientation labels, unrelated to
+		 * the Direction enum the answer is expressed in (see coords.md). */
 		for (uint8_t piece : {APT_DEPOT_SE, APT_DEPOT_SW, APT_DEPOT_NW, APT_DEPOT_NE,
 				APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_SW, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_NE}) {
 			st->airport.modular_tile_data->clear();
@@ -2008,7 +2009,8 @@ TEST_CASE("ModularAirportHangarAccessors")
 			CHECK(st->airport.GetHangarExitDirection(hangar) == GetModularHangarExitDirection(st, hangar));
 		}
 
-		/* The generic SE piece is the one the stored rotation still speaks for. */
+		/* APT_DEPOT_SE is the generic piece the stored rotation still speaks for. At
+		 * rotation 0 its door faces dy=+1, which is DIR_SE for the leaving aircraft. */
 		st->airport.modular_tile_data->clear();
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.MarkLayoutDirty();
