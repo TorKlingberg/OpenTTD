@@ -474,6 +474,78 @@ TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 	RebuildViewportKdtree();
 }
 
+TEST_CASE("ModularAirportTileBuildNamesTheStationAnAirport")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+
+	const CompanyID saved_company = _current_company;
+	const bool saved_noise = _settings_game.economy.station_noise_level;
+	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+	_settings_game.economy.station_noise_level = false;
+	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	_settings_game.station.never_expire_airports = true;
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	/* A station is named once, when its first tile creates it, and a tile-by-tile
+	 * build has no layout yet to name itself from. Deriving the name from the single
+	 * piece in hand made it depend on which one the player clicked first — an apron
+	 * first meant the finished airport was called "Heliport" forever. Pin the generic
+	 * name for every plausible starting piece. */
+	for (uint8_t first_piece : {APT_APRON, APT_STAND, APT_DEPOT_SE, APT_HELIPAD_2, APT_RUNWAY_END}) {
+		CAPTURE(first_piece);
+		Map::Allocate(64, 64);
+		extern StationPool _station_pool;
+		extern TownPool _town_pool;
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		_company_pool.CleanPool();
+		RebuildStationKdtree();
+		RebuildViewportKdtree();
+		AirportSpec::ResetAirports();
+
+		Company *company = Company::CreateAtIndex(CompanyID(0));
+		REQUIRE(company != nullptr);
+		company->money = INT64_MAX;
+		company->clear_limit = UINT32_MAX;
+		_current_company = company->index;
+
+		Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+
+		const TileIndex base = TileXY(4, 4);
+		REQUIRE(CmdBuildModularAirportTile(DoCommandFlag::Execute, base, first_piece,
+				NEW_STATION, false, 0, 0x0F, false, false).Succeeded());
+		const Station *st = Station::GetByTile(base);
+		REQUIRE(st != nullptr);
+
+		CHECK(st->string_id == STR_SV_STNAME_AIRPORT);
+	}
+
+	_current_company = saved_company;
+	_settings_game.economy.station_noise_level = saved_noise;
+	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	_settings_game.station.never_expire_airports = saved_never_expire;
+	TimerGameCalendar::year = saved_year;
+
+	extern StationPool _station_pool;
+	extern TownPool _town_pool;
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
+}
+
 TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")
 {
 	Map::Allocate(64, 64);

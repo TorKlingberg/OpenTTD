@@ -834,31 +834,36 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	}
 
 	const bool new_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
-	std::vector<ModularAirportNoisePiece> future_pieces;
-	if (!new_facility && st->airport.modular_tile_data != nullptr) {
-		future_pieces.reserve(st->airport.modular_tile_data->size() + 1);
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (data.tile != tile) future_pieces.push_back({data.tile, data.piece_type});
-		}
-	}
-	future_pieces.push_back({tile, static_cast<uint8_t>(gfx)});
-	const ModularAirportNoiseSnapshot noise_before = new_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
-	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_pieces);
+
+	/* Only worth building when we are going to test it. Template placement calls this
+	 * once per tile with check_noise false, and each snapshot walks the whole layout
+	 * looking for the nearest town — computing them anyway makes a placement quadratic
+	 * in its own tile count for an answer that is thrown away. */
 	if (check_noise) {
+		std::vector<ModularAirportNoisePiece> future_pieces;
+		if (!new_facility && st->airport.modular_tile_data != nullptr) {
+			future_pieces.reserve(st->airport.modular_tile_data->size() + 1);
+			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+				if (data.tile != tile) future_pieces.push_back({data.tile, data.piece_type});
+			}
+		}
+		future_pieces.push_back({tile, static_cast<uint8_t>(gfx)});
+		const ModularAirportNoiseSnapshot noise_before = new_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
+		const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_pieces);
 		ret = CheckModularAirportNoiseChange(noise_before, noise_after);
 		if (ret.Failed()) return ret;
 	}
 
 	if (new_facility && !_settings_game.economy.station_noise_level &&
 			_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
-			Town *t = ClosestTownFromTile(tile, UINT_MAX);
-			uint num = 0;
-			for (const Station *other : Station::Iterate()) {
-				if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
-			}
-			if (num >= 2) {
-				return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT, t->index);
-			}
+		Town *t = ClosestTownFromTile(tile, UINT_MAX);
+		uint num = 0;
+		for (const Station *other : Station::Iterate()) {
+			if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
+		}
+		if (num >= 2) {
+			return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT, t->index);
+		}
 	}
 
 	/* Enforce same height level across the entire modular airport. */
@@ -871,8 +876,14 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		}
 	}
 
-	const StationNaming naming = IsModularRunwayPiece(static_cast<uint8_t>(gfx)) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
-	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
+	/* The name is chosen once, when the first tile creates the station, and a
+	 * tile-by-tile build has no layout yet to derive it from. Deriving it from the
+	 * one tile in hand makes the name depend on which piece the player happened to
+	 * click first: start a full airport with an apron and it is named "Heliport"
+	 * forever. The template and from-stock paths know their finished layout and do
+	 * derive it (see ModularAirportAcceptsPlanesFromPieces at their BuildStationPart
+	 * calls); this path cannot, so it keeps the generic name. */
+	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
 	if (ret.Failed()) return ret;
 
 	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
