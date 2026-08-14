@@ -28,6 +28,7 @@
 #include "newgrf_airport.h"
 #include "newgrf_airporttiles.h"
 #include "newgrf_debug.h"
+#include "order_backup.h"
 #include "order_func.h"
 #include "station_cmd.h"
 #include "station_map.h"
@@ -557,6 +558,14 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 				if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
 					removed_runway_tiles.push_back({t, md->rotation});
 				}
+			}
+		}
+
+		for (TileIndex t : tiles_to_remove) {
+			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
+			if (md != nullptr && IsModularHangarPiece(md->piece_type)) {
+				OrderBackup::Reset(t, false);
+				CloseWindowById(WC_VEHICLE_DEPOT, t);
 			}
 		}
 
