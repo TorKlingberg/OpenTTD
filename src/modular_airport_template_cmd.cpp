@@ -446,14 +446,14 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	if (will_create_airport_facility && !_settings_game.economy.station_noise_level &&
 			_settings_game.difficulty.town_council_tolerance != TOWN_COUNCIL_PERMISSIVE) {
-			Town *t = ClosestTownFromTile(abs_tiles[0], UINT_MAX);
-			uint num = 0;
-			for (const Station *other : Station::Iterate()) {
-				if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
-			}
-			if (num >= 2) {
-				return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT, t->index);
-			}
+		Town *t = ClosestTownFromTile(abs_tiles[0], UINT_MAX);
+		uint num = 0;
+		for (const Station *other : Station::Iterate()) {
+			if (other->town == t && other->facilities.Test(StationFacility::Airport) && other->airport.type != AT_OILRIG) num++;
+		}
+		if (num >= 2) {
+			return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_AIRPORT, t->index);
+		}
 	}
 
 	/* Enforce same height level across the entire modular airport. */

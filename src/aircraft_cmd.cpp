@@ -1563,9 +1563,8 @@ bool ModularAircraftHasElevatedOverrunRisk(const Aircraft *v, const Station *st)
  * large-aircraft safety requirements check (6-tile landing+takeoff runway,
  * control tower, big terminal), since the generic AT_MODULAR FTA always carries
  * ShortStrip regardless of how the airport is actually built. Helicopters are
- * excluded
- * (no high-speed runway rollout). Intended to be called once per brake tick
- * while rolling out, exactly like the stock check, so the per-landing risk
+ * excluded (no high-speed runway rollout). Intended to be called once per brake
+ * tick while rolling out, exactly like the stock check, so the per-landing risk
  * matches a stock airport.
  * @param v Aircraft braking on a modular runway.
  * @param st The modular airport the aircraft is rolling out on (the physical

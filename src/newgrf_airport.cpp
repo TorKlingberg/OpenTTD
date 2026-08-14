@@ -156,6 +156,10 @@ void BindAirportSpecs()
 
 uint16_t AirportOverrideManager::RelocateLegacyModularID()
 {
+	/* CheckValidNewID spells the reserved slot numerically because airport.h is not
+	 * available in newgrf_commons.h. Tie the two together here, where both are. */
+	static_assert(RESERVED_MODULAR_ID == AT_MODULAR);
+
 	EntityIDMapping &legacy = this->mappings[AT_MODULAR];
 	if (legacy.grfid == 0 && legacy.entity_id == 0) return AT_INVALID;
 

@@ -730,7 +730,7 @@ Money AirportMaintenanceCost(Owner owner)
 			total_cost += _price[Price::InfrastructureAirport] * maintenance_eighth_points;
 		}
 	}
-	return ScaleAirportMaintenanceCost(total_cost, 1);
+	return ScaleAccumulatedAirportMaintenance(total_cost);
 }
 
 bool StationCompare::operator() (const Station *lhs, const Station *rhs) const

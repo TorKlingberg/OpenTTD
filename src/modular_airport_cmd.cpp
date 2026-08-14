@@ -672,11 +672,25 @@ static uint GetModularAirportPieceNoisePoints(uint8_t piece_type)
 	}
 }
 
+/**
+ * Round an accumulated noise total in sixteenth-points to a stored noise level.
+ *
+ * The clamp is load-bearing, not defensive. Stock noise levels top out at 25, so
+ * the uint8_t storage could never overflow; a layout-derived level can, and a
+ * silent wrap would make a very large airport read as *quieter* than a small one
+ * and sail through the local-authority gate. Shared so the rounding and the clamp
+ * cannot drift between the cached and the abstract-layout entry points.
+ */
+static uint8_t ModularNoisePointsToLevel(uint points)
+{
+	return static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
+}
+
 uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_types)
 {
 	uint points = 0;
 	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceNoisePoints(piece_type);
-	return static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
+	return ModularNoisePointsToLevel(points);
 }
 
 uint8_t GetModularAirportNoiseLevel(const Station *st)
@@ -688,7 +702,7 @@ uint8_t GetModularAirportNoiseLevel(const Station *st)
 				points += GetModularAirportPieceNoisePoints(data.piece_type);
 			}
 		}
-		st->airport.modular_noise_cache = static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
+		st->airport.modular_noise_cache = ModularNoisePointsToLevel(points);
 		st->airport.modular_noise_dirty = false;
 	}
 	return st->airport.modular_noise_cache;

@@ -261,9 +261,13 @@ public:
 struct AirportSpec;
 class AirportOverrideManager : public OverrideManagerBase {
 protected:
-	/* Runtime airport ID 127 is reserved for modular airports. Keep the mapping
-	 * array 128 entries wide so AirportSpec::Get(127) remains in bounds. */
-	bool CheckValidNewID(uint16_t testid) override { return testid != 0x7F; }
+	/* Runtime airport ID 127 is reserved for modular airports. Reserve it here rather
+	 * than by shrinking max_entities: the mapping array must stay 128 entries wide, or
+	 * GetGRFID(127) — which AirportSpec::Get reaches on every modular lookup — reads
+	 * one past the end. Spelled numerically because airport.h is not available here;
+	 * newgrf_airport.cpp static_asserts it against AT_MODULAR. */
+	static constexpr uint16_t RESERVED_MODULAR_ID = 0x7F;
+	bool CheckValidNewID(uint16_t testid) override { return testid != RESERVED_MODULAR_ID; }
 public:
 	AirportOverrideManager(uint16_t offset, uint16_t maximum, uint16_t invalid) :
 			OverrideManagerBase(offset, maximum, invalid) {}

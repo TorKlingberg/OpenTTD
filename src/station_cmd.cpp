@@ -2867,7 +2867,12 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		 * need of recalculation */
 		uint dist;
 		Town *nearest = AirportGetNearestTown(st, dist);
-		nearest->noise_reached -= GetAirportNoiseLevelForDistance(st->airport.GetSpec(), dist);
+		/* Take the station overload, not the spec: a modular airport's noise comes from
+		 * its layout, so removing it at the type's rate would leave noise_reached
+		 * permanently wrong. ClearTile_Station routes modular tiles to
+		 * RemoveModularAirportTile before this function, so this is unreachable for
+		 * modular today — but the two must not be allowed to disagree. */
+		nearest->noise_reached -= GetAirportNoiseLevelForDistance(st, dist);
 
 		if (_settings_game.economy.station_noise_level) {
 			SetWindowDirty(WC_TOWN_VIEW, nearest->index);
