@@ -1191,18 +1191,36 @@ std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t a
 		}
 	}
 
+	/* GetStockFenceEdgeMask() reproduces whatever edges the stock gfx variant baked a
+	 * fence line into, which is either a genuine internal partition between two stock
+	 * tiles (rare, e.g. an apron divider) or, far more commonly, just the airport's
+	 * outer boundary at conversion time. Modular airports already draw an automatic
+	 * fence along any edge that isn't shared with another airport tile (the "perimeter"
+	 * check in DrawModularAirportPerimeterFences), and that check keeps working
+	 * correctly as tiles are added or removed later. A perimeter-only bit baked into
+	 * edge_block_mask is therefore both redundant at conversion time and wrong once the
+	 * airport grows past it — it would keep drawing (and taxi-blocking) a fence deep
+	 * inside the layout. Keep the bit only where the neighbour is also part of this
+	 * layout, i.e. a genuine internal partition; mirror it onto that neighbour so both
+	 * sides agree, matching how the in-game fence tool stores a partition. Drop it
+	 * everywhere else. */
 	static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } fence_edges[] = {
 		{  0, -1, 0x01, 0x04},
 		{ +1,  0, 0x02, 0x08},
 		{  0, +1, 0x04, 0x01},
 		{ -1,  0, 0x08, 0x02},
 	};
-	for (const ModularAirportTileData &data : result) {
+	for (ModularAirportTileData &data : result) {
+		const uint8_t original_mask = data.edge_block_mask;
 		for (const auto &edge : fence_edges) {
-			if ((data.edge_block_mask & edge.bit) == 0) continue;
+			if ((original_mask & edge.bit) == 0) continue;
 			const TileIndex neighbour = TileAddXY(data.tile, edge.dx, edge.dy);
 			auto it = std::find_if(result.begin(), result.end(), [=](const ModularAirportTileData &candidate) { return candidate.tile == neighbour; });
-			if (it != result.end()) it->edge_block_mask |= edge.opposite;
+			if (it != result.end()) {
+				it->edge_block_mask |= edge.opposite;
+			} else {
+				data.edge_block_mask &= ~edge.bit;
+			}
 		}
 	}
 

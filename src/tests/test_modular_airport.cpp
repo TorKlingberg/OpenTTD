@@ -321,12 +321,17 @@ TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
 		static constexpr struct { int8_t dx, dy; uint8_t bit, opposite; } edges[] = {
 			{0, -1, 0x01, 0x04}, {1, 0, 0x02, 0x08}, {0, 1, 0x04, 0x01}, {-1, 0, 0x08, 0x02},
 		};
-		for (const ModularAirportTileData &data : std::as_const(manual)) {
+		for (ModularAirportTileData &data : manual) {
+			const uint8_t original_mask = data.edge_block_mask;
 			for (const auto &edge : edges) {
-				if ((data.edge_block_mask & edge.bit) == 0) continue;
+				if ((original_mask & edge.bit) == 0) continue;
 				const TileIndex neighbour = TileAddXY(data.tile, edge.dx, edge.dy);
 				auto it = std::find_if(manual.begin(), manual.end(), [=](const ModularAirportTileData &candidate) { return candidate.tile == neighbour; });
-				if (it != manual.end()) it->edge_block_mask |= edge.opposite;
+				if (it != manual.end()) {
+					it->edge_block_mask |= edge.opposite;
+				} else {
+					data.edge_block_mask &= ~edge.bit;
+				}
 			}
 		}
 
