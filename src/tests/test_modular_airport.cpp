@@ -474,7 +474,7 @@ TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 	RebuildViewportKdtree();
 }
 
-TEST_CASE("ModularAirportTileBuildNamesTheStationAnAirport")
+TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 {
 	MockEnvironment::Instance();
 	static LanguageMetadata test_language;
@@ -487,18 +487,32 @@ TEST_CASE("ModularAirportTileBuildNamesTheStationAnAirport")
 	const bool saved_noise = _settings_game.economy.station_noise_level;
 	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
 	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const uint8_t saved_station_spread = _settings_game.station.station_spread;
 	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
 	_settings_game.economy.station_noise_level = false;
 	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
 	_settings_game.station.never_expire_airports = true;
+	_settings_game.station.station_spread = 64;
 	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
 
-	/* A station is named once, when its first tile creates it, and a tile-by-tile
-	 * build has no layout yet to name itself from. Deriving the name from the single
-	 * piece in hand made it depend on which one the player clicked first — an apron
-	 * first meant the finished airport was called "Heliport" forever. Pin the generic
-	 * name for every plausible starting piece. */
-	for (uint8_t first_piece : {APT_APRON, APT_STAND, APT_DEPOT_SE, APT_HELIPAD_2, APT_RUNWAY_END}) {
+	/* A station is named once, when its first tile creates it, so a tile-by-tile build
+	 * has to answer "airport or heliport?" from one piece. A helipad is the only piece
+	 * that answers it: nothing else is helicopter-only. Every other piece takes the
+	 * generic name — asking whether the piece is a runway instead named an airport
+	 * begun with an apron "Heliport" for the rest of the game. */
+	const std::array<std::pair<uint8_t, StringID>, 7> cases = {{
+		{APT_APRON, STR_SV_STNAME_AIRPORT},
+		{APT_STAND, STR_SV_STNAME_AIRPORT},
+		{APT_DEPOT_SE, STR_SV_STNAME_AIRPORT},
+		{APT_RUNWAY_END, STR_SV_STNAME_AIRPORT},
+		{APT_HELIPAD_2, STR_SV_STNAME_HELIPORT},
+		{APT_HELIPAD_3_FENCE_NW, STR_SV_STNAME_HELIPORT},
+		/* The stock heliport is a single tile, so this is the whole layout: a
+		 * hand-built heliport must end up named like the stock one built as modular. */
+		{APT_HELIPORT, STR_SV_STNAME_HELIPORT},
+	}};
+
+	for (const auto &[first_piece, expected_name] : cases) {
 		CAPTURE(first_piece);
 		Map::Allocate(64, 64);
 		extern StationPool _station_pool;
@@ -527,13 +541,50 @@ TEST_CASE("ModularAirportTileBuildNamesTheStationAnAirport")
 		const Station *st = Station::GetByTile(base);
 		REQUIRE(st != nullptr);
 
-		CHECK(st->string_id == STR_SV_STNAME_AIRPORT);
+		CHECK(st->string_id == expected_name);
+	}
+
+	/* The other half of the claim: the stock heliport built as modular derives its
+	 * name from the finished layout. Both paths must land on the same name for the
+	 * same one-tile layout, which is what makes the helipad case above worth having. */
+	{
+		Map::Allocate(64, 64);
+		extern StationPool _station_pool;
+		extern TownPool _town_pool;
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		_company_pool.CleanPool();
+		RebuildStationKdtree();
+		RebuildViewportKdtree();
+		AirportSpec::ResetAirports();
+
+		Company *company = Company::CreateAtIndex(CompanyID(0));
+		REQUIRE(company != nullptr);
+		company->money = INT64_MAX;
+		company->clear_limit = UINT32_MAX;
+		_current_company = company->index;
+
+		Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+
+		const TileIndex base = TileXY(4, 4);
+		const CommandCost stock_build = CmdBuildModularAirportFromStock(DoCommandFlag::Execute,
+				base, AT_HELIPORT, 0, NEW_STATION, false);
+		CAPTURE(stock_build.GetErrorMessage(), stock_build.GetExtraErrorMessage());
+		REQUIRE(stock_build.Succeeded());
+		const Station *st = Station::GetByTile(base);
+		REQUIRE(st != nullptr);
+
+		CHECK(st->string_id == STR_SV_STNAME_HELIPORT);
 	}
 
 	_current_company = saved_company;
 	_settings_game.economy.station_noise_level = saved_noise;
 	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
 	_settings_game.station.never_expire_airports = saved_never_expire;
+	_settings_game.station.station_spread = saved_station_spread;
 	TimerGameCalendar::year = saved_year;
 
 	extern StationPool _station_pool;

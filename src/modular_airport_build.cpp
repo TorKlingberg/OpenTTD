@@ -876,14 +876,24 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		}
 	}
 
-	/* The name is chosen once, when the first tile creates the station, and a
-	 * tile-by-tile build has no layout yet to derive it from. Deriving it from the
-	 * one tile in hand makes the name depend on which piece the player happened to
-	 * click first: start a full airport with an apron and it is named "Heliport"
-	 * forever. The template and from-stock paths know their finished layout and do
-	 * derive it (see ModularAirportAcceptsPlanesFromPieces at their BuildStationPart
-	 * calls); this path cannot, so it keeps the generic name. */
-	ret = BuildStationPart(&st, flags, reuse, airport_area, STATIONNAMING_AIRPORT);
+	/* The name is chosen once, when the first tile creates the station, so this path
+	 * has to answer "airport or heliport?" from a single piece — the template and
+	 * from-stock paths derive it from their finished layout, which does not exist yet
+	 * here.
+	 *
+	 * A helipad is the one piece that says something: nothing but a helicopter uses
+	 * one, and a player laying a pad down first is building a heliport. Every other
+	 * piece — apron, stand, hangar, runway, building — appears in both kinds of
+	 * airport, so it gets the generic name. Asking instead whether this one tile is a
+	 * runway (or whether the one-tile layout accepts planes) names an airport begun
+	 * with an apron "Heliport" for the rest of the game.
+	 *
+	 * Order dependence is not fully removable here: a large airport whose first tile
+	 * happens to be a helipad still comes out "Heliport". What this does buy is the
+	 * case that matters — a hand-built heliport now gets the same name as the stock
+	 * heliport built as modular. */
+	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? STATIONNAMING_HELIPORT : STATIONNAMING_AIRPORT;
+	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
 	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
