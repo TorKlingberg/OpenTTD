@@ -232,7 +232,11 @@ static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 		case APT_DEPOT_SE: case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
 		case APT_SMALL_DEPOT_SE: case APT_SMALL_DEPOT_SW:
 		case APT_SMALL_DEPOT_NW: case APT_SMALL_DEPOT_NE:
-			return CalculateAutoTaxiDirectionsForGfx(piece_type, rotation);
+			/* Hangar sprites already depict a fully-walled building (door aside),
+			 * so the generic perimeter fence overlay would be redundant/overlapping.
+			 * Door-direction handling for taxi/pathfinding purposes is unaffected;
+			 * that still goes through CalculateAutoTaxiDirectionsForGfx elsewhere. */
+			return 0x0F;
 		case APT_APRON_FENCE_NE: case APT_APRON_FENCE_SE:
 		case APT_APRON_FENCE_SW: case APT_APRON_FENCE_NW:
 			return 0x0F;
