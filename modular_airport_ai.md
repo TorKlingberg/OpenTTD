@@ -3,8 +3,13 @@
 Plan for a NoAI script that designs and builds modular airports rather than picking a stock
 type or a saved template.
 
-**Status:** the script API this needs is built and merged (see §2). What remains is the AI
-itself, from §5 onwards.
+**Status:** the script API is built (§2) and so is a working AI (`ai/ModularAirportAI/`).
+It designs, sites, builds, and grows airports, and flies aircraft between them. M0–M4 are
+done; §8 has what is left.
+
+Run it headless with `scripts/run_ai.sh <years> <seed>`. On a 256×256 map from 1970 it
+reaches 20 airports and ~55 aircraft carrying ~500 movements a year, every airport large-safe,
+using the pier/linear/apron families across all four orientations.
 
 ---
 
@@ -89,6 +94,30 @@ one, and is the fastest way to see the API in use.
   preview functions deliberately do not, so a script can cost a 1955 airport in 1948.
 - Layouts are capped at 128 tiles. Compound small-terminal pieces and legacy small hangars
   cannot rotate; legacy small runway pieces only 0/180.
+
+### Traps found by building against it
+
+Each of these produced an airport that built cleanly and then did not work, and each was
+found by measuring rather than by reading the source. They are the reason `run_ai.sh` reports
+`[AirportStats]` movement counts: nothing else distinguishes a working airport from a dead one.
+
+- **Rotation is broken.** `PlaceModularAirportLayout` with `rotation != 0` yields an airport
+  whose aircraft never leave the hangar — no error, no `[ModAp]` log lines, valid-looking
+  orders. The same layout authored vertically by hand at rotation 0 flies. The AI therefore
+  rotates layouts itself (`Grid.Rotate`, mirroring `RotateTemplateTile`) and always passes 0.
+  Suspected cause: a hangar's facing lives in both the piece type (`APT_DEPOT_*`) and the
+  tile's rotation field, and rotation appears to turn both.
+- **After rotation the origin tile may not belong to the airport** — for a half-turn, local
+  (0,0) maps to (w−1, h−1), which can be an empty cell. `GetStationID(origin)` and
+  `GetHangarOfAirport(origin)` then fail on a *successful* build.
+- **`AITown.GetAllowedNoise` is not a noise level** when `station_noise_level` is off, which
+  is the default: it returns "2 minus this town's airports". Comparing a layout's noise
+  against it rejects everything bigger than a single helipad.
+- **`AIOrder.AppendOrder` infers station-vs-depot from the tile**, so an order to a hangar
+  tile silently becomes go-to-depot. Any layout whose northernmost row holds the hangar
+  produces aircraft that fly to a hangar and stop.
+- **`AIEngine.GetMaximumOrderDistance` is not in tiles.** It may only be compared against
+  `AIOrder.GetOrderDistance`.
 
 ### What the API does not answer
 
@@ -300,45 +329,74 @@ time, while long thin one-way taxiways queue per tile and pipeline.
 
 ## 7. Structuring the AI
 
-Squirrel, in `bin/ai/` or `~/Documents/OpenTTD/ai/`:
+As built, in `ai/ModularAirportAI/` (copied into `build/ai/` by `scripts/run_ai.sh`):
 
 ```
-info.nut     AIInfo registration, settings (aggressiveness, max airports, family choice)
-main.nut     AIController: main loop, events, exception dispatch     (ChooChoo shape)
-task.nut     Task tree + Failed() rollback                           (ChooChoo, verbatim idea)
-world.nut    persisted model: airports built, growth stage, routes   (HogEx SaveStatics idea)
-sites.nut    candidate site search over one-level regions
-layout.nut   the generator of §6 — pure, testable, no API calls
-build.nut    execution: atomic submit path, tile-by-tile path, rollback
-grow.nut     upgrade decisions: when to add stands / runway / go large-safe
-fleet.nut    aircraft purchase, orders, replacement
+info.nut      AIInfo registration and settings (max_airports, variety, selftest)
+main.nut      AIController: the loop, budget policy, town choice, fleet sizing
+util.nut      Grid, piece predicates, Grid.Rotate, ValidateGrid (connectivity)
+layout.nut    the six families of section 6 - pure functions, no world access
+fit.nut       FitGridToMask: trim a layout to the ground that exists; ScoreGrid
+sites.nut     terrain scan, candidate generation, tiered family fallback
+build.nut     placement, pre-build revalidation, read-back dumps
+grow.nut      growth on live airports: tower/terminal to large-safe, stands on demand
+fleet.nut     engine choice gated on airport capability, orders, retirement
+selftest.nut  offline dump of every family plus five awkward site masks
 ```
 
-Two things to get right early because they are painful later:
+There is no `task.nut` and no `world.nut`, and both omissions are deliberate. ChooChoo's task
+tree exists to roll back a half-built structure; `PlaceModularAirportLayout` is atomic, so new
+airports never need it, and growth adds one independently-safe tile at a time. HogEx's
+persisted world model is likewise unnecessary while everything the AI reasons about - which
+airports exist, what pieces they hold, whether they are large-safe - is re-read from the map
+each pass. That trade costs API calls per iteration and buys immunity to the save/load and
+suspension bugs a cached model invites.
 
-- **Save/load.** `Save()`/`Load()` must round-trip the world model — especially each airport's
-  growth stage, which is not derivable from the map. Anything that *is* derivable (which tile
-  holds which piece) should be re-read via `GetModularPiece` rather than saved.
-- **Suspension.** Every command suspends the script and the world can change between two tiles
-  of the same airport. The atomic path sidesteps this; the tile-by-tile growth path must
-  re-validate and be able to roll back.
+Two things that bit, and how they are handled:
+
+- **Suspension.** Every command suspends the script, so a site search spans *months* of game
+  time and the world moves under it. The terrain scan a search runs on is stale by the time it
+  picks a winner — a town can build a house on the chosen ground meanwhile — so `BuildSite`
+  re-checks every tile immediately before committing. Re-reading thirty tiles is far cheaper
+  than a failed build, which costs the attempt and teaches nothing.
+- **Cost.** Terrain lookups dominate the search, and done naively they cost tens of thousands
+  of suspending API calls per town, which is game *years*. `ScanRegion` reads each town's
+  neighbourhood once into a table and the inner loop becomes table lookups. Watch the region's
+  radius: it must cover where the *layouts* reach, not just where their origins sit, or every
+  tile past the edge reads as unbuildable and nothing ever fits.
 
 ---
 
 ## 8. Milestones
 
-M0 (API reachable end to end) and M1 (atomic layout submit + previews) are **done**.
+M0–M4 are **done**, and M6 landed early because the fitter was the natural way to make one
+family serve many sites.
 
-| # | Deliverable | Proves |
+| # | Deliverable | State |
 |---|---|---|
-| M2 | `layout.nut` families 1 + 2 as pure functions, verified by dumping grids to template JSON and viewing with `scripts/parse_airport_template.py` | The generator produces legal layouts |
-| M3 | Site search + build + one aircraft flying a route | First working AI |
-| M4 | Growth: add stands, add runway, upgrade to large-safe on a live airport | The strategic thesis (§4) |
-| M5 | Multi-airport network, fleet management, money management | A competitive AI |
-| M6 | Non-rectangular footprint fitting (§6 B) | Fits sites no stock airport can use |
+| M0 | API reachable end to end | done |
+| M1 | Atomic layout submit + previews | done |
+| M2 | `layout.nut` families as pure functions | done — six families, verified by `selftest` |
+| M3 | Site search + build + aircraft flying a route | done |
+| M4 | Growth on a live airport | done — tower/terminal to reach large-safe, stands on demand |
+| M5 | Multi-airport network, fleet and money management | partly — works, but see below |
+| M6 | Non-rectangular footprint fitting | done — `FitGridToMask`, reported as `trimmed=` |
 
-M2 is the natural next step and needs no C++: the generator is a pure function from parameters
-to an integer array, so it can be developed and eyeballed without a running game.
+What M5 still wants:
+
+- **Save/load.** `Save()` returns an empty table. Everything the AI needs is currently
+  re-derived from the map each pass, which is why that is survivable, but the failed-site
+  blacklist is lost on load.
+- **Aircraft replacement.** `RetireLosers` sells persistent loss-makers; nothing renews
+  ageing aircraft, so a long game slowly loses capacity to breakdowns.
+- **A second runway on a saturated airport.** The growth path adds stands and buildings but
+  never a runway, which is the step that actually raises throughput at a busy airport, and the
+  one the `DUAL` family exists to make unnecessary at build time.
+- **Contention shaping.** No one-way taxiways are ever set. `skills/reservations-design.md`
+  says layout shape *is* throughput — a wide apron is a single atomic segment — and nothing in
+  the AI acts on that yet.
+- **Competition.** Untested against other AIs on the same map; `PickUnservedTown` has the
+  randomisation to avoid fighting over sites but this has never been observed.
 
 ---
 
