@@ -80,6 +80,7 @@ class Site
 	town = -1;
 	score = 0;
 	family = -1;
+	trimmed = 0;   ///< cells dropped to fit the ground, i.e. how cramped the site was
 
 	constructor(tile_, rot_, grid_, town_, family_)
 	{
@@ -136,7 +137,9 @@ function TryFit(grid, origin, rot, town, region)
 
 	local fitted = FitGridToMask(grid, allowed);
 	if (fitted == null) return null;
-	return Site(origin, rot, fitted, town, -1);
+	local site = Site(origin, rot, fitted, town, -1);
+	site.trimmed = grid.Count() - fitted.Count();
+	return site;
 }
 
 /**
@@ -164,14 +167,31 @@ function PickFamily(families, scale)
 	return weighted[AIBase.RandRange(weighted.len())];
 }
 
-/** Families that carry fixed-wing traffic, which is nearly always what we want. */
-function PlaneFamilies()
+/**
+ * The families to try, in descending order of preference.
+ *
+ * Order matters more than weighting here. Terrain silently selects for whatever
+ * is smallest: a grass strip fits where a six-tile runway does not, and a
+ * heliport fits where neither does, so offering all of them at once produces a
+ * map covered in the meanest airport that would fit. Trying the real airports
+ * first and falling back only when nothing fits gives each site the best
+ * airport its ground can carry — and keeps strips and heliports for the cramped
+ * places where they are genuinely the right answer.
+ */
+function FamilyTiers()
 {
-	local out = [];
-	foreach (f in AvailableFamilies()) {
-		if (f != Family.HELIPORT) out.append(f);
+	local available = AvailableFamilies();
+	local modern = [], strip = [], heli = [];
+	foreach (f in available) {
+		if (f == Family.HELIPORT) heli.append(f);
+		else if (f == Family.STRIP) strip.append(f);
+		else modern.append(f);
 	}
-	return out;
+	local tiers = [];
+	if (modern.len() > 0) tiers.append(modern);
+	if (strip.len() > 0) tiers.append(strip);
+	if (heli.len() > 0) tiers.append(heli);
+	return tiers;
 }
 
 /**
@@ -213,25 +233,27 @@ function SiteSearchStats()
 }
 
 /**
- * Find a site near a town, preferring an airport that takes aeroplanes.
+ * Find a site near a town, taking the best airport the ground will carry.
  *
- * Heliports are tried only when nothing else fits. Left in the general pool
- * they crowd everything else out — being three tiles wide, they fit on ground
- * where no runway will, so terrain quietly selects for them — and a heliport
- * cannot serve the fixed-wing network at all. As a fallback for genuinely
- * cramped ground, though, they are exactly right.
+ * Works down the tiers in FamilyTiers, stopping at the first that fits. If a
+ * large-safe design was wanted and no tier can provide one, it tries again
+ * without that requirement rather than leaving the town unserved — but the
+ * caller then knows not to send jets there.
  */
 function FindSiteNearTown(town, scale, want_large_safe, variety, budget, blacklist)
 {
-	local site = SearchSites(town, scale, want_large_safe, variety, budget, blacklist, PlaneFamilies());
-	if (site != null) return site;
-	if (want_large_safe) return null;
-
-	local heli = AvailableFamilies();
-	local only_heli = [];
-	foreach (f in heli) if (f == Family.HELIPORT) only_heli.append(f);
-	if (only_heli.len() == 0) return null;
-	return SearchSites(town, scale, false, variety, budget, blacklist, only_heli);
+	local tiers = FamilyTiers();
+	if (want_large_safe) {
+		foreach (tier in tiers) {
+			local site = SearchSites(town, scale, true, variety, budget, blacklist, tier);
+			if (site != null) return site;
+		}
+	}
+	foreach (tier in tiers) {
+		local site = SearchSites(town, scale, false, variety, budget, blacklist, tier);
+		if (site != null) return site;
+	}
+	return null;
 }
 
 function SearchSites(town, scale, want_large_safe, variety, budget, blacklist, families)

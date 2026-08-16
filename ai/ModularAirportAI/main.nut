@@ -111,9 +111,9 @@ class ModularAirportAI extends AIController
 		local funds = FundsAvailable();
 		local pop = AITown.GetPopulation(town);
 		local scale = 0;
-		if (pop > 1200) scale = 1;
-		if (pop > 2500) scale = 2;
-		if (pop > 5000) scale = 3;
+		if (pop > 700) scale = 1;
+		if (pop > 1800) scale = 2;
+		if (pop > 3500) scale = 3;
 		if (funds < 200000 && scale > 0) scale = 0;
 		else if (funds < 450000 && scale > 1) scale = 1;
 		else if (funds < 900000 && scale > 2) scale = 2;
@@ -121,13 +121,9 @@ class ModularAirportAI extends AIController
 		/* Jets are only worth designing for once we could actually buy one. */
 		local want_large_safe = funds > 250000;
 
+		/* FindSiteNearTown already falls back from large-safe to whatever fits,
+		 * and from real airports down to strips and heliports. */
 		local site = FindSiteNearTown(town, scale, want_large_safe, this.variety, budget, this.blacklist);
-		if (site == null && want_large_safe) {
-			/* A large-safe design needs a tower, a big terminal and six clear
-			 * runway tiles. If the ground will not take that, a smaller airport
-			 * is better than none — we just must not fly jets into it. */
-			site = FindSiteNearTown(town, scale, false, this.variety, budget, this.blacklist);
-		}
 		if (site == null) {
 			AILog.Info("no site near " + AITown.GetName(town) + " (scale " + scale + "): " + SiteSearchStats());
 			this.blacklist[AITown.GetLocation(town)] <- true;

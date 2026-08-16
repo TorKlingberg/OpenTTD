@@ -85,6 +85,7 @@ function BuildSite(site)
 	           + " tiles=" + site.grid.Count()
 	           + " stands=" + CountPieces(site.grid, IsStandPiece)
 	           + " safety=" + safety
+	           + (site.trimmed > 0 ? " trimmed=" + site.trimmed : "")
 	           + " -> " + AIStation.GetName(station));
 	foreach (row in site.grid.AsciiRows()) AILog.Info("    plan |" + row + "|");
 	DumpBuiltAirport(station, "   ");
