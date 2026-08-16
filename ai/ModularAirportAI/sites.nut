@@ -147,14 +147,20 @@ function TryFit(grid, origin, rot, town, region)
  * network at all. Keep it rare, and let it earn its place by being the only
  * thing that fits on sites too small for a runway.
  */
-function PickFamily(families)
+function PickFamily(families, scale)
 {
 	local weighted = [];
 	foreach (f in families) {
 		local weight = 4;
-		if (f == Family.DUAL) weight = 2;
+		/* A grass strip is the right answer when there is no money and no modern
+		 * pieces, and the wrong one everywhere else — it can never be large-safe,
+		 * so every jet using it takes an elevated crash roll. Let it fade out as
+		 * the AI can afford better. */
+		if (f == Family.STRIP) weight = (scale >= 2) ? 0 : (scale == 1 ? 1 : 4);
+		if (f == Family.DUAL) weight = (scale >= 2) ? 3 : 1;
 		for (local i = 0; i < weight; i++) weighted.append(f);
 	}
+	if (weighted.len() == 0) return families[AIBase.RandRange(families.len())];
 	return weighted[AIBase.RandRange(weighted.len())];
 }
 
@@ -239,7 +245,7 @@ function SearchSites(town, scale, want_large_safe, variety, budget, blacklist, f
 	local candidates = [];
 	local tries = 4 + variety * 2;
 	for (local i = 0; i < tries; i++) {
-		local family = PickFamily(families);
+		local family = PickFamily(families, scale);
 		local params = RandomParams(family, scale);
 		if (!want_large_safe) params.large_safe = false;
 		local grid = GenerateLayout(family, params);

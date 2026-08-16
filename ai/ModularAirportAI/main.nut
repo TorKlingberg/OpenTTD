@@ -4,6 +4,7 @@ require("fit.nut");
 require("sites.nut");
 require("build.nut");
 require("fleet.nut");
+require("grow.nut");
 require("selftest.nut");
 
 /* Keep this much in the bank rather than spending down to zero: an airport with
@@ -18,6 +19,8 @@ class ModularAirportAI extends AIController
 	blacklist = null;   ///< origins that failed to build, so we stop retrying them
 	max_airports = 12;
 	variety = 2;
+	grow_cursor = 0;    ///< round-robin over airports, so none is starved
+	pax_cargo = -1;
 
 	function Start()
 	{
@@ -50,6 +53,7 @@ class ModularAirportAI extends AIController
 				airports = OurAirports();
 			}
 			if (airports.len() >= 2) this.TryExpandFleet(airports);
+			this.TryGrowAirports(airports);
 
 			local year = AIDate.GetYear(AIDate.GetCurrentDate());
 			if (year != last_report) {
@@ -96,16 +100,26 @@ class ModularAirportAI extends AIController
 		local budget = AICompany.GetBankBalance(AICompany.COMPANY_SELF) - CASH_RESERVE;
 		if (budget < 60000) return;
 
-		local town = this.PickUnservedTown(airports);
+		local town = this.PickUnservedTown(airports, FundsAvailable());
 		if (town < 0) return;
 
+		/* Size the airport for the town it serves, then cap it by what we can
+		 * raise rather than by what happens to be in the bank. Sizing off the
+		 * instantaneous balance produces nothing but minimal airstrips forever:
+		 * the balance is low precisely because the AI is spending, so it never
+		 * observes itself being able to afford anything better. */
+		local funds = FundsAvailable();
+		local pop = AITown.GetPopulation(town);
 		local scale = 0;
-		if (budget > 200000) scale = 1;
-		if (budget > 500000) scale = 2;
-		if (budget > 1200000) scale = 3;
+		if (pop > 1200) scale = 1;
+		if (pop > 2500) scale = 2;
+		if (pop > 5000) scale = 3;
+		if (funds < 200000 && scale > 0) scale = 0;
+		else if (funds < 450000 && scale > 1) scale = 1;
+		else if (funds < 900000 && scale > 2) scale = 2;
 
 		/* Jets are only worth designing for once we could actually buy one. */
-		local want_large_safe = budget > 250000;
+		local want_large_safe = funds > 250000;
 
 		local site = FindSiteNearTown(town, scale, want_large_safe, this.variety, budget, this.blacklist);
 		if (site == null && want_large_safe) {
@@ -127,14 +141,22 @@ class ModularAirportAI extends AIController
 		}
 	}
 
-	/** A town with no airport of ours nearby, preferring big ones. */
-	function PickUnservedTown(airports)
+	/**
+	 * A town with no airport of ours nearby, preferring big ones.
+	 *
+	 * Once the map is covered and money has piled up, fall back to towns that
+	 * still have room for a second airport. A town takes two, and a large town
+	 * generates far more traffic than one small airport at its edge can carry —
+	 * so densifying beats leaving millions in the bank.
+	 */
+	function PickUnservedTown(airports, funds)
 	{
 		local towns = AITownList();
 		towns.Valuate(AITown.GetPopulation);
 		towns.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
 
 		local shortlist = [];
+		local second_best = [];
 		foreach (town, pop in towns) {
 			if (pop < 200) continue;
 			local loc = AITown.GetLocation(town);
@@ -143,10 +165,17 @@ class ModularAirportAI extends AIController
 			foreach (a in airports) {
 				if (AIMap.DistanceManhattan(a.tile, loc) < 15) { taken = true; break; }
 			}
-			if (taken) continue;
-			shortlist.append(town);
-			if (shortlist.len() >= 6) break;
+			if (!taken) {
+				shortlist.append(town);
+				if (shortlist.len() >= 6) break;
+				continue;
+			}
+			/* Room for one more here, and big enough to be worth it. */
+			if (pop > 2000 && AITown.GetAllowedNoise(town) >= 1 && second_best.len() < 4) {
+				second_best.append(town);
+			}
 		}
+		if (shortlist.len() == 0 && funds > 1500000) shortlist = second_best;
 		if (shortlist.len() == 0) return -1;
 		/* Some randomness so two instances of this AI do not fight over the
 		 * same town, and so successive games do not look identical. */
@@ -158,6 +187,30 @@ class ModularAirportAI extends AIController
 	 * Add aircraft where they will do the most good: the route between two of
 	 * our airports with the fewest aircraft on it.
 	 */
+	/**
+	 * Improve one existing airport per pass.
+	 *
+	 * One at a time on purpose: each build suspends the script, and spreading
+	 * the work out keeps the AI responsive to whatever else needs doing.
+	 */
+	function TryGrowAirports(airports)
+	{
+		if (airports.len() == 0) return;
+		local funds = FundsAvailable();
+		if (funds < 60000) return;
+		if (this.pax_cargo < 0) this.pax_cargo = PassengerCargo();
+
+		local i = this.grow_cursor % airports.len();
+		this.grow_cursor = (this.grow_cursor + 1) % airports.len();
+		local a = airports[i];
+
+		local what = GrowAirport(a.station, a.tile, funds, this.pax_cargo);
+		if (what != null) {
+			AILog.Info("grew " + AIStation.GetName(a.station) + ": " + what
+			           + " (safety now " + AIAirport.GetModularAirportSafety(a.tile) + ")");
+		}
+	}
+
 	/** Buy aircraft while there is both money and an under-served route. */
 	function TryExpandFleet(airports)
 	{
@@ -310,6 +363,18 @@ function AirportOrderTile(station, fallback)
 		if (IsStandPiece(p) || IsHelipadPiece(p) || p == AIAirport.MP_APRON) return t;
 	}
 	return fallback;
+}
+
+/**
+ * What we could spend if we wanted to, counting unused loan capacity.
+ *
+ * The bank balance alone is a poor measure of how big an airport to build: it
+ * is lowest exactly when expansion is going well.
+ */
+function FundsAvailable()
+{
+	return AICompany.GetBankBalance(AICompany.COMPANY_SELF)
+	     + (AICompany.GetMaxLoanAmount() - AICompany.GetLoanAmount());
 }
 
 /** Company names must be unique, so add a suffix when the plain name is taken. */
