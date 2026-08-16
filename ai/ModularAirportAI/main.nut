@@ -45,14 +45,19 @@ class ModularAirportAI extends AIController
 			local aircraft = AIVehicleList().Count();
 
 			/* An airport with no aircraft is a monthly bill and nothing else, so
-			 * the fleet leads and the network follows. Below two airports there
-			 * is no route to fly, so building comes first there. */
-			local fleet_is_thin = airports.len() >= 2 && aircraft < airports.len() * 2;
+			 * the fleet leads and the network follows: buy first, build second.
+			 *
+			 * Holding back new airports whenever the fleet looks thin deadlocks,
+			 * though. Two airports too close together to be worth a route leave
+			 * the fleet permanently thin and no aircraft ever buyable, so the AI
+			 * stops building the very airports that would give it somewhere to
+			 * fly. Only defer building when the fleet actually grew. */
+			local bought = (airports.len() >= 2) ? this.TryExpandFleet(airports) : 0;
+			local fleet_is_thin = bought > 0 && aircraft + bought < airports.len() * 2;
 			if (airports.len() < this.max_airports && !fleet_is_thin) {
 				this.TryBuildAirport(airports);
 				airports = OurAirports();
 			}
-			if (airports.len() >= 2) this.TryExpandFleet(airports);
 			this.TryGrowAirports(airports);
 
 			local year = AIDate.GetYear(AIDate.GetCurrentDate());
@@ -207,12 +212,19 @@ class ModularAirportAI extends AIController
 		}
 	}
 
-	/** Buy aircraft while there is both money and an under-served route. */
+	/**
+	 * Buy aircraft while there is both money and an under-served route.
+	 * Returns how many were bought, which the caller uses to tell "the fleet is
+	 * catching up" from "the fleet cannot grow at all".
+	 */
 	function TryExpandFleet(airports)
 	{
+		local bought = 0;
 		for (local i = 0; i < 3; i++) {
-			if (!this.BuyOneAircraft(airports)) return;
+			if (!this.BuyOneAircraft(airports)) break;
+			bought++;
 		}
+		return bought;
 	}
 
 	function BuyOneAircraft(airports)
