@@ -66,8 +66,14 @@ function ChooseAircraft(allow_jets, want_heli, budget, distance)
 		local running = AIEngine.GetRunningCost(e);
 		if (capacity <= 0 || speed <= 0) continue;
 
-		/* Rough revenue proxy per unit cost. */
-		local score = capacity * speed / (1 + running / 300) - price / 200;
+		/* Passenger-miles per year against what it costs to run for a year.
+		 * Capacity times speed is the throughput of one aircraft; running cost
+		 * is the recurring bill; price is amortised roughly over a decade so a
+		 * large aircraft is not rejected for being expensive when it earns its
+		 * price back many times over. */
+		local yearly_cost = running + price / 10;
+		if (yearly_cost <= 0) continue;
+		local score = capacity * speed * 100 / yearly_cost;
 		if (score > best_score) { best_score = score; best = e; }
 	}
 	return best;

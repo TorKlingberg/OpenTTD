@@ -29,6 +29,14 @@ class ModularAirportAI extends AIController
 		this.max_airports = AIController.GetSetting("max_airports");
 		this.variety = AIController.GetSetting("variety");
 
+		/* Let the game renew ageing aircraft. Without this a long game quietly
+		 * decays: aircraft grow old, break down more, and throughput slides even
+		 * though the airports and routes are unchanged — over thirty years that
+		 * cost about a fifth of the movements. */
+		AICompany.SetAutoRenewStatus(true);
+		AICompany.SetAutoRenewMonths(-6);
+		AICompany.SetAutoRenewMoney(100000);
+
 		if (AIController.GetSetting("selftest") == 1) {
 			RunSelfTest();
 			while (true) this.Sleep(1000);
@@ -272,7 +280,10 @@ class ModularAirportAI extends AIController
 
 		local v = BuyAircraft(hangar, engine, a.order_tile, b.order_tile);
 		if (v < 0) return false;
+		local ptype = AIEngine.GetPlaneType(engine);
 		AILog.Info("aircraft " + AIEngine.GetName(engine)
+		           + " [" + (ptype == AIAirport.PT_BIG_PLANE ? "big" :
+		                     ptype == AIAirport.PT_HELICOPTER ? "heli" : "small") + "]"
 		           + " on " + AIStation.GetName(a.station) + " <-> " + AIStation.GetName(b.station)
 		           + (allow_jets ? "" : " (no jets: an end is not large-safe)"));
 		return true;
