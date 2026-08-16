@@ -40,6 +40,16 @@ function RunSelfTest()
 	AILog.Info("        T stand+terminal  P stand+pier  H hangar  h small hangar");
 	AILog.Info("        X helipad  B terminal  b low terminal  W tower  r radar  f flag  , grass");
 
+	/* Calibration: the modular upkeep figure is directly comparable with a stock
+	 * airport's, so print the stock ladder to give the generated numbers below a
+	 * scale a human can judge. */
+	AILog.Info("stock airport upkeep for comparison:"
+	           + " small=" + AIAirport.GetMonthlyMaintenanceCost(AIAirport.AT_SMALL)
+	           + " large=" + AIAirport.GetMonthlyMaintenanceCost(AIAirport.AT_LARGE)
+	           + " metropolitan=" + AIAirport.GetMonthlyMaintenanceCost(AIAirport.AT_METROPOLITAN)
+	           + " intercontinental=" + AIAirport.GetMonthlyMaintenanceCost(AIAirport.AT_INTERCON)
+	           + " helistation=" + AIAirport.GetMonthlyMaintenanceCost(AIAirport.AT_HELISTATION));
+
 	local families = [Family.STRIP, Family.LINEAR, Family.PIER,
 	                  Family.DUAL, Family.APRON, Family.HELIPORT];
 	local total = 0, bad = 0;
@@ -75,7 +85,13 @@ function RunSelfTest()
 			for (local scale = 3; scale >= 0; scale--) {
 				local params = RandomParams(family, scale);
 				local grid = GenerateLayout(family, params);
-				local fitted = FitGridToMask(grid, fn);
+				local allowed = {};
+				for (local y = 0; y < grid.h; y++) {
+					for (local x = 0; x < grid.w; x++) {
+						if (fn(x, y)) allowed[grid.Key(x, y)] <- true;
+					}
+				}
+				local fitted = FitGridToMask(grid, allowed);
 				if (fitted == null) continue;
 				if (best == null || fitted.Count() > best.Count()) { best = fitted; best_family = family; }
 			}

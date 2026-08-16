@@ -398,8 +398,41 @@ function GenerateLayout(family, params)
 		case Family.HELIPORT: g = GenerateHeliport(params); break;
 		default:              g = GenerateLinear(params); break;
 	}
+	EnsureTowerIfNearlySafe(g);
 	if (params.mirror) g = g.MirrorX().Normalise();
 	return g;
+}
+
+/**
+ * Add a control tower when it is the only thing between this layout and being
+ * safe for fast jets.
+ *
+ * This happens by accident and often: a stand_style that uses MP_STAND_TERMINAL
+ * satisfies the big-terminal requirement for free, so a layout generated with
+ * large_safe off can end up holding a six-tile runway, a big terminal and
+ * nothing else missing. One extra tile then converts an airport that gives jets
+ * an elevated overrun crash roll into one that does not — much the cheapest
+ * safety the generator can buy.
+ */
+function EnsureTowerIfNearlySafe(grid)
+{
+	local safety = AIAirport.GetModularLayoutSafety(grid.ToLayout());
+	if (safety != AIAirport.MS_MISSING_TOWER) return;
+
+	/* Somewhere empty that touches the airport, so it does not look dropped in
+	 * a field. Non-taxiable, so it can go anywhere that is not a through route. */
+	for (local y = 0; y < grid.h; y++) {
+		for (local x = 0; x < grid.w; x++) {
+			if (grid.Get(x, y) != null) continue;
+			local touches = false;
+			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+				if (grid.Get(x + d[0], y + d[1]) != null) { touches = true; break; }
+			}
+			if (!touches) continue;
+			grid.Set(x, y, AIAirport.MP_TOWER);
+			return;
+		}
+	}
 }
 
 /**

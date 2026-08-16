@@ -1,0 +1,152 @@
+/*
+ * Aircraft: choosing them, buying them, and keeping them off airports that
+ * would crash them.
+ *
+ * The last part is specific to modular airports and is not optional. A fast jet
+ * using an airport that is not large-safe takes an elevated overrun crash roll
+ * *regardless of the "plane crashes" setting* — it is the stock short-strip
+ * behaviour, not the general crash rate. So the aircraft choice is gated on
+ * what the airports at both ends of the route actually are.
+ */
+
+/** What an airport can host, read off the map. */
+function AirportCapability(tile)
+{
+	local caps = { planes = false, jets = false, helis = false };
+	if (!AIAirport.IsModularAirportTile(tile)) return caps;
+	local station = AIStation.GetStationID(tile);
+	if (!AIStation.IsValidStation(station)) return caps;
+
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local p = AIAirport.GetModularPiece(t);
+		if (IsStandPiece(p)) caps.planes = true;
+		if (IsHelipadPiece(p)) caps.helis = true;
+	}
+	caps.jets = caps.planes && AIAirport.GetModularAirportSafety(tile) == AIAirport.MS_OK;
+	return caps;
+}
+
+/**
+ * Pick an aircraft for a route.
+ *
+ * `allow_jets` false means both ends are not large-safe, so big planes are off
+ * the table however good their economics look.
+ */
+function ChooseAircraft(allow_jets, want_heli, budget, distance)
+{
+	local engines = AIEngineList(AIVehicle.VT_AIR);
+	local best = -1, best_score = -1;
+
+	foreach (e, _ in engines) {
+		if (!AIEngine.IsBuildable(e)) continue;
+		local type = AIEngine.GetPlaneType(e);
+		local is_heli = (type == AIAirport.PT_HELICOPTER);
+		if (want_heli != is_heli) continue;
+		if (!is_heli && !allow_jets && type == AIAirport.PT_BIG_PLANE) continue;
+
+		local price = AIEngine.GetPrice(e);
+		if (price <= 0 || price > budget) continue;
+
+		/* Range matters once it exists: an aircraft that cannot reach the far end
+		 * accepts the orders, then sits in the hangar forever — no error, no
+		 * movement, and nothing in the airport logs, because it never starts
+		 * taxiing at all.
+		 *
+		 * `distance` must come from AIOrder.GetOrderDistance, not from a map
+		 * distance. The unit is explicitly unspecified and is not tiles, so
+		 * comparing a Manhattan distance against it silently passes routes the
+		 * aircraft cannot fly. */
+		local range = AIEngine.GetMaximumOrderDistance(e);
+		if (range > 0 && distance > range) continue;
+
+		local capacity = AIEngine.GetCapacity(e);
+		local speed = AIEngine.GetMaxSpeed(e);
+		local running = AIEngine.GetRunningCost(e);
+		if (capacity <= 0 || speed <= 0) continue;
+
+		/* Rough revenue proxy per unit cost. */
+		local score = capacity * speed / (1 + running / 300) - price / 200;
+		if (score > best_score) { best_score = score; best = e; }
+	}
+	return best;
+}
+
+/**
+ * Buy an aircraft at `hangar` and set it flying between two stations.
+ * Returns the VehicleID or -1.
+ */
+function BuyAircraft(hangar, engine, from_tile, to_tile)
+{
+	local v = AIVehicle.BuildVehicle(hangar, engine);
+	if (!AIVehicle.IsValidVehicle(v)) {
+		AILog.Warning("could not buy aircraft: " + AIError.GetLastErrorString());
+		return -1;
+	}
+	/* Both tiles must be station tiles that are not hangars, or AppendOrder
+	 * quietly makes a depot order out of them and the aircraft never flies. */
+	if (AIAirport.IsModularAirportTile(from_tile) && IsHangarPiece(AIAirport.GetModularPiece(from_tile))) {
+		AILog.Error("refusing to order to a hangar tile at " + TileStr(from_tile));
+		AIVehicle.SellVehicle(v);
+		return -1;
+	}
+	/* Aircraft are fast; waiting for a full load usually costs more in idle
+	 * time than it gains in payload, so run them as a shuttle. */
+	if (!AIOrder.AppendOrder(v, from_tile, AIOrder.OF_NONE)
+	 || !AIOrder.AppendOrder(v, to_tile, AIOrder.OF_NONE)) {
+		AILog.Warning("could not set orders: " + AIError.GetLastErrorString());
+		AIVehicle.SellVehicle(v);
+		return -1;
+	}
+	local started = AIVehicle.StartStopVehicle(v);
+	AILog.Info("  start=" + started + " err=" + AIError.GetLastErrorString()
+	           + " stopped_in_depot=" + AIVehicle.IsStoppedInDepot(v)
+	           + " built_at=" + TileStr(hangar));
+
+	/* Read the orders back. "Valid-looking orders that the aircraft ignores" is
+	 * the failure this AI keeps rediscovering, and it is invisible unless the
+	 * kind of each order is checked explicitly. */
+	local kinds = "";
+	for (local i = 0; i < AIOrder.GetOrderCount(v); i++) {
+		local dest = AIOrder.GetOrderDestination(v, i);
+		local kind = "?";
+		if (AIOrder.IsGotoStationOrder(v, i)) kind = "station";
+		else if (AIOrder.IsGotoDepotOrder(v, i)) kind = "DEPOT";
+		else if (AIOrder.IsGotoWaypointOrder(v, i)) kind = "waypoint";
+		kinds += " " + i + ":" + kind + "@" + TileStr(dest);
+	}
+	AILog.Info("  orders" + kinds
+	           + " range=" + AIEngine.GetMaximumOrderDistance(engine)
+	           + " dist=" + AIOrder.GetOrderDistance(AIVehicle.VT_AIR, from_tile, to_tile)
+	           + " state=" + AIVehicle.GetState(v));
+	return v;
+}
+
+/** Sell aircraft that have been losing money for two years running. */
+function RetireLosers()
+{
+	local sold = 0;
+	local list = AIVehicleList();
+	foreach (v, _ in list) {
+		if (AIVehicle.GetVehicleType(v) != AIVehicle.VT_AIR) continue;
+		if (AIVehicle.GetAge(v) < 730) continue;
+		if (AIVehicle.GetProfitLastYear(v) >= 0) continue;
+		if (AIVehicle.GetProfitThisYear(v) >= 0) continue;
+		if (!AIVehicle.IsStoppedInDepot(v)) {
+			AIVehicle.SendVehicleToDepot(v);
+			continue;
+		}
+		if (AIVehicle.SellVehicle(v)) sold++;
+	}
+	return sold;
+}
+
+/** Aircraft currently flying to or from a station. */
+function VehiclesServingStation(station)
+{
+	local n = 0;
+	local list = AIVehicleList_Station(station);
+	foreach (_, __ in list) n++;
+	return n;
+}

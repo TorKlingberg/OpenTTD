@@ -13,20 +13,27 @@
  */
 
 /**
- * Try to fit a grid into the region where mask(x, y) is true.
+ * Try to fit a grid into a region, given as a table whose keys are
+ * Grid.Key(x, y) for every usable cell.
+ *
+ * A table rather than a predicate closure on purpose: Squirrel resolves a bare
+ * identifier inside a nested function against `this` before the enclosing
+ * scope, so a mask closure over the caller's locals fails at run time rather
+ * than compile time. Building the set up front also means the caller only has
+ * to test the tiles the layout actually wants.
  *
  * Coordinates are not renormalised: the returned grid keeps the input's
  * coordinate system, so the caller's origin tile stays valid.
  *
  * Returns the trimmed grid, or null when no valid airport survives.
  */
-function FitGridToMask(grid, mask)
+function FitGridToMask(grid, allowed)
 {
 	local g = grid.Clone();
 
 	/* Anything required that falls outside the region is fatal. */
 	foreach (c in g.Ordered()) {
-		if (mask(c.x, c.y)) continue;
+		if (g.Key(c.x, c.y) in allowed) continue;
 		if (!c.optional) return null;
 		g.Remove(c.x, c.y);
 	}

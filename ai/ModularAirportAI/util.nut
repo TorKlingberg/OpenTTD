@@ -27,6 +27,16 @@ function FaceOffset(face)
 	return [0, 0];
 }
 
+/** Turn a four-bit direction mask by r quarter-turns. */
+function RotateDirMask(mask, r)
+{
+	local out = 0;
+	for (local i = 0; i < 4; i++) {
+		if (mask & (1 << i)) out = out | (1 << ((i + r) & 3));
+	}
+	return out;
+}
+
 /** The facing a hangar needs to exit onto (tx, ty) from (x, y), or -1 if not adjacent. */
 function FaceTowards(x, y, tx, ty)
 {
@@ -306,6 +316,64 @@ class Grid
 			};
 		}
 		return g;
+	}
+
+	/**
+	 * Rotate the whole layout by r quarter-turns, in the script's own hands.
+	 *
+	 * PlaceModularAirportLayout can rotate a layout itself, but airports built
+	 * that way do not work: aircraft never leave the hangar. Measured, not
+	 * assumed — the same layout authored vertically by hand and placed at
+	 * rotation 0 flies, while rotations 1 and 3 of the horizontal original leave
+	 * every aircraft parked forever. So the AI rotates here and always places at
+	 * rotation 0.
+	 *
+	 * The transform mirrors RotateTemplateTile in modular_airport_template_cmd.cpp:
+	 * positions turn, each piece's own rotation advances by r, direction masks
+	 * rotate, and a runway's low/high flag flips when the coordinate order along
+	 * its axis reverses.
+	 */
+	function Rotate(r)
+	{
+		r = r & 3;
+		if (r == 0) return this.Clone();
+
+		local out = Grid((r % 2 == 0) ? this.w : this.h, (r % 2 == 0) ? this.h : this.w);
+		foreach (_, c in this.cells) {
+			local nx, ny;
+			switch (r) {
+				case 1: nx = this.h - 1 - c.y; ny = c.x; break;
+				case 2: nx = this.w - 1 - c.x; ny = this.h - 1 - c.y; break;
+				case 3: nx = c.y;              ny = this.w - 1 - c.x; break;
+			}
+
+			local piece = c.piece;
+			local rwy = c.rwy;
+			if (IsRunwayPiece(piece)) {
+				/* Low and high ends swap whenever the order of coordinates along
+				 * the runway's own axis reverses. */
+				local on_x_axis = (c.rot % 2) == 0;
+				local reverse = on_x_axis ? (r == 2 || r == 3) : (r == 1 || r == 2);
+				if (reverse) {
+					local low = rwy & AIAirport.MRF_DIR_LOW;
+					local high = rwy & AIAirport.MRF_DIR_HIGH;
+					rwy = rwy & ~(AIAirport.MRF_DIR_LOW | AIAirport.MRF_DIR_HIGH);
+					if (low != 0) rwy = rwy | AIAirport.MRF_DIR_HIGH;
+					if (high != 0) rwy = rwy | AIAirport.MRF_DIR_LOW;
+					/* The end pieces of a small runway are named for which end
+					 * they sit at, so they swap with the ends. */
+					if (piece == AIAirport.MP_RUNWAY_SMALL_NEAR_END) piece = AIAirport.MP_RUNWAY_SMALL_FAR_END;
+					else if (piece == AIAirport.MP_RUNWAY_SMALL_FAR_END) piece = AIAirport.MP_RUNWAY_SMALL_NEAR_END;
+				}
+			}
+
+			out.cells[out.Key(nx, ny)] <- {
+				x = nx, y = ny, piece = piece, rot = (c.rot + r) & 3, rwy = rwy,
+				one_way = c.one_way, taxi = RotateDirMask(c.taxi, r),
+				fence = RotateDirMask(c.fence, r), optional = c.optional
+			};
+		}
+		return out;
 	}
 
 	function AsciiRows()

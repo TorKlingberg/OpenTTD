@@ -1,24 +1,315 @@
 require("util.nut");
 require("layout.nut");
 require("fit.nut");
+require("sites.nut");
+require("build.nut");
+require("fleet.nut");
 require("selftest.nut");
+
+/* Keep this much in the bank rather than spending down to zero: an airport with
+ * no aircraft earns nothing, and a fleet with no maintenance money bleeds. */
+const CASH_RESERVE = 20000;
+
+/* Routes shorter than this are not worth flying. */
+const MIN_ROUTE_DISTANCE = 25;
 
 class ModularAirportAI extends AIController
 {
+	blacklist = null;   ///< origins that failed to build, so we stop retrying them
+	max_airports = 12;
+	variety = 2;
+
 	function Start()
 	{
+		this.blacklist = {};
 		AICompany.SetName(UniqueCompanyName("ModularAirportAI"));
+		this.max_airports = AIController.GetSetting("max_airports");
+		this.variety = AIController.GetSetting("variety");
 
 		if (AIController.GetSetting("selftest") == 1) {
 			RunSelfTest();
 			while (true) this.Sleep(1000);
 		}
 
-		while (true) this.Sleep(100);
+		AILog.Info("start: year=" + AIDate.GetYear(AIDate.GetCurrentDate())
+		           + " max_airports=" + this.max_airports + " variety=" + this.variety);
+
+		local last_report = 0;
+		while (true) {
+			this.ManageLoan();
+
+			local airports = OurAirports();
+			local aircraft = AIVehicleList().Count();
+
+			/* An airport with no aircraft is a monthly bill and nothing else, so
+			 * the fleet leads and the network follows. Below two airports there
+			 * is no route to fly, so building comes first there. */
+			local fleet_is_thin = airports.len() >= 2 && aircraft < airports.len() * 2;
+			if (airports.len() < this.max_airports && !fleet_is_thin) {
+				this.TryBuildAirport(airports);
+				airports = OurAirports();
+			}
+			if (airports.len() >= 2) this.TryExpandFleet(airports);
+
+			local year = AIDate.GetYear(AIDate.GetCurrentDate());
+			if (year != last_report) {
+				last_report = year;
+				this.Report(year);
+				RetireLosers();
+				/* A site that was unaffordable or too cramped last year may not
+				 * be this year: the budget grows, and with it the scale of
+				 * layout worth trying. Blacklisting has to expire or the AI
+				 * talks itself out of the whole map within a decade. */
+				this.blacklist = {};
+			}
+
+			this.Sleep(50);
+		}
+	}
+
+	/**
+	 * Borrow while expanding, repay when the money is idle. Airports are
+	 * expensive and earn nothing until an aircraft flies to them, so being
+	 * unable to buy the aircraft after building the airport is the worst
+	 * outcome available.
+	 */
+	function ManageLoan()
+	{
+		local balance = AICompany.GetBankBalance(AICompany.COMPANY_SELF);
+		local loan = AICompany.GetLoanAmount();
+		if (balance < CASH_RESERVE && loan < AICompany.GetMaxLoanAmount()) {
+			AICompany.SetLoanAmount(AICompany.GetMaxLoanAmount());
+		} else if (loan > 0 && balance > loan + CASH_RESERVE * 4) {
+			AICompany.SetLoanAmount(0);
+		}
+	}
+
+	/**
+	 * Pick a town we do not serve and try to put an airport by it.
+	 *
+	 * Scale rises with the bank balance, so the AI opens routes with something
+	 * small and cheap and only builds the big families once it can afford both
+	 * the airport and the aircraft to justify it.
+	 */
+	function TryBuildAirport(airports)
+	{
+		local budget = AICompany.GetBankBalance(AICompany.COMPANY_SELF) - CASH_RESERVE;
+		if (budget < 60000) return;
+
+		local town = this.PickUnservedTown(airports);
+		if (town < 0) return;
+
+		local scale = 0;
+		if (budget > 200000) scale = 1;
+		if (budget > 500000) scale = 2;
+		if (budget > 1200000) scale = 3;
+
+		/* Jets are only worth designing for once we could actually buy one. */
+		local want_large_safe = budget > 250000;
+
+		local site = FindSiteNearTown(town, scale, want_large_safe, this.variety, budget, this.blacklist);
+		if (site == null && want_large_safe) {
+			/* A large-safe design needs a tower, a big terminal and six clear
+			 * runway tiles. If the ground will not take that, a smaller airport
+			 * is better than none — we just must not fly jets into it. */
+			site = FindSiteNearTown(town, scale, false, this.variety, budget, this.blacklist);
+		}
+		if (site == null) {
+			AILog.Info("no site near " + AITown.GetName(town) + " (scale " + scale + "): " + SiteSearchStats());
+			this.blacklist[AITown.GetLocation(town)] <- true;
+			return;
+		}
+
+		local station = BuildSite(site);
+		if (station < 0) {
+			this.blacklist[site.tile] <- true;
+			return;
+		}
+	}
+
+	/** A town with no airport of ours nearby, preferring big ones. */
+	function PickUnservedTown(airports)
+	{
+		local towns = AITownList();
+		towns.Valuate(AITown.GetPopulation);
+		towns.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
+
+		local shortlist = [];
+		foreach (town, pop in towns) {
+			if (pop < 200) continue;
+			local loc = AITown.GetLocation(town);
+			if (loc in this.blacklist) continue;
+			local taken = false;
+			foreach (a in airports) {
+				if (AIMap.DistanceManhattan(a.tile, loc) < 15) { taken = true; break; }
+			}
+			if (taken) continue;
+			shortlist.append(town);
+			if (shortlist.len() >= 6) break;
+		}
+		if (shortlist.len() == 0) return -1;
+		/* Some randomness so two instances of this AI do not fight over the
+		 * same town, and so successive games do not look identical. */
+		local pick = this.variety > 0 ? AIBase.RandRange(shortlist.len()) : 0;
+		return shortlist[pick];
+	}
+
+	/**
+	 * Add aircraft where they will do the most good: the route between two of
+	 * our airports with the fewest aircraft on it.
+	 */
+	/** Buy aircraft while there is both money and an under-served route. */
+	function TryExpandFleet(airports)
+	{
+		for (local i = 0; i < 3; i++) {
+			if (!this.BuyOneAircraft(airports)) return;
+		}
+	}
+
+	function BuyOneAircraft(airports)
+	{
+		local budget = AICompany.GetBankBalance(AICompany.COMPANY_SELF) - CASH_RESERVE;
+		if (budget < 30000) return false;
+		if (AIVehicleList().Count() >= AIGameSettings.GetValue("vehicle.max_aircraft") - 1) return false;
+
+		local best = null, best_need = -1;
+		for (local i = 0; i < airports.len(); i++) {
+			for (local j = i + 1; j < airports.len(); j++) {
+				local a = airports[i], b = airports[j];
+				local dist = AIMap.DistanceManhattan(a.tile, b.tile);
+				if (dist < MIN_ROUTE_DISTANCE) continue;
+
+				local served = VehiclesServingStation(a.station) + VehiclesServingStation(b.station);
+				local stands = CountPieces2(a) + CountPieces2(b);
+				/* Do not pile more aircraft onto an airport than it has room to
+				 * park: past that they queue in the air and the reservation
+				 * system does the rest of the damage. */
+				if (served >= stands * 2) continue;
+
+				local need = stands * 100 - served * 100 + dist;
+				if (need > best_need) { best_need = need; best = [a, b]; }
+			}
+		}
+		if (best == null) return false;
+
+		local a = best[0], b = best[1];
+		local caps_a = AirportCapability(a.tile);
+		local caps_b = AirportCapability(b.tile);
+		local want_heli = !(caps_a.planes && caps_b.planes) && caps_a.helis && caps_b.helis;
+		if (!want_heli && !(caps_a.planes && caps_b.planes)) return false;
+
+		local allow_jets = caps_a.jets && caps_b.jets;
+		/* Order distance, not map distance: the two are in different units and
+		 * only this one may be compared with an engine's maximum range. */
+		local dist = AIOrder.GetOrderDistance(AIVehicle.VT_AIR, a.order_tile, b.order_tile);
+		local engine = ChooseAircraft(allow_jets, want_heli, budget, dist);
+		if (engine < 0) return false;
+
+		local hangar = AIAirport.GetHangarOfAirport(a.tile);
+		if (hangar < 0) hangar = AIAirport.GetHangarOfAirport(b.tile);
+		if (hangar < 0) return false;
+
+		local v = BuyAircraft(hangar, engine, a.order_tile, b.order_tile);
+		if (v < 0) return false;
+		AILog.Info("aircraft " + AIEngine.GetName(engine)
+		           + " on " + AIStation.GetName(a.station) + " <-> " + AIStation.GetName(b.station)
+		           + (allow_jets ? "" : " (no jets: an end is not large-safe)"));
+		return true;
+	}
+
+	function Report(year)
+	{
+		local airports = OurAirports();
+		local safe = 0;
+		foreach (a in airports) if (AirportIsLargeSafe(a.tile)) safe++;
+		AILog.Info("--- " + year
+		           + " airports=" + airports.len() + " (large-safe " + safe + ")"
+		           + " aircraft=" + AIVehicleList().Count()
+		           + " cash=" + AICompany.GetBankBalance(AICompany.COMPANY_SELF)
+		           + " loan=" + AICompany.GetLoanAmount());
+
+		/* An aircraft that never leaves its hangar is the failure this whole
+		 * design is trying to avoid, and it looks identical to "no demand" from
+		 * the outside. Say where they actually are. */
+		local vl = AIVehicleList();
+		local stuck = 0, moving = 0;
+		foreach (v, _ in vl) {
+			if (AIVehicle.GetCurrentSpeed(v) > 0) moving++;
+			else stuck++;
+		}
+		if (stuck > 0 && moving == 0 && vl.Count() > 0) {
+			local v = vl.Begin();
+			AILog.Warning("all " + vl.Count() + " aircraft stationary; first is at "
+			              + TileStr(AIVehicle.GetLocation(v))
+			              + " orders=" + AIOrder.GetOrderCount(v)
+			              + " in_depot=" + AIVehicle.IsStoppedInDepot(v)
+			              + " age=" + AIVehicle.GetAge(v)
+			              + " profit=" + AIVehicle.GetProfitThisYear(v));
+		}
 	}
 
 	function Save() { return {}; }
 	function Load(version, data) { }
+}
+
+/** Stands at an airport, from the map. */
+function CountPieces2(airport)
+{
+	return CountAirportPieces(airport.station, IsStandPiece)
+	     + CountAirportPieces(airport.station, IsHelipadPiece);
+}
+
+/**
+ * Our modular airports, read from the game rather than remembered.
+ *
+ * Everything here is derivable from the map, so there is nothing to get out of
+ * step across a save and load. Only what the map cannot tell us — which sites
+ * we have already failed on — is worth keeping in the AI's own state.
+ */
+function OurAirports()
+{
+	local out = [];
+	local list = AIStationList(AIStation.STATION_AIRPORT);
+	foreach (st, _ in list) {
+		local tile = AirportAnchorTile(st);
+		if (tile < 0) continue;
+		out.append({ station = st, tile = tile, order_tile = AirportOrderTile(st, tile) });
+	}
+	return out;
+}
+
+/** Any modular tile of a station, for the calls that want one. */
+function AirportAnchorTile(station)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (AIAirport.IsModularAirportTile(t)) return t;
+	}
+	return -1;
+}
+
+/**
+ * A tile of this airport that is safe to put in an order.
+ *
+ * AIOrder.AppendOrder decides between a station order and a *depot* order from
+ * the tile it is given, so handing it a hangar tile silently produces "fly here
+ * and stop" instead of "serve this airport". The aircraft then does exactly
+ * that: it sits in the hangar forever, with valid-looking orders, no error, and
+ * nothing in the airport logs because it never taxis at all.
+ *
+ * Which tile a station reports first depends on the layout — a hangar in the
+ * airport's northernmost row is enough to trigger it — so pick deliberately.
+ */
+function AirportOrderTile(station, fallback)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local p = AIAirport.GetModularPiece(t);
+		if (IsHangarPiece(p)) continue;
+		if (IsStandPiece(p) || IsHelipadPiece(p) || p == AIAirport.MP_APRON) return t;
+	}
+	return fallback;
 }
 
 /** Company names must be unique, so add a suffix when the plain name is taken. */
