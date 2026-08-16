@@ -1,0 +1,94 @@
+/*
+ * Offline exercise of the layout generator.
+ *
+ * Dumps every family across a range of parameters as ASCII, together with what
+ * the preview API says about each. Turn on the "selftest" setting and run
+ * headless; nothing is built, so it is safe to run on any map.
+ *
+ * The point is that a layout can be legal, score well, and still not work — see
+ * ValidateGrid in util.nut. Every generated grid goes through both checks here,
+ * and a family that ever produces an invalid grid is a bug, not bad luck.
+ */
+
+function DumpGrid(label, grid)
+{
+	local problem = ValidateGrid(grid);
+	local layout = grid.ToLayout();
+	local safety = AIAirport.GetModularLayoutSafety(layout);
+
+	AILog.Info(label + "  " + grid.w + "x" + grid.h
+	           + " tiles=" + grid.Count()
+	           + " runway=" + LongestLargeRunway(grid)
+	           + " stands=" + CountPieces(grid, IsStandPiece)
+	           + " safety=" + safety
+	           + " catchment=" + AIAirport.GetModularLayoutCatchmentRadius(layout)
+	           + " noise=" + AIAirport.GetModularLayoutNoiseLevel(layout)
+	           + " upkeep=" + AIAirport.GetModularLayoutMonthlyMaintenanceCost(layout)
+	           + " planes=" + AIAirport.GetModularLayoutAcceptsPlanes(layout)
+	           + " heli=" + AIAirport.GetModularLayoutHasHelipad(layout)
+	           + (problem == null ? "" : "   *** INVALID: " + problem + " ***"));
+	foreach (row in grid.AsciiRows()) AILog.Info("    |" + row + "|");
+	return problem == null;
+}
+
+/** Generate many layouts per family and check every one of them. */
+function RunSelfTest()
+{
+	AILog.Info("=== ModularAirportAI layout self-test ===");
+	AILog.Info("year=" + AIDate.GetYear(AIDate.GetCurrentDate()));
+	AILog.Info("legend: = runway  E runway end  - < > small runway  + apron  S stand");
+	AILog.Info("        T stand+terminal  P stand+pier  H hangar  h small hangar");
+	AILog.Info("        X helipad  B terminal  b low terminal  W tower  r radar  f flag  , grass");
+
+	local families = [Family.STRIP, Family.LINEAR, Family.PIER,
+	                  Family.DUAL, Family.APRON, Family.HELIPORT];
+	local total = 0, bad = 0;
+
+	foreach (family in families) {
+		AILog.Info("");
+		AILog.Info("--- family " + FamilyName(family) + " ---");
+		for (local scale = 0; scale <= 3; scale++) {
+			for (local rep = 0; rep < 3; rep++) {
+				local params = RandomParams(family, scale);
+				local grid = GenerateLayout(family, params);
+				total++;
+				if (!DumpGrid(FamilyName(family) + " scale=" + scale + " rep=" + rep, grid)) bad++;
+			}
+		}
+	}
+
+	/* The fitter is the part that has to work on cramped ground, so exercise it
+	 * against a few deliberately awkward masks. */
+	AILog.Info("");
+	AILog.Info("--- fitting into constrained sites ---");
+	local masks = [
+		["full 12x6",      function (x, y) { return x < 12 && y < 6; }],
+		["notch",          function (x, y) { return x < 12 && y < 6 && !(x >= 8 && y >= 3); }],
+		["diagonal shore", function (x, y) { return x < 12 && y < 6 && (x + y) < 13; }],
+		["narrow 10x3",    function (x, y) { return x < 10 && y < 3; }],
+		["ragged",         function (x, y) { return x < 12 && y < 6 && !((x == 4 && y >= 2) || (x == 9 && y <= 1)); }],
+	];
+	foreach (m in masks) {
+		local name = m[0], fn = m[1];
+		local best = null, best_family = -1;
+		foreach (family in families) {
+			for (local scale = 3; scale >= 0; scale--) {
+				local params = RandomParams(family, scale);
+				local grid = GenerateLayout(family, params);
+				local fitted = FitGridToMask(grid, fn);
+				if (fitted == null) continue;
+				if (best == null || fitted.Count() > best.Count()) { best = fitted; best_family = family; }
+			}
+		}
+		AILog.Info("");
+		if (best == null) {
+			AILog.Info("mask '" + name + "': nothing fits");
+		} else {
+			total++;
+			if (!DumpGrid("mask '" + name + "' -> " + FamilyName(best_family), best)) bad++;
+		}
+	}
+
+	AILog.Info("");
+	AILog.Info("=== self-test done: " + total + " layouts, " + bad + " invalid ===");
+}
