@@ -375,6 +375,114 @@ static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
 }
 
 /**
+ * Lookup over pieces laid out on an abstract integer grid, so the layout-derived
+ * properties can be measured for a layout that has not been placed yet (a saved
+ * template, or one a script proposes). Shared by every *FromPieces entry point so
+ * they all agree on what a contiguous runway is.
+ */
+class ModularPieceGrid {
+public:
+	explicit ModularPieceGrid(std::span<const ModularCatchmentPiece> pieces)
+	{
+		for (const ModularCatchmentPiece &p : pieces) this->grid[{p.x, p.y}] = &p;
+	}
+
+	const ModularCatchmentPiece *At(int x, int y) const
+	{
+		auto it = this->grid.find({x, y});
+		return it == this->grid.end() ? nullptr : it->second;
+	}
+
+	/**
+	 * Collect the whole contiguous runway containing \a start, walking back to its
+	 * first tile first so any tile of a runway yields the same canonical list.
+	 * Mirrors GetContiguousModularRunwayTiles() on the map.
+	 */
+	bool CollectRunway(const ModularCatchmentPiece &start, std::vector<const ModularCatchmentPiece *> &out) const
+	{
+		out.clear();
+		if (!IsModularRunwayPiece(start.piece_type)) return false;
+
+		const bool horizontal = (start.rotation % 2) == 0;
+		const int dx = horizontal ? 1 : 0;
+		const int dy = horizontal ? 0 : 1;
+
+		int fx = start.x;
+		int fy = start.y;
+		while (OnAxis(this->At(fx - dx, fy - dy), horizontal)) {
+			fx -= dx;
+			fy -= dy;
+		}
+
+		int cx = fx;
+		int cy = fy;
+		while (true) {
+			const ModularCatchmentPiece *cur = this->At(cx, cy);
+			if (!OnAxis(cur, horizontal)) break;
+			out.push_back(cur);
+			if (!OnAxis(this->At(cx + dx, cy + dy), horizontal)) break;
+			cx += dx;
+			cy += dy;
+		}
+		return !out.empty();
+	}
+
+private:
+	static bool OnAxis(const ModularCatchmentPiece *p, bool horizontal)
+	{
+		return p != nullptr && IsModularRunwayPiece(p->piece_type) && (((p->rotation % 2) == 0) == horizontal);
+	}
+
+	std::map<std::pair<int, int>, const ModularCatchmentPiece *> grid;
+};
+
+/**
+ * Get the safety status for large aircraft of a layout on an abstract grid.
+ * Returns a bitmask of MISSING requirements. Mirrors GetModularAirportSafetyStatus()
+ * exactly — the elevated jet-overrun crash path depends on the two agreeing, so any
+ * change here has to be made in both.
+ * @param pieces The layout to measure.
+ * @return Bitmask of the requirements the layout does not meet.
+ */
+ModularAirportSafetyRequirement GetModularAirportSafetyStatusFromPieces(std::span<const ModularCatchmentPiece> pieces)
+{
+	if (pieces.empty()) return MASR_NONE;
+
+	const ModularPieceGrid grid(pieces);
+
+	ModularAirportSafetyRequirement missing = MASR_NONE;
+	bool has_tower = false;
+	bool has_big_terminal = false;
+
+	for (const ModularCatchmentPiece &p : pieces) {
+		if (p.piece_type == APT_TOWER || p.piece_type == APT_TOWER_FENCE_SW) has_tower = true;
+		if (IsBigTerminalPiece(p.piece_type)) has_big_terminal = true;
+		if (has_tower && has_big_terminal) break;
+	}
+
+	std::vector<const ModularCatchmentPiece *> tiles;
+	auto has_safe_runway_for = [&](bool landing) {
+		for (const ModularCatchmentPiece &p : pieces) {
+			if (p.piece_type != APT_RUNWAY_END) continue;
+			if ((p.runway_flags & (landing ? RUF_LANDING : RUF_TAKEOFF)) == 0) continue;
+			if (!grid.CollectRunway(p, tiles) || tiles.size() < 6) continue;
+			if (std::all_of(tiles.begin(), tiles.end(),
+					[](const ModularCatchmentPiece *t) { return IsLargeRunwayFamily(t->piece_type); })) {
+				return true;
+			}
+		}
+		return false;
+	};
+
+	if (!has_tower) missing |= MASR_TOWER;
+	if (!has_big_terminal) missing |= MASR_BIG_TERMINAL;
+	if (!has_safe_runway_for(true)) missing |= MASR_LANDING_RUNWAY;
+	if (!has_safe_runway_for(false)) missing |= MASR_TAKEOFF_RUNWAY;
+
+	return missing;
+}
+
+/**
  * Get the safety status of a modular airport for large aircraft.
  * Returns a bitmask of MISSING requirements.
  */
@@ -747,58 +855,20 @@ uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchment
 	constexpr uint CATCH_MIN = 4;
 	if (pieces.empty()) return CATCH_MIN;
 
-	std::map<std::pair<int, int>, const ModularCatchmentPiece *> grid;
-	for (const ModularCatchmentPiece &p : pieces) grid[{p.x, p.y}] = &p;
-
-	auto at = [&grid](int x, int y) -> const ModularCatchmentPiece * {
-		auto it = grid.find({x, y});
-		return it == grid.end() ? nullptr : it->second;
-	};
-	auto on_axis = [](const ModularCatchmentPiece *p, bool horizontal) {
-		return p != nullptr && IsModularRunwayPiece(p->piece_type) && (((p->rotation % 2) == 0) == horizontal);
-	};
-
-	/* Collect the whole contiguous runway containing \a start, walking back to its
-	 * first tile first so any tile of a runway yields the same canonical list. */
-	auto collect_runway = [&](const ModularCatchmentPiece &start, std::vector<const ModularCatchmentPiece *> &out) {
-		out.clear();
-		if (!IsModularRunwayPiece(start.piece_type)) return false;
-
-		const bool horizontal = (start.rotation % 2) == 0;
-		const int dx = horizontal ? 1 : 0;
-		const int dy = horizontal ? 0 : 1;
-
-		int fx = start.x;
-		int fy = start.y;
-		while (on_axis(at(fx - dx, fy - dy), horizontal)) {
-			fx -= dx;
-			fy -= dy;
-		}
-
-		int cx = fx;
-		int cy = fy;
-		while (true) {
-			const ModularCatchmentPiece *cur = at(cx, cy);
-			if (!on_axis(cur, horizontal)) break;
-			out.push_back(cur);
-			if (!on_axis(at(cx + dx, cy + dy), horizontal)) break;
-			cx += dx;
-			cy += dy;
-		}
-		return !out.empty();
-	};
+	const ModularPieceGrid grid(pieces);
 
 	auto is_paved = [](const std::vector<const ModularCatchmentPiece *> &tiles) {
 		return std::all_of(tiles.begin(), tiles.end(), [](const ModularCatchmentPiece *p) { return IsLargeRunwayFamily(p->piece_type); });
 	};
+	auto collect_runway = [&grid](const ModularCatchmentPiece &start, std::vector<const ModularCatchmentPiece *> &out) {
+		return grid.CollectRunway(start, out);
+	};
 
 	/* Count the pieces the tiers care about. */
-	bool has_tower = false;
 	uint helipads = 0;
 	uint radars = 0;
 	uint big_terminals = 0;
 	for (const ModularCatchmentPiece &p : pieces) {
-		if (p.piece_type == APT_TOWER || p.piece_type == APT_TOWER_FENCE_SW) has_tower = true;
 		if (IsModularHelipadPiece(p.piece_type)) helipads++;
 		if (IsRadarPiece(p.piece_type)) radars++;
 		if (IsBigTerminalPiece(p.piece_type)) big_terminals++;
@@ -806,20 +876,9 @@ uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchment
 
 	std::vector<const ModularCatchmentPiece *> tiles;
 
-	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff runway).
-	 * Mirrors GetModularAirportSafetyStatus()/IsRunwaySafeForLarge(). */
-	auto has_safe_runway_for = [&](bool landing) {
-		for (const ModularCatchmentPiece &p : pieces) {
-			if (p.piece_type != APT_RUNWAY_END) continue;
-			if ((p.runway_flags & (landing ? RUF_LANDING : RUF_TAKEOFF)) == 0) continue;
-			if (!collect_runway(p, tiles) || tiles.size() < 6) continue;
-			if (is_paved(tiles)) return true;
-		}
-		return false;
-	};
-
-	if (!has_tower || big_terminals == 0) return CATCH_MIN;
-	if (!has_safe_runway_for(true) || !has_safe_runway_for(false)) return CATCH_MIN;
+	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff
+	 * runway). Shared with the built-airport path so the two cannot drift. */
+	if (GetModularAirportSafetyStatusFromPieces(pieces) != MASR_NONE) return CATCH_MIN;
 
 	/* Gather the tile lengths of each distinct fully-paved runway. */
 	std::vector<size_t> paved_runways;

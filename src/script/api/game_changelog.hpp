@@ -19,6 +19,29 @@
  *
  * This version is not yet released. The following changes are not set in stone yet.
  *
+ * API additions:
+ * \li GSAirport::ModularPiece
+ * \li GSAirport::ModularRunwayFlags
+ * \li GSAirport::ModularSafety
+ * \li GSAirport::ModularLayoutField
+ * \li GSAirport::IsModularAirportTile
+ * \li GSAirport::GetModularPiece
+ * \li GSAirport::GetModularPieceRotation
+ * \li GSAirport::GetModularRunwayFlags
+ * \li GSAirport::IsModularPieceAvailable
+ * \li GSAirport::GetModularPieceMinYear
+ * \li GSAirport::GetModularAirportSafety
+ * \li GSAirport::BuildModularAirportTile
+ * \li GSAirport::SetModularRunwayFlags
+ * \li GSAirport::SetModularTaxiwayFlags
+ * \li GSAirport::PlaceModularAirportLayout
+ * \li GSAirport::GetModularLayoutNoiseLevel
+ * \li GSAirport::GetModularLayoutCatchmentRadius
+ * \li GSAirport::GetModularLayoutMonthlyMaintenanceCost
+ * \li GSAirport::GetModularLayoutAcceptsPlanes
+ * \li GSAirport::GetModularLayoutHasHelipad
+ * \li GSAirport::GetModularLayoutSafety
+ *
  * \b 15.0
  *
  * API additions:

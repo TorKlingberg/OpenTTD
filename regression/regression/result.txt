@@ -10872,13 +10872,179 @@ ERROR: IsEnd() is invalid as Begin() is never called
   Clear():      (null : 0x00000000)
   IsEmpty():    true
   Count():      0
+
+--AIAirport Modular: piece availability--
+  Current year:                             1954
+  MP_APRON: available true, min year 0
+  MP_STAND: available true, min year 0
+  MP_STAND_TERMINAL: available true, min year 0
+  MP_RUNWAY: available false, min year 1955
+  MP_RUNWAY_END: available false, min year 1955
+  MP_RUNWAY_SMALL_MIDDLE: available true, min year 0
+  MP_RUNWAY_SMALL_NEAR_END: available true, min year 0
+  MP_RUNWAY_SMALL_FAR_END: available true, min year 0
+  MP_HANGAR: available false, min year 1955
+  MP_SMALL_HANGAR: available true, min year 0
+  MP_HELIPAD: available false, min year 1955
+  MP_TOWER: available false, min year 1955
+  MP_TERMINAL: available false, min year 1955
+  MP_GRASS: available true, min year 0
+  MP_EMPTY: available true, min year 0
+  IsModularPieceAvailable(invalid):         false
+  GetModularPieceMinYear(invalid):          -1
+
+--AIAirport Modular: layout preview--
+  small airport:
+    NoiseLevel:             2
+    CatchmentRadius:        4
+    MonthlyMaintenanceCost: 1992
+    AcceptsPlanes:          true
+    HasHelipad:             false
+    Safety:                 15
+  large-safe airport:
+    NoiseLevel:             5
+    CatchmentRadius:        5
+    MonthlyMaintenanceCost: 6914
+    AcceptsPlanes:          true
+    HasHelipad:             true
+    Safety:                 0
+  landing-only runway:
+    NoiseLevel:             1
+    CatchmentRadius:        4
+    MonthlyMaintenanceCost: 1230
+    AcceptsPlanes:          false
+    HasHelipad:             false
+    Safety:                 15
+  heliport:
+    NoiseLevel:             1
+    CatchmentRadius:        4
+    MonthlyMaintenanceCost: 1406
+    AcceptsPlanes:          false
+    HasHelipad:             true
+    Safety:                 15
+  5-tile large runway:
+    NoiseLevel:             3
+    CatchmentRadius:        4
+    MonthlyMaintenanceCost: 3105
+    AcceptsPlanes:          true
+    HasHelipad:             false
+    Safety:                 12
+  6-tile runway along Y:
+    NoiseLevel:             3
+    CatchmentRadius:        5
+    MonthlyMaintenanceCost: 3574
+    AcceptsPlanes:          true
+    HasHelipad:             false
+    Safety:                 0
+  malformed layouts:
+    empty:                    -1
+    short stride:             -1
+    bad piece:                -1
+    bad rotation:             -1
+    negative offset:          -1
+    bad runway flags:         -1
+    safety of malformed:      -1
+    accepts planes malformed: false
+    maintenance of malformed: -1
+
+--AIAirport Modular: build tile by tile--
+  site found:                               true
+  IsModularAirportTile() before:            false
+  GetModularPiece() before:                 -1
+  GetModularPieceRotation() before:         -1
+  GetModularRunwayFlags() before:           -1
+  GetModularAirportSafety() before:         -1
+  Build(MP_RUNWAY) (year gated):            false
+    error:                                  ERR_PRECONDITION_FAILED
+  Build(rotation 4):                        false
+    error:                                  ERR_PRECONDITION_FAILED
+  Build(invalid piece):                     false
+    error:                                  ERR_PRECONDITION_FAILED
+  Build(FAR_END):                           true
+  Build(MIDDLE):                            true
+  Build(NEAR_END):                          true
+  Build(APRON):                             true
+  Build(STAND):                             true
+  Build(SMALL_HANGAR rot 2):                true
+  IsModularAirportTile() after:             true
+  GetAirportType() == AT_MODULAR:           true
+  IsAirportInformationAvailable(AT_MODULAR):false
+  IsValidAirportType(AT_MODULAR):           false
+  piece readback:
+    runway far end: piece 8, rotation 0, runway flags 7
+    runway middle: piece 6, rotation 0, runway flags 7
+    runway near end: piece 7, rotation 0, runway flags 7
+    apron: piece 0, rotation 0, runway flags -1
+    stand: piece 1, rotation 0, runway flags -1
+    small hangar: piece 10, rotation 2, runway flags -1
+  GetNumHangars():                          1
+  GetHangarOfAirport() is the hangar tile:  true
+  IsHangarTile(hangar):                     true
+  GetStationCoverageRadius():               4
+  GetModularAirportSafety() after:          15
+  SetModularRunwayFlags(LANDING|DIR_LOW):   true
+    flags on far end:                       5
+    flags on middle:                        5
+    flags on near end:                      5
+  SetModularRunwayFlags(out of range):      false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularRunwayFlags(both directions):   false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularRunwayFlags(no direction):      false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularRunwayFlags(no operation):      false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularRunwayFlags(TAKEOFF|DIR_HIGH):  true
+    flags on far end:                       10
+  SetModularRunwayFlags(on the apron):      false
+  SetModularTaxiwayFlags(one way, 4 dirs):  false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularTaxiwayFlags(one way, 1 dir):   true
+  SetModularTaxiwayFlags(two way):          true
+  SetModularTaxiwayFlags(bad mask):         false
+    error:                                  ERR_PRECONDITION_FAILED
+  SetModularTaxiwayFlags(on the stand):     false
+  SetModularTaxiwayFlags(non-airport tile): false
+    error:                                  ERR_PRECONDITION_FAILED
+
+--AIAirport Modular: place whole layout--
+  site found:                               true
+  Place(bad rotation):                      false
+    error:                                  ERR_PRECONDITION_FAILED
+  Place(bad width):                         false
+    error:                                  ERR_PRECONDITION_FAILED
+  Place(malformed layout):                  false
+    error:                                  ERR_PRECONDITION_FAILED
+  Place(year gated pieces):                 false
+    error:                                  ERR_PRECONDITION_FAILED
+  nothing built by the failures:            true
+  Place(small airport):                     true
+  IsModularAirportTile():                   true
+  piece readback:
+    (0,0): piece 8, rotation 0
+    (1,0): piece 6, rotation 0
+    (2,0): piece 7, rotation 0
+    (0,1): piece 0, rotation 0
+    (1,1): piece 1, rotation 0
+    (2,1): piece 10, rotation 0
+  GetNumHangars():                          1
+  GetStationCoverageRadius():               4
+  GetModularAirportSafety():                15
+  Place(again, same spot):                  false
+    error:                                  ERR_AREA_NOT_CLEAR
+
+--AIAirport Modular: one height level per airport--
+  found a flat tile at another height:      true
+  height differs from the airport:          true
+  Build() joining the airport there:        false
+    error:                                  ERR_FLAT_LAND_REQUIRED
 --Valuate() with excessive CPU usage--
 constructor failed with: excessive CPU usage in list filter function
 Your script made an error: excessive CPU usage in valuator function
 
 CALLSTACK
 *FUNCTION [Valuate()] Valuate line [5]
-*FUNCTION [Start()] regression/main.nut line [2412]
+*FUNCTION [Start()] regression/main.nut line [2780]
 
 LOCALS
 [args] ARRAY

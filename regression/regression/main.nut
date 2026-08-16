@@ -2300,6 +2300,364 @@ function Regression::PriorityQueue()
 	print("  Count():      " + queue.Count());
 }
 
+/** Build one flat array entry for a modular airport layout. */
+function ModularLayoutTile(dx, dy, piece, rotation = 0, runway_flags = 0, one_way = 0, taxi_mask = 15, fence = 0)
+{
+	return [dx, dy, piece, rotation, runway_flags, one_way, taxi_mask, fence];
+}
+
+/** Concatenate modular layout tile entries into the flat array the API takes. */
+function ModularLayout(tiles)
+{
+	local result = [];
+	foreach (tile in tiles) {
+		foreach (value in tile) result.append(value);
+	}
+	return result;
+}
+
+/**
+ * A small airport that works: a 3 tile grass runway, an apron, a stand and a
+ * small hangar. Every piece is available from the start of the game.
+ */
+function SmallModularLayout()
+{
+	return ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_SMALL_FAR_END,  0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW),
+		ModularLayoutTile(1, 0, AIAirport.MP_RUNWAY_SMALL_MIDDLE,   0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW),
+		ModularLayoutTile(2, 0, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW),
+		ModularLayoutTile(0, 1, AIAirport.MP_APRON),
+		ModularLayoutTile(1, 1, AIAirport.MP_STAND),
+		ModularLayoutTile(2, 1, AIAirport.MP_SMALL_HANGAR, 0),
+	]);
+}
+
+/**
+ * An airport that is safe for large aircraft: a 6 tile large runway allowing
+ * both landing and takeoff, a control tower and a large terminal.
+ */
+function LargeSafeModularLayout()
+{
+	local tiles = [];
+	tiles.append(ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	for (local x = 1; x < 5; x++) {
+		tiles.append(ModularLayoutTile(x, 0, AIAirport.MP_RUNWAY, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	}
+	tiles.append(ModularLayoutTile(5, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	tiles.append(ModularLayoutTile(0, 1, AIAirport.MP_APRON));
+	tiles.append(ModularLayoutTile(1, 1, AIAirport.MP_STAND));
+	tiles.append(ModularLayoutTile(2, 1, AIAirport.MP_TOWER));
+	tiles.append(ModularLayoutTile(3, 1, AIAirport.MP_TERMINAL));
+	tiles.append(ModularLayoutTile(4, 1, AIAirport.MP_HANGAR, 0));
+	tiles.append(ModularLayoutTile(5, 1, AIAirport.MP_HELIPAD));
+	return ModularLayout(tiles);
+}
+
+/** Print every layout-derived property of a modular layout. */
+function DumpModularLayout(name, layout)
+{
+	print("  " + name + ":");
+	print("    NoiseLevel:             " + AIAirport.GetModularLayoutNoiseLevel(layout));
+	print("    CatchmentRadius:        " + AIAirport.GetModularLayoutCatchmentRadius(layout));
+	print("    MonthlyMaintenanceCost: " + AIAirport.GetModularLayoutMonthlyMaintenanceCost(layout));
+	print("    AcceptsPlanes:          " + AIAirport.GetModularLayoutAcceptsPlanes(layout));
+	print("    HasHelipad:             " + AIAirport.GetModularLayoutHasHelipad(layout));
+	print("    Safety:                 " + AIAirport.GetModularLayoutSafety(layout));
+}
+
+/**
+ * Find the north tile of a clear, flat rectangle of the given size, searching
+ * outwards from a starting tile. Returns -1 when there is none.
+ */
+function FindFlatModularSite(width, height, start_tile, radius)
+{
+	local area = AITileList();
+	area.AddRectangle(
+		AIMap.GetTileIndex(
+			max(1, AIMap.GetTileX(start_tile) - radius),
+			max(1, AIMap.GetTileY(start_tile) - radius)),
+		AIMap.GetTileIndex(
+			min(AIMap.GetMapSizeX() - 2, AIMap.GetTileX(start_tile) + radius),
+			min(AIMap.GetMapSizeY() - 2, AIMap.GetTileY(start_tile) + radius)));
+
+	local candidates = [];
+	foreach (tile, _ in area) candidates.append(tile);
+	candidates.sort();
+
+	foreach (tile in candidates) {
+		local ok = true;
+		local height_here = AITile.GetMaxHeight(tile);
+		for (local x = 0; x < width && ok; x++) {
+			for (local y = 0; y < height && ok; y++) {
+				local t = tile + AIMap.GetTileIndex(x, y);
+				if (!AITile.IsBuildable(t)) ok = false;
+				else if (AITile.GetSlope(t) != AITile.SLOPE_FLAT) ok = false;
+				else if (AITile.GetMaxHeight(t) != height_here) ok = false;
+			}
+		}
+		if (ok) return tile;
+	}
+	return -1;
+}
+
+function Regression::ModularAirportPieces()
+{
+	print("");
+	print("--AIAirport Modular: piece availability--");
+	print("  Current year:                             " + AIDate.GetYear(AIDate.GetCurrentDate()));
+
+	local pieces = [
+		["MP_APRON",                 AIAirport.MP_APRON],
+		["MP_STAND",                 AIAirport.MP_STAND],
+		["MP_STAND_TERMINAL",        AIAirport.MP_STAND_TERMINAL],
+		["MP_RUNWAY",                AIAirport.MP_RUNWAY],
+		["MP_RUNWAY_END",            AIAirport.MP_RUNWAY_END],
+		["MP_RUNWAY_SMALL_MIDDLE",   AIAirport.MP_RUNWAY_SMALL_MIDDLE],
+		["MP_RUNWAY_SMALL_NEAR_END", AIAirport.MP_RUNWAY_SMALL_NEAR_END],
+		["MP_RUNWAY_SMALL_FAR_END",  AIAirport.MP_RUNWAY_SMALL_FAR_END],
+		["MP_HANGAR",                AIAirport.MP_HANGAR],
+		["MP_SMALL_HANGAR",          AIAirport.MP_SMALL_HANGAR],
+		["MP_HELIPAD",               AIAirport.MP_HELIPAD],
+		["MP_TOWER",                 AIAirport.MP_TOWER],
+		["MP_TERMINAL",              AIAirport.MP_TERMINAL],
+		["MP_GRASS",                 AIAirport.MP_GRASS],
+		["MP_EMPTY",                 AIAirport.MP_EMPTY],
+	];
+
+	foreach (piece in pieces) {
+		print("  " + piece[0] + ": available " + AIAirport.IsModularPieceAvailable(piece[1]) +
+			", min year " + AIAirport.GetModularPieceMinYear(piece[1]));
+	}
+
+	print("  IsModularPieceAvailable(invalid):         " + AIAirport.IsModularPieceAvailable(-1));
+	print("  GetModularPieceMinYear(invalid):          " + AIAirport.GetModularPieceMinYear(-1));
+}
+
+function Regression::ModularAirportLayoutPreview()
+{
+	print("");
+	print("--AIAirport Modular: layout preview--");
+
+	DumpModularLayout("small airport", SmallModularLayout());
+	DumpModularLayout("large-safe airport", LargeSafeModularLayout());
+
+	/* A runway that may only be landed on strands anything that uses it. */
+	DumpModularLayout("landing-only runway", ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_SMALL_FAR_END,  0, AIAirport.MRF_LANDING),
+		ModularLayoutTile(1, 0, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0, AIAirport.MRF_LANDING),
+		ModularLayoutTile(0, 1, AIAirport.MP_STAND),
+	]));
+
+	/* A heliport: no runway at all. */
+	DumpModularLayout("heliport", ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_HELIPAD),
+		ModularLayoutTile(1, 0, AIAirport.MP_SMALL_HANGAR, 0),
+	]));
+
+	/* A large runway one tile too short is not safe for large aircraft. */
+	local short_runway = [];
+	short_runway.append(ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	for (local x = 1; x < 4; x++) {
+		short_runway.append(ModularLayoutTile(x, 0, AIAirport.MP_RUNWAY, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	}
+	short_runway.append(ModularLayoutTile(4, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	short_runway.append(ModularLayoutTile(0, 1, AIAirport.MP_TOWER));
+	short_runway.append(ModularLayoutTile(1, 1, AIAirport.MP_TERMINAL));
+	DumpModularLayout("5-tile large runway", ModularLayout(short_runway));
+
+	/* Same 6-tile runway, but laid along the Y axis via the rotation field. */
+	local vertical = [];
+	vertical.append(ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_END, 1, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	for (local y = 1; y < 5; y++) {
+		vertical.append(ModularLayoutTile(0, y, AIAirport.MP_RUNWAY, 1, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	}
+	vertical.append(ModularLayoutTile(0, 5, AIAirport.MP_RUNWAY_END, 1, AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW));
+	vertical.append(ModularLayoutTile(1, 0, AIAirport.MP_TOWER));
+	vertical.append(ModularLayoutTile(1, 1, AIAirport.MP_TERMINAL));
+	DumpModularLayout("6-tile runway along Y", ModularLayout(vertical));
+
+	print("  malformed layouts:");
+	print("    empty:                    " + AIAirport.GetModularLayoutNoiseLevel([]));
+	print("    short stride:             " + AIAirport.GetModularLayoutNoiseLevel([0, 0, AIAirport.MP_APRON]));
+	print("    bad piece:                " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, 999)));
+	print("    bad rotation:             " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 7)));
+	print("    negative offset:          " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(-1, 0, AIAirport.MP_APRON)));
+	print("    bad runway flags:         " + AIAirport.GetModularLayoutCatchmentRadius(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 0, 99)));
+	print("    safety of malformed:      " + AIAirport.GetModularLayoutSafety([1]));
+	print("    accepts planes malformed: " + AIAirport.GetModularLayoutAcceptsPlanes([1]));
+	print("    maintenance of malformed: " + AIAirport.GetModularLayoutMonthlyMaintenanceCost([1]));
+}
+
+function Regression::ModularAirportBuild()
+{
+	print("");
+	print("--AIAirport Modular: build tile by tile--");
+
+	local site = FindFlatModularSite(3, 2, 32116, 12);
+	print("  site found:                               " + (site >= 0));
+	if (site < 0) return -1;
+
+	print("  IsModularAirportTile() before:            " + AIAirport.IsModularAirportTile(site));
+	print("  GetModularPiece() before:                 " + AIAirport.GetModularPiece(site));
+	print("  GetModularPieceRotation() before:         " + AIAirport.GetModularPieceRotation(site));
+	print("  GetModularRunwayFlags() before:           " + AIAirport.GetModularRunwayFlags(site));
+	print("  GetModularAirportSafety() before:         " + AIAirport.GetModularAirportSafety(site));
+
+	/* Year-gated piece: refused before large airports become available. */
+	print("  Build(MP_RUNWAY) (year gated):            " + AIAirport.BuildModularAirportTile(site, AIAirport.MP_RUNWAY, 0, AIStation.STATION_NEW));
+	print("    error:                                  " + AIError.GetLastErrorString());
+
+	/* Bad arguments. */
+	print("  Build(rotation 4):                        " + AIAirport.BuildModularAirportTile(site, AIAirport.MP_APRON, 4, AIStation.STATION_NEW));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  Build(invalid piece):                     " + AIAirport.BuildModularAirportTile(site, -1, 0, AIStation.STATION_NEW));
+	print("    error:                                  " + AIError.GetLastErrorString());
+
+	/* A three tile grass runway plus an apron, a stand and a hangar. */
+	print("  Build(FAR_END):                           " + AIAirport.BuildModularAirportTile(site, AIAirport.MP_RUNWAY_SMALL_FAR_END, 0, AIStation.STATION_NEW));
+	local station = AIStation.GetStationID(site);
+	print("  Build(MIDDLE):                            " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(1, 0), AIAirport.MP_RUNWAY_SMALL_MIDDLE, 0, station));
+	print("  Build(NEAR_END):                          " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 0), AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0, station));
+	print("  Build(APRON):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(0, 1), AIAirport.MP_APRON, 0, station));
+	print("  Build(STAND):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(1, 1), AIAirport.MP_STAND, 0, station));
+	print("  Build(SMALL_HANGAR rot 2):                " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 2, station));
+
+	print("  IsModularAirportTile() after:             " + AIAirport.IsModularAirportTile(site));
+	print("  GetAirportType() == AT_MODULAR:           " + (AIAirport.GetAirportType(site) == AIAirport.AT_MODULAR));
+	print("  IsAirportInformationAvailable(AT_MODULAR):" + AIAirport.IsAirportInformationAvailable(AIAirport.AT_MODULAR));
+	print("  IsValidAirportType(AT_MODULAR):           " + AIAirport.IsValidAirportType(AIAirport.AT_MODULAR));
+
+	print("  piece readback:");
+	local names = ["runway far end", "runway middle", "runway near end", "apron", "stand", "small hangar"];
+	local i = 0;
+	for (local y = 0; y < 2; y++) {
+		for (local x = 0; x < 3; x++) {
+			local tile = site + AIMap.GetTileIndex(x, y);
+			print("    " + names[i] + ": piece " + AIAirport.GetModularPiece(tile) +
+				", rotation " + AIAirport.GetModularPieceRotation(tile) +
+				", runway flags " + AIAirport.GetModularRunwayFlags(tile));
+			i++;
+		}
+	}
+
+	print("  GetNumHangars():                          " + AIAirport.GetNumHangars(site));
+	print("  GetHangarOfAirport() is the hangar tile:  " + (AIAirport.GetHangarOfAirport(site) == site + AIMap.GetTileIndex(2, 1)));
+	print("  IsHangarTile(hangar):                     " + AIAirport.IsHangarTile(site + AIMap.GetTileIndex(2, 1)));
+	print("  GetStationCoverageRadius():               " + AIStation.GetStationCoverageRadius(AIStation.GetStationID(site)));
+	print("  GetModularAirportSafety() after:          " + AIAirport.GetModularAirportSafety(site));
+
+	/* Runway flags apply to the whole contiguous runway, not just one tile. */
+	print("  SetModularRunwayFlags(LANDING|DIR_LOW):   " + AIAirport.SetModularRunwayFlags(site, AIAirport.MRF_LANDING | AIAirport.MRF_DIR_LOW));
+	print("    flags on far end:                       " + AIAirport.GetModularRunwayFlags(site));
+	print("    flags on middle:                        " + AIAirport.GetModularRunwayFlags(site + AIMap.GetTileIndex(1, 0)));
+	print("    flags on near end:                      " + AIAirport.GetModularRunwayFlags(site + AIMap.GetTileIndex(2, 0)));
+
+	/* A runway runs in one direction, and has to allow landing or takeoff. */
+	print("  SetModularRunwayFlags(out of range):      " + AIAirport.SetModularRunwayFlags(site, 99));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularRunwayFlags(both directions):   " + AIAirport.SetModularRunwayFlags(site, AIAirport.MRF_LANDING | AIAirport.MRF_DIR_LOW | AIAirport.MRF_DIR_HIGH));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularRunwayFlags(no direction):      " + AIAirport.SetModularRunwayFlags(site, AIAirport.MRF_LANDING));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularRunwayFlags(no operation):      " + AIAirport.SetModularRunwayFlags(site, AIAirport.MRF_DIR_LOW));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularRunwayFlags(TAKEOFF|DIR_HIGH):  " + AIAirport.SetModularRunwayFlags(site, AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_HIGH));
+	print("    flags on far end:                       " + AIAirport.GetModularRunwayFlags(site));
+	print("  SetModularRunwayFlags(on the apron):      " + AIAirport.SetModularRunwayFlags(site + AIMap.GetTileIndex(0, 1), AIAirport.MRF_LANDING | AIAirport.MRF_DIR_LOW));
+
+	/* Taxiway flags apply to the one apron tile. A one-way taxiway runs one way. */
+	print("  SetModularTaxiwayFlags(one way, 4 dirs):  " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(0, 1), 15, true));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularTaxiwayFlags(one way, 1 dir):   " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(0, 1), 1, true));
+	print("  SetModularTaxiwayFlags(two way):          " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(0, 1), 15, false));
+	print("  SetModularTaxiwayFlags(bad mask):         " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(0, 1), 99, false));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  SetModularTaxiwayFlags(on the stand):     " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(1, 1), 15, false));
+	print("  SetModularTaxiwayFlags(non-airport tile): " + AIAirport.SetModularTaxiwayFlags(1, 15, false));
+	print("    error:                                  " + AIError.GetLastErrorString());
+
+	return site;
+}
+
+function Regression::ModularAirportPlaceLayout(avoid_tile)
+{
+	print("");
+	print("--AIAirport Modular: place whole layout--");
+
+	/* The town by the first airport already has as many airports as its local
+	 * authority allows, so build this one by the town furthest away. */
+	local towns = AITownList();
+	towns.Valuate(AITown.GetDistanceManhattanToTile, avoid_tile);
+	towns.Sort(AIList.SORT_BY_VALUE, false);
+	local site = FindFlatModularSite(3, 2, AITown.GetLocation(towns.Begin()), 15);
+	print("  site found:                               " + (site >= 0));
+	if (site < 0) return;
+
+	print("  Place(bad rotation):                      " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 4, 3, 2, SmallModularLayout()));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  Place(bad width):                         " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 0, 0, 2, SmallModularLayout()));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  Place(malformed layout):                  " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 0, 3, 2, [1, 2, 3]));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  Place(year gated pieces):                 " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 0, 6, 2, LargeSafeModularLayout()));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  nothing built by the failures:            " + !AIAirport.IsModularAirportTile(site));
+
+	print("  Place(small airport):                     " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 0, 3, 2, SmallModularLayout()));
+	print("  IsModularAirportTile():                   " + AIAirport.IsModularAirportTile(site));
+	print("  piece readback:");
+	for (local y = 0; y < 2; y++) {
+		for (local x = 0; x < 3; x++) {
+			local tile = site + AIMap.GetTileIndex(x, y);
+			print("    (" + x + "," + y + "): piece " + AIAirport.GetModularPiece(tile) +
+				", rotation " + AIAirport.GetModularPieceRotation(tile));
+		}
+	}
+	print("  GetNumHangars():                          " + AIAirport.GetNumHangars(site));
+	print("  GetStationCoverageRadius():               " + AIStation.GetStationCoverageRadius(AIStation.GetStationID(site)));
+	print("  GetModularAirportSafety():                " + AIAirport.GetModularAirportSafety(site));
+
+	/* Building the same layout on top of itself cannot work. */
+	print("  Place(again, same spot):                  " + AIAirport.PlaceModularAirportLayout(site, AIStation.STATION_NEW, 0, 3, 2, SmallModularLayout()));
+	print("    error:                                  " + AIError.GetLastErrorString());
+}
+
+function Regression::ModularAirportHeightRule(site)
+{
+	print("");
+	print("--AIAirport Modular: one height level per airport--");
+	if (site < 0) {
+		print("  no airport built, skipped");
+		return;
+	}
+
+	/* Every tile of a modular airport sits at one height, so joining a tile at a
+	 * different height has to fail. */
+	local airport_height = AITile.GetMaxHeight(site);
+	local step_tile = -1;
+	local area = AITileList();
+	area.AddRectangle(
+		AIMap.GetTileIndex(max(1, AIMap.GetTileX(site) - 6), max(1, AIMap.GetTileY(site) - 6)),
+		AIMap.GetTileIndex(min(AIMap.GetMapSizeX() - 2, AIMap.GetTileX(site) + 6), min(AIMap.GetMapSizeY() - 2, AIMap.GetTileY(site) + 6)));
+	local candidates = [];
+	foreach (tile, _ in area) candidates.append(tile);
+	candidates.sort();
+	foreach (tile in candidates) {
+		if (!AITile.IsBuildable(tile)) continue;
+		if (AITile.GetSlope(tile) != AITile.SLOPE_FLAT) continue;
+		if (AITile.GetMaxHeight(tile) == airport_height) continue;
+		step_tile = tile;
+		break;
+	}
+
+	print("  found a flat tile at another height:      " + (step_tile >= 0));
+	if (step_tile < 0) return;
+
+	print("  height differs from the airport:          " + (AITile.GetMaxHeight(step_tile) != airport_height));
+	print("  Build() joining the airport there:        " + AIAirport.BuildModularAirportTile(step_tile, AIAirport.MP_APRON, 0, AIStation.GetStationID(site)));
+	print("    error:                                  " + AIError.GetLastErrorString());
+}
+
 function Regression::Start()
 {
 	this.TestInit();
@@ -2398,6 +2756,16 @@ function Regression::Start()
 
 	this.Math();
 	this.PriorityQueue();
+
+	this.ModularAirportPieces();
+	this.ModularAirportLayoutPreview();
+	{
+		/* Block-scoped so the site tile does not show up in the LOCALS dump of the
+		 * excessive-CPU test below, which would tie that output to the terrain. */
+		local modular_site = this.ModularAirportBuild();
+		this.ModularAirportPlaceLayout(modular_site < 0 ? 32116 : modular_site);
+		this.ModularAirportHeightRule(modular_site);
+	}
 
 	/* Check Valuate() is actually limited, MUST BE THE LAST TEST. */
 	print("--Valuate() with excessive CPU usage--")

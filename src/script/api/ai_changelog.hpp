@@ -19,6 +19,29 @@
  *
  * This version is not yet released. The following changes are not set in stone yet.
  *
+ * API additions:
+ * \li AIAirport::ModularPiece
+ * \li AIAirport::ModularRunwayFlags
+ * \li AIAirport::ModularSafety
+ * \li AIAirport::ModularLayoutField
+ * \li AIAirport::IsModularAirportTile
+ * \li AIAirport::GetModularPiece
+ * \li AIAirport::GetModularPieceRotation
+ * \li AIAirport::GetModularRunwayFlags
+ * \li AIAirport::IsModularPieceAvailable
+ * \li AIAirport::GetModularPieceMinYear
+ * \li AIAirport::GetModularAirportSafety
+ * \li AIAirport::BuildModularAirportTile
+ * \li AIAirport::SetModularRunwayFlags
+ * \li AIAirport::SetModularTaxiwayFlags
+ * \li AIAirport::PlaceModularAirportLayout
+ * \li AIAirport::GetModularLayoutNoiseLevel
+ * \li AIAirport::GetModularLayoutCatchmentRadius
+ * \li AIAirport::GetModularLayoutMonthlyMaintenanceCost
+ * \li AIAirport::GetModularLayoutAcceptsPlanes
+ * \li AIAirport::GetModularLayoutHasHelipad
+ * \li AIAirport::GetModularLayoutSafety
+ *
  * \b 15.0
  *
  * API additions:

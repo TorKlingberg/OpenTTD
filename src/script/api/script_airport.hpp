@@ -11,6 +11,7 @@
 #define SCRIPT_AIRPORT_HPP
 
 #include "script_object.hpp"
+#include "../squirrel_helper_type.hpp"
 #include "../../airport.h"
 #include "../../station_type.h"
 
@@ -220,6 +221,315 @@ public:
 	 * @return Number of helipads of this type of airport. When 0 helicopters will go to normal terminals.
 	 */
 	static SQInteger GetAirportNumHelipads(AirportType type);
+
+	/**
+	 * The pieces a modular airport can be built from.
+	 *
+	 * A modular airport has no type-level data: its size, capabilities, noise,
+	 * catchment and maintenance all follow from the pieces it is made of. This is
+	 * the curated set the interactive builder offers; the underlying game has more
+	 * tile graphics, but they are either decorative variants chosen automatically
+	 * or multi-tile compounds that cannot be placed one tile at a time.
+	 */
+	enum ModularPiece {
+		/* Movement surfaces. */
+		MP_APRON,                  ///< Plain apron. Aircraft taxi over it and it is not a stopping place.
+		MP_STAND,                  ///< Aircraft stand (a terminal). Aircraft load and unload here.
+		MP_STAND_TERMINAL,         ///< Stand that also counts as a large terminal building.
+		MP_STAND_PIER,             ///< Stand at a pier, also counts as a large terminal building.
+		MP_RUNWAY,                 ///< Middle piece of a large runway.
+		MP_RUNWAY_END,             ///< End piece of a large runway. Landings target these.
+		MP_RUNWAY_SMALL_MIDDLE,    ///< Middle piece of a small (grass) runway.
+		MP_RUNWAY_SMALL_NEAR_END,  ///< High-coordinate end piece of a small runway.
+		MP_RUNWAY_SMALL_FAR_END,   ///< Low-coordinate end piece of a small runway.
+		MP_HANGAR,                 ///< Large hangar. Aircraft are built and serviced here.
+		MP_SMALL_HANGAR,           ///< Small hangar.
+		MP_HELIPAD,                ///< Helipad.
+		MP_HELIPAD_PLAIN,          ///< Helipad, plain "H" variant.
+		MP_HELIPORT,               ///< Rooftop heliport.
+
+		/* Buildings and decoration. Aircraft cannot enter these. */
+		MP_TERMINAL,               ///< Large terminal building.
+		MP_TERMINAL_ALT,           ///< Large terminal building, second variant.
+		MP_TERMINAL_OTHER,         ///< Large terminal building, third variant.
+		MP_TERMINAL_ROUND,         ///< Round terminal concourse.
+		MP_LOW_TERMINAL,           ///< Low terminal building. Does not count as a large terminal.
+		MP_TOWER,                  ///< Control tower.
+		MP_RADIO_TOWER,            ///< Radio tower.
+		MP_RADAR,                  ///< Radar.
+		MP_RADAR_GRASS,            ///< Radar on grass.
+		MP_FLAG_GRASS,             ///< Windsock on grass.
+		MP_GRASS,                  ///< Plain airport grass.
+		MP_EMPTY,                  ///< Empty airport tile. Reserves the ground without building anything on it.
+
+		MP_INVALID = -1,           ///< Not a modular airport piece.
+	};
+
+	/**
+	 * Usage flags of a modular runway. A runway carries one set of flags along its
+	 * whole contiguous length; setting them on any tile sets them on all of it.
+	 *
+	 * A valid combination has at least one of MRF_LANDING and MRF_TAKEOFF, and
+	 * exactly one of MRF_DIR_LOW and MRF_DIR_HIGH: a runway is used in one
+	 * direction, so asking for both, or for neither, is refused. Splitting landing
+	 * onto one runway and takeoff onto another is how a busy airport raises its
+	 * throughput.
+	 */
+	enum ModularRunwayFlags {
+		MRF_LANDING  = 0x01, ///< Aircraft may land on this runway.
+		MRF_TAKEOFF  = 0x02, ///< Aircraft may take off from this runway.
+		MRF_DIR_LOW  = 0x04, ///< Operations run towards the low-coordinate end.
+		MRF_DIR_HIGH = 0x08, ///< Operations run towards the high-coordinate end.
+	};
+
+	/**
+	 * What a modular airport is missing before it is safe for large (fast jet)
+	 * aircraft. A fast jet using an airport that is not large-safe runs a much
+	 * higher risk of crashing on landing, regardless of the "plane crashes" setting.
+	 */
+	enum ModularSafety {
+		MS_OK                      = 0x00, ///< Nothing missing; the airport is safe for large aircraft.
+		MS_MISSING_TOWER           = 0x01, ///< No control tower.
+		MS_MISSING_BIG_TERMINAL    = 0x02, ///< No large terminal building.
+		MS_MISSING_LANDING_RUNWAY  = 0x04, ///< No large runway of at least 6 tiles that allows landing.
+		MS_MISSING_TAKEOFF_RUNWAY  = 0x08, ///< No large runway of at least 6 tiles that allows takeoff.
+	};
+
+	/**
+	 * Layout of the flat array describing a modular airport layout.
+	 *
+	 * A layout is a flat array of integers holding MLF_STRIDE values per tile, in
+	 * the order given here. It is flat rather than an array of arrays because the
+	 * script API cannot pass nested arrays. For example, a two-tile layout of an
+	 * apron at (0,0) and a stand at (1,0), both with default settings, is:
+	 *
+	 *   [0, 0, AIAirport.MP_APRON, 0, 0, 0, 15, 0,
+	 *    1, 0, AIAirport.MP_STAND, 0, 0, 0, 15, 0]
+	 */
+	enum ModularLayoutField {
+		MLF_DX,               ///< X offset from the layout's north tile, 0 or more.
+		MLF_DY,               ///< Y offset from the layout's north tile, 0 or more.
+		MLF_PIECE,            ///< The ModularPiece to place.
+		MLF_ROTATION,         ///< Rotation of the piece, 0 to 3.
+		MLF_RUNWAY_FLAGS,     ///< ModularRunwayFlags for a runway piece, ignored otherwise.
+		MLF_ONE_WAY_TAXI,     ///< 1 to make a taxiway one-way, 0 otherwise.
+		MLF_TAXI_DIR_MASK,    ///< Permitted taxi directions, 15 for all.
+		MLF_EDGE_FENCE_MASK,  ///< Bitmask of tile edges to fence off, 0 for none.
+		MLF_STRIDE,           ///< Number of values per tile; not a field itself.
+	};
+
+	/**
+	 * Checks whether the given tile is part of a modular airport.
+	 * @param tile The tile to check.
+	 * @pre ScriptMap::IsValidTile(tile).
+	 * @return True if and only if the tile belongs to a modular airport.
+	 */
+	static bool IsModularAirportTile(TileIndex tile);
+
+	/**
+	 * Get the piece a modular airport tile is built from.
+	 * @param tile The tile to check.
+	 * @pre ScriptMap::IsValidTile(tile).
+	 * @return The piece, or MP_INVALID when the tile is not part of a modular
+	 *  airport or holds a piece this API does not name.
+	 */
+	static ModularPiece GetModularPiece(TileIndex tile);
+
+	/**
+	 * Get the rotation of a modular airport tile.
+	 * @param tile The tile to check.
+	 * @pre IsModularAirportTile(tile).
+	 * @return The rotation, 0 to 3, or -1 when the tile is not modular.
+	 */
+	static SQInteger GetModularPieceRotation(TileIndex tile);
+
+	/**
+	 * Get the usage flags of the runway a tile belongs to.
+	 * @param tile The tile to check.
+	 * @pre IsModularAirportTile(tile).
+	 * @return A bitmask of ModularRunwayFlags, or -1 when the tile is not a
+	 *  modular runway piece.
+	 */
+	static SQInteger GetModularRunwayFlags(TileIndex tile);
+
+	/**
+	 * Checks whether a modular piece can be built in the current year.
+	 * Some pieces only become available once large airports do.
+	 * @param piece The piece to check.
+	 * @return True if and only if the piece can be built now.
+	 */
+	static bool IsModularPieceAvailable(ModularPiece piece);
+
+	/**
+	 * Get the first year in which a modular piece can be built.
+	 * @param piece The piece to check.
+	 * @return The year the piece becomes available.
+	 * @see \ref ScriptCalendarTime
+	 */
+	static SQInteger GetModularPieceMinYear(ModularPiece piece);
+
+	/**
+	 * Get what an existing modular airport is missing before it is safe for large aircraft.
+	 * @param tile Any tile of the airport.
+	 * @pre IsModularAirportTile(tile).
+	 * @return A bitmask of ModularSafety, MS_OK when nothing is missing, or -1
+	 *  when the tile is not part of a modular airport.
+	 */
+	static SQInteger GetModularAirportSafety(TileIndex tile);
+
+	/**
+	 * Build a single modular airport tile.
+	 *
+	 * Unlike BuildAirport() this places one piece at a time, so an airport is built
+	 * up over many calls and a failure part-way leaves the tiles already built in
+	 * place. Use PlaceModularAirportLayout() to build a whole layout in one
+	 * all-or-nothing command.
+	 *
+	 * Every tile of a modular airport must sit at the same height, so the first
+	 * tile fixes the height of the whole airport and any later tile at a different
+	 * height fails with ERR_FLAT_LAND_REQUIRED.
+	 *
+	 * @param tile The tile to build on.
+	 * @param piece The piece to build.
+	 * @param rotation The rotation of the piece, 0 to 3. For hangars this is the
+	 *  direction the hangar faces (0 = SE, 1 = NE, 2 = NW, 3 = SW). For runway
+	 *  pieces an even rotation lays the runway along the X axis and an odd one
+	 *  along the Y axis. Ignored by pieces that cannot rotate.
+	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
+	 * @pre ScriptMap::IsValidTile(tile).
+	 * @pre rotation >= 0 && rotation <= 3.
+	 * @pre IsModularPieceAvailable(piece).
+	 * @pre station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id).
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_AREA_NOT_CLEAR
+	 * @exception ScriptError::ERR_FLAT_LAND_REQUIRED
+	 * @exception ScriptError::ERR_LOCAL_AUTHORITY_REFUSES
+	 * @exception ScriptError::ERR_STATION_TOO_SPREAD_OUT
+	 * @exception ScriptStation::ERR_STATION_TOO_CLOSE_TO_ANOTHER_STATION
+	 * @return Whether the tile has been/can be built or not.
+	 */
+	static bool BuildModularAirportTile(TileIndex tile, ModularPiece piece, SQInteger rotation, StationID station_id);
+
+	/**
+	 * Set the usage flags of a modular runway. The flags apply to the whole
+	 * contiguous runway the tile belongs to, not just this tile.
+	 * @param tile Any tile of the runway.
+	 * @param flags A bitmask of ModularRunwayFlags.
+	 * @pre IsModularAirportTile(tile).
+	 * @pre flags has at least one of MRF_LANDING and MRF_TAKEOFF.
+	 * @pre flags has exactly one of MRF_DIR_LOW and MRF_DIR_HIGH.
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_OWNED_BY_ANOTHER_COMPANY
+	 * @return Whether the flags have been/can be set or not.
+	 */
+	static bool SetModularRunwayFlags(TileIndex tile, SQInteger flags);
+
+	/**
+	 * Set the taxi restrictions of a modular taxiway tile. One-way taxiways let
+	 * aircraft queue through a taxiway one tile at a time instead of reserving a
+	 * whole area, which raises throughput on a busy airport.
+	 * @param tile The taxiway tile.
+	 * @param dir_mask Bitmask of permitted taxi directions, 15 for all. A one-way
+	 *  taxiway must name exactly one direction, and it has to be one the piece
+	 *  already allows.
+	 * @param one_way Whether the taxiway is one-way.
+	 * @pre IsModularAirportTile(tile).
+	 * @pre dir_mask >= 0 && dir_mask <= 15.
+	 * @pre !one_way || dir_mask has exactly one bit set.
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_OWNED_BY_ANOTHER_COMPANY
+	 * @return Whether the flags have been/can be set or not.
+	 */
+	static bool SetModularTaxiwayFlags(TileIndex tile, SQInteger dir_mask, bool one_way);
+
+	/**
+	 * Build a whole modular airport layout in one command.
+	 *
+	 * The entire layout is checked before anything is built, so this either builds
+	 * all of it or none of it. That makes it the safer way to build a new airport;
+	 * BuildModularAirportTile() is for growing one that already exists.
+	 *
+	 * All tiles of the layout must sit at the same height.
+	 *
+	 * @param tile The tile the layout's (0,0) offset lands on.
+	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
+	 * @param rotation Rotation to apply to the whole layout, 0 to 3, clockwise.
+	 * @param width Width of the layout in tiles, before rotation.
+	 * @param height Height of the layout in tiles, before rotation.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre ScriptMap::IsValidTile(tile).
+	 * @pre rotation >= 0 && rotation <= 3.
+	 * @pre width > 0 && height > 0.
+	 * @pre layout.len() > 0 && layout.len() % MLF_STRIDE == 0.
+	 * @pre layout.len() / MLF_STRIDE <= 128.
+	 * @pre station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id).
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_AREA_NOT_CLEAR
+	 * @exception ScriptError::ERR_FLAT_LAND_REQUIRED
+	 * @exception ScriptError::ERR_LOCAL_AUTHORITY_REFUSES
+	 * @exception ScriptError::ERR_STATION_TOO_SPREAD_OUT
+	 * @exception ScriptStation::ERR_STATION_TOO_CLOSE_TO_ANOTHER_STATION
+	 * @return Whether the layout has been/can be built or not.
+	 * @note Small runway pieces cannot be rotated by an odd number of quarter turns,
+	 *  and this fails if you try.
+	 */
+	static bool PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout);
+
+	/**
+	 * Get the noise a layout would add to a town, without building it.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return The noise level of the layout, or -1 when the layout is malformed.
+	 */
+	static SQInteger GetModularLayoutNoiseLevel(Array<SQInteger> &&layout);
+
+	/**
+	 * Get the catchment radius a layout would have, without building it.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return The catchment radius in tiles, or -1 when the layout is malformed.
+	 */
+	static SQInteger GetModularLayoutCatchmentRadius(Array<SQInteger> &&layout);
+
+	/**
+	 * Get the monthly maintenance cost a layout would have, without building it.
+	 * Directly comparable with GetMonthlyMaintenanceCost() for a stock airport type.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return The maintenance cost per economy-month, or -1 when the layout is malformed.
+	 * @see \ref ScriptEconomyTime
+	 */
+	static Money GetModularLayoutMonthlyMaintenanceCost(Array<SQInteger> &&layout);
+
+	/**
+	 * Check whether a layout could serve planes, without building it.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return True if and only if planes can use the layout.
+	 */
+	static bool GetModularLayoutAcceptsPlanes(Array<SQInteger> &&layout);
+
+	/**
+	 * Check whether a layout contains a helipad, without building it.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return True if and only if the layout has at least one helipad.
+	 * @note This is not the same question as whether helicopters can use the
+	 *  finished airport: one without a helipad may still take them on its apron,
+	 *  which depends on where the airport ends up and can only be answered once it
+	 *  is built.
+	 */
+	static bool GetModularLayoutHasHelipad(Array<SQInteger> &&layout);
+
+	/**
+	 * Get what a layout would be missing before it is safe for large aircraft,
+	 * without building it.
+	 * @param layout The layout, as described by ModularLayoutField.
+	 * @pre layout.len() % MLF_STRIDE == 0.
+	 * @return A bitmask of ModularSafety, MS_OK when nothing is missing, or -1
+	 *  when the layout is malformed.
+	 */
+	static SQInteger GetModularLayoutSafety(Array<SQInteger> &&layout);
 };
 
 #endif /* SCRIPT_AIRPORT_HPP */

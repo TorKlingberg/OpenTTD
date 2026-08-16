@@ -480,4 +480,9 @@ DECLARE_ENUM_AS_BIT_SET(ModularAirportSafetyRequirement)
 
 ModularAirportSafetyRequirement GetModularAirportSafetyStatus(const Station *st);
 
+/* Abstract-grid variant, for measuring a layout that has not been placed yet.
+ * Must stay in exact agreement with the built-airport version above: the elevated
+ * jet-overrun crash path is gated on it. */
+ModularAirportSafetyRequirement GetModularAirportSafetyStatusFromPieces(std::span<const ModularCatchmentPiece> pieces);
+
 #endif /* MODULAR_AIRPORT_CMD_H */
