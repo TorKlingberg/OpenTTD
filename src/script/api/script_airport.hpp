@@ -398,7 +398,8 @@ public:
 	 * @param rotation The rotation of the piece, 0 to 3. For hangars this is the
 	 *  direction the hangar faces (0 = SE, 1 = NE, 2 = NW, 3 = SW). For runway
 	 *  pieces an even rotation lays the runway along the X axis and an odd one
-	 *  along the Y axis. Ignored by pieces that cannot rotate.
+	 *  along the Y axis. MP_SMALL_HANGAR has only one graphic and requires 0.
+	 *  Ignored by other pieces that cannot rotate.
 	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
 	 * @pre ScriptMap::IsValidTile(tile).
 	 * @pre rotation >= 0 && rotation <= 3.
@@ -475,6 +476,7 @@ public:
 	 * @exception ScriptStation::ERR_STATION_TOO_CLOSE_TO_ANOTHER_STATION
 	 * @return Whether the layout has been/can be built or not.
 	 * @note Small runway pieces cannot be rotated by an odd number of quarter turns,
+	 *  MP_SMALL_HANGAR and compound pieces require a per-piece rotation of 0,
 	 *  and this fails if you try.
 	 */
 	static bool PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout);

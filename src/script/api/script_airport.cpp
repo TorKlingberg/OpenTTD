@@ -322,6 +322,9 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 
 		const uint8_t gfx = GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(piece));
 		if (gfx == UINT8_MAX) return false;
+		/* The legacy small hangar has only its SE graphic. Giving it another
+		 * rotation changes its taxi opening without changing what is drawn. */
+		if (::IsLegacySmallHangarPiece(gfx) && rotation != 0) return false;
 
 		ModularTemplatePlacementTile tile{};
 		tile.dx = static_cast<uint16_t>(dx);
@@ -439,6 +442,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, rotation >= 0 && rotation <= 3);
 	EnforcePrecondition(false, IsModularPieceAvailable(piece));
+	EnforcePrecondition(false, piece != MP_SMALL_HANGAR || rotation == 0);
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
 	const uint8_t gfx = GetGfxForModularPiece(piece);

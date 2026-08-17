@@ -10948,6 +10948,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
     short stride:             -1
     bad piece:                -1
     bad rotation:             -1
+    rotated small hangar:     -1
     negative offset:          -1
     bad runway flags:         -1
     safety of malformed:      -1
@@ -10972,7 +10973,9 @@ ERROR: IsEnd() is invalid as Begin() is never called
   Build(NEAR_END):                          true
   Build(APRON):                             true
   Build(STAND):                             true
-  Build(SMALL_HANGAR rot 2):                true
+  Build(SMALL_HANGAR rot 2):                false
+    error:                                  ERR_PRECONDITION_FAILED
+  Build(SMALL_HANGAR rot 0):                true
   IsModularAirportTile() after:             true
   GetAirportType() == AT_MODULAR:           true
   IsAirportInformationAvailable(AT_MODULAR):false
@@ -10983,7 +10986,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
     runway near end: piece 5, rotation 0, runway flags 7
     apron: piece 0, rotation 0, runway flags -1
     stand: piece 1, rotation 0, runway flags -1
-    small hangar: piece 8, rotation 2, runway flags -1
+    small hangar: piece 8, rotation 0, runway flags -1
   GetNumHangars():                          1
   GetHangarOfAirport() is the hangar tile:  true
   IsHangarTile(hangar):                     true
@@ -11051,7 +11054,7 @@ Your script made an error: excessive CPU usage in valuator function
 
 CALLSTACK
 *FUNCTION [Valuate()] Valuate line [5]
-*FUNCTION [Start()] regression/main.nut line [2792]
+*FUNCTION [Start()] regression/main.nut line [2795]
 
 LOCALS
 [args] ARRAY

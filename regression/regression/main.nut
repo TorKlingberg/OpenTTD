@@ -2493,6 +2493,7 @@ function Regression::ModularAirportLayoutPreview()
 	print("    short stride:             " + AIAirport.GetModularLayoutNoiseLevel([0, 0, AIAirport.MP_APRON]));
 	print("    bad piece:                " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, 999)));
 	print("    bad rotation:             " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 7)));
+	print("    rotated small hangar:     " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_SMALL_HANGAR, 2)));
 	print("    negative offset:          " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(-1, 0, AIAirport.MP_APRON)));
 	print("    bad runway flags:         " + AIAirport.GetModularLayoutCatchmentRadius(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 0, 99)));
 	print("    safety of malformed:      " + AIAirport.GetModularLayoutSafety([1]));
@@ -2533,6 +2534,8 @@ function Regression::ModularAirportBuild()
 	print("  Build(APRON):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(0, 1), AIAirport.MP_APRON, 0, station));
 	print("  Build(STAND):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(1, 1), AIAirport.MP_STAND, 0, station));
 	print("  Build(SMALL_HANGAR rot 2):                " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 2, station));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  Build(SMALL_HANGAR rot 0):                " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 0, station));
 
 	print("  IsModularAirportTile() after:             " + AIAirport.IsModularAirportTile(site));
 	print("  GetAirportType() == AT_MODULAR:           " + (AIAirport.GetAirportType(site) == AIAirport.AT_MODULAR));
