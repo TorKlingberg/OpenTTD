@@ -241,6 +241,19 @@ class ModularAirportAI extends AIController
 		if (budget < 30000) return false;
 		if (AIVehicleList().Count() >= AIGameSettings.GetValue("vehicle.max_aircraft") - 1) return false;
 
+		if (this.pax_cargo < 0) this.pax_cargo = PassengerCargo();
+
+		/* Route choice follows demand: the passengers standing at the two ends
+		 * with nothing to fly on. An earlier version ranked routes by spare stand
+		 * capacity instead, which meant the AI kept feeding whichever airport
+		 * happened to have been built biggest rather than whichever one people
+		 * were waiting at.
+		 *
+		 * Capacity is not part of the ranking, only a veto: an airport already at
+		 * its ceiling cannot use another aircraft, and one more would queue in the
+		 * air and let the reservation system do the rest of the damage. When the
+		 * veto is what stops a route with a queue behind it, GrowAirport sees the
+		 * same two facts and builds. */
 		local best = null, best_need = -1;
 		for (local i = 0; i < airports.len(); i++) {
 			for (local j = i + 1; j < airports.len(); j++) {
@@ -248,20 +261,14 @@ class ModularAirportAI extends AIController
 				local dist = AIMap.DistanceManhattan(a.tile, b.tile);
 				if (dist < MIN_ROUTE_DISTANCE) continue;
 
-				local served = VehiclesServingStation(a.station) + VehiclesServingStation(b.station);
-				local stands = CountPieces2(a) + CountPieces2(b);
-				/* Do not pile more aircraft onto an airport than it has room to
-				 * park: past that they queue in the air and the reservation
-				 * system does the rest of the damage.
-				 *
-				 * Three per stand rather than two because stands are now capped
-				 * (see StandCap): at two, the cap on stands became a cap on the
-				 * fleet and cost real throughput. Aircraft share a stand happily
-				 * enough — what they cannot share is the runway, which is what
-				 * StandCap is actually sizing for. */
-				if (served >= stands * 3) continue;
+				if (VehiclesServingStation(a.station) >= AircraftCeiling(a.station)) continue;
+				if (VehiclesServingStation(b.station) >= AircraftCeiling(b.station)) continue;
 
-				local need = stands * 100 - served * 100 + dist;
+				/* Distance breaks ties between equally busy pairs and is worth a
+				 * little on its own, since a longer leg earns more per trip. */
+				local need = AIStation.GetCargoWaiting(a.station, this.pax_cargo)
+				           + AIStation.GetCargoWaiting(b.station, this.pax_cargo)
+				           + dist;
 				if (need > best_need) { best_need = need; best = [a, b]; }
 			}
 		}
@@ -336,13 +343,6 @@ class ModularAirportAI extends AIController
 
 	function Save() { return {}; }
 	function Load(version, data) { }
-}
-
-/** Stands at an airport, from the map. */
-function CountPieces2(airport)
-{
-	return CountAirportPieces(airport.station, IsStandPiece)
-	     + CountAirportPieces(airport.station, IsHelipadPiece);
 }
 
 /**

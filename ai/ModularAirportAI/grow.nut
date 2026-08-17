@@ -100,63 +100,112 @@ function GrowAirport(station, tile, funds, pax_cargo)
 		return null;
 	}
 
-	/* Sound, or as sound as it can be made: add capacity where traffic asks.
+	/* Sound, or as sound as it can be made. Now the question is whether it is big
+	 * enough, and that is two questions:
 	 *
-	 * The trigger is a queue of waiting passengers, which is an indirect signal:
-	 * BuyOneAircraft will not put more than two aircraft on a stand, so a stand is
-	 * also how the AI raises the fleet cap on a route. That is what makes the
-	 * queue respond to stands at all, and gating growth on the current fleet
-	 * instead — tried, measured — costs about a seventh of total throughput
-	 * because it stops the fleet before it starts.
+	 *   1. Is there demand it is not carrying? A queue of waiting passengers.
+	 *   2. Is more aeroplane the answer, or is the airport itself the limit?
 	 *
-	 * What it needs is a ceiling rather than a different trigger. Left uncapped it
-	 * chased a queue that a growing town refills faster than any number of stands
-	 * can drain, and built airports with nine of them. */
+	 * Buying aircraft is much the cheaper answer and BuyOneAircraft reaches for it
+	 * first, so an airport that is still below its ceiling needs nothing built:
+	 * the next aircraft will take the queue. Building only makes sense once the
+	 * ground is what is holding the route back.
+	 *
+	 * That also says *what* to build. The ceiling is the lower of the stand and
+	 * runway limits, so whichever of the two produced it is the thing to add, and
+	 * the AI stops guessing between a stand and a runway. */
 	local waiting = AIStation.GetCargoWaiting(station, pax_cargo);
-	local stands = CountAirportPieces(station, IsStandPiece);
-	if (waiting > 60 + stands * 25 && stands < StandCap(station) && funds > 80000) {
-		if (AddPiece(station, AIAirport.MP_STAND, true, true)) {
-			return "added a stand (" + waiting + " waiting, " + (stands + 1) + " stands)";
+	if (waiting <= MIN_QUEUE_TO_GROW) return null;
+
+	local serving = VehiclesServingStation(station);
+	if (serving < AircraftCeiling(station)) return null;
+
+	local slots = ParkingSlots(station);
+	local runways = CountRunways(station);
+	local stand_bound = PLANES_PER_STAND * slots <= PLANES_PER_RUNWAY * runways;
+
+	if (stand_bound) {
+		if (funds > 80000 && AddPiece(station, AIAirport.MP_STAND, true, true)) {
+			return "added a stand (" + waiting + " waiting, " + serving + " aircraft on "
+			       + slots + " stands)";
 		}
+		return null;
 	}
 
-	/* A second runway is the step that actually raises throughput once the
-	 * stands are keeping up: a runway is reserved atomically along its whole
-	 * length, so one runway serialises every landing and departure however many
-	 * stands feed it. */
-	if (waiting > 120 + stands * 30 && funds > 400000 && CountRunways(station) < 2) {
+	/* Runway-bound: a runway is reserved along its whole length, so this is the
+	 * step that actually raises throughput once the stands are keeping up. Capped
+	 * at two because a third would need the landing and takeoff split to be worth
+	 * anything, and that is a different design. */
+	if (funds > 400000 && runways < 2) {
 		local added = TryAddRunway(station);
-		if (added != null) return added + " (" + waiting + " waiting)";
+		if (added != null) {
+			return added + " (" + waiting + " waiting, " + serving + " aircraft on "
+			       + runways + " runway)";
+		}
 	}
 	return null;
 }
 
-/**
- * The most stands worth having here.
+/* Below this, the queue is ordinary turnover rather than unmet demand and
+ * nothing needs building. */
+const MIN_QUEUE_TO_GROW = 60;
+
+/*
+ * How much aeroplane an airport can work.
  *
- * A runway is reserved along its whole length, so every landing and departure at
- * a one-runway airport goes through the same lock however many stands feed it.
- * Six stands already allow twelve aircraft on one runway under the two-per-stand
- * rule in BuyOneAircraft, which is more than it can cycle; past that the extra
- * tiles buy upkeep, taxi distance and a longer queue for the same runway. A
- * second runway roughly doubles what the ground can absorb.
+ * Two resources bind, and which one binds is the whole question when deciding
+ * what to build next:
  *
- * Airports whose only runway is a grass strip count zero here and cap at three,
- * which suits them: they are the AI's cheap opening move, not its hubs.
+ *  - Stands. An aircraft has to park somewhere to load. More than a few sharing
+ *    a stand and they spend their time waiting for it rather than flying.
+ *  - Runways. A runway is reserved along its whole length, so every landing and
+ *    every departure at the airport goes through that one lock, however many
+ *    stands feed it.
+ *
+ * Both numbers are aircraft *serving the station*, which is what
+ * VehiclesServingStation counts, and an aircraft on a two-airport route is
+ * counted at both ends.
  */
-function StandCap(station)
+const PLANES_PER_STAND  = 3;
+const PLANES_PER_RUNWAY = 10;
+
+/** Parking slots: stands, plus helipads for the helicopters that use them. */
+function ParkingSlots(station)
 {
-	return 3 + 3 * CountRunways(station);
+	return CountAirportPieces(station, IsStandPiece)
+	     + CountAirportPieces(station, IsHelipadPiece);
 }
 
-/** Large runways at this airport, counted from their end pieces. */
+/**
+ * The most aircraft this airport can usefully have on it.
+ *
+ * The lower of the two ceilings, because the tighter resource is the one that
+ * decides. Which one it is also says what to build: see GrowAirport.
+ */
+function AircraftCeiling(station)
+{
+	local by_stands = PLANES_PER_STAND * ParkingSlots(station);
+	local by_runway = PLANES_PER_RUNWAY * CountRunways(station);
+	return (by_stands < by_runway) ? by_stands : by_runway;
+}
+
+/**
+ * Runways at this airport, counted from their end pieces.
+ *
+ * Grass strips count: they cannot take fast jets, but they land and launch the
+ * light aircraft that use them through the same single lock, so they size an
+ * airport's throughput exactly the same way.
+ */
 function CountRunways(station)
 {
 	local ends = 0;
 	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
 	foreach (t, _ in tiles) {
 		if (!AIAirport.IsModularAirportTile(t)) continue;
-		if (AIAirport.GetModularPiece(t) == AIAirport.MP_RUNWAY_END) ends++;
+		local p = AIAirport.GetModularPiece(t);
+		if (p == AIAirport.MP_RUNWAY_END
+		 || p == AIAirport.MP_RUNWAY_SMALL_NEAR_END
+		 || p == AIAirport.MP_RUNWAY_SMALL_FAR_END) ends++;
 	}
 	return ends / 2;
 }
