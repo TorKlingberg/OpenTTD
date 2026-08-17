@@ -102,15 +102,22 @@ function GrowAirport(station, tile, funds, pax_cargo)
 
 	/* Sound, or as sound as it can be made: add capacity where traffic asks.
 	 *
-	 * The threshold is deliberately low. An earlier version wanted 150 + 60 per
-	 * stand, which no airport in a sixteen-year run ever reached — the busiest
-	 * peaked around 166 against a bar of 330 — so nothing ever grew and the AI
-	 * sat on millions. A queue of a hundred-odd passengers at a three-stand
-	 * airport is already worth another stand. */
+	 * The trigger is a queue of waiting passengers, which is an indirect signal:
+	 * BuyOneAircraft will not put more than two aircraft on a stand, so a stand is
+	 * also how the AI raises the fleet cap on a route. That is what makes the
+	 * queue respond to stands at all, and gating growth on the current fleet
+	 * instead — tried, measured — costs about a seventh of total throughput
+	 * because it stops the fleet before it starts.
+	 *
+	 * What it needs is a ceiling rather than a different trigger. Left uncapped it
+	 * chased a queue that a growing town refills faster than any number of stands
+	 * can drain, and built airports with nine of them. */
 	local waiting = AIStation.GetCargoWaiting(station, pax_cargo);
 	local stands = CountAirportPieces(station, IsStandPiece);
-	if (waiting > 60 + stands * 25 && funds > 80000) {
-		if (AddPiece(station, AIAirport.MP_STAND, true)) return "added a stand (" + waiting + " waiting)";
+	if (waiting > 60 + stands * 25 && stands < StandCap(station) && funds > 80000) {
+		if (AddPiece(station, AIAirport.MP_STAND, true, true)) {
+			return "added a stand (" + waiting + " waiting, " + (stands + 1) + " stands)";
+		}
 	}
 
 	/* A second runway is the step that actually raises throughput once the
@@ -122,6 +129,24 @@ function GrowAirport(station, tile, funds, pax_cargo)
 		if (added != null) return added + " (" + waiting + " waiting)";
 	}
 	return null;
+}
+
+/**
+ * The most stands worth having here.
+ *
+ * A runway is reserved along its whole length, so every landing and departure at
+ * a one-runway airport goes through the same lock however many stands feed it.
+ * Six stands already allow twelve aircraft on one runway under the two-per-stand
+ * rule in BuyOneAircraft, which is more than it can cycle; past that the extra
+ * tiles buy upkeep, taxi distance and a longer queue for the same runway. A
+ * second runway roughly doubles what the ground can absorb.
+ *
+ * Airports whose only runway is a grass strip count zero here and cap at three,
+ * which suits them: they are the AI's cheap opening move, not its hubs.
+ */
+function StandCap(station)
+{
+	return 3 + 3 * CountRunways(station);
 }
 
 /** Large runways at this airport, counted from their end pieces. */
@@ -210,16 +235,52 @@ function TryAddRunway(station)
 }
 
 /**
+ * Tiles that touch a hangar.
+ *
+ * A stand beside the hangar shortens every servicing trip and the first trip a
+ * newly built aircraft makes. It is a preference and not a rule: these tiles are
+ * tried first and the airport still grows wherever it can.
+ */
+function TilesTouchingHangar(station)
+{
+	local out = {};
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		if (!IsHangarPiece(AIAirport.GetModularPiece(t))) continue;
+		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
+		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+			local n = AIMap.GetTileIndex(x + d[0], y + d[1]);
+			if (AIMap.IsValidTile(n)) out[n] <- true;
+		}
+	}
+	return out;
+}
+
+/**
  * Add one piece to an existing airport.
  *
  * `taxi_adjacent` marks pieces aircraft must be able to reach — stands and
  * helipads. Buildings and decoration can go anywhere the airport touches.
+ * `near_hangar` reorders the candidates rather than filtering them, so it costs
+ * nothing when no tile beside the hangar is free.
  */
-function AddPiece(station, piece, taxi_adjacent)
+function AddPiece(station, piece, taxi_adjacent, near_hangar = false)
 {
 	if (!AIAirport.IsModularPieceAvailable(piece)) return false;
 	local candidates = ExpansionTiles(station, taxi_adjacent);
 	if (candidates.len() == 0) return false;
+
+	if (near_hangar) {
+		local touching = TilesTouchingHangar(station);
+		local preferred = [], others = [];
+		foreach (t in candidates) {
+			if (t in touching) preferred.append(t);
+			else others.append(t);
+		}
+		foreach (t in others) preferred.append(t);
+		candidates = preferred;
+	}
 
 	foreach (t in candidates) {
 		if (AIAirport.BuildModularAirportTile(t, piece, 0, station)) return true;

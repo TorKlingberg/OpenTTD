@@ -392,6 +392,28 @@ class Grid
  * hangar walled in behind the tower, build without error, and leave every
  * aircraft parked forever. So the generator has to prove connectivity itself.
  *
+ * How many stands in this grid touch a hangar.
+ *
+ * Worth a nudge in the layout score, not a rule: aircraft go to the hangar to be
+ * built and to be serviced, and a stand next to it makes both trips short. It
+ * has to stay a nudge, because insisting on it would collapse the pier and apron
+ * families, where the hangar closes one end of a run of stands and only the
+ * nearest one or two can ever touch it.
+ */
+function StandsTouchingHangars(grid)
+{
+	local n = 0;
+	foreach (c in grid.Ordered()) {
+		if (!IsStandPiece(c.piece)) continue;
+		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+			local nb = grid.Get(c.x + d[0], c.y + d[1]);
+			if (nb != null && IsHangarPiece(nb.piece)) { n++; break; }
+		}
+	}
+	return n;
+}
+
+/**
  * Returns null when the grid is sound, or a string naming the first problem.
  */
 function ValidateGrid(grid)

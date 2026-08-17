@@ -252,8 +252,14 @@ class ModularAirportAI extends AIController
 				local stands = CountPieces2(a) + CountPieces2(b);
 				/* Do not pile more aircraft onto an airport than it has room to
 				 * park: past that they queue in the air and the reservation
-				 * system does the rest of the damage. */
-				if (served >= stands * 2) continue;
+				 * system does the rest of the damage.
+				 *
+				 * Three per stand rather than two because stands are now capped
+				 * (see StandCap): at two, the cap on stands became a cap on the
+				 * fleet and cost real throughput. Aircraft share a stand happily
+				 * enough — what they cannot share is the runway, which is what
+				 * StandCap is actually sizing for. */
+				if (served >= stands * 3) continue;
 
 				local need = stands * 100 - served * 100 + dist;
 				if (need > best_need) { best_need = need; best = [a, b]; }
