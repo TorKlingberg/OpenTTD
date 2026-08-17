@@ -10951,6 +10951,9 @@ ERROR: IsEnd() is invalid as Begin() is never called
     rotated small hangar:     -1
     negative offset:          -1
     bad runway flags:         -1
+    duplicate tile:           -1
+    compound overlap:         -1
+    mixed runway flags:       -1
     safety of malformed:      -1
     accepts planes malformed: false
     maintenance of malformed: -1
@@ -11016,6 +11019,10 @@ ERROR: IsEnd() is invalid as Begin() is never called
   SetModularTaxiwayFlags(on the stand):     false
   SetModularTaxiwayFlags(non-airport tile): false
     error:                                  ERR_PRECONDITION_FAILED
+  UpgradeModularAirportTile(year gated):    false
+    error:                                  ERR_UNKNOWN
+  UpgradeModularAirportArea(year gated):    false
+    error:                                  ERR_UNKNOWN
 
 --AIAirport Modular: place whole layout--
   site found:                               true
@@ -11054,7 +11061,7 @@ Your script made an error: excessive CPU usage in valuator function
 
 CALLSTACK
 *FUNCTION [Valuate()] Valuate line [5]
-*FUNCTION [Start()] regression/main.nut line [2795]
+*FUNCTION [Start()] regression/main.nut line [2816]
 
 LOCALS
 [args] ARRAY

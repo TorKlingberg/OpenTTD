@@ -38,7 +38,7 @@ function RunSelfTest()
 	AILog.Info("year=" + AIDate.GetYear(AIDate.GetCurrentDate()));
 	AILog.Info("legend: = runway  E runway end  - < > small runway  + apron  S stand");
 	AILog.Info("        T stand+terminal  P stand+pier  H hangar  h small hangar");
-	AILog.Info("        X helipad  B terminal  b low terminal  W tower  r radar  f flag  , grass");
+	AILog.Info("        X helipad  B terminal  b low terminal  W tower  r radar  f flag  , grass  _ empty");
 
 	/* Calibration: the modular upkeep figure is directly comparable with a stock
 	 * airport's, so print the stock ladder to give the generated numbers below a
@@ -81,7 +81,17 @@ function RunSelfTest()
 				local params = RandomParams(family, scale);
 				local grid = GenerateLayout(family, params);
 				total++;
-				if (!DumpGrid(FamilyName(family) + " scale=" + scale + " rep=" + rep, grid)) bad++;
+				local filled = true;
+				if (AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY)) {
+					for (local y = 0; y < grid.h && filled; y++) {
+						for (local x = 0; x < grid.w; x++) {
+							if (grid.Get(x, y) == null) { filled = false; break; }
+						}
+					}
+				}
+				local valid = DumpGrid(FamilyName(family) + " scale=" + scale + " rep=" + rep, grid);
+				if (!filled) AILog.Info("    *** INVALID: generated bounds contain holes ***");
+				if (!valid || !filled) bad++;
 			}
 		}
 	}

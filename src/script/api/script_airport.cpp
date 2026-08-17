@@ -304,6 +304,14 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 
 	tiles.clear();
 	tiles.reserve(layout.size() / ScriptAirport::MLF_STRIDE);
+	std::map<std::pair<uint16_t, uint16_t>, size_t> occupied;
+
+	auto append_tile = [&](const ModularTemplatePlacementTile &tile) {
+		const auto coord = std::make_pair(tile.dx, tile.dy);
+		if (!occupied.emplace(coord, tiles.size()).second) return false;
+		tiles.push_back(tile);
+		return true;
+	};
 
 	for (size_t i = 0; i < layout.size(); i += ScriptAirport::MLF_STRIDE) {
 		const SQInteger dx = layout[i + ScriptAirport::MLF_DX];
@@ -345,7 +353,7 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		 * containing one without knowing its footprint. */
 		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
 		if (compound.empty()) {
-			tiles.push_back(tile);
+			if (!append_tile(tile)) return false;
 			continue;
 		}
 
@@ -353,12 +361,33 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		 * only, so there is nothing sensible to do with a rotation. */
 		if (rotation != 0) return false;
 		for (const ModularCompoundPieceTile &ct : compound) {
+			const uint32_t part_dx = static_cast<uint32_t>(dx) + ct.dx;
+			const uint32_t part_dy = static_cast<uint32_t>(dy) + ct.dy;
+			if (part_dx > UINT16_MAX || part_dy > UINT16_MAX) return false;
 			ModularTemplatePlacementTile part = tile;
-			part.dx = static_cast<uint16_t>(dx + ct.dx);
-			part.dy = static_cast<uint16_t>(dy + ct.dy);
+			part.dx = static_cast<uint16_t>(part_dx);
+			part.dy = static_cast<uint16_t>(part_dy);
 			part.piece_type = ct.gfx;
-			tiles.push_back(part);
+			if (!append_tile(part)) return false;
 		}
+	}
+
+	/* Runway flags are a property of a whole contiguous runway. Placement
+	 * propagates them from every tile to that tile's complete segment, so mixed
+	 * values would otherwise make the last tile silently win while previews
+	 * aggregate the contradictory values. Require one canonical value per
+	 * segment so preview and placement describe the same airport. */
+	for (const ModularTemplatePlacementTile &tile : tiles) {
+		if (!::IsModularRunwayPiece(tile.piece_type)) continue;
+		const bool horizontal = (tile.rotation % 2) == 0;
+		const uint32_t next_x = static_cast<uint32_t>(tile.dx) + (horizontal ? 1 : 0);
+		const uint32_t next_y = static_cast<uint32_t>(tile.dy) + (horizontal ? 0 : 1);
+		if (next_x > UINT16_MAX || next_y > UINT16_MAX) continue;
+		const auto it = occupied.find({static_cast<uint16_t>(next_x), static_cast<uint16_t>(next_y)});
+		if (it == occupied.end()) continue;
+		const ModularTemplatePlacementTile &next = tiles[it->second];
+		if (!::IsModularRunwayPiece(next.piece_type) || ((next.rotation % 2) == 0) != horizontal) continue;
+		if (next.runway_flags != tile.runway_flags) return false;
 	}
 
 	return true;

@@ -311,6 +311,12 @@ Scale-two and scale-three modern families commonly add one or two optional full-
 buildings beyond the terminal required for jet safety. They cost normal upkeep and are the first
 things the terrain fitter may drop on cramped ground.
 
+After placing functional and decorative pieces, the generator fills unused cells inside the
+layout's bounding rectangle with optional `MP_EMPTY` airport ground. This gives an unobstructed
+site a coherent rectangular footprint and reserves space visually, while the terrain fitter may
+drop any of those empty tiles around buildings, water or uneven ground. Empty infill is ignored by
+layout scoring, so it never outranks a more useful runway, stand or terminal.
+
 Each family is written once, verified by hand in-game, then scales by parameter. Rotation is
 free — the layout command rotates the whole thing, and the codebase already handles the
 awkward cases (hangar direction convention `0=SE, 1=NE, 2=NW, 3=SW`; legacy small runway

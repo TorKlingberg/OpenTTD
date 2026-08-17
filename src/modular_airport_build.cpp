@@ -673,11 +673,22 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 {
 	if (tile >= Map::Size() || area_start >= Map::Size()) return CMD_ERROR;
 
+	struct UpgradeTarget {
+		TileIndex tile;
+		Station *station;
+		ModularAirportTileData *data;
+		uint8_t new_piece;
+	};
+
 	CommandCost cost(EXPENSES_CONSTRUCTION);
-	bool found_upgradeable = false;
+	std::vector<UpgradeTarget> targets;
 	std::set<StationID> affected_stations;
 	std::map<StationID, ModularAirportNoiseSnapshot> noise_before;
 
+	/* Preflight the complete area before changing any tile. Besides making the
+	 * command safe when called directly in tests or by another command, this is
+	 * what guarantees a runway is never left half upgraded when an aircraft is
+	 * standing on a later tile. */
 	TileArea ta(tile, area_start);
 	for (TileIndex t : ta) {
 		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) continue;
@@ -701,22 +712,28 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 		CommandCost ret = EnsureNoVehicleOnGround(t);
 		if (ret.Failed()) return ret;
 
-		found_upgradeable = true;
-
 		/* Cost = removal + build of new piece (no discount). */
 		cost.AddCost(_price[Price::ClearStationAirport]);
 		cost.AddCost(GetModularAirportPieceBuildCost(new_piece));
+		targets.push_back({t, st, md, new_piece});
+	}
 
-		if (flags.Test(DoCommandFlag::Execute)) {
+	if (targets.empty()) return CommandCost(STR_ERROR_NOTHING_TO_UPGRADE);
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		for (const UpgradeTarget &target : targets) {
+			Station *st = target.station;
+			ModularAirportTileData *md = target.data;
+			const TileIndex t = target.tile;
 			noise_before.try_emplace(st->index, GetModularAirportNoiseSnapshot(st));
 			/* Update map tile gfx and modular metadata. */
 			uint8_t old_rotation = md->rotation;
-			SetStationGfx(Tile(t), new_piece);
-			md->piece_type = new_piece;
-			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(new_piece, old_rotation);
+			SetStationGfx(Tile(t), target.new_piece);
+			md->piece_type = target.new_piece;
+			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(target.new_piece, old_rotation);
 
 			/* Normalize may further adjust gfx for the segment context. */
-			if (IsModularRunwayPiece(new_piece)) {
+			if (IsModularRunwayPiece(target.new_piece)) {
 				NormalizeRunwaySegmentVisuals(st, t, (old_rotation % 2) == 0);
 			}
 
@@ -730,12 +747,8 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 
 			affected_stations.insert(st->index);
 		}
-	}
 
-	if (!found_upgradeable) return CommandCost(STR_ERROR_NOTHING_TO_UPGRADE);
-
-	/* Batch station updates after all tiles are upgraded. */
-	if (flags.Test(DoCommandFlag::Execute)) {
+		/* Batch station updates after all tiles are upgraded. */
 		for (StationID sid : affected_stations) {
 			Station *st = Station::GetIfValid(sid);
 			if (st == nullptr) continue;

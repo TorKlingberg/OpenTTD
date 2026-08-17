@@ -2496,6 +2496,18 @@ function Regression::ModularAirportLayoutPreview()
 	print("    rotated small hangar:     " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_SMALL_HANGAR, 2)));
 	print("    negative offset:          " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(-1, 0, AIAirport.MP_APRON)));
 	print("    bad runway flags:         " + AIAirport.GetModularLayoutCatchmentRadius(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 0, 99)));
+	print("    duplicate tile:           " + AIAirport.GetModularLayoutNoiseLevel(ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_APRON),
+		ModularLayoutTile(0, 0, AIAirport.MP_TOWER),
+	])));
+	print("    compound overlap:         " + AIAirport.GetModularLayoutNoiseLevel(ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_SMALL_TERMINAL_3),
+		ModularLayoutTile(1, 0, AIAirport.MP_TOWER),
+	])));
+	print("    mixed runway flags:       " + AIAirport.GetModularLayoutNoiseLevel(ModularLayout([
+		ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_LANDING | AIAirport.MRF_DIR_LOW),
+		ModularLayoutTile(1, 0, AIAirport.MP_RUNWAY_END, 0, AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW),
+	])));
 	print("    safety of malformed:      " + AIAirport.GetModularLayoutSafety([1]));
 	print("    accepts planes malformed: " + AIAirport.GetModularLayoutAcceptsPlanes([1]));
 	print("    maintenance of malformed: " + AIAirport.GetModularLayoutMonthlyMaintenanceCost([1]));
@@ -2589,6 +2601,15 @@ function Regression::ModularAirportBuild()
 	print("    error:                                  " + AIError.GetLastErrorString());
 	print("  SetModularTaxiwayFlags(on the stand):     " + AIAirport.SetModularTaxiwayFlags(site + AIMap.GetTileIndex(1, 1), 15, false));
 	print("  SetModularTaxiwayFlags(non-airport tile): " + AIAirport.SetModularTaxiwayFlags(1, 15, false));
+	print("    error:                                  " + AIError.GetLastErrorString());
+
+	/* Both upgrade entry points are callable through the script API. This game
+	 * deliberately runs before modern airport pieces become available, so the
+	 * legacy runway and hangar must remain untouched. Native tests cover their
+	 * successful and atomic execution once the year gate opens. */
+	print("  UpgradeModularAirportTile(year gated):    " + AIAirport.UpgradeModularAirportTile(site));
+	print("    error:                                  " + AIError.GetLastErrorString());
+	print("  UpgradeModularAirportArea(year gated):    " + AIAirport.UpgradeModularAirportArea(site, site + AIMap.GetTileIndex(2, 1)));
 	print("    error:                                  " + AIError.GetLastErrorString());
 
 	return site;

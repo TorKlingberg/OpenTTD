@@ -361,6 +361,116 @@ TEST_CASE("ModularAirportStockConversionRejectsNewGRFAirports")
 	CHECK(CmdBuildModularAirportFromStock({}, TileXY(2, 2), NEW_AIRPORT_OFFSET, 0, NEW_STATION, false).Failed());
 }
 
+TEST_CASE("ModularAirportLegacyUpgradeIsAtomic")
+{
+	Map::Allocate(64, 64);
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+	const CompanyID saved_company = _current_company;
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+	_current_company = CompanyID(0);
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	auto reset_world = []() {
+		extern StationPool _station_pool;
+		extern TownPool _town_pool;
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		SetupAircraftPool();
+		RebuildStationKdtree();
+		RebuildTownKdtree();
+		RebuildViewportKdtree();
+		Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+	};
+
+	auto setup_legacy_runway = []() {
+		const TileIndex base = TileXY(10, 10);
+		Station *st = SetupModularAirport(base, 8, 3);
+		REQUIRE(st != nullptr);
+		st->owner = _current_company;
+		st->town = Town::Get(TownID(0));
+		st->string_id = STR_SV_STNAME_AIRPORT;
+		for (uint x = 0; x < 4; x++) {
+			const TileIndex tile = base + TileDiffXY(x, 1);
+			const uint8_t piece = x == 0 ? APT_RUNWAY_SMALL_FAR_END :
+					x == 3 ? APT_RUNWAY_SMALL_NEAR_END : APT_RUNWAY_SMALL_MIDDLE;
+			SetStationGfx(Tile(tile), piece);
+			ModularAirportTileData *data = AddModularTileWithData(st, tile, piece, 0);
+			data->runway_flags = RUF_DEFAULT;
+		}
+		return std::make_pair(st, base + TileDiffXY(0, 1));
+	};
+
+	SECTION("A whole runway upgrades in one area command") {
+		reset_world();
+		auto [st, start] = setup_legacy_runway();
+		const TileIndex end = start + TileDiffXY(3, 0);
+		REQUIRE(CmdUpgradeModularAirportTile(DoCommandFlag::Execute, end, start).Succeeded());
+
+		for (uint x = 0; x < 4; x++) {
+			const ModularAirportTileData *data = st->airport.GetModularTileData(start + TileDiffXY(x, 0));
+			REQUIRE(data != nullptr);
+			CHECK(IsLargeRunwayFamily(data->piece_type));
+			CHECK(data->runway_flags == RUF_DEFAULT);
+		}
+	}
+
+	SECTION("One occupied tile prevents every runway tile changing") {
+		reset_world();
+		auto [st, start] = setup_legacy_runway();
+		const TileIndex occupied = start + TileDiffXY(2, 0);
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->tile = occupied;
+		v->x_pos = TileX(occupied) * TILE_SIZE;
+		v->y_pos = TileY(occupied) * TILE_SIZE;
+		v->z_pos = GetTileMaxPixelZ(occupied);
+		v->UpdatePosition();
+
+		CHECK(CmdUpgradeModularAirportTile(DoCommandFlag::Execute,
+				start + TileDiffXY(3, 0), start).Failed());
+		for (uint x = 0; x < 4; x++) {
+			const ModularAirportTileData *data = st->airport.GetModularTileData(start + TileDiffXY(x, 0));
+			REQUIRE(data != nullptr);
+			CHECK(IsLegacySmallRunwayPiece(data->piece_type));
+		}
+	}
+
+	SECTION("A single legacy hangar still upgrades by tile") {
+		reset_world();
+		const TileIndex base = TileXY(10, 10);
+		Station *st = SetupModularAirport(base, 3, 3);
+		REQUIRE(st != nullptr);
+		st->owner = _current_company;
+		st->town = Town::Get(TownID(0));
+		st->string_id = STR_SV_STNAME_AIRPORT;
+		SetStationGfx(Tile(base), APT_SMALL_DEPOT_SE);
+		AddModularTile(st, base, APT_SMALL_DEPOT_SE, 0);
+
+		REQUIRE(CmdUpgradeModularAirportTile(DoCommandFlag::Execute, base, base).Succeeded());
+		const ModularAirportTileData *data = st->airport.GetModularTileData(base);
+		REQUIRE(data != nullptr);
+		CHECK(data->piece_type == APT_DEPOT_SE);
+	}
+
+	SetupAircraftPool();
+	_current_company = saved_company;
+	TimerGameCalendar::year = saved_year;
+	extern StationPool _station_pool;
+	extern TownPool _town_pool;
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
+}
+
 TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 {
 	MockEnvironment::Instance();

@@ -24,6 +24,10 @@ function AirportCapability(tile)
 		if (IsStandPiece(p)) caps.planes = true;
 		if (IsHelipadPiece(p)) caps.helis = true;
 	}
+	/* Stock-compatible modular handling lets helicopters use ordinary stands
+	 * when an airport has no dedicated helipad. A fixed-wing-capable endpoint is
+	 * therefore also a helicopter-capable endpoint. */
+	if (caps.planes) caps.helis = true;
 	caps.jets = caps.planes && AIAirport.GetModularAirportSafety(tile) == AIAirport.MS_OK;
 	return caps;
 }

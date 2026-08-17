@@ -32,6 +32,8 @@
  * \li AIAirport::GetModularPieceMinYear
  * \li AIAirport::GetModularAirportSafety
  * \li AIAirport::BuildModularAirportTile
+ * \li AIAirport::UpgradeModularAirportTile
+ * \li AIAirport::UpgradeModularAirportArea
  * \li AIAirport::SetModularRunwayFlags
  * \li AIAirport::SetModularTaxiwayFlags
  * \li AIAirport::PlaceModularAirportLayout

@@ -274,52 +274,64 @@ class ModularAirportAI extends AIController
 		 * air and let the reservation system do the rest of the damage. When the
 		 * veto is what stops a route with a queue behind it, GrowAirport sees the
 		 * same two facts and builds. */
-		local best = null, best_need = -1;
+		local routes = [];
 		for (local i = 0; i < airports.len(); i++) {
 			for (local j = i + 1; j < airports.len(); j++) {
 				local a = airports[i], b = airports[j];
-				local dist = AIMap.DistanceManhattan(a.tile, b.tile);
-				if (dist < MIN_ROUTE_DISTANCE) continue;
+				local map_dist = AIMap.DistanceManhattan(a.tile, b.tile);
+				if (map_dist < MIN_ROUTE_DISTANCE) continue;
 
 				if (VehiclesServingStation(a.station) >= AircraftCeiling(a.station)) continue;
 				if (VehiclesServingStation(b.station) >= AircraftCeiling(b.station)) continue;
+
+				local caps_a = AirportCapability(a.tile);
+				local caps_b = AirportCapability(b.tile);
+				local want_heli = !(caps_a.planes && caps_b.planes) && caps_a.helis && caps_b.helis;
+				if (!want_heli && !(caps_a.planes && caps_b.planes)) continue;
+
+				local allow_jets = caps_a.jets && caps_b.jets;
+				/* Order distance, not map distance: the two are in different units
+				 * and only this one may be compared with an engine's range. Reject an
+				 * infeasible pair here so it cannot hide every route ranked below it. */
+				local order_dist = AIOrder.GetOrderDistance(AIVehicle.VT_AIR, a.order_tile, b.order_tile);
+				local engine = ChooseAircraft(allow_jets, want_heli, budget, order_dist);
+				if (engine < 0) continue;
+
+				local hangar = AIAirport.GetHangarOfAirport(a.tile);
+				if (hangar < 0) hangar = AIAirport.GetHangarOfAirport(b.tile);
+				if (hangar < 0) continue;
 
 				/* Distance breaks ties between equally busy pairs and is worth a
 				 * little on its own, since a longer leg earns more per trip. */
 				local need = AIStation.GetCargoWaiting(a.station, this.pax_cargo)
 				           + AIStation.GetCargoWaiting(b.station, this.pax_cargo)
-				           + dist;
-				if (need > best_need) { best_need = need; best = [a, b]; }
+				           + map_dist;
+				routes.append({ a = a, b = b, need = need, engine = engine,
+				                hangar = hangar, allow_jets = allow_jets });
 			}
 		}
-		if (best == null) return false;
+		if (routes.len() == 0) return false;
+		routes.sort(function (a, b) {
+			if (a.need < b.need) return 1;
+			if (a.need > b.need) return -1;
+			return 0;
+		});
 
-		local a = best[0], b = best[1];
-		local caps_a = AirportCapability(a.tile);
-		local caps_b = AirportCapability(b.tile);
-		local want_heli = !(caps_a.planes && caps_b.planes) && caps_a.helis && caps_b.helis;
-		if (!want_heli && !(caps_a.planes && caps_b.planes)) return false;
-
-		local allow_jets = caps_a.jets && caps_b.jets;
-		/* Order distance, not map distance: the two are in different units and
-		 * only this one may be compared with an engine's maximum range. */
-		local dist = AIOrder.GetOrderDistance(AIVehicle.VT_AIR, a.order_tile, b.order_tile);
-		local engine = ChooseAircraft(allow_jets, want_heli, budget, dist);
-		if (engine < 0) return false;
-
-		local hangar = AIAirport.GetHangarOfAirport(a.tile);
-		if (hangar < 0) hangar = AIAirport.GetHangarOfAirport(b.tile);
-		if (hangar < 0) return false;
-
-		local v = BuyAircraft(hangar, engine, a.order_tile, b.order_tile);
-		if (v < 0) return false;
-		local ptype = AIEngine.GetPlaneType(engine);
-		AILog.Info("aircraft " + AIEngine.GetName(engine)
-		           + " [" + (ptype == AIAirport.PT_BIG_PLANE ? "big" :
-		                     ptype == AIAirport.PT_HELICOPTER ? "heli" : "small") + "]"
-		           + " on " + AIStation.GetName(a.station) + " <-> " + AIStation.GetName(b.station)
-		           + (allow_jets ? "" : " (no jets: an end is not large-safe)"));
-		return true;
+		/* A route can become unavailable while BuildVehicle suspends the script.
+		 * Continue down the ranked list instead of letting that one stale choice
+		 * stop fleet growth for the whole network. */
+		foreach (route in routes) {
+			local v = BuyAircraft(route.hangar, route.engine, route.a.order_tile, route.b.order_tile);
+			if (v < 0) continue;
+			local ptype = AIEngine.GetPlaneType(route.engine);
+			AILog.Info("aircraft " + AIEngine.GetName(route.engine)
+			           + " [" + (ptype == AIAirport.PT_BIG_PLANE ? "big" :
+			                     ptype == AIAirport.PT_HELICOPTER ? "heli" : "small") + "]"
+			           + " on " + AIStation.GetName(route.a.station) + " <-> " + AIStation.GetName(route.b.station)
+			           + (route.allow_jets ? "" : " (no jets: an end is not large-safe)"));
+			return true;
+		}
+		return false;
 	}
 
 	function Report(year)

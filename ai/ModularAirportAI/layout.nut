@@ -535,6 +535,24 @@ function DecorateGrid(grid, params)
 	}
 }
 
+/**
+ * Claim otherwise unused cells inside the design's bounding rectangle.
+ *
+ * Empty airport tiles make the finished field read as one coherent site and
+ * reserve a little room for later growth. They remain optional: irregular or
+ * obstructed terrain may trim any of them without sacrificing the runway,
+ * stands, hangar, or other functional pieces.
+ */
+function FillEmptyBounds(grid)
+{
+	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY)) return;
+	for (local y = 0; y < grid.h; y++) {
+		for (local x = 0; x < grid.w; x++) {
+			if (grid.Get(x, y) == null) grid.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
+		}
+	}
+}
+
 /** Dispatch to a family generator. */
 function GenerateLayout(family, params)
 {
@@ -550,6 +568,7 @@ function GenerateLayout(family, params)
 	}
 	EnsureTowerIfNearlySafe(g);
 	DecorateGrid(g, params);
+	FillEmptyBounds(g);
 	if (params.mirror) g = g.MirrorX().Normalise();
 	return g;
 }

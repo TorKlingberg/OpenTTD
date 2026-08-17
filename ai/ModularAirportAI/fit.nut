@@ -154,7 +154,13 @@ function ScoreGrid(grid, want_large_safe)
 	score += (touching > 2 ? 2 : touching) * 10;
 	score += catchment * 40;
 	score += LongestLargeRunway(grid) * 8;
-	score -= grid.Count() * 6;
+	/* Optional empty ground improves the visual footprint but has no operational
+	 * value. Do not let infill make the same functional design score worse. */
+	local functional_tiles = 0;
+	foreach (c in grid.Ordered()) {
+		if (c.piece != AIAirport.MP_EMPTY) functional_tiles++;
+	}
+	score -= functional_tiles * 6;
 	score -= upkeep / 8;
 
 	if (want_large_safe) {

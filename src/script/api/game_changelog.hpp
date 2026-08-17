@@ -32,6 +32,8 @@
  * \li GSAirport::GetModularPieceMinYear
  * \li GSAirport::GetModularAirportSafety
  * \li GSAirport::BuildModularAirportTile
+ * \li GSAirport::UpgradeModularAirportTile
+ * \li GSAirport::UpgradeModularAirportArea
  * \li GSAirport::SetModularRunwayFlags
  * \li GSAirport::SetModularTaxiwayFlags
  * \li GSAirport::PlaceModularAirportLayout
