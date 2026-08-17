@@ -376,7 +376,7 @@ class Grid
 		return g;
 	}
 
-	/** Mirror along X. Runway direction flags are unaffected; hangar facings are not. */
+	/** Mirror along X, including the direction encoded by runway flags and end pieces. */
 	function MirrorX()
 	{
 		local g = Grid(this.w, this.h);
@@ -388,18 +388,32 @@ class Grid
 			if (c.filler) continue;
 			local nx = this.w - c.span - c.x;
 			local rot = c.rot;
+			local piece = c.piece;
+			local rwy = c.rwy;
 			if (IsHangarPiece(c.piece)) {
 				if (rot == FACE_NE) rot = FACE_SW;
 				else if (rot == FACE_SW) rot = FACE_NE;
 			}
+			/* Mirroring reverses coordinate order along an X-axis runway. Preserve
+			 * its operational direction and keep the perspective-specific small
+			 * runway end graphics at their canonical low/high ends. */
+			if (IsRunwayPiece(piece) && (rot % 2) == 0) {
+				local low = rwy & AIAirport.MRF_DIR_LOW;
+				local high = rwy & AIAirport.MRF_DIR_HIGH;
+				rwy = rwy & ~(AIAirport.MRF_DIR_LOW | AIAirport.MRF_DIR_HIGH);
+				if (low != 0) rwy = rwy | AIAirport.MRF_DIR_HIGH;
+				if (high != 0) rwy = rwy | AIAirport.MRF_DIR_LOW;
+				if (piece == AIAirport.MP_RUNWAY_SMALL_NEAR_END) piece = AIAirport.MP_RUNWAY_SMALL_FAR_END;
+				else if (piece == AIAirport.MP_RUNWAY_SMALL_FAR_END) piece = AIAirport.MP_RUNWAY_SMALL_NEAR_END;
+			}
 			g.cells[g.Key(nx, c.y)] <- {
-				x = nx, y = c.y, piece = c.piece, rot = rot, rwy = c.rwy,
+				x = nx, y = c.y, piece = piece, rot = rot, rwy = rwy,
 				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
 				span = c.span, filler = false
 			};
 			for (local i = 1; i < c.span; i++) {
 				g.cells[g.Key(nx + i, c.y)] <- {
-					x = nx + i, y = c.y, piece = c.piece, rot = rot, rwy = c.rwy,
+					x = nx + i, y = c.y, piece = piece, rot = rot, rwy = rwy,
 					one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
 					span = c.span, filler = true
 				};
@@ -620,6 +634,21 @@ function ValidateGrid(grid)
 	/* Runway flags must be a combination the game will accept. */
 	foreach (c in grid.Ordered()) {
 		if (!IsRunwayPiece(c.piece)) continue;
+		if (c.piece == AIAirport.MP_RUNWAY_SMALL_FAR_END
+		 || c.piece == AIAirport.MP_RUNWAY_SMALL_NEAR_END) {
+			local dx = (c.rot % 2) == 0 ? 1 : 0;
+			local dy = (c.rot % 2) == 0 ? 0 : 1;
+			local before = grid.Get(c.x - dx, c.y - dy);
+			local after = grid.Get(c.x + dx, c.y + dy);
+			local has_before = before != null && IsSmallRunwayPiece(before.piece);
+			local has_after = after != null && IsSmallRunwayPiece(after.piece);
+			if (c.piece == AIAirport.MP_RUNWAY_SMALL_FAR_END && (has_before || !has_after)) {
+				return "small runway far end is not at the low end";
+			}
+			if (c.piece == AIAirport.MP_RUNWAY_SMALL_NEAR_END && (!has_before || has_after)) {
+				return "small runway near end is not at the high end";
+			}
+		}
 		if ((c.rwy & (AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF)) == 0) {
 			return "runway at " + c.x + "," + c.y + " does neither landing nor takeoff";
 		}
