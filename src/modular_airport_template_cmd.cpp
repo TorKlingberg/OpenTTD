@@ -398,7 +398,10 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	int common_z = -1;
 	uint min_x = UINT_MAX, min_y = UINT_MAX, max_x = 0, max_y = 0;
 	for (const ModularTemplatePlacementTile &rt : rotated_tiles) {
-		TileIndex t = TileAddXY(tile, rt.dx, rt.dy);
+		/* TileAddXY performs linear TileIndex arithmetic, so an X offset past the
+		 * map edge can wrap into the next row and still name a valid tile. Templates
+		 * use coordinate offsets: wrapping must fail rather than move a piece. */
+		TileIndex t = TileAddWrap(tile, rt.dx, rt.dy);
 		if (!IsValidTile(t)) return CMD_ERROR;
 		abs_tiles.push_back(t);
 
