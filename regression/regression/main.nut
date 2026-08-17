@@ -2419,6 +2419,7 @@ function Regression::ModularAirportPieces()
 		["MP_HELIPAD",               AIAirport.MP_HELIPAD],
 		["MP_TOWER",                 AIAirport.MP_TOWER],
 		["MP_TERMINAL",              AIAirport.MP_TERMINAL],
+		["MP_SMALL_TERMINAL_3",      AIAirport.MP_SMALL_TERMINAL_3],
 		["MP_GRASS",                 AIAirport.MP_GRASS],
 		["MP_EMPTY",                 AIAirport.MP_EMPTY],
 	];

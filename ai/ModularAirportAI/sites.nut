@@ -25,6 +25,8 @@ function AllowedRotations(grid)
 		 * stays put. Mirroring is still fine — that swaps NE and SW and leaves SE
 		 * alone — so these layouts are not all identical. */
 		if (c.piece == AIAirport.MP_SMALL_HANGAR) return [0];
+		/* A compound piece has one graphic per tile and joins up one way only. */
+		if (c.span > 1) return [0];
 		if (IsSmallRunwayPiece(c.piece)) small_runway = true;
 	}
 	/* Legacy small runway pieces are axis-locked: half-turns only. */

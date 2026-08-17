@@ -257,6 +257,7 @@ public:
 		MP_TERMINAL_OTHER,         ///< Large terminal building, third variant.
 		MP_TERMINAL_ROUND,         ///< Round terminal concourse.
 		MP_LOW_TERMINAL,           ///< Low terminal building. Does not count as a large terminal.
+		MP_SMALL_TERMINAL_3,       ///< Small terminal, three tiles wide. Placed from its west end and never rotated.
 		MP_TOWER,                  ///< Control tower.
 		MP_RADIO_TOWER,            ///< Radio tower.
 		MP_RADAR,                  ///< Radar.

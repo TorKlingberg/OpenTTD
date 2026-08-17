@@ -22,8 +22,32 @@ void ShowBuildModularAirportWindow();
  * This is the definition of what a modular airport may be built from. Anything
  * that places modular tiles without going through the builder — the script API
  * above all — must place only graphics from this set.
+ *
+ * A compound piece appears here once, under the graphic that names it; see
+ * GetModularCompoundPieceTiles for what it actually puts on the ground.
  */
 std::vector<uint8_t> GetModularAirportBuilderPieceGfx();
+
+/** One tile of a compound piece, relative to the tile the player clicked. */
+struct ModularCompoundPieceTile {
+	int dx;        ///< Offset along X from the anchor tile.
+	int dy;        ///< Offset along Y from the anchor tile.
+	uint8_t gfx;   ///< The graphic this tile gets.
+};
+
+/**
+ * The tiles a compound piece places, or an empty span for an ordinary piece.
+ *
+ * Some airport buildings are drawn across several tiles and only make sense
+ * whole, so the builder places them as a unit from one click. The footprint is
+ * fixed and unrotatable: each tile has its own graphic, drawn to join up with
+ * its neighbours in one orientation only.
+ * @param gfx The graphic naming the piece (the one in GetModularAirportBuilderPieceGfx).
+ */
+std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(uint8_t gfx);
+
+/** Footprint of a piece in tiles: the compound's bounding box, or 1x1. */
+Dimension GetModularCompoundPieceSize(uint8_t gfx);
 
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;

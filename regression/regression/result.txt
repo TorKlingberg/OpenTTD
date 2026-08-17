@@ -10887,6 +10887,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
   MP_HELIPAD: available false, min year 1955
   MP_TOWER: available false, min year 1955
   MP_TERMINAL: available false, min year 1955
+  MP_SMALL_TERMINAL_3: available true, min year 0
   MP_GRASS: available true, min year 0
   MP_EMPTY: available true, min year 0
   IsModularPieceAvailable(invalid):         false
@@ -11043,7 +11044,7 @@ Your script made an error: excessive CPU usage in valuator function
 
 CALLSTACK
 *FUNCTION [Valuate()] Valuate line [5]
-*FUNCTION [Start()] regression/main.nut line [2779]
+*FUNCTION [Start()] regression/main.nut line [2780]
 
 LOCALS
 [args] ARRAY

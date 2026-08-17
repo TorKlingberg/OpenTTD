@@ -11,6 +11,9 @@
  * from cosmetic choices that do not affect function.
  */
 
+/* Tiles the three-tile small terminal occupies, along X from its west end. */
+const SMALL_TERMINAL_WIDTH = 3;
+
 enum Family {
 	STRIP,     ///< Small grass runway, a couple of stands. Buildable from year zero.
 	LINEAR,    ///< One large runway, apron spine, a row of stands behind it.
@@ -66,6 +69,7 @@ function DefaultParams()
 		pier_depth    = 3,
 		pier_double   = true,  ///< stands on both sides of the pier spine
 		cosmetics     = 2,   ///< how many decorative tiles to try to add
+		small_terminal = false, ///< try to fit the three-tile terminal into the decoration
 		cosmetic_kind = AIAirport.MP_RADAR_GRASS,
 		apron_rows    = 2,
 		mirror        = false,
@@ -398,8 +402,30 @@ function DecorateGrid(grid, params)
 	local cap = 1 + grid.Count() / 8;
 	if (want > cap) want = cap;
 	if (want > spots.len()) want = spots.len();
+
+	/* The three-tile terminal, when the airport is big enough to be worth a
+	 * frontage and the gaps happen to line up. It is the only piece here that
+	 * needs a run of tiles rather than one, so it gets first refusal: fitting it
+	 * after the single tiles have taken the good spots almost never works.
+	 * SetWide refuses unless the whole run is free, so a failure costs nothing. */
+	if (params.small_terminal && grid.Count() >= 14
+	 && AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3)) {
+		foreach (s in spots) {
+			if (grid.SetWide(s[0], s[1], AIAirport.MP_SMALL_TERMINAL_3, SMALL_TERMINAL_WIDTH, true)) {
+				/* It is a building rather than clutter, so it is not held to the
+				 * decoration budget — but it does spend it, and an airport that
+				 * gets a terminal gets fewer radars. */
+				want -= SMALL_TERMINAL_WIDTH;
+				if (want < 0) want = 0;
+				break;
+			}
+		}
+	}
+
 	for (local i = 0; i < want; i++) {
 		local s = spots[i];
+		/* A spot the terminal just took. */
+		if (grid.Get(s[0], s[1]) != null) continue;
 		/* A fresh kind per tile, so one airport can hold a radar, a windsock and
 		 * a patch of grass rather than three radars. */
 		grid.Set(s[0], s[1], kinds[AIBase.RandRange(kinds.len())], 0, 0, true);
@@ -472,6 +498,9 @@ function RandomParams(family, scale)
 	p.terminal = terms[AIBase.RandRange(terms.len())];
 	p.cosmetic_kind = cosms[AIBase.RandRange(cosms.len())];
 	p.cosmetics = 1 + AIBase.RandRange(5);
+	/* Roughly one airport in three, so it reads as a feature of some airports
+	 * rather than as the house style. */
+	p.small_terminal = AIBase.RandRange(3) == 0;
 	p.hangar_at_end = AIBase.RandRange(2) == 0;
 	p.mirror = AIBase.RandRange(2) == 0;
 	p.helipad_style = AIBase.RandRange(3);

@@ -1145,6 +1145,45 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 		CHECK(GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(ScriptAirport::MP_EMPTY + 1)) == UINT8_MAX);
 	}
 
+	SECTION("A compound piece is named by one of its own tiles") {
+		/* Otherwise building it and reading it back disagree: the script asks for
+		 * the naming graphic, and every tile that lands on the map reports some
+		 * other piece — or none. */
+		for (uint8_t gfx : GetModularAirportBuilderPieceGfx()) {
+			CAPTURE(gfx);
+			const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
+			if (compound.empty()) continue;
+
+			bool names_itself = false;
+			for (const ModularCompoundPieceTile &ct : compound) {
+				if (ct.gfx == gfx) names_itself = true;
+				/* And every tile of it reads back as the whole piece. */
+				CHECK(GetModularPieceForGfx(ct.gfx) == GetModularPieceForGfx(gfx));
+			}
+			CHECK(names_itself);
+		}
+	}
+
+	SECTION("The small terminal is three tiles in a row and never rotated") {
+		const std::span<const ModularCompoundPieceTile> tiles = GetModularCompoundPieceTiles(APT_SMALL_BUILDING_2);
+		REQUIRE(tiles.size() == 3);
+		for (int i = 0; i < 3; i++) {
+			CAPTURE(i);
+			CHECK(tiles[i].dx == i);
+			CHECK(tiles[i].dy == 0);
+		}
+		CHECK(GetModularCompoundPieceSize(APT_SMALL_BUILDING_2).width == 3);
+		CHECK(GetModularCompoundPieceSize(APT_SMALL_BUILDING_2).height == 1);
+		CHECK(GetModularPieceForGfx(APT_SMALL_BUILDING_1) == ScriptAirport::MP_SMALL_TERMINAL_3);
+		CHECK(GetModularPieceForGfx(APT_SMALL_BUILDING_3) == ScriptAirport::MP_SMALL_TERMINAL_3);
+	}
+
+	SECTION("Ordinary pieces have no compound footprint") {
+		CHECK(GetModularCompoundPieceTiles(APT_STAND).empty());
+		CHECK(GetModularCompoundPieceSize(APT_STAND).width == 1);
+		CHECK(GetModularCompoundPieceSize(APT_STAND).height == 1);
+	}
+
 	SECTION("The stock city airport's jetway stands are not placeable") {
 		/* The case that put this test here. They stay readable — a converted stock
 		 * airport is full of them — but as plain stands, under a name a script

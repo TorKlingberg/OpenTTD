@@ -16,6 +16,8 @@
 #include "../../landscape_cmd.h"
 #include "../../station_cmd.h"
 #include "../../modular_airport_cmd.h"
+/* For the builder's own piece vocabulary, which this API is held equal to. */
+#include "../../modular_airport_gui.h"
 #include "../../table/airporttile_ids.h"
 #include "../../timer/timer_game_calendar.h"
 
@@ -207,6 +209,7 @@ static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[
 	{ScriptAirport::MP_TERMINAL_OTHER,        APT_BUILDING_3},
 	{ScriptAirport::MP_TERMINAL_ROUND,        APT_ROUND_TERMINAL},
 	{ScriptAirport::MP_LOW_TERMINAL,          APT_LOW_BUILDING},
+	{ScriptAirport::MP_SMALL_TERMINAL_3,      APT_SMALL_BUILDING_2},
 	{ScriptAirport::MP_TOWER,                 APT_TOWER},
 	{ScriptAirport::MP_RADIO_TOWER,           APT_RADIO_TOWER_FENCE_NE},
 	{ScriptAirport::MP_RADAR,                 APT_RADAR_FENCE_NE},
@@ -264,6 +267,9 @@ ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx)
 	}
 	if (::IsModularHelipadPiece(gfx)) return ScriptAirport::MP_HELIPAD;
 	if (::IsModularStandPiece(gfx)) return ScriptAirport::MP_STAND;
+	/* The other two thirds of the small terminal: reading any of its tiles names
+	 * the whole piece, which is the only thing a script can build or reason about. */
+	if (gfx == APT_SMALL_BUILDING_1 || gfx == APT_SMALL_BUILDING_3) return ScriptAirport::MP_SMALL_TERMINAL_3;
 	if (::IsApronOrTaxiwayPiece(gfx)) return ScriptAirport::MP_APRON;
 
 	return ScriptAirport::MP_INVALID;
@@ -326,7 +332,28 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		tile.one_way_taxi = layout[i + ScriptAirport::MLF_ONE_WAY_TAXI] != 0;
 		tile.user_taxi_dir_mask = static_cast<uint8_t>(taxi_dir_mask);
 		tile.edge_block_mask = static_cast<uint8_t>(edge_fence_mask);
-		tiles.push_back(tile);
+
+		/* A compound piece is one entry to the script and several tiles on the
+		 * ground. Expanding here means every caller — placement, and all the
+		 * layout-derived queries that go through this parser — sees the tiles the
+		 * layout will really occupy, so a script can cost and size a layout
+		 * containing one without knowing its footprint. */
+		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
+		if (compound.empty()) {
+			tiles.push_back(tile);
+			continue;
+		}
+
+		/* Each tile of a compound has its own graphic and they join up one way
+		 * only, so there is nothing sensible to do with a rotation. */
+		if (rotation != 0) return false;
+		for (const ModularCompoundPieceTile &ct : compound) {
+			ModularTemplatePlacementTile part = tile;
+			part.dx = static_cast<uint16_t>(dx + ct.dx);
+			part.dy = static_cast<uint16_t>(dy + ct.dy);
+			part.piece_type = ct.gfx;
+			tiles.push_back(part);
+		}
 	}
 
 	return true;
@@ -412,10 +439,30 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforcePrecondition(false, IsModularPieceAvailable(piece));
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
+	const uint8_t gfx = GetGfxForModularPiece(piece);
+
+	/* A compound piece covers several tiles, so it goes through the template
+	 * command the same way the builder's own click does — one atomic placement,
+	 * never a half-built building. */
+	if (const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx); !compound.empty()) {
+		EnforcePrecondition(false, rotation == 0);
+		const Dimension size = GetModularCompoundPieceSize(gfx);
+		ModularTemplatePlacementData data;
+		data.width = static_cast<uint16_t>(size.width);
+		data.height = static_cast<uint16_t>(size.height);
+		data.rotation = 0;
+		for (const ModularCompoundPieceTile &ct : compound) {
+			data.tiles.push_back({static_cast<uint16_t>(ct.dx), static_cast<uint16_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
+		}
+		return ScriptObject::Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(tile,
+				(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
+				station_id != ScriptStation::STATION_JOIN_ADJACENT, data);
+	}
+
 	/* Taxi directions and one-way are left at their defaults; SetModularTaxiwayFlags
 	 * changes them afterwards. Runway orientation comes from the rotation the caller
 	 * gave rather than from the neighbouring tiles, so a script gets what it asked for. */
-	return ScriptObject::Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(tile, GetGfxForModularPiece(piece),
+	return ScriptObject::Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(tile, gfx,
 			(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
 			station_id != ScriptStation::STATION_JOIN_ADJACENT, static_cast<uint8_t>(rotation),
 			static_cast<uint8_t>(0x0F), false, false);

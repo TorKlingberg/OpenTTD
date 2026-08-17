@@ -253,8 +253,8 @@ static constexpr uint8_t _modular_airport_implicit_gfx[] = {
  * included. See ModularAirportBuilderVocabulary in the tests, which holds that
  * line.
  *
- * Multi-tile cosmetic pieces are left out: the builder places them as a compound
- * and there is no single graphic that means "this piece".
+ * A compound piece is listed once, under the graphic that names it in the picker
+ * table; GetModularCompoundPieceTiles says what it puts on the ground.
  */
 std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
 {
@@ -268,7 +268,6 @@ std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
 		out.push_back(GetModularAirportPieceGfx(i));
 	}
 	for (const CosmeticPiece &p : _cosmetic_pieces) {
-		if (p.is_multi_tile) continue;
 		out.push_back(p.apt_gfx);
 	}
 	for (const HelipadPiece &p : _helipad_pieces) {
@@ -281,6 +280,35 @@ std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
 	std::sort(out.begin(), out.end());
 	out.erase(std::unique(out.begin(), out.end()), out.end());
 	return out;
+}
+
+/**
+ * The three tiles of the small terminal.
+ *
+ * Each has its own graphic and they only join up left to right, so the piece has
+ * no rotations: this is the whole of its geometry. Anything that places it —
+ * the picker below, the script API — works from this one definition.
+ */
+static constexpr ModularCompoundPieceTile _small_terminal_3_tiles[] = {
+	{0, 0, APT_SMALL_BUILDING_1},
+	{1, 0, APT_SMALL_BUILDING_2},
+	{2, 0, APT_SMALL_BUILDING_3},
+};
+
+std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(uint8_t gfx)
+{
+	if (gfx == APT_SMALL_BUILDING_2) return _small_terminal_3_tiles;
+	return {};
+}
+
+Dimension GetModularCompoundPieceSize(uint8_t gfx)
+{
+	Dimension size{1, 1};
+	for (const ModularCompoundPieceTile &ct : GetModularCompoundPieceTiles(gfx)) {
+		size.width = std::max<uint>(size.width, ct.dx + 1);
+		size.height = std::max<uint>(size.height, ct.dy + 1);
+	}
+	return size;
 }
 
 static void ShowModularHangarPicker(Window *parent, bool is_large);
@@ -981,14 +1009,15 @@ private:
 	 */
 	void PlaceMultiTileCosmetic(TileIndex tile, const CosmeticPiece &piece)
 	{
-		if (piece.apt_gfx == APT_SMALL_BUILDING_2) { // 3-tile terminal
+		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(piece.apt_gfx);
+		if (!compound.empty()) {
 			ModularTemplatePlacementData data;
-			data.width = 3;
-			data.height = 1;
+			data.width = static_cast<uint16_t>(GetModularCompoundPieceSize(piece.apt_gfx).width);
+			data.height = static_cast<uint16_t>(GetModularCompoundPieceSize(piece.apt_gfx).height);
 			data.rotation = 0;
-			data.tiles.push_back({0, 0, APT_SMALL_BUILDING_1, 0, 0, false, 0x0F, 0});
-			data.tiles.push_back({1, 0, APT_SMALL_BUILDING_2, 0, 0, false, 0x0F, 0});
-			data.tiles.push_back({2, 0, APT_SMALL_BUILDING_3, 0, 0, false, 0x0F, 0});
+			for (const ModularCompoundPieceTile &ct : compound) {
+				data.tiles.push_back({static_cast<uint16_t>(ct.dx), static_cast<uint16_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
+			}
 
 			auto proc = [=](bool test, StationID to_join) -> bool {
 				if (test) {
@@ -1203,9 +1232,8 @@ private:
 			/* Show multi-tile footprint for compound cosmetic pieces. */
 			if (this->selected_piece == 3) { // Cosmetic picker
 				const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
-				if (piece.is_multi_tile && piece.apt_gfx == APT_SMALL_BUILDING_2) {
-					SetTileSelectSize(3, 1);
-				}
+				const Dimension size = GetModularCompoundPieceSize(piece.apt_gfx);
+				SetTileSelectSize(size.width, size.height);
 			}
 		}
 		this->updating_cursor = false;
@@ -1530,11 +1558,8 @@ public:
 
 		/* Update cursor footprint for multi-tile pieces. */
 		const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
-		if (piece.is_multi_tile && piece.apt_gfx == APT_SMALL_BUILDING_2) {
-			SetTileSelectSize(3, 1);
-		} else {
-			SetTileSelectSize(1, 1);
-		}
+		const Dimension size = GetModularCompoundPieceSize(piece.apt_gfx);
+		SetTileSelectSize(size.width, size.height);
 	}
 };
 

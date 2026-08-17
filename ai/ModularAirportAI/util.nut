@@ -127,6 +127,7 @@ function IsCosmeticPiece(piece)
 		case AIAirport.MP_FLAG_GRASS:
 		case AIAirport.MP_GRASS:
 		case AIAirport.MP_LOW_TERMINAL:
+		case AIAirport.MP_SMALL_TERMINAL_3:
 		case AIAirport.MP_EMPTY:
 			return true;
 	}
@@ -154,6 +155,7 @@ function PieceChar(piece)
 		case AIAirport.MP_TERMINAL_OTHER:        return "B";
 		case AIAirport.MP_TERMINAL_ROUND:        return "B";
 		case AIAirport.MP_LOW_TERMINAL:          return "b";
+		case AIAirport.MP_SMALL_TERMINAL_3:      return "t";
 		case AIAirport.MP_TOWER:                 return "W";
 		case AIAirport.MP_RADIO_TOWER:           return "R";
 		case AIAirport.MP_RADAR:                 return "r";
@@ -197,8 +199,66 @@ class Grid
 		if (x < 0 || y < 0 || x >= this.w || y >= this.h) return;
 		this.cells[this.Key(x, y)] <- {
 			x = x, y = y, piece = piece, rot = rot, rwy = rwy,
-			one_way = 0, taxi = 15, fence = 0, optional = optional
+			one_way = 0, taxi = 15, fence = 0, optional = optional,
+			span = 1, filler = false
 		};
+	}
+
+	/**
+	 * Place a piece that occupies `span` tiles along X from (x, y).
+	 *
+	 * The extra tiles become filler cells: they hold the ground so nothing else
+	 * is placed on top, and ToLayout skips them, because the game expands the
+	 * compound from its anchor itself. Nothing is placed at all unless the whole
+	 * footprint is free and inside the grid — a compound is all or nothing.
+	 * Returns whether it went down.
+	 */
+	function SetWide(x, y, piece, span, optional = false)
+	{
+		if (x < 0 || y < 0 || y >= this.h || x + span > this.w) return false;
+		for (local i = 0; i < span; i++) {
+			if (this.Get(x + i, y) != null) return false;
+		}
+		this.Set(x, y, piece, 0, 0, optional);
+		this.Get(x, y).span = span;
+		for (local i = 1; i < span; i++) {
+			this.Set(x + i, y, piece, 0, 0, optional);
+			local f = this.Get(x + i, y);
+			f.span = span;
+			f.filler = true;
+		}
+		return true;
+	}
+
+	/** Does this grid hold anything wider than a single tile? */
+	function HasWidePiece()
+	{
+		foreach (_, c in this.cells) {
+			if (c.span > 1) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Remove a cell, and with it the rest of the compound it belongs to.
+	 *
+	 * Half a building is worse than none: the graphics only join up as a set, and
+	 * the game would have refused to place them piecemeal anyway.
+	 */
+	function RemoveWhole(x, y)
+	{
+		local c = this.Get(x, y);
+		if (c == null) return;
+		if (c.span <= 1) { this.Remove(x, y); return; }
+
+		/* Walk back to the anchor, then clear the whole run. */
+		local ax = x;
+		while (ax > 0) {
+			local prev = this.Get(ax - 1, y);
+			if (prev == null || prev.span != c.span || !this.Get(ax, y).filler) break;
+			ax--;
+		}
+		for (local i = 0; i < c.span; i++) this.Remove(ax + i, y);
 	}
 
 	function SetTaxi(x, y, dir_mask, one_way)
@@ -267,6 +327,9 @@ class Grid
 	{
 		local out = [];
 		foreach (c in this.Ordered()) {
+			/* The game expands a compound from its anchor, so only the anchor is
+			 * described here; its filler cells exist to reserve the ground. */
+			if (c.filler) continue;
 			out.append(c.x);
 			out.append(c.y);
 			out.append(c.piece);
@@ -285,7 +348,8 @@ class Grid
 		foreach (_, c in this.cells) {
 			g.cells[g.Key(c.x, c.y)] <- {
 				x = c.x, y = c.y, piece = c.piece, rot = c.rot, rwy = c.rwy,
-				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional
+				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
+				span = c.span, filler = c.filler
 			};
 		}
 		return g;
@@ -296,7 +360,12 @@ class Grid
 	{
 		local g = Grid(this.w, this.h);
 		foreach (_, c in this.cells) {
-			local nx = this.w - 1 - c.x;
+			/* A compound is not mirrored, only moved: its tiles have one graphic
+			 * each and only join up left to right. Its run [x, x+span-1] maps to
+			 * [w-span-x, w-1-x], so the anchor lands at w-span-x and the filler
+			 * cells are rebuilt from there rather than mirrored individually. */
+			if (c.filler) continue;
+			local nx = this.w - c.span - c.x;
 			local rot = c.rot;
 			if (IsHangarPiece(c.piece)) {
 				if (rot == FACE_NE) rot = FACE_SW;
@@ -304,8 +373,16 @@ class Grid
 			}
 			g.cells[g.Key(nx, c.y)] <- {
 				x = nx, y = c.y, piece = c.piece, rot = rot, rwy = c.rwy,
-				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional
+				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
+				span = c.span, filler = false
 			};
+			for (local i = 1; i < c.span; i++) {
+				g.cells[g.Key(nx + i, c.y)] <- {
+					x = nx + i, y = c.y, piece = c.piece, rot = rot, rwy = c.rwy,
+					one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
+					span = c.span, filler = true
+				};
+			}
 		}
 		return g;
 	}
@@ -329,6 +406,12 @@ class Grid
 	{
 		r = r & 3;
 		if (r == 0) return this.Clone();
+
+		/* A compound piece runs along X and has one graphic per tile, so there is
+		 * no such thing as a rotated one. AllowedRotations refuses to offer a
+		 * rotation for a layout holding one, so this is a guard rather than a
+		 * branch that runs. */
+		if (r != 0 && this.HasWidePiece()) return this.Clone();
 
 		local out = Grid((r % 2 == 0) ? this.w : this.h, (r % 2 == 0) ? this.h : this.w);
 		foreach (_, c in this.cells) {
@@ -362,7 +445,8 @@ class Grid
 			out.cells[out.Key(nx, ny)] <- {
 				x = nx, y = ny, piece = piece, rot = (c.rot + r) & 3, rwy = rwy,
 				one_way = c.one_way, taxi = RotateDirMask(c.taxi, r),
-				fence = RotateDirMask(c.fence, r), optional = c.optional
+				fence = RotateDirMask(c.fence, r), optional = c.optional,
+				span = c.span, filler = c.filler
 			};
 		}
 		return out;
@@ -432,6 +516,26 @@ function ValidateGrid(grid)
 	if (stands.len() == 0 && helipads.len() == 0) return "no stand or helipad";
 	if (hangars.len() == 0) return "no hangar";
 	if (stands.len() > 0 && runway_ends.len() == 0) return "stands but no runway";
+
+	/* A compound piece is described to the game by its anchor alone, which the
+	 * game then expands along X. So the anchor must be at the west end of a
+	 * contiguous run of its own filler cells, or the tiles the game places and
+	 * the tiles this grid reserved are not the same tiles. Mirroring and trimming
+	 * both move these around, which is why it is checked rather than assumed. */
+	local wide_cells = 0, spanned = 0;
+	foreach (c in grid.Ordered()) {
+		if (c.span <= 1) continue;
+		wide_cells++;
+		if (c.filler) continue;
+		spanned += c.span;
+		for (local i = 1; i < c.span; i++) {
+			local f = grid.Get(c.x + i, c.y);
+			if (f == null || !f.filler || f.piece != c.piece || f.span != c.span) {
+				return "compound piece broken at " + c.x + "," + c.y;
+			}
+		}
+	}
+	if (wide_cells != spanned) return "compound piece tile without its anchor";
 
 	/* Flood the through-taxiable network from one runway end (or, for a pure
 	 * heliport, from whatever a helipad touches). */

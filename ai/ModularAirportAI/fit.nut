@@ -31,11 +31,13 @@ function FitGridToMask(grid, allowed)
 {
 	local g = grid.Clone();
 
-	/* Anything required that falls outside the region is fatal. */
+	/* Anything required that falls outside the region is fatal. Optional cells go,
+	 * and a multi-tile piece goes whole: two thirds of a building is not a
+	 * building, and the game would refuse to place it that way in any case. */
 	foreach (c in g.Ordered()) {
 		if (g.Key(c.x, c.y) in allowed) continue;
 		if (!c.optional) return null;
-		g.Remove(c.x, c.y);
+		g.RemoveWhole(c.x, c.y);
 	}
 
 	/* Trimming can strand a hangar that used to face an apron. Re-aim it at
