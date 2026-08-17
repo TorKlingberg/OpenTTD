@@ -52,6 +52,11 @@ static const DrawTileSeqStruct _station_display_jetway_1_nofence[] = {
 static const DrawTileSpriteSpan _station_display_modular_jetway_1(
 	PalSpriteID{SPR_AIRPORT_AIRCRAFT_STAND, PAL_NONE}, _station_display_jetway_1_nofence);
 
+/* A stand with nothing on it. Every modular stand starts from this; the jetway
+ * is added back only where a round terminal is actually adjacent. */
+static const DrawTileSpriteSpan _station_display_modular_stand(
+	PalSpriteID{SPR_AIRPORT_AIRCRAFT_STAND, PAL_NONE});
+
 /* NS (NW-SE on screen) runway sprites for modular airports. */
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_2(PalSpriteID{SPR_NSRUNWAY2, PAL_NONE});
@@ -150,11 +155,17 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 		t = &_station_display_modular_newhelipad;
 	}
 
-	/* Modular APT_STAND_1 can exist as persisted piece data (for example after
-	 * stock-airport conversion or in saved templates). Use the fence-free jetway
-	 * layout in all modular contexts, not only for adjacency-derived visuals. */
-	if (modular_piece_type == APT_STAND_1) {
-		t = &_station_display_modular_jetway_1;
+	/* APT_STAND_1 and APT_STAND_PIER_NE carry a jetway in their stock layouts,
+	 * because in the stock city airport they are only ever the stands beside the
+	 * round terminal. A modular airport can put them anywhere — the script API
+	 * offers them as "a stand that also counts as a large terminal", and templates
+	 * and stock-airport conversion can persist them too — so the jetway has to
+	 * follow the terminal rather than the piece, or a stand next to a hangar ends
+	 * up with a jetway bridging to nothing. Plain stand is the default here;
+	 * ApplyModularAirportTileLayoutOverrides puts the jetway back when a round
+	 * terminal really is next door. */
+	if (modular_piece_type == APT_STAND_1 || modular_piece_type == APT_STAND_PIER_NE) {
+		t = &_station_display_modular_stand;
 	}
 
 	if (t == nullptr) switch (gfx) {
@@ -191,12 +202,17 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 
 	t = GetAirportTileLayoutWithModularOverrides(gfx, md->piece_type, md->rotation, GetAnimationFrame(ti->tile));
 
-	const StationGfx original_gfx = gfx;
-
-	/* Auto-jetway: a plain stand adjacent to a round terminal gets a jetway sprite.
-	 * jetway_1 (APT_STAND_1)      -- terminal is one tile to the south (dy=+1)
-	 * jetway_2 (APT_STAND_PIER_NE) -- terminal is one tile to the west  (dx=-1) */
-	if (md->piece_type == APT_STAND) {
+	/* Auto-jetway: a stand adjacent to a round terminal grows a jetway towards it.
+	 * Only two jetway sprites exist and each points a fixed way:
+	 *   jetway_1 (APT_STAND_1)       -- terminal one tile to the SE (dy=+1)
+	 *   jetway_2 (APT_STAND_PIER_NE) -- terminal one tile to the NE (dx=-1)
+	 * so a terminal on either of the other two sides draws no jetway.
+	 *
+	 * This runs for every stand piece, including the two whose stock layout has a
+	 * jetway baked in, so that what is drawn always describes what is next to the
+	 * tile. Placing one of those pieces is a gameplay choice (they count as a large
+	 * terminal) and must not by itself conjure a jetway to nowhere. */
+	if (md->piece_type == APT_STAND || md->piece_type == APT_STAND_1 || md->piece_type == APT_STAND_PIER_NE) {
 		auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
 			TileIndex nb = TileAddXY(ti->tile, dx, dy);
 			if (!IsValidTile(nb)) return 0xFF;
@@ -205,19 +221,13 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 		};
 		if (NeighborPiece(0, +1) == APT_ROUND_TERMINAL) {
 			gfx = APT_STAND_1;
+			/* Fence-free variant: the stock jetway_1 layout has a baked-in north
+			 * fence that doesn't belong in modular airports. */
+			t = &_station_display_modular_jetway_1;
 		} else if (NeighborPiece(-1, 0) == APT_ROUND_TERMINAL) {
 			gfx = APT_STAND_PIER_NE;
+			t = GetStationTileLayout(StationType::Airport, gfx);
 		}
-	}
-
-	/* Auto-jetway intentionally overrides the default stand layout returned by
-	 * GetAirportTileLayoutWithModularOverrides when a round terminal is adjacent.
-	 * Use fence-free variant for jetway_1 since the stock layout has a baked-in
-	 * north fence that doesn't belong in modular airports. */
-	if (gfx == APT_STAND_1) {
-		t = &_station_display_modular_jetway_1;
-	} else if (gfx != original_gfx) {
-		t = GetStationTileLayout(StationType::Airport, gfx);
 	}
 }
 

@@ -12,6 +12,9 @@
 
 #include "../modular_airport_cmd.h"
 #include "../modular_airport_build.h"
+#include "../modular_airport_draw.h"
+#include "../sprite.h"
+#include "../table/sprites.h"
 #include "../airport_template.h"
 #include "../table/airporttile_ids.h"
 #include "../map_func.h"
@@ -1100,6 +1103,89 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(IsLegacySmallHangarPiece(APT_SMALL_DEPOT_NE));
 		CHECK_FALSE(IsLegacySmallHangarPiece(APT_DEPOT_SE));
 		CHECK_FALSE(IsLegacySmallHangarPiece(APT_STAND));
+	}
+}
+
+TEST_CASE("ModularAirportStandJetwayDrawing")
+{
+	/* Does this layout draw a jetway on the tile? */
+	auto HasJetway = [](const DrawTileSprites *t) {
+		if (t == nullptr) return false;
+		for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
+			SpriteID spr = dtss.image.sprite & SPRITE_MASK;
+			if (spr == SPR_AIRPORT_JETWAY_1 || spr == SPR_AIRPORT_JETWAY_2 || spr == SPR_AIRPORT_JETWAY_3) return true;
+		}
+		return false;
+	};
+
+	/* A jetway bridges a stand to the round terminal beside it, so it belongs to
+	 * the pair of tiles rather than to the stand. APT_STAND_1 and APT_STAND_PIER_NE
+	 * carry one in their stock layouts only because the stock city airport never
+	 * places them anywhere else; a modular airport can, and a script that picks
+	 * them for their large-terminal value must not get a jetway to nowhere.
+	 *
+	 * Adjacency lives in ApplyModularAirportTileLayoutOverrides, which needs a map.
+	 * This covers the context-free half: the default for every stand piece is a
+	 * bare stand. */
+	SECTION("Stand pieces default to no jetway") {
+		CHECK_FALSE(HasJetway(GetAirportTileLayoutWithModularOverrides(APT_STAND, APT_STAND, 0, 0)));
+		CHECK_FALSE(HasJetway(GetAirportTileLayoutWithModularOverrides(APT_STAND_1, APT_STAND_1, 0, 0)));
+		CHECK_FALSE(HasJetway(GetAirportTileLayoutWithModularOverrides(APT_STAND_PIER_NE, APT_STAND_PIER_NE, 0, 0)));
+	}
+
+	SECTION("Stock layouts are the ones that bake a jetway in") {
+		/* Guards the premise: if these ever stop carrying a jetway, the override
+		 * above is dead code rather than a fix. */
+		CHECK(HasJetway(GetStationTileLayout(StationType::Airport, APT_STAND_1)));
+		CHECK(HasJetway(GetStationTileLayout(StationType::Airport, APT_STAND_PIER_NE)));
+		CHECK_FALSE(HasJetway(GetStationTileLayout(StationType::Airport, APT_STAND)));
+	}
+
+	/* The half that needs a map: what is actually next to the stand. */
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 4, 4);
+	REQUIRE(st != nullptr);
+
+	const TileIndex stand = base + TileDiffXY(1, 1);
+
+	/* Ask the drawing code what it would put on the stand tile. */
+	auto StandLayout = [&](uint8_t stand_piece) {
+		AddModularTile(st, stand, stand_piece);
+		TileInfo ti{};
+		ti.tile = stand;
+		StationGfx gfx = stand_piece;
+		const DrawTileSprites *t = nullptr;
+		ApplyModularAirportTileLayoutOverrides(&ti, gfx, t);
+		return t;
+	};
+
+	SECTION("A round terminal to the SE gives the stand a jetway") {
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_ROUND_TERMINAL);
+		CHECK(HasJetway(StandLayout(APT_STAND)));
+	}
+
+	SECTION("A round terminal to the NE gives the stand a jetway") {
+		AddModularTile(st, stand + TileDiffXY(-1, 0), APT_ROUND_TERMINAL);
+		CHECK(HasJetway(StandLayout(APT_STAND)));
+	}
+
+	SECTION("A large-terminal stand gets a jetway from the terminal, not from itself") {
+		/* The reported glitch: a script places APT_STAND_1 for its large-terminal
+		 * value, next to a hangar, and the stand sprouts a jetway onto nothing. */
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_DEPOT_SE);
+		CHECK_FALSE(HasJetway(StandLayout(APT_STAND_1)));
+	}
+
+	SECTION("A large-terminal stand still gets its jetway beside a round terminal") {
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_ROUND_TERMINAL);
+		CHECK(HasJetway(StandLayout(APT_STAND_1)));
+	}
+
+	SECTION("A hangar beside a plain stand draws no jetway") {
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_DEPOT_SE);
+		AddModularTile(st, stand + TileDiffXY(-1, 0), APT_APRON);
+		CHECK_FALSE(HasJetway(StandLayout(APT_STAND)));
 	}
 }
 
