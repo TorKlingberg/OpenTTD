@@ -128,14 +128,15 @@ Every taxiable tile is one of three types used by the segment reservation system
 
 | Type | Condition | Reservation |
 |------|-----------|-------------|
-| `RUNWAY` | `IsModularRunwayPiece(piece_type)` — `APT_RUNWAY_1-5`, `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_*` | Atomic: entire contiguous runway |
-| `ONE_WAY` | `IsTaxiwayPiece(piece_type) && one_way_taxi == true` | Queue: one tile at a time |
-| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Atomic: entire segment at once |
+| `RUNWAY` | `IsModularRunwayPiece(piece_type)` — `APT_RUNWAY_1-5`, `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_*` | Crossing: traveled tiles only; explicit landing/takeoff: entire contiguous runway |
+| `ONE_WAY` | `IsTaxiwayPiece(piece_type) && one_way_taxi == true` | Safe queue boundary in the forward reservation horizon |
+| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward reservation horizon |
 
 Notes:
 - Runway end fence variants (`APT_RUNWAY_END_FENCE_*`) are **not** in `IsModularRunwayPiece` — they're decorative. Only `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_NEAR_END`, `APT_RUNWAY_SMALL_FAR_END` are landing targets.
 - Hangars: `APT_DEPOT_SE/SW/NW/NE` (large) and `APT_SMALL_DEPOT_SE/SW/NW/NE` (small) — four rotations each. Hangars are multi-capacity (multiple aircraft can park in one).
 - One-way flags only apply to `IsTaxiwayPiece` types. Stands, hangars, and runways cannot be one-way.
+- Reservation, retention, and landing admission use the same forward horizon to the aircraft's goal or first future safe stop. Segment boundaries do not define separate acquisition rules.
 
 ## Aircraft Crashes (modular)
 

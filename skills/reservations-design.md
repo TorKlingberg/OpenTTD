@@ -4,15 +4,19 @@ How taxiing and tile reservations actually work in `src/modular_airport_cmd.cpp`
 
 ## 1. Segment types
 
-Taxi paths are split into contiguous segments, each with type-specific reservation behavior:
+Taxi paths are split into contiguous segments. Segment type still describes routing
+and safe-stop behavior, but reservation scope is decided by the aircraft's operation,
+not by treating every runway segment as the same resource:
 
 | Type | Where it applies | Reservation model |
 |------|------------------|-------------------|
-| `RUNWAY` | `IsModularRunwayPiece(piece_type)` | Atomic — entire contiguous runway reserved as one resource |
-| `ONE_WAY` | `IsTaxiwayPiece` with `one_way_taxi == true` | Per-tile queue — one tile at a time |
-| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Atomic per-segment — whole segment reserved at once |
+| `RUNWAY` | `IsModularRunwayPiece(piece_type)` | Crossing: traveled tiles only. Explicit landing/takeoff operation: entire contiguous runway |
+| `ONE_WAY` | `IsTaxiwayPiece` with `one_way_taxi == true` | Queue tile and forward-horizon boundary |
+| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward horizon |
 
-`TaxiSegmentType` is assigned by `ClassifyTile` in `airport_ground_pathfinder.cpp` and consumed by `TryReserveTaxiSegment`.
+`TaxiSegmentType` is assigned by `ClassifyTile` in
+`airport_ground_pathfinder.cpp`. `TryReserveTaxiSegment` builds one reservation
+horizon from the current path index regardless of which segment triggered the call.
 
 ## 2. Safe stops (key invariant)
 
@@ -24,76 +28,90 @@ Taxi paths are split into contiguous segments, each with type-specific reservati
 | Hangar | Yes | Multi-capacity parking; never hard-blocks |
 | Helipad | Yes | Parking for helicopters |
 | `ONE_WAY` taxiway tile | Yes | Designed as a queue; per-tile semantics support waiting |
-| Runway tile | **No** (in transit) | Atomic resource — stopping pins the whole runway |
+| Runway tile | **No** (in transit) | Shared crossing/operation space; an aircraft may not wait there |
 | `FREE_MOVE` grass / apron | **No** | Pure transit; stopping blocks anyone else needing to cross |
 
 A runway tile is special: it *is* the destination during takeoff (`MGT_RUNWAY_TAKEOFF` → state `TAKEOFF`), where the aircraft transitions out of ground movement entirely. So a runway-end takeoff goal is acceptable as a path terminus, but **never** as a mid-path resting place.
 
 The fallout: every reservation step must guarantee that the aircraft, after taking it, still owns a chain reaching some safe stop. Stopping on grass/apron is an invariant violation, not a "stuck" symptom — the system is supposed to deny entry rather than allow the stop.
 
-## 3. Reservation rules by segment
+## 3. Unified forward reservation horizon
 
-### `FREE_MOVE`
+`BuildForwardReservationPlan` is the single description used by reservation and
+retention. Starting at `taxi_path_index`, it walks through the aircraft's goal or
+the first *future* safe stop. The current safe-stop tile cannot immediately end a
+departure plan; the aircraft must reserve somewhere to advance to.
 
-`TryReserveTaxiSegment` reserves:
-- All forward tiles in the segment atomically (when entering from outside).
-- If already inside the same segment, only forward tiles past `taxi_path_index` (re-checking tiles behind can deadlock opposing movers holding disjoint prefixes).
-- One exit tile (first tile of the next segment).
-- If the next segment is `RUNWAY`, recurses into the runway segment's contract before committing.
+The plan partitions that horizon into two kinds of claim:
 
-Hangar tiles are non-blocking (multi-capacity).
+- **Taxi tiles:** every traveled apron, taxiway, parking, and transit-runway tile.
+  A runway crossing is ordinary exclusive path space: only the tile(s) on this
+  path are claimed. Two aircraft may therefore cross the same runway at disjoint
+  places.
+- **Operation runway:** only the runway explicitly used for a landing or runway
+  takeoff. It expands to the whole contiguous runway. A takeoff runway is not
+  acquired while the horizon still ends at an upstream one-way queue; it joins
+  the plan when the horizon actually reaches that runway.
 
-### `ONE_WAY`
+Landing supplies its touchdown runway explicitly. Ground movement identifies a
+takeoff operation from `MGT_RUNWAY_TAKEOFF` and `modular_takeoff_tile`; after
+touchdown, the aircraft's tracked whole-runway claim identifies the landing
+operation until the aircraft steps off it. A runway merely crossed on the way to
+another runway never enters `modular_runway_reservation`.
 
-- Reserve the single next tile, per-tile.
-- If next is a runway tile and target is takeoff (`MGT_RUNWAY_TAKEOFF`), require full contiguous runway reservation before stepping onto a runway tile.
-- Hangar next tile: tracked but not map-blocking.
+`TryCommitForwardReservationPlan` validates every claim before changing any
+ownership. Whole-runway operations check every runway tile; crossings check their
+individual path tiles. The map claims make the exclusion symmetric: an operation
+is denied by a crossing anywhere on its runway, while a crossing is denied by an
+active operation. A denied transaction leaves existing ownership unchanged.
 
-### `RUNWAY`
+`AirportMoveModular` revalidates this same horizon before every step. Consequently
+an aircraft never enters runway or apron transit without already owning a path to
+a place where it may wait, but it also never reacquires a runway or other tile that
+has fallen behind its current path index.
 
-Two modes, distinguished by `IsRunwaySegmentTerminalGoal`:
+#### Termination invariant
 
-- **Terminal runway** (the tile ground movement ends on lies on this segment): atomically reserve the contiguous runway resource via `TryReserveRunwayResourcesAtomic`. A takeoff *target* does not make every runway on the path terminal — a takeoff path may cross one runway to reach another, and the crossed one is transit.
-- **Transit runway** (using runway as a taxiway bridge): all-or-nothing pre-entry reservation of the *full crossing chain* — every runway resource crossed, plus every tile up to and including the **first safe stop** on the far side (a ONE_WAY queue tile, a stand/hangar/helipad, or the path goal). The chain is fully validated first; nothing is committed unless the whole chain is free. If no safe stop is reachable past the runway, or any tile/resource is blocked, entry is denied and the aircraft waits *before* the runway (on its prior safe stop).
+Every visited tile reaches the termination tests; no tile classification may skip
+them. The aircraft's goal is tested separately from the tile's safe-stop property
+and before the generic safe-stop test. A goal that is itself a runway tile can
+therefore terminate the horizon. It expands to a whole runway only when it is the
+explicit landing/runway-takeoff operation; otherwise it remains a taxi-tile
+claim.
 
-This makes runway entry self-sufficient for every aircraft class: stepping onto a transit runway guarantees a reserved path off it to a place where the aircraft can wait indefinitely. It never halts on the runway or on transit grass/apron.
-
-The walk is `BuildRunwayCrossingChain`, and it is the **single** implementation — the entry decision, keep-set retention, and the stuck diagnostics all call it, so they cannot drift apart. `IsModularSafeStopTile` decides which *tiles* may end a chain; the aircraft's own goal is tested separately by the walker.
-
-#### Termination invariant (why the contract is always satisfiable)
-
-**The chain walk always reaches a terminator, because the goal test precedes every piece-type test and the goal is the last tile of the path.** Two consequences:
-
-- A goal that is *itself a runway tile* — a computed helicopter pad or takeoff tile that fell back to a runway end — terminates the chain like any other goal. Its runway resource folds into the atomic acquisition, and the aircraft may stop there because that is exactly where its ground movement ends and it departs.
-- `NO_SAFE_STOP` therefore cannot be a traffic state. It means the path does not end at `ground_path_goal`, which is an internal inconsistency, and it is logged as `runway-transit-invariant`, not as a deny.
-
-The walker's loop body deliberately contains **no `continue`**: every tile is classified and then tested for termination. That structure is the guarantee — any classification branch that skips the terminator test reintroduces a permanently unsatisfiable contract, i.e. an aircraft that waits forever on a completely empty airport. That is precisely the bug this shape exists to prevent; see Pitfall 2.
-
-Combined with all-or-nothing acquisition (`TryReserveRunwayResourcesAtomic` validates every resource before mutating any, and continuation tiles are validated before any `SetTaxiReservation`), a denied attempt leaves the aircraft holding exactly what it held before. No hold-and-wait on runway resources, so blocked aircraft cannot form a circular wait over them.
+Because a valid taxi path ends at `ground_path_goal`, `NO_SAFE_STOP` indicates an
+inconsistent path/goal rather than ordinary traffic contention. See Pitfall 2.
 
 ## 4. Reserve-then-reconcile (Reservation V2)
 
 Per-step movement uses `TryReserveTaxiSegment` to acquire forward, then a deterministic release pass:
 
-1. `BuildReservationKeepSet(v, st, &keep_set)` computes the tiles that should remain reserved.
+1. `BuildReservationKeepSet(v, st, keep_set)` computes the tiles that should remain reserved.
 2. `ReconcileAircraftReservations(v, st, keep_set, "post-step")` releases everything owned that isn't in the keep-set, and prunes `taxi_reserved_tiles` / `modular_runway_reservation` to match.
 
 `keep_set` includes:
 - Current tile (`v->tile`).
-- Forward segment horizon: tiles from `max(seg.start_index, taxi_path_index)` through `seg.end_index`, plus the first tile of the next segment.
-- Landing-chain continuity (every tile in `v->landing_chain_path`, until the rollout transition discards it).
-- Runway resources owned along the remaining path (covers takeoff intent, active traversal, and pre-committed transit crossings).
-- Full `modular_runway_reservation` when `ShouldRetainRunwayReservation(v, st)` returns true (takeoff intent on the still-valid takeoff runway).
+- The taxi tiles and operation runway produced by the same forward plan used for acquisition.
+- Landing-chain continuity (every tile in `v->landing_chain_path`, until the rollout transition discards it) and its committed operation runway.
+- A committed safe-stop claim while a just-landed aircraft is still standing on a runway without an active saved path.
+- Full `modular_runway_reservation` when `ShouldRetainRunwayReservation(v, st)` confirms an active takeoff operation on the intended runway.
 
-Runway resources are atomic on retention too: if any tile of resource `R` is in the keep-set, the helper expands it to the full contiguous runway. `ClearTaxiPathReservation` is reserved for transitions and force-clear; normal per-step release is reconciler-driven.
+Transit-runway claims are **not** expanded during retention; they remain ordinary
+taxi tiles. An operation runway remains whole while current or inside the active
+forward horizon, then falls out of the recomputed plan immediately after the
+aircraft steps onto another resource. `ClearTaxiPathReservation` is reserved for
+transitions and force-clear; normal per-step release is reconciler-driven.
 
 ## 5. Landing chain (pre-touchdown reservation)
 
-`TryReserveLandingChain` reserves before commit:
-- The landing runway atomically (terminal mode).
-- A post-runway chain to the first safe queueing point:
-  - first non-runway segment is `ONE_WAY` → entry tile reserved.
-  - first non-runway segment is `FREE_MOVE` → whole segment reserved + one exit tile.
+`TryReserveLandingChain` builds and commits one transaction before descent:
+
+- The whole contiguous landing runway as the operation claim.
+- Every traveled tile from the rollout end through the ground goal or first safe queueing point. Any runway crossed after rollout contributes only its traveled path tiles.
+
+If any operation or taxi claim is unavailable, nothing in the landing transaction
+is acquired. This prevents an aircraft from landing with a reserved touchdown
+runway but no reserved route through an adjacent runway or apron to safety.
 
 The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `ONE_WAY` buffer after the runway.
 
@@ -111,33 +129,36 @@ The computed path is stored in `landing_chain_path` and reused after touchdown w
 
 ### Pitfall 1: Transit-runway entry must guarantee a safe stop beyond (resolved)
 
-Entering a transit runway reserves the entire crossing chain to the first safe
-stop (see §3 `RUNWAY`), so an aircraft never steps onto a runway — or off it
-onto unreserved grass — without owning a chain to a place it can wait. This is
-enforced uniformly for fixed-wing and helicopters inside the `RUNWAY` branch of
-`TryReserveTaxiSegment`; there is **no** vehicle-class special case at the
-`AirportMoveModular` segment boundary anymore.
+Entering a transit runway commits every traveled tile through the first safe stop
+(see §3), so an aircraft never steps onto a runway — or off it onto unreserved
+grass — without owning a path to a place it can wait. The crossing itself remains
+tile-level; only an explicit landing/takeoff operation claims the whole runway.
+This is enforced uniformly for fixed-wing and helicopters by the common forward
+planner; there is **no** vehicle-class or runway-segment special case at the
+`AirportMoveModular` boundary.
 
 History: this used to pin only the first continuation tile, leaving the rest of
 the downstream `FREE_MOVE` segment unreserved, so fixed-wing could strand on
 grass. A helicopter-only revalidation at the segment boundary patched the
-symptom; the full-chain transit contract removed the root cause and let the
-special case be deleted. Tightening the fixed-wing contract cost ~2% on the
+symptom; the forward-horizon contract removed the root cause and let the special
+case be deleted. Tightening the fixed-wing contract cost ~2% on the
 `mass6-inair.sav` baseline (floor lowered 9200 → 9000) — the price of the
 provable safe-stop guarantee.
 
-### Pitfall 2: Never classify a tile before asking whether it ends the chain
+### Pitfall 2: Never let classification skip the horizon terminator
 
-The crossing walk must test "is this the goal / a safe stop?" *before* any
-piece-type dispatch, and must never `continue` past a tile it has not tested.
+Every tile in the forward walk must reach "is this the goal / a safe stop?" and
+must never `continue` past those tests. The aircraft goal remains a separate test
+from the tile's safe-stop property.
 
 This has now caused the same permanent deadlock twice. `FindRunwayTransitContinuationTile`
 (deleted) skipped runway tiles before its goal check; that was latent, because it
 only ever produced a hint. `a7346e86c8` copied the ordering into the real
-full-chain walk, where it became fatal: a helicopter whose computed pad had
+old crossing walk, where it became fatal: a helicopter whose computed pad had
 fallen back to a runway end could never satisfy the contract, and waited forever
-on an *empty* airport with every blocker reading false. `BuildRunwayCrossingChain`
-now has one code path, no `continue`, and the goal tested first.
+on an *empty* airport with every blocker reading false. The replacement
+`BuildForwardReservationPlan` has one code path, no classification `continue`,
+and tests the aircraft goal separately before the generic safe-stop condition.
 
 Two smells to watch for when touching this area:
 
@@ -145,7 +166,7 @@ Two smells to watch for when touching this area:
   (the old three-argument `IsModularSafeStopTile(st, tile, goal)`). It hides the
   goal behind a piece-type check that an earlier branch can skip. The goal is a
   property of the *aircraft*, not of the tile — keep it at the call site.
-- Two functions that both answer "what is past this runway". They will disagree,
+- Two functions that both answer "what must I own before advancing". They will disagree,
   and the log will confidently print the wrong one's answer while the other denies
   entry. That is exactly how this bug hid in plain sight.
 
@@ -174,7 +195,7 @@ case instead of every apron transit. Measure before widening it.
 
 `SetTaxiReservation` blindly overwrites the map-level reserver bit; the caller must have already verified that no other vehicle owns the tile. Likewise, the reconciler edits both the map bits and the vehicle vectors — divergence between vector and map state usually means something wrote map state without going through `SetTaxiReservation`, or vice versa.
 
-The reconciler now *relies* on the vectors being authoritative: its release pass walks `taxi_reserved_tiles` + `modular_runway_reservation` (not the whole airport) to find map bits to clear, so per-step reconcile is O(reserved) not O(tiles). Every map-bit setter (`SetTaxiReservation`, `TryReserveContiguousModularRunway`, `TryReserveRunwayResourcesAtomic`) records into one of these vectors — if you add a new setter, it **must** track here or its bit can leak (the reconciler will never see it).
+The reconciler now *relies* on the vectors being authoritative: its release pass walks `taxi_reserved_tiles` + `modular_runway_reservation` (not the whole airport) to find map bits to clear, so per-step reconcile is O(reserved) not O(tiles). Every map-bit setter (`SetTaxiReservation`, `TryReserveContiguousModularRunway`, `TryCommitForwardReservationPlan`) records into one of these vectors — if you add a new setter, it **must** track here or its bit can leak (the reconciler will never see it).
 
 The `owned-reservations` log line reads map state; `tracked-runway` reads `modular_runway_reservation`. A mismatch is a useful red flag. See `skills/stuck_plane_debugging.md`.
 
