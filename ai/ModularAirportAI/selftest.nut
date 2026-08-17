@@ -54,6 +54,15 @@ function RunSelfTest()
 	                  Family.DUAL, Family.APRON, Family.HELIPORT];
 	local total = 0, bad = 0;
 
+	/* A heliport deliberately has no runway. It must nevertheless admit
+	 * helicopters, while a stand-only malformed airport must not. */
+	local capacity_ok = AircraftCeilingForCounts(0, 2, 0) == 6
+	                 && AircraftCeilingForCounts(2, 0, 0) == 0
+	                 && AircraftCeilingForCounts(2, 1, 1) == 9
+	                 && AircraftCeilingForCounts(4, 0, 1) == 10;
+	AILog.Info("capacity model: " + (capacity_ok ? "ok" : "*** INVALID ***"));
+	if (!capacity_ok) bad++;
+
 	foreach (family in families) {
 		AILog.Info("");
 		AILog.Info("--- family " + FamilyName(family) + " ---");

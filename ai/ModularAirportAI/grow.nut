@@ -122,6 +122,18 @@ function GrowAirport(station, tile, funds, pax_cargo)
 
 	local slots = ParkingSlots(station);
 	local runways = CountRunways(station);
+
+	/* A heliport has no runway by design. Once its pads are full, grow the
+	 * resource helicopters actually use instead of treating the absent runway
+	 * as a bottleneck and trying to turn the heliport into an aerodrome. */
+	if (runways == 0) {
+		if (funds > 80000 && AddHelipad(station)) {
+			return "added a helipad (" + waiting + " waiting, " + serving
+			       + " helicopters on " + slots + " pads)";
+		}
+		return null;
+	}
+
 	local stand_bound = PLANES_PER_STAND * slots <= PLANES_PER_RUNWAY * runways;
 
 	if (stand_bound) {
@@ -176,6 +188,30 @@ function ParkingSlots(station)
 	     + CountAirportPieces(station, IsHelipadPiece);
 }
 
+/** Add one of the interchangeable helipad styles as capacity. */
+function AddHelipad(station)
+{
+	foreach (piece in [AIAirport.MP_HELIPAD,
+	                   AIAirport.MP_HELIPAD_PLAIN,
+	                   AIAirport.MP_HELIPORT]) {
+		if (AddPiece(station, piece, true)) return true;
+	}
+	return false;
+}
+
+/** Pure capacity calculation, kept separate so the model can be self-tested. */
+function AircraftCeilingForCounts(stands, helipads, runways)
+{
+	/* With no runway, only helicopters can operate and only helipads provide
+	 * useful parking. In particular, a malformed stand-only airport must not be
+	 * given helicopter capacity merely because it has parking tiles. */
+	if (runways == 0) return PLANES_PER_STAND * helipads;
+
+	local by_parking = PLANES_PER_STAND * (stands + helipads);
+	local by_runway = PLANES_PER_RUNWAY * runways;
+	return (by_parking < by_runway) ? by_parking : by_runway;
+}
+
 /**
  * The most aircraft this airport can usefully have on it.
  *
@@ -184,9 +220,10 @@ function ParkingSlots(station)
  */
 function AircraftCeiling(station)
 {
-	local by_stands = PLANES_PER_STAND * ParkingSlots(station);
-	local by_runway = PLANES_PER_RUNWAY * CountRunways(station);
-	return (by_stands < by_runway) ? by_stands : by_runway;
+	return AircraftCeilingForCounts(
+		CountAirportPieces(station, IsStandPiece),
+		CountAirportPieces(station, IsHelipadPiece),
+		CountRunways(station));
 }
 
 /**
