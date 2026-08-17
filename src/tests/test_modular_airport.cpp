@@ -1789,6 +1789,42 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 		/* Blocker's reservation untouched. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), VehicleID(11)));
 	}
+
+	SECTION("A disjoint crossing claim denies a whole-runway operation") {
+		SetupAircraftPool();
+		Aircraft *crossing = setup_aircraft_on_path(VehicleID(10));
+		REQUIRE(TryReserveTaxiSegment(crossing, st, runway_segment(crossing)));
+		const TileIndex crossing_tile = base + TileDiffXY(2, 2);
+		REQUIRE(IsModularAirportTileReservedBy(crossing_tile, crossing->index));
+
+		/* Enter the same runway at its other end for takeoff. The crossing at x=2
+		 * is disjoint from the x=0 entry tile, but a flight operation needs every
+		 * tile and must therefore wait for that crossing claim. */
+		const TileIndex takeoff_start = base + TileDiffXY(0, 1);
+		const TileIndex takeoff_goal = base + TileDiffXY(0, 2);
+		AddModularTile(st, takeoff_start, APT_APRON, 0);
+		Aircraft *operation = CreateAircraft(VehicleID(11));
+		operation->targetairport = st->index;
+		operation->tile = takeoff_start;
+		operation->ground_path_goal = takeoff_goal;
+		operation->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		operation->modular_takeoff_tile = takeoff_goal;
+		TaxiPath operation_path = BuildTaxiPath(st, takeoff_start, takeoff_goal, operation, true);
+		REQUIRE(operation_path.valid);
+		operation->taxi_path = std::make_unique<TaxiPath>(std::move(operation_path));
+		operation->taxi_path_index = 0;
+		operation->taxi_current_segment = FindTaxiSegmentIndex(operation->taxi_path.get(), 0);
+
+		TaxiReserveResult result;
+		CHECK_FALSE(TryReserveTaxiSegment(operation, st, operation->taxi_current_segment, &result));
+		CHECK(result.reason == TaxiReserveFailure::RUNWAY_BUSY);
+		CHECK(result.tile == crossing_tile);
+		CHECK(operation->modular_runway_reservation.empty());
+		for (int i = 0; i < 3; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), operation->index));
+		}
+		CHECK(IsModularAirportTileReservedBy(crossing_tile, crossing->index));
+	}
 }
 
 TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
@@ -1829,7 +1865,7 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 		CHECK(IsModularAirportTileReservedBy(lower_high, VehicleID(11)));
 	}
 
-	SECTION("After crossing, the runway behind is released and never reacquired") {
+	SECTION("The real movement step releases the runway behind and never reacquires it") {
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
 		v->targetairport = st->index;
@@ -1853,25 +1889,34 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 		v->taxi_path_index = 0;
 		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 		REQUIRE(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
+		REQUIRE(v->taxi_path->tiles.size() >= 3);
+		REQUIRE(v->taxi_path->tiles[1] == lower_high);
 
-		const auto lower_it = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), lower_high);
-		REQUIRE(lower_it != v->taxi_path->tiles.end());
-		v->tile = lower_high;
-		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), lower_it));
-		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), v->taxi_path_index);
-
-		std::vector<TileIndex> keep_set;
-		BuildReservationKeepSet(v, st, keep_set);
-		ReconcileAircraftReservations(v, st, keep_set, "test-crossed-adjacent-runway");
+		/* Put the sprite at the next tile centre so AirportMoveModular executes one
+		 * complete logical step without depending on speed/tick timing. The function
+		 * must update tile/index and run its real post-step reconciliation. */
+		v->x_pos = TileX(lower_high) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(lower_high) * TILE_SIZE + TILE_SIZE / 2;
+		v->z_pos = GetTileMaxPixelZ(lower_high);
+		CHECK_FALSE(AirportMoveModular(v, st));
+		CHECK(v->tile == lower_high);
+		CHECK(v->taxi_path_index == 1);
 		for (int i = 0; i < 6; i++) {
 			CHECK_FALSE(IsModularAirportTileReservedBy(upper_low + TileDiffXY(i, 0), v->index));
 		}
 		CHECK(v->modular_runway_reservation.empty());
 
-		/* A new claim behind the aircraft must not block its remaining route. */
+		/* A new claim behind the aircraft must not block the next real movement
+		 * step; recomputing from a segment start would incorrectly demand it again. */
 		CreateBlockerOnTile(st, VehicleID(11), upper_low + TileDiffXY(1, 0));
-		REQUIRE(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
-		CHECK(IsModularAirportTileReservedBy(lower_high, v->index));
+		const TileIndex next_lower_tile = v->taxi_path->tiles[2];
+		v->x_pos = TileX(next_lower_tile) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(next_lower_tile) * TILE_SIZE + TILE_SIZE / 2;
+		v->z_pos = GetTileMaxPixelZ(next_lower_tile);
+		CHECK_FALSE(AirportMoveModular(v, st));
+		CHECK(v->tile == next_lower_tile);
+		CHECK(v->taxi_path_index == 2);
+		CHECK(IsModularAirportTileReservedBy(next_lower_tile, v->index));
 	}
 }
 
