@@ -31,6 +31,7 @@
 #include "../viewport_kdtree.h"
 #include "mock_environment.h"
 #include "../vehicle_base.h"
+#include "../vehicle_func.h"
 #include "../engine_base.h"
 #include "../company_base.h"
 #include "../company_func.h"
@@ -73,6 +74,10 @@ static void SetupAircraftPool()
 {
 	extern VehiclePool _vehicle_pool;
 	_vehicle_pool.CleanPool();
+	/* Several command-path tests create and destroy real vehicles before these
+	 * bare-shell aircraft tests. Keep the spatial lookup in sync with the pool so
+	 * occupancy validation never follows a stale test vehicle pointer. */
+	ResetVehicleHash();
 }
 
 /* Bare-shell aircraft for tests: only fields read by the APIs under test
@@ -1527,7 +1532,7 @@ TEST_CASE("ModularAirportLandingChain")
 		CHECK(v->modular_runway_reservation.empty());
 	}
 
-	SECTION("Reserves transit runway end-to-end") {
+	SECTION("Reserves a transit runway crossing tile end-to-end") {
 		/* Layout:
 		 *   Row 0 (rollout runway):  RWY_END RWY_5 RWY_END
 		 *   Row 1:                   APRON   APRON APRON
@@ -1556,15 +1561,15 @@ TEST_CASE("ModularAirportLandingChain")
 		for (int i = 0; i < 3; i++) {
 			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
 		}
-		/* Transit runway atomically reserved too (full row 2). */
-		for (int i = 0; i < 3; i++) {
-			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
-		}
+		/* A crossed runway is ordinary path space: only the tile actually used. */
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(0, 2)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(1, 2)));
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
 		/* Goal stand reserved (end-to-end walk reaches the goal). */
 		CHECK(IsModularAirportTileReservedBy(goal, v->index));
 	}
 
-	SECTION("Fails when transit runway is held; rollout fully rolled back") {
+	SECTION("Allows independent crossings at different runway tiles") {
 		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
 		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
@@ -1578,20 +1583,39 @@ TEST_CASE("ModularAirportLandingChain")
 		Aircraft *v = CreateAircraft(VehicleID(10));
 		v->targetairport = st->index;
 
-		/* Pre-occupy the transit runway. */
+		/* Another ground movement owns a different tile on the same runway. */
 		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(0, 2));
 
 		TileIndex touchdown = base;
 		TileIndex goal = base + TileDiffXY(2, 3);
-		CHECK_FALSE(TryReserveLandingChain(v, st, touchdown, goal));
+		REQUIRE(TryReserveLandingChain(v, st, touchdown, goal));
 
-		/* Rollout runway released — no half-commit. */
+		/* The landing operation still owns its whole rollout runway. */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		/* Only the crossing point is claimed, and the independent claim is untouched. */
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(0, 2), VehicleID(11)));
+	}
+
+	SECTION("A blocked crossing rejects the landing without a partial runway claim") {
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(2, 3), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(2, 2));
+
+		CHECK_FALSE(TryReserveLandingChain(v, st, base, base + TileDiffXY(2, 3)));
 		for (int i = 0; i < 3; i++) {
 			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
 		}
 		CHECK(v->modular_runway_reservation.empty());
-		/* Blocker's reservation on the transit runway untouched. */
-		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(0, 2), VehicleID(11)));
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), VehicleID(11)));
 	}
 
 	SECTION("Stops at first ONE_WAY tile") {
@@ -1677,15 +1701,15 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 		return 0;
 	};
 
-	SECTION("Reserves the full crossing chain to the far-side safe stop") {
+	SECTION("Reserves the path through the crossing to the far-side safe stop") {
 		SetupAircraftPool();
 		Aircraft *v = setup_aircraft_on_path(VehicleID(10));
 		REQUIRE(TryReserveTaxiSegment(v, st, runway_segment(v)));
 
-		/* Whole transit runway atomically reserved. */
-		for (int i = 0; i < 3; i++) {
-			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
-		}
+		/* Only the runway tile on this path is reserved. */
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(0, 2)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(1, 2)));
+		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
 		/* Far-side transit grass reserved (would have been a strand point before). */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 		/* Goal stand reserved — chain reached the safe stop. */
@@ -1701,13 +1725,97 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 
 		CHECK_FALSE(TryReserveTaxiSegment(v, st, runway_segment(v)));
 
-		/* No half-commit: the runway resource was never taken. */
+		/* No half-commit: the crossing tile was never taken. */
 		for (int i = 0; i < 3; i++) {
 			CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(i, 2), v->index));
 		}
 		CHECK(v->modular_runway_reservation.empty());
 		/* Blocker's reservation untouched. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), VehicleID(11)));
+	}
+}
+
+TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 16, 8);
+	REQUIRE(st != nullptr);
+
+	/* Fort Bronhill-shaped overlap: the landing runway's rollout end is adjacent
+	 * to the far end of a second parallel runway, which is the only route to the
+	 * stand.
+	 *
+	 *   row 2: STAND .... U0 U1 U2 U3 U4 U5(touchdown)
+	 *   row 3:      L0 L1 L2 L3 L4 L5
+	 *                         path runs L5 -> L1 -> stand
+	 */
+	const TileIndex upper_low = base + TileDiffXY(6, 2);
+	const TileIndex upper_high = base + TileDiffXY(11, 2);
+	const TileIndex lower_low = base + TileDiffXY(1, 3);
+	const TileIndex lower_high = base + TileDiffXY(6, 3);
+	const TileIndex stand = base + TileDiffXY(2, 2);
+	AddLargeRunway(st, upper_low, 6, 0, RUF_DEFAULT);
+	AddLargeRunway(st, lower_low, 6, 0, RUF_DEFAULT);
+	AddModularTile(st, stand, APT_STAND, 0);
+
+	SECTION("Landing admission is one atomic runway-to-stand transaction") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		CreateBlockerOnTile(st, VehicleID(11), lower_high);
+
+		CHECK_FALSE(TryReserveLandingChain(v, st, upper_high, stand));
+		for (int i = 0; i < 6; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(upper_low + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(v->modular_runway_reservation.empty());
+		CHECK(IsModularAirportTileReservedBy(lower_high, VehicleID(11)));
+	}
+
+	SECTION("After crossing, the runway behind is released and never reacquired") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->ground_path_goal = stand;
+		v->modular_ground_target = MGT_TERMINAL;
+		REQUIRE(TryReserveLandingChain(v, st, upper_high, stand));
+
+		/* Landing owns the whole operation runway, but only the tiles used to cross
+		 * and traverse the lower runway. */
+		for (int i = 0; i < 6; i++) {
+			CHECK(IsModularAirportTileReservedBy(upper_low + TileDiffXY(i, 0), v->index));
+		}
+		CHECK_FALSE(HasModularAirportTileReservation(lower_low));
+		for (int i = 1; i < 6; i++) {
+			CHECK(IsModularAirportTileReservedBy(lower_low + TileDiffXY(i, 0), v->index));
+		}
+
+		REQUIRE(v->landing_chain_path != nullptr);
+		v->tile = upper_low;
+		v->taxi_path = std::move(v->landing_chain_path);
+		v->taxi_path_index = 0;
+		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
+		REQUIRE(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
+
+		const auto lower_it = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), lower_high);
+		REQUIRE(lower_it != v->taxi_path->tiles.end());
+		v->tile = lower_high;
+		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), lower_it));
+		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), v->taxi_path_index);
+
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+		ReconcileAircraftReservations(v, st, keep_set, "test-crossed-adjacent-runway");
+		for (int i = 0; i < 6; i++) {
+			CHECK_FALSE(IsModularAirportTileReservedBy(upper_low + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(v->modular_runway_reservation.empty());
+
+		/* A new claim behind the aircraft must not block its remaining route. */
+		CreateBlockerOnTile(st, VehicleID(11), upper_low + TileDiffXY(1, 0));
+		REQUIRE(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(lower_high, v->index));
 	}
 }
 
@@ -2017,7 +2125,7 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 	 *   Row 3: APRON(2,3)            <- transit apron, not a safe stop
 	 *   Row 4: RWY_END RWY_5 RWY_END <- runway B; (2,4) is the goal
 	 * There is no stand, hangar, helipad or one-way tile anywhere past runway A,
-	 * so the goal is the only thing that can terminate the crossing chain. */
+	 * so the goal is the only thing that can terminate the forward horizon. */
 	AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
 	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
 	AddModularTile(st, base + TileDiffXY(2, 3), APT_APRON, 0);
@@ -2050,7 +2158,7 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 		return 0;
 	};
 
-	SECTION("A goal on a runway terminates the crossing chain") {
+	SECTION("A goal on a runway terminates the forward horizon") {
 		SetupAircraftPool();
 		Aircraft *v = setup_aircraft(VehicleID(10), MGT_HELI_TAKEOFF_TILE);
 
@@ -2059,12 +2167,15 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 		 * the goal, and the goal was a runway tile. */
 		REQUIRE(TryReserveTaxiSegment(v, st, transit_runway_segment(v)));
 
-		/* Runway A held atomically. */
-		CheckReservedBy({base + TileDiffXY(0, 2), base + TileDiffXY(1, 2), base + TileDiffXY(2, 2)}, v->index);
+		/* The helicopter only needs the two runway tiles that are on its ground path. */
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(0, 2)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(1, 2)));
+		CheckReservedBy({base + TileDiffXY(2, 2)}, v->index);
 		/* The transit apron between the runways. */
 		CheckReservedBy({base + TileDiffXY(2, 3)}, v->index);
-		/* Runway B held atomically too — the goal's own runway folds into the chain. */
-		CheckReservedBy({base + TileDiffXY(0, 4), base + TileDiffXY(1, 4), goal}, v->index);
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(0, 4)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(1, 4)));
+		CheckReservedBy({goal}, v->index);
 	}
 
 	SECTION("A blocked chain past a runway goal denies entry without half-committing") {
@@ -2090,11 +2201,12 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 
 		REQUIRE(TryReserveTaxiSegment(v, st, transit_runway_segment(v)));
 
-		/* Runway A must not be entered on its own: a takeoff target used to make
-		 * every runway on the path "terminal", letting the aircraft halt on a
-		 * runway it was only crossing. The full chain past it is held instead. */
+		/* Runway A is a tile-level crossing, while runway B is the takeoff operation. */
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(0, 2)));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(1, 2)));
+		CheckReservedBy({base + TileDiffXY(2, 2)}, v->index);
 		CheckReservedBy({base + TileDiffXY(2, 3)}, v->index);
-		CheckReservedBy({goal}, v->index);
+		CheckReservedBy({base + TileDiffXY(0, 4), base + TileDiffXY(1, 4), goal}, v->index);
 	}
 }
 
