@@ -34,9 +34,13 @@ VARIETY="${MODULAR_AI_VARIETY:-2}"
 MAP_X="${MODULAR_AI_MAP_X:-9}"
 MAP_Y="${MODULAR_AI_MAP_Y:-9}"
 
-rm -rf "${AI_DST}"
-mkdir -p "${AI_DST}"
-cp "${AI_SRC}"/*.nut "${AI_DST}/"
+# Symlink rather than copy, so the AI you play interactively from build/openttd is
+# always the one in the repo. A copy silently goes stale the moment you edit a
+# .nut file and then wonder why a fix did nothing.
+if [ ! -L "${AI_DST}" ] || [ "$(readlink "${AI_DST}")" != "${AI_SRC}" ]; then
+	rm -rf "${AI_DST}"
+	ln -s "${AI_SRC}" "${AI_DST}"
+fi
 
 cat > "${CFG}" <<EOF
 [misc]
