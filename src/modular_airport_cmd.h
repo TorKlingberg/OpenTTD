@@ -166,6 +166,19 @@ inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
  * - APT_BUILDING_1 and APT_BUILDING_2 are quarter-turn variants.
  * - Legacy small-runway near/far end sprites swap when axis flips.
  */
+/**
+ * Whether a piece is a hangar in its canonical, un-oriented form.
+ *
+ * Callers hand hangars over as APT_DEPOT_SE / APT_SMALL_DEPOT_SE and express the
+ * facing through the tile's rotation; BuildModularAirportTile_Apply derives the
+ * directional variant from the two. Anything that rotates a tile before it is
+ * placed must leave these alone, or the facing ends up encoded twice.
+ */
+inline bool IsCanonicalHangarPiece(uint8_t piece_type)
+{
+	return piece_type == APT_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SE;
+}
+
 inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 {
 	rotation &= 3;

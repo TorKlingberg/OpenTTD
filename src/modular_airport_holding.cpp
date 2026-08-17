@@ -762,14 +762,19 @@ Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile
 	const ModularAirportTileData *data = ap.GetModularTileData(tile);
 	if (data == nullptr) return DIR_SE; // Fallback
 
+	/* Convention: 0=SE, 1=NE, 2=NW, 3=SW, as built by kLargeByRot in
+	 * BuildModularAirportTile_Apply and rotated by SwapBuildingPieceForRotation.
+	 * NE is 1 and SW is 3; having them the other way round points a hangar's door
+	 * 180 degrees away from where it really is, and an aircraft that leaves a
+	 * hangar into a tile it cannot taxi on never leaves at all. */
 	uint8_t hangar_rot = data->rotation % 4;
 	switch (data->piece_type) {
-		case APT_DEPOT_SW:
-		case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
 		case APT_DEPOT_NW:
 		case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-		case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
 		default: break;
 	}
 

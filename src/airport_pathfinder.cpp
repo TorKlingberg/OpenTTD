@@ -152,16 +152,21 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 			 * Keep in sync with GetModularHangarExitDirection(). */
 			uint8_t hangar_rot = rotation % 4;
 			switch (gfx) {
-				case APT_DEPOT_SW:
-				case APT_SMALL_DEPOT_SW: hangar_rot = 1; break;
+				case APT_DEPOT_NE:
+				case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
 				case APT_DEPOT_NW:
 				case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-				case APT_DEPOT_NE:
-				case APT_SMALL_DEPOT_NE: hangar_rot = 3; break;
+				case APT_DEPOT_SW:
+				case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
 				default: break;
 			}
-			/* Single-direction opening. Use inverse rotation mapping for hangars. */
-			return (1 << ((2 + 4 - hangar_rot) % 4));
+			/* Single-direction opening, in the bit order of coords.md:
+			 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0).
+			 * hangar_rot 0=SE 1=NE 2=NW 3=SW means the door faces (0,+1), (-1,0),
+			 * (0,-1), (+1,0) — that is bits 2, 3, 0, 1, or (hangar_rot + 2) % 4.
+			 * The old form negated the rotation instead, which happens to agree for
+			 * SE and NW and is 180 degrees out for NE and SW. */
+			return (1 << ((hangar_rot + 2) % 4));
 		}
 		case APT_HELIPORT:
 		case APT_HELIPAD_1:

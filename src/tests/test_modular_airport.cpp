@@ -802,7 +802,10 @@ TEST_CASE("ModularAirportPathfinding")
 
 	SECTION("Simple Taxi Path") {
 		// Hangar (10,10) -> Taxiway -> Stand (13,10)
-		AddModularTile(st, base, APT_DEPOT_SE, 1); // rotation 1 allows East (dx=+1)
+		/* Rotation 3 is SW, which is dx=+1 — the direction this chain runs.
+		 * This said rotation 1 when the pathfinder had NE and SW swapped; rotation 1
+		 * is NE, draws _station_display_modular_hangar_ne, and opens towards dx=-1. */
+		AddModularTile(st, base, APT_DEPOT_SE, 3);
 		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(3, 0), APT_STAND, 0);
@@ -2584,6 +2587,78 @@ TEST_CASE("ModularAirportHangarAccessors")
 		st->airport.MarkLayoutDirty();
 		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
 		CHECK(st->airport.GetHangarExitDirection(hangar) == DIR_SE);
+	}
+
+	SECTION("Rotating a hangar piece rotates its exit direction by the same amount") {
+		const TileIndex hangar = base + TileDiffXY(4, 3);
+
+		/* Deliberately not asserting that APT_DEPOT_SW exits DIR_SW: the suffixes are
+		 * graphic-orientation labels and arguing from them is what got this wrong in
+		 * the first place. This asserts only self-consistency, which holds whatever
+		 * the labels mean — turning the piece a quarter-turn must turn the door a
+		 * quarter-turn, in the same direction, every time.
+		 *
+		 * A template placed with rotation != 0 runs its pieces through
+		 * SwapBuildingPieceForRotation, so any disagreement here lands an aircraft in
+		 * a hangar whose door the movement code believes faces somewhere it does not.
+		 * The aircraft then never leaves: no error, and nothing in the airport log. */
+		for (uint8_t start : {APT_DEPOT_SE, APT_SMALL_DEPOT_SE}) {
+			st->airport.modular_tile_data->clear();
+			st->airport.modular_tile_index_dirty = true;
+			st->airport.MarkLayoutDirty();
+			AddModularTile(st, hangar, start, 0);
+			const Direction base_dir = GetModularHangarExitDirection(st, hangar);
+
+			for (uint8_t r = 1; r < 4; r++) {
+				uint8_t piece = start;
+				SwapBuildingPieceForRotation(piece, r);
+
+				st->airport.modular_tile_data->clear();
+				st->airport.modular_tile_index_dirty = true;
+				st->airport.MarkLayoutDirty();
+				AddModularTile(st, hangar, piece, 0);
+
+				/* One quarter-turn is two steps of the eight-way Direction enum. The
+				 * sign follows from rotation 0's own mapping, so it is derived rather
+				 * than assumed. */
+				const Direction want = (Direction)((base_dir + 8 - 2 * r) % 8);
+				CHECK(GetModularHangarExitDirection(st, hangar) == want);
+			}
+		}
+	}
+
+	SECTION("A hangar's taxi opening is the tile its door faces") {
+		/* Two answers about the same door: GetModularHangarExitDirection tells the
+		 * aircraft which way to drive out, and CalculateAutoTaxiDirectionsForGfx
+		 * tells the ground pathfinder which neighbour the hangar connects to. If
+		 * they disagree the pathfinder cannot find a route from the hangar to any
+		 * stand, FindFreeModularTerminal returns nothing, and the aircraft waits in
+		 * the hangar forever — silently, since waiting for a free stand is normal.
+		 *
+		 * Direction bit order is the pathfinder's own (see coords.md):
+		 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0). */
+		const TileIndex hangar = base + TileDiffXY(4, 3);
+		for (uint8_t piece : {APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW,
+				APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_NE, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_SW}) {
+			st->airport.modular_tile_data->clear();
+			st->airport.modular_tile_index_dirty = true;
+			st->airport.MarkLayoutDirty();
+			AddModularTile(st, hangar, piece, 0);
+
+			const Direction exit = GetModularHangarExitDirection(st, hangar);
+			const uint8_t opening = CalculateAutoTaxiDirectionsForGfx(piece, 0);
+
+			int want_bit = -1;
+			switch (exit) {
+				case DIR_SE: want_bit = 2; break; // (0, +1)
+				case DIR_SW: want_bit = 1; break; // (+1, 0)
+				case DIR_NW: want_bit = 0; break; // (0, -1)
+				case DIR_NE: want_bit = 3; break; // (-1, 0)
+				default: break;
+			}
+			REQUIRE(want_bit >= 0);
+			CHECK(opening == (1 << want_bit));
+		}
 	}
 }
 

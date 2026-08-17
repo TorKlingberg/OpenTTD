@@ -57,7 +57,20 @@ static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, ui
 
 	tile.rotation = (old_rotation + r) & 3;
 
-	SwapBuildingPieceForRotation(tile.piece_type, r);
+	/* A hangar's facing is carried by `rotation` on the way in — the script API and
+	 * the builder both send the canonical APT_DEPOT_SE — and
+	 * BuildModularAirportTile_Apply turns that into the directional variant when the
+	 * tile is placed. Rotating the piece type here as well would encode the turn
+	 * twice, and because every reader resolves piece_type ahead of rotation, the
+	 * piece would win and the caller's original facing would be silently discarded:
+	 * a hangar authored facing NW came out facing whatever the template rotation
+	 * alone said. Leave canonical hangars alone and let rotation speak for them.
+	 *
+	 * Pieces that genuinely encode orientation in the type itself — the building
+	 * 1/2 pair, small runway near/far ends — still have to be swapped. */
+	if (!IsCanonicalHangarPiece(tile.piece_type)) {
+		SwapBuildingPieceForRotation(tile.piece_type, r);
+	}
 
 	auto rotate_mask = [r](uint8_t mask) -> uint8_t {
 		uint8_t out = 0;
