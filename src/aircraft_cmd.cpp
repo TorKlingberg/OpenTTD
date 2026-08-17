@@ -2203,6 +2203,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 				for (const ModularHoldingLoop::Gate &gate : loop.gates) {
 					if (!IsHoldingGateActive(aircraft_wp, gate.wp_index, n_wp)) continue;
 					if (!DirectionsWithin45(v->direction, gate.approach_dir)) continue;
+					if (!CanAircraftUseModularRunwayForLanding(st, v, gate.runway_tile)) continue;
 
 					const int64_t dx_axis = static_cast<int64_t>(gate.approach_x) - gate.threshold_x;
 					const int64_t dy_axis = static_cast<int64_t>(gate.approach_y) - gate.threshold_y;

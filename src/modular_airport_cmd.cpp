@@ -375,6 +375,27 @@ static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
 }
 
 /**
+ * Check whether an aircraft may use a particular modular runway for landing.
+ *
+ * Fast jets may use a short runway only as a fallback when the airport has no
+ * large-safe landing runway at all. The decision deliberately ignores transient
+ * reservations: if the suitable runway is busy, the jet must keep holding rather
+ * than divert to a short strip. Small aircraft remain free to use either runway.
+ */
+bool CanAircraftUseModularRunwayForLanding(const Station *st, const Aircraft *v, TileIndex runway_tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(runway_tile);
+	if (data == nullptr || !IsModularRunwayEndPiece(data->piece_type)) return false;
+
+	/* Bare test aircraft can have no engine assigned. Real aircraft always do; keep
+	 * the topology/reservation helpers usable for those engine-agnostic tests. */
+	if (v->engine_type == EngineID::Invalid()) return true;
+	if ((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) == 0) return true;
+
+	return IsRunwaySafeForLarge(st, runway_tile) || !ModularAirportHasSafeRunwayFor(st, true);
+}
+
+/**
  * Lookup over pieces laid out on an abstract integer grid, so the layout-derived
  * properties can be measured for a layout that has not been placed yet (a saved
  * template, or one a script proposes). Shared by every *FromPieces entry point so
@@ -1519,6 +1540,9 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		return false;
 	};
 
+	if (touchdown_on_runway && !CanAircraftUseModularRunwayForLanding(st, v, runway_tile)) {
+		return log_chain_fail("large_runway_required", runway_tile);
+	}
 	if (!IsValidTile(chain_origin)) return log_chain_fail("origin_invalid");
 
 	/* With no concrete parking goal, plan toward any stand but admit the landing
@@ -1576,7 +1600,6 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	int best_score = INT_MAX;
 
 	bool is_heli = v->subtype == AIR_HELICOPTER;
-	const bool is_large_plane = !is_heli && (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0;
 
 	/* A helicopter heading for a hangar must touch down where it can taxi to one.
 	 * Where no helipad on this airport can reach one — a rooftop heliport has no
@@ -1607,12 +1630,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 	int rejected_direction = 0;
 	int rejected_reserved = 0;
 	int rejected_takeoff_queue = 0;
-	TileIndex best_small_runway = INVALID_TILE;
-	int best_small_runway_score = INT_MAX;
-	/* Whether a large-safe runway end serves the required landing direction (ignoring
-	 * transient occupancy). When true, a large aircraft never falls back to a short
-	 * runway — if every good runway is momentarily busy it keeps holding instead. */
-	bool good_runway_exists_for_direction = false;
+	int rejected_large_aircraft = 0;
 
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		bool is_runway = IsModularRunwayPiece(data.piece_type);
@@ -1672,12 +1690,13 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				continue;
 			}
 
-			/* This end is a directionally-valid landing target. Record whether a
-			 * large-safe runway exists for this direction before any occupancy checks,
-			 * so a busy good runway still suppresses the short-runway fallback.
-			 * Only large planes care, so skip the runway walk for everything else. */
-			const bool large_safe = is_large_plane && IsRunwaySafeForLarge(st, data.tile);
-			if (large_safe) good_runway_exists_for_direction = true;
+			/* A fast jet must use a large-safe runway whenever the airport has one.
+			 * This is topological rather than occupancy-dependent: a busy long runway
+			 * makes the jet hold, not fall back to a short strip. */
+			if (!CanAircraftUseModularRunwayForLanding(st, v, data.tile)) {
+				rejected_large_aircraft++;
+				continue;
+			}
 
 			/* Avoid converging all arrivals onto one runway:
 			 * if this runway is currently reserved by another aircraft,
@@ -1693,21 +1712,6 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 				continue;
 			}
 
-			/* Large aircraft (AIR_FAST) require a long, large-family runway.
-			 * A short runway is only used as a last resort when no good runway exists
-			 * for this direction at all (handled after the loop). This holds even with
-			 * the no-jetcrash cheat on. */
-			if (is_large_plane && !large_safe) {
-				/* Track best small-runway fallback for large aircraft. */
-				int fx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-				int fy = TileY(data.tile) * TILE_SIZE + TILE_SIZE / 2;
-				int fscore = abs(fx - v->x_pos) + abs(fy - v->y_pos);
-				if (best_small_runway == INVALID_TILE || fscore < best_small_runway_score) {
-					best_small_runway_score = fscore;
-					best_small_runway = data.tile;
-				}
-				continue;
-			}
 		}
 
 		int cx = TileX(data.tile) * TILE_SIZE + TILE_SIZE / 2;
@@ -1751,19 +1755,11 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 		}
 	}
 
-	/* Large aircraft fall back to a small runway only when NO large-safe runway exists
-	 * for this direction. If a good runway exists but is currently busy, best_tile stays
-	 * INVALID and the aircraft keeps holding until one frees. */
-	if (best_tile == INVALID_TILE && is_large_plane && !good_runway_exists_for_direction &&
-			best_small_runway != INVALID_TILE) {
-		Debug(misc, 2, "[ModAp] V{} landing-small-runway: no large-safe runway for direction, using small runway {}", v->index, best_small_runway.base());
-		best_tile = best_small_runway;
-	}
-
 	if (best_tile == INVALID_TILE && !is_heli && ShouldLogModularRateLimited(v->index, 18, 128)) {
 		Debug(misc, 2,
-			"[ModAp] Vehicle {} no landing runway: runway_tiles={} reject_not_end={} reject_mode={} reject_dir={} reject_reserved={} reject_takeoff_queue={}",
-			v->index, candidates_total, rejected_not_end, rejected_mode, rejected_direction, rejected_reserved, rejected_takeoff_queue);
+			"[ModAp] Vehicle {} no landing runway: runway_tiles={} reject_not_end={} reject_mode={} reject_dir={} reject_large={} reject_reserved={} reject_takeoff_queue={}",
+			v->index, candidates_total, rejected_not_end, rejected_mode, rejected_direction,
+			rejected_large_aircraft, rejected_reserved, rejected_takeoff_queue);
 	}
 
 	return best_tile;

@@ -384,6 +384,7 @@ std::string_view TaxiReserveFailureName(TaxiReserveFailure reason);
 bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out = nullptr);
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr, TileIndex rollout_tile = INVALID_TILE);
 bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_tile, TileIndex ground_goal);
+bool CanAircraftUseModularRunwayForLanding(const Station *st, const Aircraft *v, TileIndex runway_tile);
 TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v);
 bool IsModularHeliLandingTileAvailable(const Station *st, const Aircraft *v, TileIndex tile);
 void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, int *target_x, int *target_y);

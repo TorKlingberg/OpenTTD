@@ -125,6 +125,18 @@ static void AddLargeRunway(Station *st, TileIndex start, uint length, uint8_t ro
 	}
 }
 
+static void AddSmallRunway(Station *st, TileIndex start, uint length, uint8_t rotation = 0, uint8_t flags = RUF_DEFAULT)
+{
+	for (uint i = 0; i < length; i++) {
+		const TileIndex tile = start + ((rotation % 2) == 0 ? TileDiffXY(i, 0) : TileDiffXY(0, i));
+		uint8_t piece_type = APT_RUNWAY_SMALL_MIDDLE;
+		if (i == 0) piece_type = APT_RUNWAY_SMALL_FAR_END;
+		if (i + 1 == length) piece_type = APT_RUNWAY_SMALL_NEAR_END;
+		ModularAirportTileData *data = AddModularTileWithData(st, tile, piece_type, rotation);
+		data->runway_flags = flags;
+	}
+}
+
 static void CheckReservedBy(const std::vector<TileIndex> &tiles, VehicleID vid)
 {
 	for (TileIndex tile : tiles) {
@@ -911,6 +923,50 @@ TEST_CASE("ModularAirportHoldingLoop")
 		// Tie goes to lower index (2).
 		CHECK(GetNearestModularHoldingWaypoint(v, loop) == 2);
 	}
+}
+
+TEST_CASE("ModularAirportLargeAircraftLandingRunwayChoice")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 12, 8);
+	REQUIRE(st != nullptr);
+
+	/* Match the reported Pindborough layout: a short runway operating toward the
+	 * high end and a long runway operating in the opposite direction. The holding
+	 * loop reaches both gates, but a jet must wait for the long-runway gate. */
+	const TileIndex short_low = base + TileDiffXY(1, 1);
+	const TileIndex long_low = base + TileDiffXY(1, 3);
+	const TileIndex long_high = long_low + TileDiffXY(5, 0);
+	AddSmallRunway(st, short_low, 4, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+	AddLargeRunway(st, long_low, 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID jet_engine = CreateAircraftEngine(EngineID(0), AIR_FAST);
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(1), 0);
+	SetupAircraftPool();
+	Aircraft *jet = CreateAircraft(VehicleID(0));
+	jet->engine_type = jet_engine;
+	jet->x_pos = TileX(short_low) * TILE_SIZE;
+	jet->y_pos = TileY(short_low) * TILE_SIZE;
+
+	CHECK_FALSE(CanAircraftUseModularRunwayForLanding(st, jet, short_low));
+	CHECK(CanAircraftUseModularRunwayForLanding(st, jet, long_high));
+	CHECK(FindModularLandingTarget(st, jet) == long_high);
+
+	/* Small aircraft may continue using the short strip. */
+	Aircraft *prop = CreateAircraft(VehicleID(1));
+	prop->engine_type = prop_engine;
+	CHECK(CanAircraftUseModularRunwayForLanding(st, prop, short_low));
+
+	/* Preserve the original fallback: when no large-safe runway accepts landings,
+	 * a jet may use the short strip and receives the elevated overrun risk. */
+	for (uint i = 0; i < 6; ++i) {
+		st->airport.GetModularTileData(long_low + TileDiffXY(i, 0))->runway_flags = RUF_TAKEOFF | RUF_DIR_LOW;
+	}
+	CHECK(CanAircraftUseModularRunwayForLanding(st, jet, short_low));
+	CHECK(FindModularLandingTarget(st, jet) == short_low);
 }
 
 TEST_CASE("ModularAirportPathfinding")

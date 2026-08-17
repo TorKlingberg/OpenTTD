@@ -1,1 +1,5 @@
-min_movements=6500
+# Fast jets now hold for a large-safe landing runway instead of using an otherwise
+# available short strip. T5j2 deliberately contains mixed-runway airports under
+# contention, so removing that unsafe extra jet capacity lowers its deterministic
+# five-year total from the previous baseline while preserving forward progress.
+min_movements=6200
