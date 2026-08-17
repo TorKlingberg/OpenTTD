@@ -10877,7 +10877,6 @@ ERROR: IsEnd() is invalid as Begin() is never called
   Current year:                             1954
   MP_APRON: available true, min year 0
   MP_STAND: available true, min year 0
-  MP_STAND_TERMINAL: available true, min year 0
   MP_RUNWAY: available false, min year 1955
   MP_RUNWAY_END: available false, min year 1955
   MP_RUNWAY_SMALL_MIDDLE: available true, min year 0
@@ -10971,12 +10970,12 @@ ERROR: IsEnd() is invalid as Begin() is never called
   IsAirportInformationAvailable(AT_MODULAR):false
   IsValidAirportType(AT_MODULAR):           false
   piece readback:
-    runway far end: piece 8, rotation 0, runway flags 7
-    runway middle: piece 6, rotation 0, runway flags 7
-    runway near end: piece 7, rotation 0, runway flags 7
+    runway far end: piece 6, rotation 0, runway flags 7
+    runway middle: piece 4, rotation 0, runway flags 7
+    runway near end: piece 5, rotation 0, runway flags 7
     apron: piece 0, rotation 0, runway flags -1
     stand: piece 1, rotation 0, runway flags -1
-    small hangar: piece 10, rotation 2, runway flags -1
+    small hangar: piece 8, rotation 2, runway flags -1
   GetNumHangars():                          1
   GetHangarOfAirport() is the hangar tile:  true
   IsHangarTile(hangar):                     true
@@ -11021,12 +11020,12 @@ ERROR: IsEnd() is invalid as Begin() is never called
   Place(small airport):                     true
   IsModularAirportTile():                   true
   piece readback:
-    (0,0): piece 8, rotation 0
-    (1,0): piece 6, rotation 0
-    (2,0): piece 7, rotation 0
+    (0,0): piece 6, rotation 0
+    (1,0): piece 4, rotation 0
+    (2,0): piece 5, rotation 0
     (0,1): piece 0, rotation 0
     (1,1): piece 1, rotation 0
-    (2,1): piece 10, rotation 0
+    (2,1): piece 8, rotation 0
   GetNumHangars():                          1
   GetStationCoverageRadius():               4
   GetModularAirportSafety():                15
@@ -11044,7 +11043,7 @@ Your script made an error: excessive CPU usage in valuator function
 
 CALLSTACK
 *FUNCTION [Valuate()] Valuate line [5]
-*FUNCTION [Start()] regression/main.nut line [2780]
+*FUNCTION [Start()] regression/main.nut line [2779]
 
 LOCALS
 [args] ARRAY

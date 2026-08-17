@@ -62,7 +62,6 @@ function DefaultParams()
 		large_safe    = true,
 		hangar_at_end = true,  ///< hangar at the low-x end of the service row
 		terminal      = AIAirport.MP_TERMINAL,
-		stand_style   = 0,   ///< 0 plain, 1 mix in MP_STAND_TERMINAL, 2 mix in MP_STAND_PIER
 		helipad_style = 0,   ///< 0 MP_HELIPAD, 1 plain "H", 2 rooftop heliport
 		pier_depth    = 3,
 		pier_double   = true,  ///< stands on both sides of the pier spine
@@ -71,27 +70,6 @@ function DefaultParams()
 		apron_rows    = 2,
 		mirror        = false,
 	};
-}
-
-/**
- * Pick a stand piece for the given index, honouring the style.
- *
- * MP_STAND_TERMINAL and MP_STAND_PIER are worth knowing about: they are stands
- * that *also* satisfy MS_MISSING_BIG_TERMINAL, so an airport can be large-safe
- * without spending a whole tile on a non-taxiable terminal building. That is
- * the difference between fitting and not fitting on a cramped site.
- */
-function StandPiece(params, index)
-{
-	if (params.stand_style == 1 && index == 0) return AIAirport.MP_STAND_TERMINAL;
-	if (params.stand_style == 2 && index == 0) return AIAirport.MP_STAND_PIER;
-	return AIAirport.MP_STAND;
-}
-
-/** True when the stand style already provides a large terminal. */
-function StandsProvideTerminal(params)
-{
-	return params.stand_style == 1 || params.stand_style == 2;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -160,13 +138,13 @@ function GenerateLinear(params)
 
 	local placed = 0;
 	while (placed < params.stands && cursor >= 0 && cursor < len) {
-		g.Set(cursor, 2, StandPiece(params, placed), 0, 0, placed >= 2);
+		g.Set(cursor, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		cursor += step;
 		placed++;
 	}
 	if (params.large_safe) {
 		if (cursor >= 0 && cursor < len) { g.Set(cursor, 2, AIAirport.MP_TOWER); cursor += step; }
-		if (!StandsProvideTerminal(params) && cursor >= 0 && cursor < len) {
+		if (cursor >= 0 && cursor < len) {
 			g.Set(cursor, 2, params.terminal); cursor += step;
 		}
 	}
@@ -202,11 +180,11 @@ function GeneratePier(params)
 		local y = 2 + d;
 		g.Set(sx, y, AIAirport.MP_APRON, 0, 0, d >= 1);
 		if (placed < params.stands) {
-			g.Set(sx - 1, y, StandPiece(params, placed), 0, 0, placed >= 2);
+			g.Set(sx - 1, y, AIAirport.MP_STAND, 0, 0, placed >= 2);
 			placed++;
 		}
 		if (params.pier_double && placed < params.stands) {
-			g.Set(sx + 1, y, StandPiece(params, placed), 0, 0, placed >= 2);
+			g.Set(sx + 1, y, AIAirport.MP_STAND, 0, 0, placed >= 2);
 			placed++;
 		}
 	}
@@ -219,7 +197,7 @@ function GeneratePier(params)
 		/* Buildings go on the far side of the runway row, well clear of the
 		 * spine, so they can never block it. */
 		g.Set(len - 1, 2, AIAirport.MP_TOWER);
-		if (!StandsProvideTerminal(params)) g.Set(len - 2, 2, params.terminal);
+		g.Set(len - 2, 2, params.terminal);
 	}
 	/* Helipads hang off the runway-parallel taxiway, between the pier spine and
 	 * the buildings, where they cannot collide with either. */
@@ -258,12 +236,12 @@ function GenerateDual(params)
 	g.Set(cursor++, 2, AIAirport.MP_HANGAR, FACE_NW);
 	local placed = 0;
 	while (placed < params.stands && cursor < len) {
-		g.Set(cursor++, 2, StandPiece(params, placed), 0, 0, placed >= 2);
+		g.Set(cursor++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
 	if (params.large_safe) {
 		if (cursor < len) g.Set(cursor++, 2, AIAirport.MP_TOWER);
-		if (!StandsProvideTerminal(params) && cursor < len) g.Set(cursor++, 2, params.terminal);
+		if (cursor < len) g.Set(cursor++, 2, params.terminal);
 	}
 	/* Anything left in the middle row stays apron so the two taxiways connect
 	 * around the buildings rather than dead-ending at them. */
@@ -300,7 +278,7 @@ function GenerateApron(params)
 		local y = 2 + r;
 		for (local x = 0; x < len; x++) {
 			if (placed < params.stands) {
-				g.Set(x, y, StandPiece(params, placed), 0, 0, placed >= 2);
+				g.Set(x, y, AIAirport.MP_STAND, 0, 0, placed >= 2);
 				placed++;
 			} else {
 				g.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
@@ -312,7 +290,7 @@ function GenerateApron(params)
 	g.Set(0, hy, AIAirport.MP_HANGAR, FACE_NW);
 	if (params.large_safe) {
 		g.Set(len - 1, hy, AIAirport.MP_TOWER, 0, 0, false);
-		if (!StandsProvideTerminal(params)) g.Set(len - 2, hy, params.terminal, 0, 0, false);
+		g.Set(len - 2, hy, params.terminal, 0, 0, false);
 	}
 	if (params.helipads > 0) AddHelipadsAlongApron(g, params, hy, 1, len - 3);
 	return g.Normalise();
@@ -451,12 +429,11 @@ function GenerateLayout(family, params)
  * Add a control tower when it is the only thing between this layout and being
  * safe for fast jets.
  *
- * This happens by accident and often: a stand_style that uses MP_STAND_TERMINAL
- * satisfies the big-terminal requirement for free, so a layout generated with
- * large_safe off can end up holding a six-tile runway, a big terminal and
- * nothing else missing. One extra tile then converts an airport that gives jets
- * an elevated overrun crash roll into one that does not — much the cheapest
- * safety the generator can buy.
+ * This happens by accident and often: fitting can trim a layout down to
+ * something that still holds a six-tile runway and a big terminal, with nothing
+ * else missing. One extra tile then converts an airport that gives jets an
+ * elevated overrun crash roll into one that does not — much the cheapest safety
+ * the generator can buy.
  */
 function EnsureTowerIfNearlySafe(grid)
 {
@@ -497,7 +474,6 @@ function RandomParams(family, scale)
 	p.cosmetics = 1 + AIBase.RandRange(5);
 	p.hangar_at_end = AIBase.RandRange(2) == 0;
 	p.mirror = AIBase.RandRange(2) == 0;
-	p.stand_style = AIBase.RandRange(3);
 	p.helipad_style = AIBase.RandRange(3);
 	p.pier_double = AIBase.RandRange(4) != 0;
 
@@ -507,7 +483,6 @@ function RandomParams(family, scale)
 			p.runway_length = 4 + AIBase.RandRange(3);
 			p.stands = 2 + (scale > 1 ? AIBase.RandRange(2) : 0);
 			p.large_safe = false;
-			p.stand_style = 0;
 			break;
 
 		case Family.LINEAR:

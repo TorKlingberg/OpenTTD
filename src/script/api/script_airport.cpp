@@ -192,8 +192,6 @@
 static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[] = {
 	{ScriptAirport::MP_APRON,                 APT_APRON},
 	{ScriptAirport::MP_STAND,                 APT_STAND},
-	{ScriptAirport::MP_STAND_TERMINAL,        APT_STAND_1},
-	{ScriptAirport::MP_STAND_PIER,            APT_STAND_PIER_NE},
 	{ScriptAirport::MP_RUNWAY,                APT_RUNWAY_5},
 	{ScriptAirport::MP_RUNWAY_END,            APT_RUNWAY_END},
 	{ScriptAirport::MP_RUNWAY_SMALL_MIDDLE,   APT_RUNWAY_SMALL_MIDDLE},
@@ -220,10 +218,14 @@ static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[
 
 /**
  * Get the graphic a named modular piece places.
+ *
+ * Deliberately not static: the modular airport tests hold this mapping against
+ * the builder's own piece tables, which is what keeps a script's vocabulary and
+ * a player's identical.
  * @param piece The piece to look up.
  * @return The graphic, or UINT8_MAX when the piece is not a valid ModularPiece.
  */
-static uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
+uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
 {
 	for (const auto &[named, gfx] : _modular_piece_gfx) {
 		if (named == piece) return gfx;
@@ -236,12 +238,17 @@ static uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
  *
  * Beyond the exact graphics this API places, a modular airport can hold decorative
  * variants (fenced aprons, the other hangar rotations) and the graphics a converted
- * stock airport brings with it. Those are reported as the family they belong to, so
- * a script inspecting an airport it did not build still gets a useful answer.
+ * stock airport brings with it — including stands that are not placeable, such as
+ * the jetway-bearing pair from the stock city airport. Those are reported as the
+ * family they belong to, so a script inspecting an airport it did not build still
+ * gets a useful answer, and so a script can never learn a piece name it is not
+ * allowed to build.
+ *
+ * Deliberately not static; see GetGfxForModularPiece above.
  * @param gfx The graphic to look up.
  * @return The piece, or MP_INVALID when nothing sensible names it.
  */
-static ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx)
+ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx)
 {
 	for (const auto &[named, named_gfx] : _modular_piece_gfx) {
 		if (named_gfx == gfx) return named;
@@ -256,6 +263,7 @@ static ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx)
 		return ::IsLegacySmallHangarPiece(gfx) ? ScriptAirport::MP_SMALL_HANGAR : ScriptAirport::MP_HANGAR;
 	}
 	if (::IsModularHelipadPiece(gfx)) return ScriptAirport::MP_HELIPAD;
+	if (::IsModularStandPiece(gfx)) return ScriptAirport::MP_STAND;
 	if (::IsApronOrTaxiwayPiece(gfx)) return ScriptAirport::MP_APRON;
 
 	return ScriptAirport::MP_INVALID;

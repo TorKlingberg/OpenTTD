@@ -228,6 +228,19 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 	}
 }
 
+/**
+ * Is this an aircraft stand?
+ *
+ * Only APT_STAND is placeable. The other two arrive with a converted stock
+ * airport (or an old template) and behave as ordinary stands; in the stock city
+ * airport they are the stands flanking the round terminal, which is why their
+ * graphics carry a jetway.
+ */
+inline bool IsModularStandPiece(uint8_t piece_type)
+{
+	return piece_type == APT_STAND || piece_type == APT_STAND_1 || piece_type == APT_STAND_PIER_NE;
+}
+
 inline bool IsModularBuildingPiece(uint8_t piece_type)
 {
 	switch (piece_type) {

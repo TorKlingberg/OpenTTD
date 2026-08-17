@@ -230,6 +230,59 @@ static uint8_t GetModularAirportPieceGfx(uint8_t piece)
 	}
 }
 
+/**
+ * Graphics the builder places that no toolbar button selects directly.
+ *
+ * The small runway tool drags a strip of APT_RUNWAY_SMALL_MIDDLE and caps it
+ * with these two, so they are part of the builder's vocabulary even though they
+ * have no button of their own.
+ */
+static constexpr uint8_t _modular_airport_implicit_gfx[] = {
+	APT_RUNWAY_SMALL_NEAR_END,
+	APT_RUNWAY_SMALL_FAR_END,
+};
+
+/**
+ * Every airport graphic the modular builder can place on the map.
+ *
+ * The tables above are the authority on what a modular airport is built from:
+ * the toolbar, the cosmetic picker and the helipad picker are between them its
+ * whole vocabulary. AirportTiles holds a good deal more, but the rest belongs to
+ * stock airports and reaches a modular airport only through conversion — those
+ * graphics must not become buildable by any other route, the script API
+ * included. See ModularAirportBuilderVocabulary in the tests, which holds that
+ * line.
+ *
+ * Multi-tile cosmetic pieces are left out: the builder places them as a compound
+ * and there is no single graphic that means "this piece".
+ */
+std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
+{
+	std::vector<uint8_t> out;
+
+	for (uint8_t i = 0; i < lengthof(_modular_airport_pieces); i++) {
+		/* The two picker buttons resolve to whatever the picker currently has
+		 * selected; their graphics come from the picker tables below. The last
+		 * entry is the eraser and places nothing. */
+		if (i == 3 || i == 6 || i == MODULAR_AIRPORT_PIECE_ERASE_INDEX) continue;
+		out.push_back(GetModularAirportPieceGfx(i));
+	}
+	for (const CosmeticPiece &p : _cosmetic_pieces) {
+		if (p.is_multi_tile) continue;
+		out.push_back(p.apt_gfx);
+	}
+	for (const HelipadPiece &p : _helipad_pieces) {
+		out.push_back(p.apt_gfx);
+	}
+	for (uint8_t gfx : _modular_airport_implicit_gfx) {
+		out.push_back(gfx);
+	}
+
+	std::sort(out.begin(), out.end());
+	out.erase(std::unique(out.begin(), out.end()), out.end());
+	return out;
+}
+
 static void ShowModularHangarPicker(Window *parent, bool is_large);
 static void ShowModularCosmeticPicker(Window *parent);
 static void ShowModularHelipadPicker(Window *parent);

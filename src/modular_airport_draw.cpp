@@ -212,7 +212,7 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 	 * jetway baked in, so that what is drawn always describes what is next to the
 	 * tile. Placing one of those pieces is a gameplay choice (they count as a large
 	 * terminal) and must not by itself conjure a jetway to nowhere. */
-	if (md->piece_type == APT_STAND || md->piece_type == APT_STAND_1 || md->piece_type == APT_STAND_PIER_NE) {
+	if (IsModularStandPiece(md->piece_type)) {
 		auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
 			TileIndex nb = TileAddXY(ti->tile, dx, dy);
 			if (!IsValidTile(nb)) return 0xFF;

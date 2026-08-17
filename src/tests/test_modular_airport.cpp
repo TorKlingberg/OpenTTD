@@ -13,6 +13,8 @@
 #include "../modular_airport_cmd.h"
 #include "../modular_airport_build.h"
 #include "../modular_airport_draw.h"
+#include "../modular_airport_gui.h"
+#include "../script/api/script_airport.hpp"
 #include "../sprite.h"
 #include "../table/sprites.h"
 #include "../airport_template.h"
@@ -1103,6 +1105,53 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(IsLegacySmallHangarPiece(APT_SMALL_DEPOT_NE));
 		CHECK_FALSE(IsLegacySmallHangarPiece(APT_DEPOT_SE));
 		CHECK_FALSE(IsLegacySmallHangarPiece(APT_STAND));
+	}
+}
+
+TEST_CASE("ModularAirportBuilderVocabulary")
+{
+	/* Which airport graphics a modular airport may be built from is a design
+	 * decision, made once, in the builder's own piece tables. Every other way of
+	 * placing a modular tile has to answer to it.
+	 *
+	 * The one that matters is the script API: an AI or game script that could
+	 * reach graphics the toolbar does not offer would build airports no player
+	 * could, out of tiles cut from stock layouts — the stock city airport's stands
+	 * carry a jetway, several tiles carry a baked-in fence, and some are one half
+	 * of a two-tile building. So the two sets are held equal here rather than
+	 * merely overlapping: a piece added to one and not the other fails this test,
+	 * in whichever direction it was forgotten. */
+	/* Both directions of the script API's piece mapping, from script_airport.cpp. */
+	extern uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece);
+	extern ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx);
+
+	SECTION("The script API places exactly the builder's pieces") {
+		const std::vector<uint8_t> from_builder = GetModularAirportBuilderPieceGfx();
+
+		std::vector<uint8_t> from_script;
+		for (int i = 0; i <= ScriptAirport::MP_EMPTY; i++) {
+			CAPTURE(i);
+			const uint8_t gfx = GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(i));
+			REQUIRE(gfx != UINT8_MAX);
+			from_script.push_back(gfx);
+		}
+		std::sort(from_script.begin(), from_script.end());
+		from_script.erase(std::unique(from_script.begin(), from_script.end()), from_script.end());
+
+		CHECK(from_script == from_builder);
+
+		/* The loop above trusts MP_EMPTY to be the last piece. Say so, or a piece
+		 * appended after it would go unchecked. */
+		CHECK(GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(ScriptAirport::MP_EMPTY + 1)) == UINT8_MAX);
+	}
+
+	SECTION("The stock city airport's jetway stands are not placeable") {
+		/* The case that put this test here. They stay readable — a converted stock
+		 * airport is full of them — but as plain stands, under a name a script
+		 * cannot pass back to the build command. */
+		CHECK(GetModularPieceForGfx(APT_STAND_1) == ScriptAirport::MP_STAND);
+		CHECK(GetModularPieceForGfx(APT_STAND_PIER_NE) == ScriptAirport::MP_STAND);
+		CHECK(GetGfxForModularPiece(ScriptAirport::MP_STAND) == APT_STAND);
 	}
 }
 

@@ -58,8 +58,6 @@ function IsThroughTaxiable(piece)
 	switch (piece) {
 		case AIAirport.MP_APRON:
 		case AIAirport.MP_STAND:
-		case AIAirport.MP_STAND_TERMINAL:
-		case AIAirport.MP_STAND_PIER:
 		case AIAirport.MP_RUNWAY:
 		case AIAirport.MP_RUNWAY_END:
 		case AIAirport.MP_RUNWAY_SMALL_MIDDLE:
@@ -73,9 +71,7 @@ function IsThroughTaxiable(piece)
 /** Pieces aircraft stop at to load and unload. */
 function IsStandPiece(piece)
 {
-	return piece == AIAirport.MP_STAND
-	    || piece == AIAirport.MP_STAND_TERMINAL
-	    || piece == AIAirport.MP_STAND_PIER;
+	return piece == AIAirport.MP_STAND;
 }
 
 function IsHangarPiece(piece)
@@ -116,8 +112,6 @@ function IsBigTerminalPiece(piece)
 		case AIAirport.MP_TERMINAL_ALT:
 		case AIAirport.MP_TERMINAL_OTHER:
 		case AIAirport.MP_TERMINAL_ROUND:
-		case AIAirport.MP_STAND_TERMINAL:
-		case AIAirport.MP_STAND_PIER:
 			return true;
 	}
 	return false;
@@ -145,8 +139,6 @@ function PieceChar(piece)
 	switch (piece) {
 		case AIAirport.MP_APRON:                 return "+";
 		case AIAirport.MP_STAND:                 return "S";
-		case AIAirport.MP_STAND_TERMINAL:        return "T";
-		case AIAirport.MP_STAND_PIER:            return "P";
 		case AIAirport.MP_RUNWAY:                return "=";
 		case AIAirport.MP_RUNWAY_END:            return "E";
 		case AIAirport.MP_RUNWAY_SMALL_MIDDLE:   return "-";

@@ -226,17 +226,20 @@ public:
 	 * The pieces a modular airport can be built from.
 	 *
 	 * A modular airport has no type-level data: its size, capabilities, noise,
-	 * catchment and maintenance all follow from the pieces it is made of. This is
-	 * the curated set the interactive builder offers; the underlying game has more
-	 * tile graphics, but they are either decorative variants chosen automatically
-	 * or multi-tile compounds that cannot be placed one tile at a time.
+	 * catchment and maintenance all follow from the pieces it is made of.
+	 *
+	 * This is exactly what the interactive builder offers, and deliberately not
+	 * one graphic more. The game holds many further airport tiles, but they belong
+	 * to stock airports: they reach a modular airport only when one is converted,
+	 * and several of them draw things — a jetway, a fence, half of a compound
+	 * building — that only make sense in the stock layout they were cut from. A
+	 * script builds from the same vocabulary a player has, so the two cannot
+	 * produce airports the other could not.
 	 */
 	enum ModularPiece {
 		/* Movement surfaces. */
 		MP_APRON,                  ///< Plain apron. Aircraft taxi over it and it is not a stopping place.
 		MP_STAND,                  ///< Aircraft stand (a terminal). Aircraft load and unload here.
-		MP_STAND_TERMINAL,         ///< Stand that also counts as a large terminal building.
-		MP_STAND_PIER,             ///< Stand at a pier, also counts as a large terminal building.
 		MP_RUNWAY,                 ///< Middle piece of a large runway.
 		MP_RUNWAY_END,             ///< End piece of a large runway. Landings target these.
 		MP_RUNWAY_SMALL_MIDDLE,    ///< Middle piece of a small (grass) runway.

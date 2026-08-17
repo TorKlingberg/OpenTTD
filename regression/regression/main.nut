@@ -2409,7 +2409,6 @@ function Regression::ModularAirportPieces()
 	local pieces = [
 		["MP_APRON",                 AIAirport.MP_APRON],
 		["MP_STAND",                 AIAirport.MP_STAND],
-		["MP_STAND_TERMINAL",        AIAirport.MP_STAND_TERMINAL],
 		["MP_RUNWAY",                AIAirport.MP_RUNWAY],
 		["MP_RUNWAY_END",            AIAirport.MP_RUNWAY_END],
 		["MP_RUNWAY_SMALL_MIDDLE",   AIAirport.MP_RUNWAY_SMALL_MIDDLE],
