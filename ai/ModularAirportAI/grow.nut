@@ -100,11 +100,111 @@ function GrowAirport(station, tile, funds, pax_cargo)
 		return null;
 	}
 
-	/* Sound, or as sound as it can be made: add capacity where traffic asks. */
+	/* Sound, or as sound as it can be made: add capacity where traffic asks.
+	 *
+	 * The threshold is deliberately low. An earlier version wanted 150 + 60 per
+	 * stand, which no airport in a sixteen-year run ever reached — the busiest
+	 * peaked around 166 against a bar of 330 — so nothing ever grew and the AI
+	 * sat on millions. A queue of a hundred-odd passengers at a three-stand
+	 * airport is already worth another stand. */
 	local waiting = AIStation.GetCargoWaiting(station, pax_cargo);
 	local stands = CountAirportPieces(station, IsStandPiece);
-	if (waiting > 150 + stands * 60 && funds > 80000) {
+	if (waiting > 60 + stands * 25 && funds > 80000) {
 		if (AddPiece(station, AIAirport.MP_STAND, true)) return "added a stand (" + waiting + " waiting)";
+	}
+
+	/* A second runway is the step that actually raises throughput once the
+	 * stands are keeping up: a runway is reserved atomically along its whole
+	 * length, so one runway serialises every landing and departure however many
+	 * stands feed it. */
+	if (waiting > 120 + stands * 30 && funds > 400000 && CountRunways(station) < 2) {
+		local added = TryAddRunway(station);
+		if (added != null) return added + " (" + waiting + " waiting)";
+	}
+	return null;
+}
+
+/** Large runways at this airport, counted from their end pieces. */
+function CountRunways(station)
+{
+	local ends = 0;
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		if (AIAirport.GetModularPiece(t) == AIAirport.MP_RUNWAY_END) ends++;
+	}
+	return ends / 2;
+}
+
+/**
+ * Lay a second runway alongside an airport that has outgrown its first.
+ *
+ * Looks for a straight run of clear tiles at the airport's own height with at
+ * least one tile touching something aircraft can already taxi on, so the new
+ * runway joins the existing network by construction rather than by hope.
+ *
+ * The new runway takes both landing and takeoff rather than splitting the two.
+ * Splitting is better for throughput, but it means a window in which the old
+ * runway is landing-only; if anything then goes wrong before the new one is
+ * finished, the airport cannot launch an aircraft at all.
+ */
+function TryAddRunway(station)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	local ours = {}, taxiable = {};
+	local minx = 99999, miny = 99999, maxx = -1, maxy = -1, base = -1;
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
+		if (base < 0) base = AITile.GetMaxHeight(t);
+		if (x < minx) minx = x;
+		if (y < miny) miny = y;
+		if (x > maxx) maxx = x;
+		if (y > maxy) maxy = y;
+		ours[t] <- true;
+		if (IsThroughTaxiable(AIAirport.GetModularPiece(t))) taxiable[t] <- true;
+	}
+	if (base < 0) return null;
+
+	local length = 6;
+	foreach (axis in [[1, 0], [0, 1]]) {
+		for (local y = miny - 3; y <= maxy + 3; y++) {
+			for (local x = minx - 3; x <= maxx + 3; x++) {
+				local run = [], touches = false, ok = true;
+				for (local i = 0; i < length && ok; i++) {
+					local tx = x + axis[0] * i, ty = y + axis[1] * i;
+					if (tx < 1 || ty < 1 || tx >= AIMap.GetMapSizeX() - 1 || ty >= AIMap.GetMapSizeY() - 1) { ok = false; break; }
+					local t = AIMap.GetTileIndex(tx, ty);
+					if ((t in ours) || AITile.IsStationTile(t) || !AITile.IsBuildable(t)
+					 || AITile.GetMaxHeight(t) != base) { ok = false; break; }
+					run.append(t);
+					foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+						local n = AIMap.GetTileIndex(tx + d[0], ty + d[1]);
+						if (n in taxiable) touches = true;
+					}
+				}
+				if (!ok || !touches) continue;
+
+				/* Runway piece rotation encodes the axis: 0 along X, 1 along Y. */
+				local rot = (axis[0] == 1) ? 0 : 1;
+				local built = 0;
+				for (local i = 0; i < run.len(); i++) {
+					local piece = (i == 0 || i == run.len() - 1)
+						? AIAirport.MP_RUNWAY_END : AIAirport.MP_RUNWAY;
+					if (!AIAirport.BuildModularAirportTile(run[i], piece, rot, station)) break;
+					built++;
+				}
+				if (built < run.len()) {
+					/* Partial runways are only taxiable tiles, so nothing is broken,
+					 * but say so — it means the ground moved under the preflight. */
+					AILog.Warning("second runway stopped after " + built + " of " + run.len() + " tiles");
+					return (built > 0) ? "added a partial second runway" : null;
+				}
+				AIAirport.SetModularRunwayFlags(run[0],
+					AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
+				return "added a second runway";
+			}
+		}
 	}
 	return null;
 }

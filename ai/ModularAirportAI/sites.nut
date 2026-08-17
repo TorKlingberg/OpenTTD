@@ -18,9 +18,17 @@
  */
 function AllowedRotations(grid)
 {
+	local small_runway = false;
 	foreach (c in grid.Ordered()) {
-		if (IsSmallRunwayPiece(c.piece)) return [0, 2];
+		/* A small hangar has only the SE graphic. Rotating the layout would turn
+		 * its door to a direction it cannot be drawn facing, so a layout using one
+		 * stays put. Mirroring is still fine — that swaps NE and SW and leaves SE
+		 * alone — so these layouts are not all identical. */
+		if (c.piece == AIAirport.MP_SMALL_HANGAR) return [0];
+		if (IsSmallRunwayPiece(c.piece)) small_runway = true;
 	}
+	/* Legacy small runway pieces are axis-locked: half-turns only. */
+	if (small_runway) return [0, 2];
 	return [0, 1, 2, 3];
 }
 
@@ -178,17 +186,26 @@ function PickFamily(families, scale)
  * airport its ground can carry — and keeps strips and heliports for the cramped
  * places where they are genuinely the right answer.
  */
-function FamilyTiers()
+function FamilyTiers(scale)
 {
 	local available = AvailableFamilies();
-	local modern = [], strip = [], heli = [];
+	local dual = [], modern = [], strip = [], heli = [];
 	foreach (f in available) {
 		if (f == Family.HELIPORT) heli.append(f);
 		else if (f == Family.STRIP) strip.append(f);
+		else if (f == Family.DUAL) dual.append(f);
 		else modern.append(f);
 	}
 	local tiers = [];
+	/* Two runways get their own tier above the rest, and only for a town big
+	 * enough to fill them. Left in with the others it never won: it is the
+	 * largest layout, so it is the one the ground most often refuses, and a
+	 * single-runway candidate from the same batch always fitted instead. That is
+	 * the same "terrain selects for the smallest" effect that buried real
+	 * airports under grass strips, one level up. */
+	if (scale >= 2 && dual.len() > 0) tiers.append(dual);
 	if (modern.len() > 0) tiers.append(modern);
+	if (scale < 2 && dual.len() > 0) tiers.append(dual);
 	if (strip.len() > 0) tiers.append(strip);
 	if (heli.len() > 0) tiers.append(heli);
 	return tiers;
@@ -242,7 +259,7 @@ function SiteSearchStats()
  */
 function FindSiteNearTown(town, scale, want_large_safe, variety, budget, blacklist)
 {
-	local tiers = FamilyTiers();
+	local tiers = FamilyTiers(scale);
 	if (want_large_safe) {
 		foreach (tier in tiers) {
 			local site = SearchSites(town, scale, true, variety, budget, blacklist, tier);

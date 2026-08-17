@@ -67,7 +67,6 @@ function DefaultParams()
 		pier_depth    = 3,
 		pier_double   = true,  ///< stands on both sides of the pier spine
 		cosmetics     = 2,   ///< how many decorative tiles to try to add
-		fence         = false, ///< fence the outer edge (visual only)
 		cosmetic_kind = AIAirport.MP_RADAR_GRASS,
 		apron_rows    = 2,
 		mirror        = false,
@@ -109,22 +108,25 @@ function GenerateStrip(params)
 	if (len < 3) len = 3;
 	local g = Grid(len, 3);
 
-	g.Set(0, 0, AIAirport.MP_RUNWAY_SMALL_FAR_END, 0,
+	g.Set(0, 2, AIAirport.MP_RUNWAY_SMALL_FAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
 	for (local x = 1; x < len - 1; x++) {
-		g.Set(x, 0, AIAirport.MP_RUNWAY_SMALL_MIDDLE, 0,
+		g.Set(x, 2, AIAirport.MP_RUNWAY_SMALL_MIDDLE, 0,
 		      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
 	}
-	g.Set(len - 1, 0, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0,
+	g.Set(len - 1, 2, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
 
 	for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
 
-	/* Hangar first, then stands along the rest of the row. */
-	g.Set(0, 2, AIAirport.MP_SMALL_HANGAR, FACE_NW);
+	/* The service row goes *above* the apron here, not below as in the other
+	 * families, because a small hangar has only one graphic — the SE one — and
+	 * must therefore face SE, onto the apron at (x, y+1). Facing it any other way
+	 * would work mechanically and look wrong on screen. */
+	g.Set(0, 0, AIAirport.MP_SMALL_HANGAR, FACE_SE);
 	local placed = 0;
 	for (local x = 1; x < len && placed < params.stands; x++) {
-		g.Set(x, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
+		g.Set(x, 0, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
 	return g.Normalise();
@@ -426,30 +428,6 @@ function DecorateGrid(grid, params)
 	}
 }
 
-/**
- * Fence the outside edge of the airport.
- *
- * Purely visual: these are edges between an airport tile and the world, which
- * no aircraft ever crosses, so blocking them costs nothing. Edges *inside* the
- * airport are left alone — the mask genuinely blocks movement, and fencing a
- * taxi route would strand aircraft.
- */
-function FenceGridPerimeter(grid)
-{
-	/* Same bit order as the taxi direction mask (coords.md):
-	 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0). */
-	local offsets = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-	foreach (c in grid.Ordered()) {
-		if (!IsThroughTaxiable(c.piece)) continue;
-		local mask = 0;
-		for (local b = 0; b < 4; b++) {
-			local n = grid.Get(c.x + offsets[b][0], c.y + offsets[b][1]);
-			if (n == null) mask = mask | (1 << b);
-		}
-		c.fence = mask;
-	}
-}
-
 /** Dispatch to a family generator. */
 function GenerateLayout(family, params)
 {
@@ -465,7 +443,6 @@ function GenerateLayout(family, params)
 	}
 	EnsureTowerIfNearlySafe(g);
 	DecorateGrid(g, params);
-	if (params.fence) FenceGridPerimeter(g);
 	if (params.mirror) g = g.MirrorX().Normalise();
 	return g;
 }
@@ -518,7 +495,6 @@ function RandomParams(family, scale)
 	p.terminal = terms[AIBase.RandRange(terms.len())];
 	p.cosmetic_kind = cosms[AIBase.RandRange(cosms.len())];
 	p.cosmetics = 1 + AIBase.RandRange(5);
-	p.fence = AIBase.RandRange(2) == 0;
 	p.hangar_at_end = AIBase.RandRange(2) == 0;
 	p.mirror = AIBase.RandRange(2) == 0;
 	p.stand_style = AIBase.RandRange(3);

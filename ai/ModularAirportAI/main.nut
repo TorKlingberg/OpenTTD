@@ -303,6 +303,14 @@ class ModularAirportAI extends AIController
 		/* An aircraft that never leaves its hangar is the failure this whole
 		 * design is trying to avoid, and it looks identical to "no demand" from
 		 * the outside. Say where they actually are. */
+		if (this.pax_cargo < 0) this.pax_cargo = PassengerCargo();
+		local worst = 0, worst_name = "-";
+		foreach (a in airports) {
+			local w = AIStation.GetCargoWaiting(a.station, this.pax_cargo);
+			if (w > worst) { worst = w; worst_name = AIStation.GetName(a.station); }
+		}
+		AILog.Info("    busiest: " + worst_name + " " + worst + " waiting");
+
 		local vl = AIVehicleList();
 		local stuck = 0, moving = 0;
 		foreach (v, _ in vl) {
