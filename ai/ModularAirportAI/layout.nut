@@ -66,7 +66,8 @@ function DefaultParams()
 		helipad_style = 0,   ///< 0 MP_HELIPAD, 1 plain "H", 2 rooftop heliport
 		pier_depth    = 3,
 		pier_double   = true,  ///< stands on both sides of the pier spine
-		cosmetics     = 1,   ///< how many decorative tiles to try to add
+		cosmetics     = 2,   ///< how many decorative tiles to try to add
+		fence         = false, ///< fence the outer edge (visual only)
 		cosmetic_kind = AIAirport.MP_RADAR_GRASS,
 		apron_rows    = 2,
 		mirror        = false,
@@ -170,7 +171,6 @@ function GenerateLinear(params)
 	/* Helipads go in whatever is left of the service row: they only need the
 	 * apron above them, which the whole row has. */
 	if (params.helipads > 0) AddHelipadsAlongApron(g, params, 2, 0, len - 1);
-	AddCosmetics(g, params, 3);
 	return g.Normalise();
 }
 
@@ -222,7 +222,6 @@ function GeneratePier(params)
 	/* Helipads hang off the runway-parallel taxiway, between the pier spine and
 	 * the buildings, where they cannot collide with either. */
 	if (params.helipads > 0) AddHelipadsAlongApron(g, params, 2, sx + 2, len - 3);
-	AddCosmetics(g, params, 2 + depth);
 	return g.Normalise();
 }
 
@@ -235,7 +234,7 @@ function GenerateDual(params)
 {
 	local len = params.runway_length;
 	if (len < 6) len = 6;
-	local g = Grid(len, 5);
+	local g = Grid(len, 6);
 
 	local land = AIAirport.MRF_LANDING | AIAirport.MRF_DIR_LOW;
 	local take = AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_HIGH;
@@ -287,7 +286,7 @@ function GenerateApron(params)
 	local rows = params.apron_rows;
 	if (rows < 1) rows = 1;
 	local rwy = AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW;
-	local g = Grid(len, 1 + rows + 1);
+	local g = Grid(len, 1 + rows + 2);
 
 	g.Set(0, 0, AIAirport.MP_RUNWAY_END, 0, rwy);
 	for (local x = 1; x < len - 1; x++) g.Set(x, 0, AIAirport.MP_RUNWAY, 0, rwy);
@@ -341,7 +340,6 @@ function GenerateHeliport(params)
 	}
 	g.Set(1, rows, AIAirport.MP_APRON);
 	g.Set(0, rows, AIAirport.MP_HANGAR, FACE_SW);
-	if (params.cosmetics > 0) g.Set(2, rows, params.cosmetic_kind, 0, 0, true);
 	return g.Normalise();
 }
 
@@ -373,15 +371,82 @@ function AddHelipadsAlongApron(grid, params, row, from_x, to_x)
 	return placed;
 }
 
-/** Sprinkle decorative tiles onto a spare row. Cosmetic only, always optional. */
-function AddCosmetics(grid, params, row)
+/**
+ * Decorate the gaps: radar, windsock, a radio tower, a low terminal, grass.
+ *
+ * None of these does anything. They exist so that two airports of the same
+ * family at the same size do not look like the same building twice, and so an
+ * airport reads as a place rather than a runway with a shed. Every one is
+ * optional, so on cramped ground the fitter drops the decoration before it
+ * touches anything that matters.
+ *
+ * They are also all non-taxiable, which is why they only ever go in cells the
+ * layout left empty — dropping one onto a route would strand aircraft, and
+ * ValidateGrid would reject the layout anyway.
+ */
+function DecorateGrid(grid, params)
 {
 	if (params.cosmetics <= 0) return;
-	local added = 0;
-	for (local x = 0; x < grid.w && added < params.cosmetics; x++) {
-		if (grid.Get(x, row) != null) continue;
-		grid.Set(x, row, params.cosmetic_kind, 0, 0, true);
-		added++;
+
+	/* Collect the empty cells that touch the airport, so decoration clusters
+	 * against the buildings instead of floating in a field. */
+	local spots = [];
+	for (local y = 0; y < grid.h; y++) {
+		for (local x = 0; x < grid.w; x++) {
+			if (grid.Get(x, y) != null) continue;
+			local touching = 0;
+			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+				if (grid.Get(x + d[0], y + d[1]) != null) touching++;
+			}
+			if (touching > 0) spots.append([x, y, touching]);
+		}
+	}
+	if (spots.len() == 0) return;
+
+	/* Prefer the most enclosed gaps: a hole surrounded on three sides looks
+	 * deliberate when filled, and a lone corner tile looks like litter. */
+	spots.sort(function (a, b) {
+		if (a[2] < b[2]) return 1;
+		if (a[2] > b[2]) return -1;
+		return 0;
+	});
+
+	local kinds = CosmeticVariants();
+	/* Scale with the airport. Every decorative tile is a real maintenance bill,
+	 * so a two-stand airfield gets a windsock, not an avenue of radars. */
+	local want = params.cosmetics;
+	local cap = 1 + grid.Count() / 8;
+	if (want > cap) want = cap;
+	if (want > spots.len()) want = spots.len();
+	for (local i = 0; i < want; i++) {
+		local s = spots[i];
+		/* A fresh kind per tile, so one airport can hold a radar, a windsock and
+		 * a patch of grass rather than three radars. */
+		grid.Set(s[0], s[1], kinds[AIBase.RandRange(kinds.len())], 0, 0, true);
+	}
+}
+
+/**
+ * Fence the outside edge of the airport.
+ *
+ * Purely visual: these are edges between an airport tile and the world, which
+ * no aircraft ever crosses, so blocking them costs nothing. Edges *inside* the
+ * airport are left alone — the mask genuinely blocks movement, and fencing a
+ * taxi route would strand aircraft.
+ */
+function FenceGridPerimeter(grid)
+{
+	/* Same bit order as the taxi direction mask (coords.md):
+	 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0). */
+	local offsets = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+	foreach (c in grid.Ordered()) {
+		if (!IsThroughTaxiable(c.piece)) continue;
+		local mask = 0;
+		for (local b = 0; b < 4; b++) {
+			local n = grid.Get(c.x + offsets[b][0], c.y + offsets[b][1]);
+			if (n == null) mask = mask | (1 << b);
+		}
+		c.fence = mask;
 	}
 }
 
@@ -399,6 +464,8 @@ function GenerateLayout(family, params)
 		default:              g = GenerateLinear(params); break;
 	}
 	EnsureTowerIfNearlySafe(g);
+	DecorateGrid(g, params);
+	if (params.fence) FenceGridPerimeter(g);
 	if (params.mirror) g = g.MirrorX().Normalise();
 	return g;
 }
@@ -450,7 +517,8 @@ function RandomParams(family, scale)
 
 	p.terminal = terms[AIBase.RandRange(terms.len())];
 	p.cosmetic_kind = cosms[AIBase.RandRange(cosms.len())];
-	p.cosmetics = AIBase.RandRange(3);
+	p.cosmetics = 1 + AIBase.RandRange(5);
+	p.fence = AIBase.RandRange(2) == 0;
 	p.hangar_at_end = AIBase.RandRange(2) == 0;
 	p.mirror = AIBase.RandRange(2) == 0;
 	p.stand_style = AIBase.RandRange(3);
