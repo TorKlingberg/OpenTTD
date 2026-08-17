@@ -2989,9 +2989,14 @@ static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
 		}
 	}
 
-	/* Runway crossings are ordinary exclusive path tiles. The state-held check is
-	 * defensive for an operation whose map claims are being restored after load; in
-	 * normal play the full-runway tile reservations already provide this exclusion. */
+	/* Runway crossings are ordinary exclusive path tiles, so a crossing claims only
+	 * what it drives over. The state-held check is what keeps that safe, and it is
+	 * load-bearing in normal play rather than a post-load safety net: a landing or
+	 * departing aircraft does not always have the whole runway in its map claims,
+	 * which is why IsContiguousModularRunwayReservedInStateByOther falls back to
+	 * modular_landing_tile / modular_takeoff_tile when the reservation vector does
+	 * not overlap. Drop this and a crossing can step in front of a rolling aircraft
+	 * in exactly the cases those fallbacks exist to cover. */
 	for (TileIndex tile : plan.taxi_tiles) {
 		if (IsModularHangarTile(st, tile)) continue;
 		if (IsPathTileRunwayPiece(st, tile)) {
