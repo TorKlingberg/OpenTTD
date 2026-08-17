@@ -416,6 +416,39 @@ public:
 	static bool BuildModularAirportTile(TileIndex tile, ModularPiece piece, SQInteger rotation, StationID station_id);
 
 	/**
+	 * Upgrade one legacy modular-airport tile to its modern equivalent.
+	 *
+	 * Small runway pieces become paved runway pieces, a small hangar becomes a
+	 * large hangar, and legacy grass becomes apron. The operation fails when the
+	 * tile has no upgrade, the modern piece is not available yet, or an aircraft
+	 * is currently on the tile.
+	 * @param tile The modular airport tile to upgrade.
+	 * @pre ScriptMap::IsValidTile(tile).
+	 * @pre IsModularAirportTile(tile).
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_OWNED_BY_ANOTHER_COMPANY
+	 * @return Whether the tile has been/can be upgraded or not.
+	 */
+	static bool UpgradeModularAirportTile(TileIndex tile);
+
+	/**
+	 * Upgrade legacy modular-airport tiles in a rectangular area to their modern equivalents.
+	 *
+	 * Small runway pieces become paved runway pieces, small hangars become large
+	 * hangars, and legacy grass becomes apron. The operation is atomic: if any
+	 * upgradeable tile in the area cannot be converted, for example because an
+	 * aircraft occupies it, none of the tiles are changed.
+	 * @param start_tile One corner of the area to upgrade.
+	 * @param end_tile The opposite corner of the area to upgrade.
+	 * @pre ScriptMap::IsValidTile(start_tile).
+	 * @pre ScriptMap::IsValidTile(end_tile).
+	 * @game @pre ScriptCompanyMode::IsValid().
+	 * @exception ScriptError::ERR_OWNED_BY_ANOTHER_COMPANY
+	 * @return Whether at least one tile has been/can be upgraded.
+	 */
+	static bool UpgradeModularAirportArea(TileIndex start_tile, TileIndex end_tile);
+
+	/**
 	 * Set the usage flags of a modular runway. The flags apply to the whole
 	 * contiguous runway the tile belongs to, not just this tile.
 	 * @param tile Any tile of the runway.

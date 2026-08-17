@@ -63,6 +63,16 @@ function RunSelfTest()
 	AILog.Info("capacity model: " + (capacity_ok ? "ok" : "*** INVALID ***"));
 	if (!capacity_ok) bad++;
 
+	/* Guard the useful minimum independently of RandomParams: even a caller
+	 * asking for a shorter strip must get a complete four-tile runway. */
+	local floor_params = DefaultParams();
+	floor_params.runway_length = 1;
+	floor_params.large_safe = false;
+	local floor_grid = GenerateStrip(floor_params);
+	local legacy_floor_ok = CountPieces(floor_grid, IsSmallRunwayPiece) >= MIN_LEGACY_RUNWAY_LENGTH;
+	AILog.Info("legacy runway minimum: " + (legacy_floor_ok ? "ok" : "*** INVALID ***"));
+	if (!legacy_floor_ok) bad++;
+
 	foreach (family in families) {
 		AILog.Info("");
 		AILog.Info("--- family " + FamilyName(family) + " ---");

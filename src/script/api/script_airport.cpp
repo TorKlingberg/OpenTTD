@@ -474,6 +474,24 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 			static_cast<uint8_t>(0x0F), false, false);
 }
 
+/* static */ bool ScriptAirport::UpgradeModularAirportTile(TileIndex tile)
+{
+	EnforceCompanyModeValid(false);
+	EnforcePrecondition(false, ::IsValidTile(tile));
+	EnforcePrecondition(false, IsModularAirportTile(tile));
+
+	return ScriptObject::Command<CMD_UPGRADE_MODULAR_AIRPORT_TILE>::Do(tile, tile);
+}
+
+/* static */ bool ScriptAirport::UpgradeModularAirportArea(TileIndex start_tile, TileIndex end_tile)
+{
+	EnforceCompanyModeValid(false);
+	EnforcePrecondition(false, ::IsValidTile(start_tile));
+	EnforcePrecondition(false, ::IsValidTile(end_tile));
+
+	return ScriptObject::Command<CMD_UPGRADE_MODULAR_AIRPORT_TILE>::Do(end_tile, start_tile);
+}
+
 /* static */ bool ScriptAirport::SetModularRunwayFlags(TileIndex tile, SQInteger flags)
 {
 	EnforceCompanyModeValid(false);

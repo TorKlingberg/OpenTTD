@@ -14,6 +14,10 @@
 /* Tiles the three-tile small terminal occupies, along X from its west end. */
 const SMALL_TERMINAL_WIDTH = 3;
 
+/* Three tiles are the engine's operational floor for a runway, but the AI's
+ * smallest useful legacy field is deliberately one tile longer. */
+const MIN_LEGACY_RUNWAY_LENGTH = 4;
+
 enum Family {
 	STRIP,     ///< Small grass runway, a couple of stands. Buildable from year zero.
 	LINEAR,    ///< One large runway, apron spine, a row of stands behind it.
@@ -48,8 +52,11 @@ function BigTerminalVariants()
 /** Purely decorative pieces to scatter on tiles nothing else wants. */
 function CosmeticVariants()
 {
-	return [AIAirport.MP_RADAR_GRASS, AIAirport.MP_FLAG_GRASS,
-	        AIAirport.MP_RADIO_TOWER, AIAirport.MP_LOW_TERMINAL, AIAirport.MP_GRASS];
+	/* Keep both radar surfaces in the pool. This deliberately gives radar two
+	 * looks without making the very tall radio mast the de-facto visual theme. */
+	return [AIAirport.MP_RADAR_GRASS, AIAirport.MP_RADAR,
+	        AIAirport.MP_FLAG_GRASS, AIAirport.MP_LOW_TERMINAL,
+	        AIAirport.MP_RADIO_TOWER, AIAirport.MP_GRASS];
 }
 
 /**
@@ -70,6 +77,8 @@ function DefaultParams()
 		pier_double   = true,  ///< stands on both sides of the pier spine
 		cosmetics     = 2,   ///< how many decorative tiles to try to add
 		small_terminal = false, ///< try to fit the three-tile terminal into the decoration
+		extra_terminals = 0, ///< optional additional full-size terminal buildings
+		strip_compact = false, ///< four-tile strip with stands directly on the runway
 		cosmetic_kind = AIAirport.MP_RADAR_GRASS,
 		apron_rows    = 2,
 		mirror        = false,
@@ -87,8 +96,10 @@ function DefaultParams()
 function GenerateStrip(params)
 {
 	local len = params.runway_length;
-	if (len < 3) len = 3;
+	if (len < MIN_LEGACY_RUNWAY_LENGTH) len = MIN_LEGACY_RUNWAY_LENGTH;
 	local g = Grid(len, 3);
+	local compact = params.strip_compact && len == 4 && params.small_terminal
+	             && AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3);
 
 	g.Set(0, 2, AIAirport.MP_RUNWAY_SMALL_FAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
@@ -99,18 +110,25 @@ function GenerateStrip(params)
 	g.Set(len - 1, 2, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
 
-	for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
+	/* The compact 4x3 style spends its middle row on hangar/stands and lets them
+	 * enter the runway directly. That leaves the back row for the old three-tile
+	 * terminal. The other styles retain a separate apron spine. */
+	if (!compact) {
+		for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
+	}
 
 	/* The service row goes *above* the apron here, not below as in the other
 	 * families, because a small hangar has only one graphic — the SE one — and
 	 * must therefore face SE, onto the apron at (x, y+1). Facing it any other way
 	 * would work mechanically and look wrong on screen. */
-	g.Set(0, 0, AIAirport.MP_SMALL_HANGAR, FACE_SE);
+	local service_y = compact ? 1 : 0;
+	g.Set(0, service_y, AIAirport.MP_SMALL_HANGAR, FACE_SE);
 	local placed = 0;
 	for (local x = 1; x < len && placed < params.stands; x++) {
-		g.Set(x, 0, AIAirport.MP_STAND, 0, 0, placed >= 2);
+		g.Set(x, service_y, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
+	if (compact) g.SetWide(1, 0, AIAirport.MP_SMALL_TERMINAL_3, SMALL_TERMINAL_WIDTH, true);
 	return g.Normalise();
 }
 
@@ -158,6 +176,7 @@ function GenerateLinear(params)
 	/* Helipads go in whatever is left of the service row: they only need the
 	 * apron above them, which the whole row has. */
 	if (params.helipads > 0) AddHelipadsAlongApron(g, params, 2, 0, len - 1);
+	AddExtraTerminalFrontage(g, params, 3);
 	return g.Normalise();
 }
 
@@ -256,6 +275,7 @@ function GenerateDual(params)
 	while (cursor < len) {
 		g.Set(cursor++, 2, AIAirport.MP_APRON, 0, 0, true);
 	}
+	AddExtraTerminalFrontage(g, params, 5);
 	return g.Normalise();
 }
 
@@ -301,6 +321,7 @@ function GenerateApron(params)
 		g.Set(len - 2, hy, params.terminal, 0, 0, false);
 	}
 	if (params.helipads > 0) AddHelipadsAlongApron(g, params, hy, 1, len - 3);
+	AddExtraTerminalFrontage(g, params, hy + 1);
 	return g.Normalise();
 }
 
@@ -360,6 +381,38 @@ function AddHelipadsAlongApron(grid, params, row, from_x, to_x)
 }
 
 /**
+ * Put optional full-size terminals on an outer frontage row.
+ *
+ * Some dense families deliberately fill every interior cell, leaving the
+ * decorator nowhere to express a larger terminal complex. Their Grid already
+ * has one spare outer row; this seeds that row only where the terminal touches
+ * the airport, and the fitter remains free to drop it on cramped ground.
+ */
+function AddExtraTerminalFrontage(grid, params, row)
+{
+	if (params.extra_terminals <= 0 || row < 0 || row >= grid.h) return;
+	local terminals = [];
+	foreach (piece in BigTerminalVariants()) {
+		if (AIAirport.IsModularPieceAvailable(piece)) terminals.append(piece);
+	}
+	if (terminals.len() == 0) return;
+
+	local candidates = [];
+	for (local x = 0; x < grid.w; x++) {
+		if (grid.Get(x, row) != null) continue;
+		local touches = (grid.Get(x, row - 1) != null)
+		             || (grid.Get(x - 1, row) != null)
+		             || (grid.Get(x + 1, row) != null);
+		if (touches) candidates.append(x);
+	}
+	for (local i = 0; i < params.extra_terminals && i < candidates.len() && terminals.len() > 0; i++) {
+		local terminal_index = AIBase.RandRange(terminals.len());
+		grid.Set(candidates[i], row, terminals[terminal_index], 0, 0, true);
+		terminals.remove(terminal_index);
+	}
+}
+
+/**
  * Decorate the gaps: radar, windsock, a radio tower, a low terminal, grass.
  *
  * None of these does anything. They exist so that two airports of the same
@@ -374,7 +427,7 @@ function AddHelipadsAlongApron(grid, params, row, from_x, to_x)
  */
 function DecorateGrid(grid, params)
 {
-	if (params.cosmetics <= 0) return;
+	if (params.cosmetics <= 0 && params.extra_terminals <= 0 && !params.small_terminal) return;
 
 	/* Collect the empty cells that touch the airport, so decoration clusters
 	 * against the buildings instead of floating in a field. */
@@ -382,24 +435,35 @@ function DecorateGrid(grid, params)
 	for (local y = 0; y < grid.h; y++) {
 		for (local x = 0; x < grid.w; x++) {
 			if (grid.Get(x, y) != null) continue;
-			local touching = 0;
+			local touching = 0, frontage = 0;
 			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-				if (grid.Get(x + d[0], y + d[1]) != null) touching++;
+				local neighbour = grid.Get(x + d[0], y + d[1]);
+				if (neighbour == null) continue;
+				touching++;
+				if (IsStandPiece(neighbour.piece) || IsTerminalBuildingPiece(neighbour.piece)) frontage++;
 			}
-			if (touching > 0) spots.append([x, y, touching]);
+			if (touching > 0) spots.append([x, y, touching, frontage]);
 		}
 	}
 	if (spots.len() == 0) return;
 
-	/* Prefer the most enclosed gaps: a hole surrounded on three sides looks
-	 * deliberate when filled, and a lone corner tile looks like litter. */
+	/* Buildings belong against stands and existing terminals. Within an equally
+	 * good frontage, prefer enclosed gaps over lone corner tiles. */
 	spots.sort(function (a, b) {
+		if (a[3] < b[3]) return 1;
+		if (a[3] > b[3]) return -1;
 		if (a[2] < b[2]) return 1;
 		if (a[2] > b[2]) return -1;
 		return 0;
 	});
 
-	local kinds = CosmeticVariants();
+	/* Only roll pieces that exist in the current year. Previously a pre-1955
+	 * radar made GridIsAvailable reject the entire otherwise-legacy airfield. */
+	local kinds = [];
+	foreach (piece in CosmeticVariants()) {
+		if (AIAirport.IsModularPieceAvailable(piece)) kinds.append(piece);
+	}
+	if (kinds.len() == 0) return;
 	/* Scale with the airport. Every decorative tile is a real maintenance bill,
 	 * so a two-stand airfield gets a windsock, not an avenue of radars. */
 	local want = params.cosmetics;
@@ -412,7 +476,11 @@ function DecorateGrid(grid, params)
 	 * needs a run of tiles rather than one, so it gets first refusal: fitting it
 	 * after the single tiles have taken the good spots almost never works.
 	 * SetWide refuses unless the whole run is free, so a failure costs nothing. */
-	if (params.small_terminal && grid.Count() >= 14
+	local has_small_terminal = false;
+	foreach (c in grid.Ordered()) {
+		if (c.piece == AIAirport.MP_SMALL_TERMINAL_3) { has_small_terminal = true; break; }
+	}
+	if (params.small_terminal && !has_small_terminal && grid.Count() >= 14
 	 && AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3)) {
 		foreach (s in spots) {
 			if (grid.SetWide(s[0], s[1], AIAirport.MP_SMALL_TERMINAL_3, SMALL_TERMINAL_WIDTH, true)) {
@@ -426,13 +494,44 @@ function DecorateGrid(grid, params)
 		}
 	}
 
-	for (local i = 0; i < want; i++) {
-		local s = spots[i];
-		/* A spot the terminal just took. */
-		if (grid.Get(s[0], s[1]) != null) continue;
-		/* A fresh kind per tile, so one airport can hold a radar, a windsock and
-		 * a patch of grass rather than three radars. */
-		grid.Set(s[0], s[1], kinds[AIBase.RandRange(kinds.len())], 0, 0, true);
+	local spot_index = 0;
+	/* Large airports frequently get a second frontage building, and the biggest
+	 * can get two. They are optional for fitting but intentionally not free: the
+	 * visual scale costs the same construction and upkeep as a functional one. */
+	local terminals = [];
+	foreach (piece in BigTerminalVariants()) {
+		if (AIAirport.IsModularPieceAvailable(piece)) terminals.append(piece);
+	}
+	local existing_big_terminals = 0;
+	foreach (c in grid.Ordered()) {
+		if (IsBigTerminalPiece(c.piece)) existing_big_terminals++;
+	}
+	/* One is the functional terminal in a large-safe family; anything beyond it
+	 * has already fulfilled part of the optional target. A fallback layout with
+	 * large_safe disabled has no such free first terminal. */
+	local functional_terminals = params.large_safe && existing_big_terminals > 0 ? 1 : 0;
+	local extras_left = params.extra_terminals - (existing_big_terminals - functional_terminals);
+	if (extras_left < 0) extras_left = 0;
+	for (local i = 0; i < extras_left && terminals.len() > 0; i++) {
+		while (spot_index < spots.len() && grid.Get(spots[spot_index][0], spots[spot_index][1]) != null) spot_index++;
+		if (spot_index >= spots.len()) break;
+		local s = spots[spot_index++];
+		local terminal_index = AIBase.RandRange(terminals.len());
+		grid.Set(s[0], s[1], terminals[terminal_index], 0, 0, true);
+		terminals.remove(terminal_index);
+		if (want > 0) want--;
+	}
+
+	for (local i = 0; i < want && kinds.len() > 0; i++) {
+		while (spot_index < spots.len() && grid.Get(spots[spot_index][0], spots[spot_index][1]) != null) spot_index++;
+		if (spot_index >= spots.len()) break;
+		local s = spots[spot_index++];
+		/* Draw without replacement. Independent rolls allowed a conspicuous radio
+		 * mast to repeat several times while subtler windsocks and terminals lost
+		 * the coin toss. One airport now gets a genuinely mixed frontage. */
+		local kind_index = AIBase.RandRange(kinds.len());
+		grid.Set(s[0], s[1], kinds[kind_index], 0, 0, true);
+		kinds.remove(kind_index);
 	}
 }
 
@@ -509,12 +608,37 @@ function RandomParams(family, scale)
 	p.mirror = AIBase.RandRange(2) == 0;
 	p.helipad_style = AIBase.RandRange(3);
 	p.pier_double = AIBase.RandRange(4) != 0;
+	/* Extra full-size frontage is a feature of substantial airports. Scale-two
+	 * layouts get one most of the time; scale three may get a second. */
+	if (family != Family.STRIP && family != Family.HELIPORT && scale >= 2
+	 && AIBase.RandRange(4) != 0) {
+		p.extra_terminals = 1;
+		if (scale >= 3 && AIBase.RandRange(2) == 0) p.extra_terminals++;
+	}
 
 	/* scale 0..3 drives how big an airport we are trying to afford. */
 	switch (family) {
 		case Family.STRIP:
-			p.runway_length = 4 + AIBase.RandRange(3);
-			p.stands = 2 + (scale > 1 ? AIBase.RandRange(2) : 0);
+			/* Three equally likely old-airfield characters:
+			 *  - a genuinely minimal 4..5-tile strip;
+			 *  - a conventional 6..8-tile strip with room along its frontage;
+			 *  - a compact 4x3 layout whose stands open directly onto the runway,
+			 *    leaving the row behind them for the three-tile terminal. */
+			local strip_style = AIBase.RandRange(3);
+			if (strip_style == 0) {
+				p.runway_length = MIN_LEGACY_RUNWAY_LENGTH + AIBase.RandRange(2);
+				p.stands = 2;
+				p.small_terminal = false;
+			} else if (strip_style == 1) {
+				p.runway_length = 6 + AIBase.RandRange(3);
+				p.stands = 2 + (scale > 1 ? AIBase.RandRange(2) : 0);
+				p.small_terminal = AIBase.RandRange(3) != 0;
+			} else {
+				p.runway_length = 4;
+				p.stands = 2;
+				p.small_terminal = true;
+				p.strip_compact = true;
+			}
 			p.large_safe = false;
 			break;
 

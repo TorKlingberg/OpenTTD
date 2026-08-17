@@ -21,6 +21,7 @@ class ModularAirportAI extends AIController
 	variety = 2;
 	grow_cursor = 0;    ///< round-robin over airports, so none is starved
 	pax_cargo = -1;
+	town_search_stats = "not run yet";
 
 	function Start()
 	{
@@ -166,25 +167,44 @@ class ModularAirportAI extends AIController
 
 		local shortlist = [];
 		local second_best = [];
+		/* Once the company is rich, coverage matters more than the immediate
+		 * return from each new endpoint. The old fixed cutoff of 200 made every
+		 * smaller town permanently invisible, however much idle cash the company
+		 * had or how high max_airports was set. */
+		local min_pop = funds > 1500000 ? 80 : 200;
+		local too_small = 0, blacklisted = 0, no_capacity = 0, served = 0;
 		foreach (town, pop in towns) {
-			if (pop < 200) continue;
+			if (pop < min_pop) { too_small++; continue; }
 			local loc = AITown.GetLocation(town);
-			if (loc in this.blacklist) continue;
+			if (loc in this.blacklist) { blacklisted++; continue; }
 			local taken = false;
 			foreach (a in airports) {
-				if (AIMap.DistanceManhattan(a.tile, loc) < 15) { taken = true; break; }
+				/* A nearby airport is not necessarily this town's airport. On maps
+				 * with closely packed towns the old 15-tile circle let one station
+				 * mark several neighbours as served forever. Use the station's town
+				 * association, which is also what the game's airport limit uses. */
+				if (AIStation.GetNearestTown(a.station) == town) { taken = true; break; }
 			}
 			if (!taken) {
-				shortlist.append(town);
-				if (shortlist.len() >= 6) break;
+				/* Do not spend a full terrain search on a town whose shared airport
+				 * allowance has already been consumed by other companies. */
+				if (AITown.GetAllowedNoise(town) < 1) { no_capacity++; continue; }
+				if (shortlist.len() < 6) shortlist.append(town);
 				continue;
 			}
+			served++;
 			/* Room for one more here, and big enough to be worth it. */
 			if (pop > 2000 && AITown.GetAllowedNoise(town) >= 1 && second_best.len() < 4) {
 				second_best.append(town);
 			}
 		}
 		if (shortlist.len() == 0 && funds > 1500000) shortlist = second_best;
+		this.town_search_stats = "min_pop=" + min_pop
+		                       + " candidates=" + shortlist.len()
+		                       + " served=" + served
+		                       + " no_capacity=" + no_capacity
+		                       + " blacklisted=" + blacklisted
+		                       + " too_small=" + too_small;
 		if (shortlist.len() == 0) return -1;
 		/* Some randomness so two instances of this AI do not fight over the
 		 * same town, and so successive games do not look identical. */
@@ -323,6 +343,7 @@ class ModularAirportAI extends AIController
 			if (w > worst) { worst = w; worst_name = AIStation.GetName(a.station); }
 		}
 		AILog.Info("    busiest: " + worst_name + " " + worst + " waiting");
+		AILog.Info("    town search: " + this.town_search_stats);
 
 		local vl = AIVehicleList();
 		local stuck = 0, moving = 0;

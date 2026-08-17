@@ -48,6 +48,8 @@ All on `AIAirport`. Full doxygen lives in `src/script/api/script_airport.hpp`.
 | Call | Notes |
 |---|---|
 | `BuildModularAirportTile(tile, piece, rotation, station_id)` | One tile. For growing an airport. |
+| `UpgradeModularAirportTile(tile)` | Converts one legacy runway, hangar or grass tile to its modern equivalent. |
+| `UpgradeModularAirportArea(start_tile, end_tile)` | Atomically converts all legacy pieces in a rectangle; use this for a whole runway. |
 | `PlaceModularAirportLayout(tile, station_id, rotation, w, h, layout)` | Whole layout, all-or-nothing. For new airports. |
 | `SetModularRunwayFlags(tile, flags)` | Applies to the whole contiguous runway. |
 | `SetModularTaxiwayFlags(tile, dir_mask, one_way)` | Per tile. |
@@ -199,10 +201,9 @@ modular AI can:
 
 1. Open a route with a minimal cheap airport (one short runway, two stands, one hangar).
 2. Add stands as waiting passengers grow.
-3. Add a second runway and split landing/takeoff via `SetModularRunwayFlags` when one
-   saturates.
-4. Upgrade to large-safe (tower + big terminal + 6-tile large runway) exactly when the first
-   big plane becomes affordable.
+3. Extend a busy runway, then add a second when the single runway still saturates.
+4. Atomically pave a whole old runway and replace its small hangar, then add the tower and big
+   terminal that make the result large-safe.
 5. Add one-way taxiways and extra aprons to break up reservation contention as the fleet grows.
 
 Each step is cheap, incremental, and never loses the station. Maintenance is points-derived, so
@@ -292,13 +293,23 @@ GenerateLayout(family, {runway_length, stands, runways, hangars, large_safe, hel
 
 Families worth having:
 
-1. **Minimal strip** — 1 small runway, apron spine, 2 stands, 1 small hangar. Buildable from
-   year zero, which matters: the modern pieces are gated to 1955.
-2. **Single-runway pier** — 1 large runway ≥6, parallel taxiway, pier of N stands, tower +
-   big terminal (large-safe by construction), 1–2 hangars.
-3. **Parallel dual-runway** — landing and takeoff runways with directional flags, central pier
-   of N stands, one-way taxi loop to avoid head-on contention.
-4. **Heliport** — helipads + hangar, no runway.
+1. **Legacy strip** — three looks sampled evenly: a minimal 4–5-tile strip, a conventional
+   6–8-tile strip, or a compact 4×3 strip with stands directly against the runway and the old
+   three-tile terminal behind them. Buildable from year zero, which matters: modern pieces are
+   gated to 1955.
+2. **Linear** — 1 large runway ≥6, a parallel apron spine and a service row containing the
+   hangar, stands, tower and terminal.
+3. **Pier** — 1 large runway ≥6 and parallel apron, with a perpendicular finger carrying
+   stands on one or both sides and the hangar at its tip.
+4. **Dual** — parallel landing and takeoff runways, two apron spines and a central service row.
+5. **Apron** — 1 large runway ≥6 with one or two open apron rows holding stands; particularly
+   tolerant of irregular sites because most of the apron block is optional.
+6. **Heliport** — a central apron spine with helipads on one or both sides and a hangar at the
+   end; no runway.
+
+Scale-two and scale-three modern families commonly add one or two optional full-size terminal
+buildings beyond the terminal required for jet safety. They cost normal upkeep and are the first
+things the terrain fitter may drop on cramped ground.
 
 Each family is written once, verified by hand in-game, then scales by parameter. Rotation is
 free — the layout command rotates the whole thing, and the codebase already handles the
@@ -339,7 +350,7 @@ layout.nut    the six families of section 6 - pure functions, no world access
 fit.nut       FitGridToMask: trim a layout to the ground that exists; ScoreGrid
 sites.nut     terrain scan, candidate generation, tiered family fallback
 build.nut     placement, pre-build revalidation, read-back dumps
-grow.nut      growth on live airports: tower/terminal to large-safe, stands on demand
+grow.nut      live growth: legacy upgrades, runway extension, stands/runways on demand
 fleet.nut     engine choice gated on airport capability, orders, retirement
 selftest.nut  offline dump of every family plus five awkward site masks
 ```
@@ -378,7 +389,7 @@ family serve many sites.
 | M1 | Atomic layout submit + previews | done |
 | M2 | `layout.nut` families as pure functions | done — six families, verified by `selftest` |
 | M3 | Site search + build + aircraft flying a route | done |
-| M4 | Growth on a live airport | done — tower/terminal to reach large-safe, stands on demand |
+| M4 | Growth on a live airport | done — legacy upgrades, runway extension/addition, stands on demand |
 | M5 | Multi-airport network, fleet and money management | partly — works, but see below |
 | M6 | Non-rectangular footprint fitting | done — `FitGridToMask`, reported as `trimmed=` |
 
@@ -387,11 +398,6 @@ What M5 still wants:
 - **Save/load.** `Save()` returns an empty table. Everything the AI needs is currently
   re-derived from the map each pass, which is why that is survivable, but the failed-site
   blacklist is lost on load.
-- **Aircraft replacement.** `RetireLosers` sells persistent loss-makers; nothing renews
-  ageing aircraft, so a long game slowly loses capacity to breakdowns.
-- **A second runway on a saturated airport.** The growth path adds stands and buildings but
-  never a runway, which is the step that actually raises throughput at a busy airport, and the
-  one the `DUAL` family exists to make unnecessary at build time.
 - **Contention shaping.** No one-way taxiways are ever set. `skills/reservations-design.md`
   says layout shape *is* throughput — a wide apron is a single atomic segment — and nothing in
   the AI acts on that yet.

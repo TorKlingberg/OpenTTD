@@ -10,10 +10,10 @@
  * nothing is spent on a terminal building that no passenger has yet arrived to
  * use.
  *
- * Growth goes through BuildModularAirportTile one tile at a time, which is not
- * atomic the way placing a layout is. Every step therefore has to leave the
- * airport working on its own: only pieces that cannot break taxi routing are
- * ever added, and they are only added to ground already checked.
+ * Most growth goes through BuildModularAirportTile one tile at a time, which is
+ * not atomic the way placing a layout is. Every such step therefore has to
+ * leave the airport working on its own. Legacy runways are the exception: the
+ * area-upgrade command converts their complete operating surface atomically.
  */
 
 /** The cargo id for passengers, which is what airports mostly move. */
@@ -79,15 +79,31 @@ function ExpansionTiles(station, want_taxi_adjacent)
 function GrowAirport(station, tile, funds, pax_cargo)
 {
 	local safety = AIAirport.GetModularAirportSafety(tile);
+	local has_legacy = AirportHasLegacyPieces(station);
+
+	/* A three-tile terminal is part of the character of an old airfield, even
+	 * though it buys no capacity. Try it before modernising away the evidence
+	 * that this was a grass strip. The compound placement is atomic, so cramped
+	 * airports simply decline it without leaving half a building. */
+	if (has_legacy && funds > 100000 && AIBase.RandRange(8) == 0
+	 && !AirportHasPiece(station, AIAirport.MP_SMALL_TERMINAL_3)) {
+		if (TryAddSmallTerminal(station)) return "added an old three-tile terminal";
+	}
+
+	/* Modernisation is intentionally occasional, but a runway is one operating
+	 * surface and is converted as one atomic job. This avoids the incoherent
+	 * half-grass, half-paved state that tile-at-a-time conversion produced. */
+	if (has_legacy && funds > 180000 && AIBase.RandRange(32) == 0) {
+		local upgraded = TryUpgradeLegacyPiece(station);
+		if (upgraded != null) return upgraded;
+	}
 
 	local missing_runway = safety & (AIAirport.MS_MISSING_LANDING_RUNWAY | AIAirport.MS_MISSING_TAKEOFF_RUNWAY);
 
-	/* A tower and a terminal are only worth buying for an airport that can
-	 * become large-safe. A grass strip cannot: it has no large runway, and one
-	 * is not addable a tile at a time — that needs six contiguous clear tiles in
-	 * a line, which is a rebuild. Adding the buildings anyway would spend real
-	 * money to move the safety mask from 15 to 12, which changes nothing about
-	 * what may safely land there. */
+	/* A tower and a terminal are only worth buying once runway modernisation
+	 * above has produced a six-tile paved runway. Adding the
+	 * buildings earlier would spend real money to move the safety mask from 15
+	 * to 12, which changes nothing about what may safely land there. */
 	if (safety != AIAirport.MS_OK && safety >= 0 && missing_runway == 0) {
 		if (safety & AIAirport.MS_MISSING_TOWER) {
 			if (AddPiece(station, AIAirport.MP_TOWER, false)) return "added a control tower";
@@ -144,16 +160,123 @@ function GrowAirport(station, tile, funds, pax_cargo)
 		return null;
 	}
 
-	/* Runway-bound: a runway is reserved along its whole length, so this is the
-	 * step that actually raises throughput once the stands are keeping up. Capped
-	 * at two because a third would need the landing and takeoff split to be worth
-	 * anything, and that is a different design. */
+	/* Runway-bound: lengthen a runway sometimes before buying a whole second
+	 * strip. Length is
+	 * capped, because runway reservations cover the complete segment and an
+	 * indefinitely long runway would reduce rather than increase throughput. */
+	if (funds > 180000 && AIBase.RandRange(3) == 0) {
+		local extended = TryExtendRunway(station, 8);
+		if (extended != null) {
+			return extended + " (" + waiting + " waiting, " + serving + " aircraft)";
+		}
+	}
+
 	if (funds > 400000 && runways < 2) {
 		local added = TryAddRunway(station);
 		if (added != null) {
 			return added + " (" + waiting + " waiting, " + serving + " aircraft on "
 			       + runways + " runway)";
 		}
+	}
+	return null;
+}
+
+/** Whether a built airport contains one of the old grass-era pieces. */
+function AirportHasLegacyPieces(station)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local p = AIAirport.GetModularPiece(t);
+		if (IsSmallRunwayPiece(p) || p == AIAirport.MP_SMALL_HANGAR) return true;
+	}
+	return false;
+}
+
+/** Whether any tile of an airport reads back as a particular named piece. */
+function AirportHasPiece(station, wanted)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (AIAirport.IsModularAirportTile(t) && AIAirport.GetModularPiece(t) == wanted) return true;
+	}
+	return false;
+}
+
+/** Try every plausible origin for the compound old terminal. */
+function TryAddSmallTerminal(station)
+{
+	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3)) return false;
+	foreach (t in ExpansionTiles(station, false)) {
+		if (AIAirport.BuildModularAirportTile(t, AIAirport.MP_SMALL_TERMINAL_3, 0, station)) return true;
+	}
+	return false;
+}
+
+/** Whether a tile is part of this station's legacy runway. */
+function IsLegacyRunwayTile(station, tile)
+{
+	return AIMap.IsValidTile(tile)
+	    && AIAirport.IsModularAirportTile(tile)
+	    && AIStation.GetStationID(tile) == station
+	    && IsSmallRunwayPiece(AIAirport.GetModularPiece(tile));
+}
+
+/**
+ * The two ends of the legacy runway containing tile.
+ *
+ * Legacy runways are axis-locked along X, so walking left and right finds the
+ * exact one-row area that the atomic upgrade command should convert.
+ */
+function LegacyRunwayEnds(station, tile)
+{
+	local y = AIMap.GetTileY(tile);
+	local left_x = AIMap.GetTileX(tile), right_x = left_x;
+	while (left_x > 0) {
+		local next = AIMap.GetTileIndex(left_x - 1, y);
+		if (!IsLegacyRunwayTile(station, next)) break;
+		left_x--;
+	}
+	while (right_x + 1 < AIMap.GetMapSizeX()) {
+		local next = AIMap.GetTileIndex(right_x + 1, y);
+		if (!IsLegacyRunwayTile(station, next)) break;
+		right_x++;
+	}
+	return [AIMap.GetTileIndex(left_x, y), AIMap.GetTileIndex(right_x, y)];
+}
+
+/** Upgrade one whole old runway, or one old hangar. */
+function TryUpgradeLegacyPiece(station)
+{
+	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_RUNWAY)
+	 && !AIAirport.IsModularPieceAvailable(AIAirport.MP_HANGAR)) return null;
+
+	local candidates = [], seen_runways = {};
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local p = AIAirport.GetModularPiece(t);
+		if (IsSmallRunwayPiece(p)) {
+			local ends = LegacyRunwayEnds(station, t);
+			if (!(ends[0] in seen_runways)) {
+				seen_runways[ends[0]] <- true;
+				candidates.append([ends[0], ends[1], true]);
+			}
+		} else if (p == AIAirport.MP_SMALL_HANGAR) {
+			candidates.append([t, t, false]);
+		}
+	}
+	if (candidates.len() == 0) return null;
+
+	local start = AIBase.RandRange(candidates.len());
+	for (local i = 0; i < candidates.len(); i++) {
+		local c = candidates[(start + i) % candidates.len()];
+		if (c[2]) {
+			if (!AIAirport.UpgradeModularAirportArea(c[0], c[1])) continue;
+			return "paved the entire " + (AIMap.DistanceManhattan(c[0], c[1]) + 1)
+			     + "-tile old runway";
+		}
+		if (AIAirport.UpgradeModularAirportTile(c[0])) return "upgraded the old hangar";
 	}
 	return null;
 }
@@ -245,6 +368,81 @@ function CountRunways(station)
 		 || p == AIAirport.MP_RUNWAY_SMALL_FAR_END) ends++;
 	}
 	return ends / 2;
+}
+
+/** A map-safe orthogonal offset, or -1 at the map edge. */
+function OffsetAirportTile(tile, dx, dy)
+{
+	local x = AIMap.GetTileX(tile) + dx;
+	local y = AIMap.GetTileY(tile) + dy;
+	if (x < 1 || y < 1 || x >= AIMap.GetMapSizeX() - 1 || y >= AIMap.GetMapSizeY() - 1) return -1;
+	return AIMap.GetTileIndex(x, y);
+}
+
+/** Whether this tile continues this station's runway along the requested axis. */
+function IsRunwayOnAxis(station, tile, rotation)
+{
+	if (tile < 0 || !AIAirport.IsModularAirportTile(tile)) return false;
+	if (AIStation.GetStationID(tile) != station) return false;
+	if (!IsRunwayPiece(AIAirport.GetModularPiece(tile))) return false;
+	return (AIAirport.GetModularPieceRotation(tile) % 2) == (rotation % 2);
+}
+
+/**
+ * Add one tile to the end of a runway shorter than max_length.
+ *
+ * Building beside an end invokes the engine's runway visual normaliser, which
+ * turns the old end into a middle and the new tile into the new end. Flags are
+ * inherited from the adjoining segment by the build command.
+ */
+function TryExtendRunway(station, max_length)
+{
+	local candidates = [];
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local p = AIAirport.GetModularPiece(t);
+		if (!IsRunwayPiece(p)) continue;
+
+		local rot = AIAirport.GetModularPieceRotation(t);
+		local ax = (rot % 2) == 0 ? 1 : 0;
+		local ay = (rot % 2) == 0 ? 0 : 1;
+		local lo = OffsetAirportTile(t, -ax, -ay);
+		local hi = OffsetAirportTile(t,  ax,  ay);
+		local has_lo = IsRunwayOnAxis(station, lo, rot);
+		local has_hi = IsRunwayOnAxis(station, hi, rot);
+		/* Exactly one runway neighbour identifies an end. */
+		if (has_lo == has_hi) continue;
+
+		local outward_x = has_lo ? ax : -ax;
+		local outward_y = has_lo ? ay : -ay;
+		local inward_x = -outward_x;
+		local inward_y = -outward_y;
+		local length = 1;
+		local walk = OffsetAirportTile(t, inward_x, inward_y);
+		while (IsRunwayOnAxis(station, walk, rot)) {
+			length++;
+			walk = OffsetAirportTile(walk, inward_x, inward_y);
+		}
+		if (length >= max_length) continue;
+
+		local outside = OffsetAirportTile(t, outward_x, outward_y);
+		if (outside < 0 || AITile.IsStationTile(outside) || !AITile.IsBuildable(outside)) continue;
+		if (AITile.GetMaxHeight(outside) != AITile.GetMaxHeight(t)) continue;
+		candidates.append({ tile = outside, rotation = rot, length = length,
+		                    small = IsSmallRunwayPiece(p) });
+	}
+	if (candidates.len() == 0) return null;
+
+	local start = AIBase.RandRange(candidates.len());
+	for (local i = 0; i < candidates.len(); i++) {
+		local c = candidates[(start + i) % candidates.len()];
+		local piece = c.small ? AIAirport.MP_RUNWAY_SMALL_MIDDLE : AIAirport.MP_RUNWAY;
+		if (AIAirport.BuildModularAirportTile(c.tile, piece, c.rotation, station)) {
+			return "extended a runway to " + (c.length + 1) + " tiles";
+		}
+	}
+	return null;
 }
 
 /**
