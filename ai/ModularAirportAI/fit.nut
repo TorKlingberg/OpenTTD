@@ -144,13 +144,13 @@ function ScoreGrid(grid, want_large_safe)
 	local score = 0;
 	score += stands * 60;
 	score += helipads * 25;
-	/* Mild on purpose, and bounded: only one or two stands can touch a hangar in
-	 * any sane layout, so counting further would just be a proxy for "small
-	 * airport". At most a third of one stand's worth, which breaks ties between
-	 * trims of the same layout without ever choosing a smaller one. An earlier
-	 * unbounded version at 15 a stand cost about 6% of total throughput by
-	 * quietly shifting which layouts won. */
-	local touching = StandsTouchingHangars(grid);
+	/* Mild on purpose, and bounded: a terminal is one or two tiles long, so only
+	 * one or two stands can touch it and counting further would just be a proxy
+	 * for "small airport". At most a third of one stand's worth, which breaks
+	 * ties between trims of the same layout without ever choosing a smaller one.
+	 * An earlier unbounded version at 15 a stand cost about 6% of total
+	 * throughput by quietly shifting which layouts won. */
+	local touching = StandsTouchingTerminals(grid);
 	score += (touching > 2 ? 2 : touching) * 10;
 	score += catchment * 40;
 	score += LongestLargeRunway(grid) * 8;

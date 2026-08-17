@@ -235,19 +235,19 @@ function TryAddRunway(station)
 }
 
 /**
- * Tiles that touch a hangar.
+ * Tiles that touch a terminal building.
  *
- * A stand beside the hangar shortens every servicing trip and the first trip a
- * newly built aircraft makes. It is a preference and not a rule: these tiles are
- * tried first and the airport still grows wherever it can.
+ * A stand against the terminal is where the passengers are, and beside a round
+ * terminal it grows a jetway onto it. It is a preference and not a rule: these
+ * tiles are tried first and the airport still grows wherever it can.
  */
-function TilesTouchingHangar(station)
+function TilesTouchingTerminal(station)
 {
 	local out = {};
 	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
 	foreach (t, _ in tiles) {
 		if (!AIAirport.IsModularAirportTile(t)) continue;
-		if (!IsHangarPiece(AIAirport.GetModularPiece(t))) continue;
+		if (!IsTerminalBuildingPiece(AIAirport.GetModularPiece(t))) continue;
 		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
 		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
 			local n = AIMap.GetTileIndex(x + d[0], y + d[1]);
@@ -262,17 +262,17 @@ function TilesTouchingHangar(station)
  *
  * `taxi_adjacent` marks pieces aircraft must be able to reach — stands and
  * helipads. Buildings and decoration can go anywhere the airport touches.
- * `near_hangar` reorders the candidates rather than filtering them, so it costs
- * nothing when no tile beside the hangar is free.
+ * `near_terminal` reorders the candidates rather than filtering them, so it costs
+ * nothing when no tile beside a terminal is free.
  */
-function AddPiece(station, piece, taxi_adjacent, near_hangar = false)
+function AddPiece(station, piece, taxi_adjacent, near_terminal = false)
 {
 	if (!AIAirport.IsModularPieceAvailable(piece)) return false;
 	local candidates = ExpansionTiles(station, taxi_adjacent);
 	if (candidates.len() == 0) return false;
 
-	if (near_hangar) {
-		local touching = TilesTouchingHangar(station);
+	if (near_terminal) {
+		local touching = TilesTouchingTerminal(station);
 		local preferred = [], others = [];
 		foreach (t in candidates) {
 			if (t in touching) preferred.append(t);

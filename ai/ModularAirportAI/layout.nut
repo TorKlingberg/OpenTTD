@@ -147,9 +147,12 @@ function GenerateLinear(params)
 		placed++;
 	}
 	if (params.large_safe) {
-		if (cursor >= 0 && cursor < len) { g.Set(cursor, 2, AIAirport.MP_TOWER); cursor += step; }
+		/* Terminal first, so it lands against the last stand rather than behind
+		 * the tower. Both are non-taxiable buildings, so the order is purely what
+		 * it looks like from the ground. */
+		if (cursor >= 0 && cursor < len) { g.Set(cursor, 2, params.terminal); cursor += step; }
 		if (cursor >= 0 && cursor < len) {
-			g.Set(cursor, 2, params.terminal); cursor += step;
+			g.Set(cursor, 2, AIAirport.MP_TOWER); cursor += step;
 		}
 	}
 	/* Helipads go in whatever is left of the service row: they only need the
@@ -244,8 +247,9 @@ function GenerateDual(params)
 		placed++;
 	}
 	if (params.large_safe) {
-		if (cursor < len) g.Set(cursor++, 2, AIAirport.MP_TOWER);
+		/* Terminal against the stands, tower behind it; see GenerateLinear. */
 		if (cursor < len) g.Set(cursor++, 2, params.terminal);
+		if (cursor < len) g.Set(cursor++, 2, AIAirport.MP_TOWER);
 	}
 	/* Anything left in the middle row stays apron so the two taxiways connect
 	 * around the buildings rather than dead-ending at them. */

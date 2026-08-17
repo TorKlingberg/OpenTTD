@@ -117,6 +117,27 @@ function IsBigTerminalPiece(piece)
 	return false;
 }
 
+/**
+ * Pieces that read as a terminal building — where passengers would come from.
+ *
+ * Wider than IsBigTerminalPiece, which answers a rules question (does this
+ * satisfy MS_MISSING_BIG_TERMINAL). This one answers a looks question, so the
+ * low terminal and the three-tile small terminal count too.
+ */
+function IsTerminalBuildingPiece(piece)
+{
+	switch (piece) {
+		case AIAirport.MP_TERMINAL:
+		case AIAirport.MP_TERMINAL_ALT:
+		case AIAirport.MP_TERMINAL_OTHER:
+		case AIAirport.MP_TERMINAL_ROUND:
+		case AIAirport.MP_LOW_TERMINAL:
+		case AIAirport.MP_SMALL_TERMINAL_3:
+			return true;
+	}
+	return false;
+}
+
 /** Decorative pieces: no function, but they are what stops airports looking identical. */
 function IsCosmeticPiece(piece)
 {
@@ -476,22 +497,22 @@ class Grid
  * hangar walled in behind the tower, build without error, and leave every
  * aircraft parked forever. So the generator has to prove connectivity itself.
  *
- * How many stands in this grid touch a hangar.
+ * How many stands in this grid touch a terminal building.
  *
- * Worth a nudge in the layout score, not a rule: aircraft go to the hangar to be
- * built and to be serviced, and a stand next to it makes both trips short. It
- * has to stay a nudge, because insisting on it would collapse the pier and apron
- * families, where the hangar closes one end of a run of stands and only the
- * nearest one or two can ever touch it.
+ * Worth a nudge in the layout score, not a rule: an aircraft parked against the
+ * terminal is where the passengers actually are, and a stand next to the round
+ * terminal grows a jetway onto it. It has to stay a nudge, because insisting on
+ * it would collapse the pier family, whose stands hang off a spine with the
+ * buildings well clear of it, and that is the family that fits tight sites.
  */
-function StandsTouchingHangars(grid)
+function StandsTouchingTerminals(grid)
 {
 	local n = 0;
 	foreach (c in grid.Ordered()) {
 		if (!IsStandPiece(c.piece)) continue;
 		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
 			local nb = grid.Get(c.x + d[0], c.y + d[1]);
-			if (nb != null && IsHangarPiece(nb.piece)) { n++; break; }
+			if (nb != null && IsTerminalBuildingPiece(nb.piece)) { n++; break; }
 		}
 	}
 	return n;
