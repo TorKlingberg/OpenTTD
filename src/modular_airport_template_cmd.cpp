@@ -113,20 +113,6 @@ static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_
 	}
 }
 
-static uint8_t NormalizeTemplateRunwayFlags(uint8_t flags)
-{
-	const uint8_t mode_bits = flags & (RUF_LANDING | RUF_TAKEOFF);
-	const uint8_t dir_bits = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
-
-	uint8_t normalized = flags;
-	if (mode_bits == 0) normalized |= (RUF_LANDING | RUF_TAKEOFF);
-	if (dir_bits != RUF_DIR_LOW && dir_bits != RUF_DIR_HIGH) {
-		normalized &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
-		normalized |= RUF_DIR_LOW;
-	}
-	return normalized;
-}
-
 CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st)
 {
 	/* Validate flags: at least one operation and exactly one direction must be set */
@@ -453,7 +439,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	for (size_t i = 0; i < rotated_tiles.size(); i++) {
 		future_noise_pieces.push_back({abs_tiles[i], rotated_tiles[i].piece_type});
 		future_capability_pieces.push_back({rotated_tiles[i].piece_type,
-				IsModularRunwayPiece(rotated_tiles[i].piece_type) ? NormalizeTemplateRunwayFlags(rotated_tiles[i].runway_flags) : RUF_DEFAULT});
+				IsModularRunwayPiece(rotated_tiles[i].piece_type) ? NormalizeModularRunwayFlags(rotated_tiles[i].runway_flags) : RUF_DEFAULT});
 	}
 	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
 	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
@@ -543,7 +529,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		if (ret.Failed()) return ret;
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
-			uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
+			uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
 			ret = SetRunwayFlags_Check(t, runway_flags, st);
 			if (ret.Failed()) return ret;
 		}
@@ -576,7 +562,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			BuildModularAirportTile_Apply(t, rt.piece_type, st, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
-				uint8_t runway_flags = NormalizeTemplateRunwayFlags(rt.runway_flags);
+				uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
 				SetRunwayFlags_Apply(t, runway_flags, st);
 			}
 

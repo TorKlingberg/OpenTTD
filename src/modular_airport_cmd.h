@@ -123,6 +123,25 @@ inline bool IsModularRunwayPiece(uint8_t gfx)
 	}
 }
 
+/**
+ * Turn a template/layout runway flag value into the valid combination stored on
+ * the airport. Zero and the fresh-tile default both need a canonical direction.
+ * Shared by placement and script previews so they describe the same layout.
+ */
+inline uint8_t NormalizeModularRunwayFlags(uint8_t flags)
+{
+	const uint8_t mode_bits = flags & (RUF_LANDING | RUF_TAKEOFF);
+	const uint8_t dir_bits = flags & (RUF_DIR_LOW | RUF_DIR_HIGH);
+
+	uint8_t normalized = flags;
+	if (mode_bits == 0) normalized |= (RUF_LANDING | RUF_TAKEOFF);
+	if (dir_bits != RUF_DIR_LOW && dir_bits != RUF_DIR_HIGH) {
+		normalized &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
+		normalized |= RUF_DIR_LOW;
+	}
+	return normalized;
+}
+
 /** Runway end pieces — the only valid landing/takeoff target tiles. */
 inline bool IsModularRunwayEndPiece(uint8_t piece_type)
 {

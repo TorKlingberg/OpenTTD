@@ -2476,6 +2476,18 @@ function Regression::ModularAirportLayoutPreview()
 	vertical.append(ModularLayoutTile(1, 1, AIAirport.MP_TERMINAL));
 	DumpModularLayout("6-tile runway along Y", ModularLayout(vertical));
 
+	/* Omitted runway flags are normalized by placement. Previewing the same
+	 * layout must describe the airport that would actually be built. */
+	local default_runway = [];
+	default_runway.append(ModularLayoutTile(0, 0, AIAirport.MP_RUNWAY_END));
+	for (local x = 1; x < 5; x++) {
+		default_runway.append(ModularLayoutTile(x, 0, AIAirport.MP_RUNWAY));
+	}
+	default_runway.append(ModularLayoutTile(5, 0, AIAirport.MP_RUNWAY_END));
+	default_runway.append(ModularLayoutTile(0, 1, AIAirport.MP_TOWER));
+	default_runway.append(ModularLayoutTile(1, 1, AIAirport.MP_TERMINAL));
+	DumpModularLayout("6-tile runway with default flags", ModularLayout(default_runway));
+
 	print("  malformed layouts:");
 	print("    empty:                    " + AIAirport.GetModularLayoutNoiseLevel([]));
 	print("    short stride:             " + AIAirport.GetModularLayoutNoiseLevel([0, 0, AIAirport.MP_APRON]));
@@ -2779,4 +2791,3 @@ function Regression::Start()
 	}
 	list.Valuate(Infinite);
 }
-

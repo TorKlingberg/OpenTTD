@@ -328,7 +328,9 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		tile.dy = static_cast<uint16_t>(dy);
 		tile.piece_type = gfx;
 		tile.rotation = static_cast<uint8_t>(rotation);
-		tile.runway_flags = static_cast<uint8_t>(runway_flags);
+		tile.runway_flags = ::IsModularRunwayPiece(gfx) ?
+				::NormalizeModularRunwayFlags(static_cast<uint8_t>(runway_flags)) :
+				static_cast<uint8_t>(runway_flags);
 		tile.one_way_taxi = layout[i + ScriptAirport::MLF_ONE_WAY_TAXI] != 0;
 		tile.user_taxi_dir_mask = static_cast<uint8_t>(taxi_dir_mask);
 		tile.edge_block_mask = static_cast<uint8_t>(edge_fence_mask);
