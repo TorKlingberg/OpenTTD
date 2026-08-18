@@ -98,8 +98,6 @@ function GenerateStrip(params)
 	local len = params.runway_length;
 	if (len < MIN_LEGACY_RUNWAY_LENGTH) len = MIN_LEGACY_RUNWAY_LENGTH;
 	local g = Grid(len, 3);
-	local compact = params.strip_compact && len == 4 && params.small_terminal
-	             && AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3);
 
 	g.Set(0, 2, AIAirport.MP_RUNWAY_SMALL_FAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
@@ -110,25 +108,16 @@ function GenerateStrip(params)
 	g.Set(len - 1, 2, AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0,
 	      AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
 
-	/* The compact 4x3 style spends its middle row on hangar/stands and lets them
-	 * enter the runway directly. That leaves the back row for the old three-tile
-	 * terminal. The other styles retain a separate apron spine. */
-	if (!compact) {
-		for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
-	}
+	for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
 
-	/* The service row goes *above* the apron here, not below as in the other
-	 * families, because a small hangar has only one graphic — the SE one — and
-	 * must therefore face SE, onto the apron at (x, y+1). Facing it any other way
-	 * would work mechanically and look wrong on screen. */
-	local service_y = compact ? 1 : 0;
-	g.Set(0, service_y, AIAirport.MP_SMALL_HANGAR, FACE_SE);
+	/* The service row goes above the apron: small hangar at (0, 0) faces SE
+	 * onto the apron at (0, 1). Stands at (1..len-1, 0) touch the apron at (x, 1). */
+	g.Set(0, 0, AIAirport.MP_SMALL_HANGAR, FACE_SE);
 	local placed = 0;
 	for (local x = 1; x < len && placed < params.stands; x++) {
-		g.Set(x, service_y, AIAirport.MP_STAND, 0, 0, placed >= 2);
+		g.Set(x, 0, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
-	if (compact) g.SetWide(1, 0, AIAirport.MP_SMALL_TERMINAL_3, SMALL_TERMINAL_WIDTH, true);
 	return g.Normalise();
 }
 
@@ -150,32 +139,31 @@ function GenerateLinear(params)
 
 	for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
 
-	/* Service row: hangar at one end, then stands, then the buildings that make
-	 * the airport large-safe at the other end. Buildings go last because they
-	 * are not taxiable and must never sit between the hangar and the apron. */
-	local cursor = params.hangar_at_end ? 0 : len - 1;
-	local step = params.hangar_at_end ? 1 : -1;
-	g.Set(cursor, 2, AIAirport.MP_HANGAR, FACE_NW);
-	cursor += step;
+	/* Service row: hangar at end(s), stands, and safety buildings.
+	 * If the runway is long (len >= 8), place a second hangar at the opposite end. */
+	local second_hangar = len >= 8;
+	local cursor_lo = 0;
+	local cursor_hi = len - 1;
+
+	g.Set(cursor_lo++, 2, AIAirport.MP_HANGAR, FACE_NW);
+	if (second_hangar) {
+		g.Set(cursor_hi--, 2, AIAirport.MP_HANGAR, FACE_NW);
+	}
+
+	if (params.large_safe) {
+		if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, AIAirport.MP_TOWER);
+		if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, params.terminal);
+	}
 
 	local placed = 0;
-	while (placed < params.stands && cursor >= 0 && cursor < len) {
-		g.Set(cursor, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
-		cursor += step;
+	while (placed < params.stands && cursor_lo <= cursor_hi) {
+		g.Set(cursor_lo++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
-	if (params.large_safe) {
-		/* Terminal first, so it lands against the last stand rather than behind
-		 * the tower. Both are non-taxiable buildings, so the order is purely what
-		 * it looks like from the ground. */
-		if (cursor >= 0 && cursor < len) { g.Set(cursor, 2, params.terminal); cursor += step; }
-		if (cursor >= 0 && cursor < len) {
-			g.Set(cursor, 2, AIAirport.MP_TOWER); cursor += step;
-		}
+
+	if (params.helipads > 0 && cursor_lo <= cursor_hi) {
+		AddHelipadsAlongApron(g, params, 2, cursor_lo, cursor_hi);
 	}
-	/* Helipads go in whatever is left of the service row: they only need the
-	 * apron above them, which the whole row has. */
-	if (params.helipads > 0) AddHelipadsAlongApron(g, params, 2, 0, len - 1);
 	AddExtraTerminalFrontage(g, params, 3);
 	return g.Normalise();
 }
@@ -215,19 +203,27 @@ function GeneratePier(params)
 		}
 	}
 
-	/* Hangar closes the end of the spine, facing back up it. */
+	/* Hangar closes the end of the spine, facing back up it onto the apron. */
 	local hy = 2 + depth;
 	g.Set(sx, hy, AIAirport.MP_HANGAR, FACE_NW);
 
-	if (params.large_safe) {
-		/* Buildings go on the far side of the runway row, well clear of the
-		 * spine, so they can never block it. */
-		g.Set(len - 1, 2, AIAirport.MP_TOWER);
-		g.Set(len - 2, 2, params.terminal);
+	/* If large (len >= 8), add a second hangar along the top apron row. */
+	local second_hangar = len >= 8;
+	if (second_hangar) {
+		g.Set(len - 1, 2, AIAirport.MP_HANGAR, FACE_NW);
 	}
-	/* Helipads hang off the runway-parallel taxiway, between the pier spine and
-	 * the buildings, where they cannot collide with either. */
-	if (params.helipads > 0) AddHelipadsAlongApron(g, params, 2, sx + 2, len - 3);
+
+	if (params.large_safe) {
+		local b_start = second_hangar ? len - 2 : len - 1;
+		if (b_start > sx + 1) g.Set(b_start, 2, AIAirport.MP_TOWER);
+		if (b_start - 1 > sx + 1) g.Set(b_start - 1, 2, params.terminal);
+	}
+
+	local heli_from = sx + (params.pier_double ? 2 : 1) + 1;
+	local heli_to = (second_hangar ? len - 2 : len - 1) - (params.large_safe ? 2 : 0) - 1;
+	if (params.helipads > 0 && heli_from <= heli_to) {
+		AddHelipadsAlongApron(g, params, 2, heli_from, heli_to);
+	}
 	return g.Normalise();
 }
 
@@ -258,22 +254,29 @@ function GenerateDual(params)
 		g.Set(x, 3, AIAirport.MP_APRON);
 	}
 
-	local cursor = 0;
-	g.Set(cursor++, 2, AIAirport.MP_HANGAR, FACE_NW);
+	local second_hangar = len >= 8;
+	local cursor_lo = 0;
+	local cursor_hi = len - 1;
+
+	g.Set(cursor_lo++, 2, AIAirport.MP_HANGAR, FACE_NW);
+	if (second_hangar) {
+		g.Set(cursor_hi--, 2, AIAirport.MP_HANGAR, FACE_NW);
+	}
+
+	if (params.large_safe) {
+		if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, AIAirport.MP_TOWER);
+		if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, params.terminal);
+	}
+
 	local placed = 0;
-	while (placed < params.stands && cursor < len) {
-		g.Set(cursor++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
+	while (placed < params.stands && cursor_lo <= cursor_hi) {
+		g.Set(cursor_lo++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
 		placed++;
 	}
-	if (params.large_safe) {
-		/* Terminal against the stands, tower behind it; see GenerateLinear. */
-		if (cursor < len) g.Set(cursor++, 2, params.terminal);
-		if (cursor < len) g.Set(cursor++, 2, AIAirport.MP_TOWER);
-	}
-	/* Anything left in the middle row stays apron so the two taxiways connect
-	 * around the buildings rather than dead-ending at them. */
-	while (cursor < len) {
-		g.Set(cursor++, 2, AIAirport.MP_APRON, 0, 0, true);
+
+	/* Anything left in the middle row stays apron so the two taxiways connect. */
+	while (cursor_lo <= cursor_hi) {
+		g.Set(cursor_lo++, 2, AIAirport.MP_APRON, 0, 0, true);
 	}
 	AddExtraTerminalFrontage(g, params, 5);
 	return g.Normalise();
@@ -294,34 +297,65 @@ function GenerateApron(params)
 	local rows = params.apron_rows;
 	if (rows < 1) rows = 1;
 	local rwy = AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW;
-	local g = Grid(len, 1 + rows + 2);
+
+	local total_h = (rows > 1) ? 5 : 3;
+	local g = Grid(len, total_h + 1);
 
 	g.Set(0, 0, AIAirport.MP_RUNWAY_END, 0, rwy);
 	for (local x = 1; x < len - 1; x++) g.Set(x, 0, AIAirport.MP_RUNWAY, 0, rwy);
 	g.Set(len - 1, 0, AIAirport.MP_RUNWAY_END, 0, rwy);
 	for (local x = 0; x < len; x++) g.Set(x, 1, AIAirport.MP_APRON);
 
+	local second_hangar = len >= 8;
+	local cursor_lo = 0;
+	local cursor_hi = len - 1;
+
+	g.Set(cursor_lo++, 2, AIAirport.MP_HANGAR, FACE_NW);
+	if (second_hangar) {
+		g.Set(cursor_hi--, 2, AIAirport.MP_HANGAR, FACE_NW);
+	}
+
 	local placed = 0;
-	for (local r = 0; r < rows; r++) {
-		local y = 2 + r;
-		for (local x = 0; x < len; x++) {
-			if (placed < params.stands) {
-				g.Set(x, y, AIAirport.MP_STAND, 0, 0, placed >= 2);
-				placed++;
-			} else {
-				g.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
-			}
+	if (rows == 1) {
+		if (params.large_safe) {
+			if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, AIAirport.MP_TOWER, 0, 0, false);
+			if (cursor_hi >= cursor_lo) g.Set(cursor_hi--, 2, params.terminal, 0, 0, false);
+		}
+		while (placed < params.stands && cursor_lo <= cursor_hi) {
+			g.Set(cursor_lo++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
+			placed++;
+		}
+		while (cursor_lo <= cursor_hi) {
+			g.Set(cursor_lo++, 2, AIAirport.MP_APRON, 0, 0, true);
+		}
+	} else {
+		for (local x = 0; x < len; x++) g.Set(x, 3, AIAirport.MP_APRON);
+		while (placed < params.stands && cursor_lo <= cursor_hi) {
+			g.Set(cursor_lo++, 2, AIAirport.MP_STAND, 0, 0, placed >= 2);
+			placed++;
+		}
+		while (cursor_lo <= cursor_hi) {
+			g.Set(cursor_lo++, 2, AIAirport.MP_APRON, 0, 0, true);
+		}
+
+		local r4_lo = 0;
+		local r4_hi = len - 1;
+		if (params.large_safe) {
+			if (r4_hi >= r4_lo) g.Set(r4_hi--, 4, AIAirport.MP_TOWER, 0, 0, false);
+			if (r4_hi >= r4_lo) g.Set(r4_hi--, 4, params.terminal, 0, 0, false);
+		}
+		while (placed < params.stands && r4_lo <= r4_hi) {
+			g.Set(r4_lo++, 4, AIAirport.MP_STAND, 0, 0, placed >= 2);
+			placed++;
+		}
+		while (r4_lo <= r4_hi) {
+			g.Set(r4_lo++, 4, AIAirport.MP_APRON, 0, 0, true);
 		}
 	}
 
-	local hy = 1 + rows;
-	g.Set(0, hy, AIAirport.MP_HANGAR, FACE_NW);
-	if (params.large_safe) {
-		g.Set(len - 1, hy, AIAirport.MP_TOWER, 0, 0, false);
-		g.Set(len - 2, hy, params.terminal, 0, 0, false);
-	}
-	if (params.helipads > 0) AddHelipadsAlongApron(g, params, hy, 1, len - 3);
-	AddExtraTerminalFrontage(g, params, hy + 1);
+	local frontage_y = (rows > 1) ? 5 : 3;
+	if (params.helipads > 0) AddHelipadsAlongApron(g, params, frontage_y, 1, len - 2);
+	AddExtraTerminalFrontage(g, params, frontage_y);
 	return g.Normalise();
 }
 
@@ -536,19 +570,90 @@ function DecorateGrid(grid, params)
 }
 
 /**
+ * Ensure no tile is > max_dist from a hangar.
+ *
+ * If the airport geometry leaves a remote corner > max_dist tiles away
+ * from all existing hangars, place an additional hangar adjacent to an apron
+ * facing that apron.
+ */
+function EnsureHangarsWithinDistance(grid, max_dist = 10)
+{
+	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_HANGAR)) return;
+	for (local iter = 0; iter < 4; iter++) {
+		local d = MaxDistanceToHangar(grid);
+		if (d <= max_dist) break;
+
+		local hangars = [];
+		foreach (c in grid.Ordered()) {
+			if (IsHangarPiece(c.piece)) hangars.append(c);
+		}
+		if (hangars.len() == 0) break;
+
+		local farthest = null, worst_d = -1;
+		foreach (c in grid.Ordered()) {
+			if (c.filler) continue;
+			local min_h = 999;
+			foreach (h in hangars) {
+				local dist = (c.x > h.x ? c.x - h.x : h.x - c.x) + (c.y > h.y ? c.y - h.y : h.y - c.y);
+				if (dist < min_h) min_h = dist;
+			}
+			if (min_h > worst_d) { worst_d = min_h; farthest = c; }
+		}
+		if (farthest == null || worst_d <= max_dist) break;
+
+		local placed = false;
+		for (local rad = 0; rad <= 4 && !placed; rad++) {
+			for (local dy = -rad; dy <= rad && !placed; dy++) {
+				for (local dx = -rad; dx <= rad && !placed; dx++) {
+					local x = farthest.x + dx, y = farthest.y + dy;
+					if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) continue;
+					local c = grid.Get(x, y);
+					if (c != null && (!c.optional || IsStandPiece(c.piece) || IsRunwayPiece(c.piece))) continue;
+
+					foreach (rot in [FACE_NW, FACE_SE, FACE_NE, FACE_SW]) {
+						local off = FaceOffset(rot);
+						local n = grid.Get(x + off[0], y + off[1]);
+						if (n != null && n.piece == AIAirport.MP_APRON) {
+							grid.Set(x, y, AIAirport.MP_HANGAR, rot, 0, false);
+							placed = true;
+							break;
+						}
+					}
+				}
+			}
+		}
+		if (!placed) break;
+	}
+}
+
+/**
  * Claim otherwise unused cells inside the design's bounding rectangle.
  *
- * Empty airport tiles make the finished field read as one coherent site and
- * reserve a little room for later growth. They remain optional: irregular or
- * obstructed terrain may trim any of them without sacrificing the runway,
- * stands, hangar, or other functional pieces.
+ * Puts apron instead of empty tiles whenever 3+ direct neighbors (not diagonal)
+ * are non-empty airport tiles. Otherwise, fills with empty airport ground.
  */
 function FillEmptyBounds(grid)
 {
-	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY)) return;
+	local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
+	local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
+	local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
+	if (!has_empty && !has_apron && !has_grass) return;
+
 	for (local y = 0; y < grid.h; y++) {
 		for (local x = 0; x < grid.w; x++) {
-			if (grid.Get(x, y) == null) grid.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
+			if (grid.Get(x, y) != null) continue;
+			local non_empty_neighbors = 0;
+			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+				local n = grid.Get(x + d[0], y + d[1]);
+				if (n != null && IsNonEmptyAirportPiece(n.piece)) non_empty_neighbors++;
+			}
+			if (non_empty_neighbors >= 3 && has_apron) {
+				grid.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
+			} else if (has_empty) {
+				grid.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
+			} else if (has_grass) {
+				grid.Set(x, y, AIAirport.MP_GRASS, 0, 0, true);
+			}
 		}
 	}
 }
@@ -567,6 +672,7 @@ function GenerateLayout(family, params)
 		default:              g = GenerateLinear(params); break;
 	}
 	EnsureTowerIfNearlySafe(g);
+	EnsureHangarsWithinDistance(g, 10);
 	DecorateGrid(g, params);
 	FillEmptyBounds(g);
 	if (params.mirror) g = g.MirrorX().Normalise();
@@ -638,25 +744,15 @@ function RandomParams(family, scale)
 	/* scale 0..3 drives how big an airport we are trying to afford. */
 	switch (family) {
 		case Family.STRIP:
-			/* Three equally likely old-airfield characters:
-			 *  - a genuinely minimal 4..5-tile strip;
-			 *  - a conventional 6..8-tile strip with room along its frontage;
-			 *  - a compact 4x3 layout whose stands open directly onto the runway,
-			 *    leaving the row behind them for the three-tile terminal. */
-			local strip_style = AIBase.RandRange(3);
+			local strip_style = AIBase.RandRange(2);
 			if (strip_style == 0) {
 				p.runway_length = MIN_LEGACY_RUNWAY_LENGTH + AIBase.RandRange(2);
 				p.stands = 2;
 				p.small_terminal = false;
-			} else if (strip_style == 1) {
+			} else {
 				p.runway_length = 6 + AIBase.RandRange(3);
 				p.stands = 2 + (scale > 1 ? AIBase.RandRange(2) : 0);
 				p.small_terminal = AIBase.RandRange(3) != 0;
-			} else {
-				p.runway_length = 4;
-				p.stands = 2;
-				p.small_terminal = true;
-				p.strip_compact = true;
 			}
 			p.large_safe = false;
 			break;

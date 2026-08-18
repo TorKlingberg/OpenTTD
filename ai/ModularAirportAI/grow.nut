@@ -33,7 +33,7 @@ function PassengerCargo()
  * height — a modular airport occupies exactly one height level, so anything
  * else is refused by the build command.
  */
-function ExpansionTiles(station, want_taxi_adjacent)
+function ExpansionTiles(station, want_apron_adjacent, want_taxi_adjacent = false)
 {
 	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
 	local base = -1;
@@ -48,9 +48,9 @@ function ExpansionTiles(station, want_taxi_adjacent)
 	local out = [];
 	local seen = {};
 	foreach (t, piece in ours) {
-		/* A new stand has to hang off something aircraft can taxi along, or it
-		 * is a stand no aircraft can reach — which builds, scores and never
-		 * gets used. */
+		/* A stand or hangar must hang off an apron tile. */
+		if (want_apron_adjacent && piece != AIAirport.MP_APRON) continue;
+		/* A new stand/helipad has to hang off something aircraft can taxi along. */
 		if (want_taxi_adjacent && !IsThroughTaxiable(piece)) continue;
 
 		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
@@ -66,6 +66,164 @@ function ExpansionTiles(station, want_taxi_adjacent)
 		}
 	}
 	return out;
+}
+
+/**
+ * Sort candidates to prioritize those that minimize expanding the airport's
+ * bounding rectangle.
+ */
+function SortByBoundingBoxImpact(station, candidates)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	local minx = 99999, miny = 99999, maxx = -1, maxy = -1;
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
+		if (x < minx) minx = x;
+		if (y < miny) miny = y;
+		if (x > maxx) maxx = x;
+		if (y > maxy) maxy = y;
+	}
+	if (maxx < 0) return candidates;
+	local cur_area = (maxx - minx + 1) * (maxy - miny + 1);
+
+	local scored = [];
+	foreach (t in candidates) {
+		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
+		local nx0 = (x < minx) ? x : minx;
+		local nx1 = (x > maxx) ? x : maxx;
+		local ny0 = (y < miny) ? y : miny;
+		local ny1 = (y > maxy) ? y : maxy;
+		local new_area = (nx1 - nx0 + 1) * (ny1 - ny0 + 1);
+		scored.append({ tile = t, delta = new_area - cur_area });
+	}
+	scored.sort(function (a, b) {
+		if (a.delta < b.delta) return -1;
+		if (a.delta > b.delta) return 1;
+		return 0;
+	});
+	local out = [];
+	foreach (s in scored) out.append(s.tile);
+	return out;
+}
+
+/**
+ * Maximum Manhattan distance from any airport tile to its nearest hangar.
+ */
+function MaxTileDistanceToAnyHangar(station)
+{
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	local hangars = [], airport_tiles = [];
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		airport_tiles.append(t);
+		if (IsHangarPiece(AIAirport.GetModularPiece(t))) hangars.append(t);
+	}
+	if (hangars.len() == 0) return 999;
+	local max_d = 0;
+	foreach (t in airport_tiles) {
+		local min_h = 999;
+		local tx = AIMap.GetTileX(t), ty = AIMap.GetTileY(t);
+		foreach (h in hangars) {
+			local hx = AIMap.GetTileX(h), hy = AIMap.GetTileY(h);
+			local d = (tx > hx ? tx - hx : hx - tx) + (ty > hy ? ty - hy : hy - ty);
+			if (d < min_h) min_h = d;
+		}
+		if (min_h > max_d) max_d = min_h;
+	}
+	return max_d;
+}
+
+/**
+ * Add a second hangar to an existing airport, ensuring it faces an apron tile.
+ */
+function TryAddSecondHangar(station)
+{
+	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_HANGAR)) return false;
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	local aprons = {};
+	foreach (t, _ in tiles) {
+		if (AIAirport.IsModularAirportTile(t) && AIAirport.GetModularPiece(t) == AIAirport.MP_APRON) {
+			aprons[t] <- true;
+		}
+	}
+	if (aprons.len() == 0) return false;
+
+	local candidates = ExpansionTiles(station, true, false);
+	candidates = SortByBoundingBoxImpact(station, candidates);
+	foreach (t in candidates) {
+		local tx = AIMap.GetTileX(t), ty = AIMap.GetTileY(t);
+		foreach (rot in [FACE_NW, FACE_SE, FACE_NE, FACE_SW]) {
+			local off = FaceOffset(rot);
+			local n = AIMap.GetTileIndex(tx + off[0], ty + off[1]);
+			if (n in aprons) {
+				if (AIAirport.BuildModularAirportTile(t, AIAirport.MP_HANGAR, rot, station)) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * Fill unbuilt tiles inside the station's bounding rectangle.
+ *
+ * Places apron tiles if 3+ direct neighbors are non-empty airport tiles;
+ * otherwise places empty airport ground.
+ */
+function TryFillEmptyBounds(station)
+{
+	local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
+	local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
+	local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
+	if (!has_empty && !has_apron && !has_grass) return false;
+
+	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
+	local minx = 99999, miny = 99999, maxx = -1, maxy = -1, base = -1;
+	local ours = {};
+	foreach (t, _ in tiles) {
+		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local x = AIMap.GetTileX(t), y = AIMap.GetTileY(t);
+		if (base < 0) base = AITile.GetMaxHeight(t);
+		if (x < minx) minx = x;
+		if (y < miny) miny = y;
+		if (x > maxx) maxx = x;
+		if (y > maxy) maxy = y;
+		ours[t] <- AIAirport.GetModularPiece(t);
+	}
+	if (base < 0 || maxx < 0) return false;
+
+	local built_any = false;
+	for (local y = miny; y <= maxy; y++) {
+		for (local x = minx; x <= maxx; x++) {
+			local t = AIMap.GetTileIndex(x, y);
+			if (!AIMap.IsValidTile(t)) continue;
+			if (t in ours) continue;
+			if (AITile.IsStationTile(t)) continue;
+			if (!AITile.IsBuildable(t)) continue;
+			if (AITile.GetMaxHeight(t) != base) continue;
+
+			local touches = false;
+			local non_empty = 0;
+			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+				local n = AIMap.GetTileIndex(x + d[0], y + d[1]);
+				if (n in ours) {
+					touches = true;
+					if (IsNonEmptyAirportPiece(ours[n])) non_empty++;
+				}
+			}
+			if (!touches) continue;
+
+			local piece = (non_empty >= 3 && has_apron) ? AIAirport.MP_APRON :
+			              (has_empty ? AIAirport.MP_EMPTY : AIAirport.MP_GRASS);
+			if (AIAirport.BuildModularAirportTile(t, piece, 0, station)) {
+				ours[t] <- piece;
+				built_any = true;
+			}
+		}
+	}
+	return built_any;
 }
 
 /**
@@ -106,14 +264,35 @@ function GrowAirport(station, tile, funds, pax_cargo)
 	 * to 12, which changes nothing about what may safely land there. */
 	if (safety != AIAirport.MS_OK && safety >= 0 && missing_runway == 0) {
 		if (safety & AIAirport.MS_MISSING_TOWER) {
-			if (AddPiece(station, AIAirport.MP_TOWER, false)) return "added a control tower";
+			if (AddPiece(station, AIAirport.MP_TOWER, false)) {
+				TryFillEmptyBounds(station);
+				return "added a control tower";
+			}
 		}
 		if (safety & AIAirport.MS_MISSING_BIG_TERMINAL) {
 			local variants = BigTerminalVariants();
 			local piece = variants[AIBase.RandRange(variants.len())];
-			if (AddPiece(station, piece, false)) return "added a terminal building";
+			if (AddPiece(station, piece, false)) {
+				TryFillEmptyBounds(station);
+				return "added a terminal building";
+			}
 		}
 		return null;
+	}
+
+	local slots = ParkingSlots(station);
+	local runways = CountRunways(station);
+
+	/* Once an airport gets large (many stands/runways or any tile > 10 from a hangar),
+	 * add a second hangar so aircraft never have to taxi too far across the field. */
+	local hangars_count = CountAirportPieces(station, IsHangarPiece);
+	local max_h_dist = MaxTileDistanceToAnyHangar(station);
+	local is_large = slots >= 5 || runways >= 2 || max_h_dist > 10;
+	if (hangars_count < 2 && is_large && funds > 80000) {
+		if (TryAddSecondHangar(station)) {
+			TryFillEmptyBounds(station);
+			return "added a second hangar (max hangar distance was " + max_h_dist + ")";
+		}
 	}
 
 	/* Sound, or as sound as it can be made. Now the question is whether it is big
@@ -125,25 +304,29 @@ function GrowAirport(station, tile, funds, pax_cargo)
 	 * Buying aircraft is much the cheaper answer and BuyOneAircraft reaches for it
 	 * first, so an airport that is still below its ceiling needs nothing built:
 	 * the next aircraft will take the queue. Building only makes sense once the
-	 * ground is what is holding the route back.
-	 *
-	 * That also says *what* to build. The ceiling is the lower of the stand and
-	 * runway limits, so whichever of the two produced it is the thing to add, and
-	 * the AI stops guessing between a stand and a runway. */
+	 * ground is what is holding the route back. */
 	local waiting = AIStation.GetCargoWaiting(station, pax_cargo);
-	if (waiting <= MIN_QUEUE_TO_GROW) return null;
+	if (waiting <= MIN_QUEUE_TO_GROW) {
+		if (funds > 100000 && TryFillEmptyBounds(station)) {
+			return "filled empty tiles in bounding rectangle";
+		}
+		return null;
+	}
 
 	local serving = VehiclesServingStation(station);
-	if (serving < AircraftCeiling(station)) return null;
-
-	local slots = ParkingSlots(station);
-	local runways = CountRunways(station);
+	if (serving < AircraftCeiling(station)) {
+		if (funds > 100000 && TryFillEmptyBounds(station)) {
+			return "filled empty tiles in bounding rectangle";
+		}
+		return null;
+	}
 
 	/* A heliport has no runway by design. Once its pads are full, grow the
 	 * resource helicopters actually use instead of treating the absent runway
 	 * as a bottleneck and trying to turn the heliport into an aerodrome. */
 	if (runways == 0) {
 		if (funds > 80000 && AddHelipad(station)) {
+			TryFillEmptyBounds(station);
 			return "added a helipad (" + waiting + " waiting, " + serving
 			       + " helicopters on " + slots + " pads)";
 		}
@@ -154,6 +337,7 @@ function GrowAirport(station, tile, funds, pax_cargo)
 
 	if (stand_bound) {
 		if (funds > 80000 && AddPiece(station, AIAirport.MP_STAND, true, true)) {
+			TryFillEmptyBounds(station);
 			return "added a stand (" + waiting + " waiting, " + serving + " aircraft on "
 			       + slots + " stands)";
 		}
@@ -167,6 +351,7 @@ function GrowAirport(station, tile, funds, pax_cargo)
 	if (funds > 180000 && AIBase.RandRange(3) == 0) {
 		local extended = TryExtendRunway(station, 8);
 		if (extended != null) {
+			TryFillEmptyBounds(station);
 			return extended + " (" + waiting + " waiting, " + serving + " aircraft)";
 		}
 	}
@@ -179,9 +364,14 @@ function GrowAirport(station, tile, funds, pax_cargo)
 	if (funds > 400000 && runways < MAX_RUNWAYS) {
 		local added = TryAddRunway(station);
 		if (added != null) {
+			TryFillEmptyBounds(station);
 			return added + " (" + waiting + " waiting, " + serving + " aircraft on "
 			       + runways + " runway)";
 		}
+	}
+
+	if (funds > 80000 && TryFillEmptyBounds(station)) {
+		return "filled empty tiles in bounding rectangle";
 	}
 	return null;
 }
@@ -466,11 +656,6 @@ function TryExtendRunway(station, max_length)
  * Looks for a straight run of clear tiles at the airport's own height with at
  * least one tile touching something aircraft can already taxi on, so the new
  * runway joins the existing network by construction rather than by hope.
- *
- * The new runway takes both landing and takeoff rather than splitting the two.
- * Splitting is better for throughput, but it means a window in which the old
- * runway is landing-only; if anything then goes wrong before the new one is
- * finished, the airport cannot launch an aircraft at all.
  */
 function TryAddRunway(station)
 {
@@ -519,8 +704,6 @@ function TryAddRunway(station)
 					built++;
 				}
 				if (built < run.len()) {
-					/* Partial runways are only taxiable tiles, so nothing is broken,
-					 * but say so — it means the ground moved under the preflight. */
 					AILog.Warning("extra runway stopped after " + built + " of " + run.len() + " tiles");
 					return (built > 0) ? "added a partial extra runway" : null;
 				}
@@ -535,10 +718,6 @@ function TryAddRunway(station)
 
 /**
  * Tiles that touch a terminal building.
- *
- * A stand against the terminal is where the passengers are, and beside a round
- * terminal it grows a jetway onto it. It is a preference and not a rule: these
- * tiles are tried first and the airport still grows wherever it can.
  */
 function TilesTouchingTerminal(station)
 {
@@ -559,16 +738,18 @@ function TilesTouchingTerminal(station)
 /**
  * Add one piece to an existing airport.
  *
- * `taxi_adjacent` marks pieces aircraft must be able to reach — stands and
- * helipads. Buildings and decoration can go anywhere the airport touches.
- * `near_terminal` reorders the candidates rather than filtering them, so it costs
- * nothing when no tile beside a terminal is free.
+ * Stands and hangars must be placed adjacent to an apron tile.
+ * Helipads must be taxi-adjacent.
+ * Candidates are sorted to minimize bounding rectangle growth.
  */
-function AddPiece(station, piece, taxi_adjacent, near_terminal = false)
+function AddPiece(station, piece, want_taxi_or_apron, near_terminal = false)
 {
 	if (!AIAirport.IsModularPieceAvailable(piece)) return false;
-	local candidates = ExpansionTiles(station, taxi_adjacent);
+	local want_apron = (piece == AIAirport.MP_STAND || piece == AIAirport.MP_HANGAR);
+	local candidates = ExpansionTiles(station, want_apron, want_taxi_or_apron);
 	if (candidates.len() == 0) return false;
+
+	candidates = SortByBoundingBoxImpact(station, candidates);
 
 	if (near_terminal) {
 		local touching = TilesTouchingTerminal(station);

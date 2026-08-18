@@ -155,6 +155,34 @@ function IsCosmeticPiece(piece)
 	return false;
 }
 
+/** Whether a piece is a real airport feature and not just empty ground. */
+function IsNonEmptyAirportPiece(piece)
+{
+	return piece != AIAirport.MP_EMPTY;
+}
+
+/** Maximum Manhattan distance from any occupied non-filler cell to its nearest hangar. */
+function MaxDistanceToHangar(grid)
+{
+	local hangars = [];
+	foreach (c in grid.Ordered()) {
+		if (IsHangarPiece(c.piece)) hangars.append(c);
+	}
+	if (hangars.len() == 0) return 999;
+
+	local max_d = 0;
+	foreach (c in grid.Ordered()) {
+		if (c.filler) continue;
+		local min_h = 999;
+		foreach (h in hangars) {
+			local d = (c.x > h.x ? c.x - h.x : h.x - c.x) + (c.y > h.y ? c.y - h.y : h.y - c.y);
+			if (d < min_h) min_h = d;
+		}
+		if (min_h > max_d) max_d = min_h;
+	}
+	return max_d;
+}
+
 /** One character per piece, for the ASCII dumps in selftest.nut. */
 function PieceChar(piece)
 {
@@ -610,15 +638,21 @@ function ValidateGrid(grid)
 	}
 	foreach (c in stands) {
 		if (!(grid.Key(c.x, c.y) in seen)) return "stand at " + c.x + "," + c.y + " unreachable";
+		local has_apron = false;
+		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+			local n = grid.Get(c.x + d[0], c.y + d[1]);
+			if (n != null && n.piece == AIAirport.MP_APRON) { has_apron = true; break; }
+		}
+		if (!has_apron) return "stand at " + c.x + "," + c.y + " has no adjacent apron";
 	}
 
 	/* Hangars and helipads are endpoints, so they need an adjacent tile on the
-	 * network — and a hangar must actually face it. */
+	 * network — and in front of a hangar must be an apron. */
 	foreach (c in hangars) {
 		local off = FaceOffset(c.rot);
 		local n = grid.Get(c.x + off[0], c.y + off[1]);
-		if (n == null || !IsThroughTaxiable(n.piece)) {
-			return "hangar at " + c.x + "," + c.y + " faces nothing";
+		if (n == null || n.piece != AIAirport.MP_APRON) {
+			return "hangar at " + c.x + "," + c.y + " does not face an apron";
 		}
 		if (!(grid.Key(n.x, n.y) in seen)) return "hangar at " + c.x + "," + c.y + " unreachable";
 	}

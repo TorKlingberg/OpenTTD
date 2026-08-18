@@ -41,7 +41,7 @@ function FitGridToMask(grid, allowed)
 	}
 
 	/* Trimming can strand a hangar that used to face an apron. Re-aim it at
-	 * whatever it still touches before giving up on the layout. */
+	 * an adjacent apron before giving up on the layout. */
 	RepairHangars(g);
 
 	/* Trimming can also cut a stand off from the taxiway network. Those are
@@ -49,22 +49,57 @@ function FitGridToMask(grid, allowed)
 	PruneUnreachable(g);
 	RepairHangars(g);
 
+	/* Re-fill holes inside the trimmed bounding box if allowed ground permits. */
+	local minx = 9999, miny = 9999, maxx = -1, maxy = -1;
+	foreach (c in g.Ordered()) {
+		if (c.x < minx) minx = c.x;
+		if (c.y < miny) miny = c.y;
+		if (c.x > maxx) maxx = c.x;
+		if (c.y > maxy) maxy = c.y;
+	}
+	if (maxx >= minx && maxy >= miny) {
+		local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
+		local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
+		local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
+		for (local y = miny; y <= maxy; y++) {
+			for (local x = minx; x <= maxx; x++) {
+				if (g.Get(x, y) != null) continue;
+				if (!(g.Key(x, y) in allowed)) continue;
+				local non_empty = 0;
+				foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+					local n = g.Get(x + d[0], y + d[1]);
+					if (n != null && IsNonEmptyAirportPiece(n.piece)) non_empty++;
+				}
+				if (non_empty >= 3 && has_apron) {
+					g.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
+				} else if (has_empty) {
+					g.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
+				} else if (has_grass) {
+					g.Set(x, y, AIAirport.MP_GRASS, 0, 0, true);
+				}
+			}
+		}
+	}
+
 	if (ValidateGrid(g) != null) return null;
 	return g;
 }
 
-/** Point each hangar at an adjacent through-taxiable tile, if one exists. */
+/** Point each hangar at an adjacent apron tile, if one exists. */
 function RepairHangars(grid)
 {
 	foreach (c in grid.Ordered()) {
 		if (!IsHangarPiece(c.piece)) continue;
 		local off = FaceOffset(c.rot);
 		local n = grid.Get(c.x + off[0], c.y + off[1]);
-		if (n != null && IsThroughTaxiable(n.piece)) continue;
-		foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+		if (n != null && n.piece == AIAirport.MP_APRON) continue;
+		local rot_options = (c.piece == AIAirport.MP_SMALL_HANGAR)
+			? [FACE_SE] : [FACE_SE, FACE_NE, FACE_NW, FACE_SW];
+		foreach (r in rot_options) {
+			local d = FaceOffset(r);
 			local m = grid.Get(c.x + d[0], c.y + d[1]);
-			if (m == null || !IsThroughTaxiable(m.piece)) continue;
-			c.rot = FaceTowards(c.x, c.y, m.x, m.y);
+			if (m == null || m.piece != AIAirport.MP_APRON) continue;
+			c.rot = r;
 			break;
 		}
 	}
@@ -108,6 +143,18 @@ function PruneUnreachable(grid)
 
 	local doomed = [];
 	foreach (c in grid.Ordered()) {
+		if (IsStandPiece(c.piece)) {
+			if (!(grid.Key(c.x, c.y) in seen)) { doomed.append(c); continue; }
+			local has_apron = false;
+			foreach (d in [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+				local n = grid.Get(c.x + d[0], c.y + d[1]);
+				if (n != null && n.piece == AIAirport.MP_APRON && (grid.Key(n.x, n.y) in seen)) {
+					has_apron = true;
+					break;
+				}
+			}
+			if (!has_apron) { doomed.append(c); continue; }
+		}
 		if (IsThroughTaxiable(c.piece)) {
 			if (!(grid.Key(c.x, c.y) in seen)) doomed.append(c);
 			continue;
@@ -157,11 +204,19 @@ function ScoreGrid(grid, want_large_safe)
 	/* Optional empty ground improves the visual footprint but has no operational
 	 * value. Do not let infill make the same functional design score worse. */
 	local functional_tiles = 0;
+	local minx = 9999, miny = 9999, maxx = -1, maxy = -1;
 	foreach (c in grid.Ordered()) {
 		if (c.piece != AIAirport.MP_EMPTY) functional_tiles++;
+		if (c.x < minx) minx = c.x;
+		if (c.y < miny) miny = c.y;
+		if (c.x > maxx) maxx = c.x;
+		if (c.y > maxy) maxy = c.y;
 	}
+	local bbox_area = (maxx >= minx && maxy >= miny) ? (maxx - minx + 1) * (maxy - miny + 1) : 0;
 	score -= functional_tiles * 6;
 	score -= upkeep / 8;
+	/* Penalty for spreading out over a larger bounding rectangle */
+	score -= bbox_area * 2;
 
 	if (want_large_safe) {
 		if (safety == AIAirport.MS_OK) score += 400;

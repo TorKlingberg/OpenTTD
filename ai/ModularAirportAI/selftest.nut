@@ -15,11 +15,14 @@ function DumpGrid(label, grid)
 	local problem = ValidateGrid(grid);
 	local layout = grid.ToLayout();
 	local safety = AIAirport.GetModularLayoutSafety(layout);
+	local max_h_dist = MaxDistanceToHangar(grid);
 
 	AILog.Info(label + "  " + grid.w + "x" + grid.h
 	           + " tiles=" + grid.Count()
 	           + " runway=" + LongestLargeRunway(grid)
 	           + " stands=" + CountPieces(grid, IsStandPiece)
+	           + " hangars=" + CountPieces(grid, IsHangarPiece)
+	           + " max_h_dist=" + max_h_dist
 	           + " safety=" + safety
 	           + " catchment=" + AIAirport.GetModularLayoutCatchmentRadius(layout)
 	           + " noise=" + AIAirport.GetModularLayoutNoiseLevel(layout)
@@ -94,9 +97,12 @@ function RunSelfTest()
 						}
 					}
 				}
+				local max_h_dist = MaxDistanceToHangar(grid);
+				local dist_ok = max_h_dist <= 10;
 				local valid = DumpGrid(FamilyName(family) + " scale=" + scale + " rep=" + rep, grid);
 				if (!filled) AILog.Info("    *** INVALID: generated bounds contain holes ***");
-				if (!valid || !filled) bad++;
+				if (!dist_ok) AILog.Info("    *** INVALID: max hangar distance " + max_h_dist + " > 10 ***");
+				if (!valid || !filled || !dist_ok) bad++;
 			}
 		}
 	}
