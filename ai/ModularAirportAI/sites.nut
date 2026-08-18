@@ -199,15 +199,24 @@ function FamilyTiers(scale)
 		else modern.append(f);
 	}
 	local tiers = [];
-	/* Two runways get their own tier above the rest, and only for a town big
-	 * enough to fill them. Left in with the others it never won: it is the
-	 * largest layout, so it is the one the ground most often refuses, and a
-	 * single-runway candidate from the same batch always fitted instead. That is
-	 * the same "terrain selects for the smallest" effect that buried real
-	 * airports under grass strips, one level up. */
-	if (scale >= 2 && dual.len() > 0) tiers.append(dual);
+	/* Two runways get their own tier above the rest. Left in with the others it
+	 * never won: it is the largest layout, so it is the one the ground most
+	 * often refuses, and a single-runway candidate from the same batch always
+	 * fitted instead. That is the same "terrain selects for the smallest" effect
+	 * that buried real airports under grass strips, one level up.
+	 *
+	 * Tier order is a hard preference, not a weight, so this promotion is the
+	 * only lever there is — and gating it on scale >= 2 alone made it dead in
+	 * practice. Scale two wants both a town over 1800 and half a million in
+	 * funds, and those never coincide: towns are served biggest-first, so the
+	 * large ones are all taken in the early years while the company is broke.
+	 * Roll for it from scale one as well, rarely enough that a two-runway
+	 * airport stays a landmark rather than the house style. */
+	local dual_first = scale >= 2 || (scale >= 1 && AIBase.RandRange(8) == 0);
+	if (dual_first && dual.len() > 0) tiers.append(dual);
 	if (modern.len() > 0) tiers.append(modern);
-	if (scale < 2 && dual.len() > 0) tiers.append(dual);
+	/* Below the modern tier it would never be reached — modern always fits
+	 * somewhere — so there is deliberately no fallback dual tier here. */
 	if (strip.len() > 0) tiers.append(strip);
 	if (heli.len() > 0) tiers.append(heli);
 	return tiers;
