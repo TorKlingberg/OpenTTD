@@ -171,7 +171,12 @@ function GrowAirport(station, tile, funds, pax_cargo)
 		}
 	}
 
-	if (funds > 400000 && runways < 2) {
+	/* More strips, not just longer ones. The runway is the airport's single
+	 * busiest lock, so a station that is still runway-bound with a strip already
+	 * added is telling us it wants another one. The cap is there because each
+	 * runway also has to be reachable and worth its upkeep, not because two is a
+	 * natural limit. */
+	if (funds > 400000 && runways < MAX_RUNWAYS) {
 		local added = TryAddRunway(station);
 		if (added != null) {
 			return added + " (" + waiting + " waiting, " + serving + " aircraft on "
@@ -302,7 +307,17 @@ const MIN_QUEUE_TO_GROW = 60;
  * counted at both ends.
  */
 const PLANES_PER_STAND  = 3;
-const PLANES_PER_RUNWAY = 10;
+const PLANES_PER_RUNWAY = 8;
+
+/**
+ * How many runways one airport may grow to.
+ *
+ * PLANES_PER_RUNWAY is both the "add a runway" trigger and the fleet ceiling,
+ * so the two numbers have to move together: lowering the first without raising
+ * this one would not build more runways, it would just cap every airport
+ * smaller.
+ */
+const MAX_RUNWAYS = 4;
 
 /** Parking slots: stands, plus helipads for the helicopters that use them. */
 function ParkingSlots(station)
@@ -506,12 +521,12 @@ function TryAddRunway(station)
 				if (built < run.len()) {
 					/* Partial runways are only taxiable tiles, so nothing is broken,
 					 * but say so — it means the ground moved under the preflight. */
-					AILog.Warning("second runway stopped after " + built + " of " + run.len() + " tiles");
-					return (built > 0) ? "added a partial second runway" : null;
+					AILog.Warning("extra runway stopped after " + built + " of " + run.len() + " tiles");
+					return (built > 0) ? "added a partial extra runway" : null;
 				}
 				AIAirport.SetModularRunwayFlags(run[0],
 					AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
-				return "added a second runway";
+				return "added a runway";
 			}
 		}
 	}
