@@ -1,4 +1,4 @@
-min_movements=12800
+min_movements=13400
 
 # This save was written by a build that predates the modular touchdown clearing
 # VehicleAirFlag::HelicopterDirectDescent, so ~52 of its 90 helicopters carry a stale

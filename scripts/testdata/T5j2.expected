@@ -2,4 +2,4 @@
 # available short strip. T5j2 deliberately contains mixed-runway airports under
 # contention, so removing that unsafe extra jet capacity lowers its deterministic
 # five-year total from the previous baseline while preserving forward progress.
-min_movements=6200
+min_movements=6300
