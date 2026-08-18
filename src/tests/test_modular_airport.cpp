@@ -965,6 +965,9 @@ TEST_CASE("ModularAirportLargeAircraftLandingRunwayChoice")
 	for (uint i = 0; i < 6; ++i) {
 		st->airport.GetModularTileData(long_low + TileDiffXY(i, 0))->runway_flags = RUF_TAKEOFF | RUF_DIR_LOW;
 	}
+	/* Writing tile data behind the command's back skips the invalidation that
+	 * SetRunwayFlags_Apply does, and the large-safe runway answer is cached. */
+	st->airport.MarkLayoutDirty();
 	CHECK(CanAircraftUseModularRunwayForLanding(st, jet, short_low));
 	CHECK(FindModularLandingTarget(st, jet) == short_low);
 }

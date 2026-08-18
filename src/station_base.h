@@ -417,6 +417,9 @@ struct Airport : public TileArea {
 	mutable bool modular_heli_tiles_dirty = true; ///< Whether computed heli tiles need recompute
 	mutable bool modular_has_hangar = false; ///< Whether the modular layout holds a hangar piece; only meaningful while !modular_has_hangar_dirty
 	mutable bool modular_has_hangar_dirty = true; ///< Whether modular_has_hangar needs recompute
+	mutable bool modular_has_large_safe_landing_runway = false; ///< Whether a large-safe runway accepts landings; only meaningful while !modular_large_safe_runway_dirty
+	mutable bool modular_has_large_safe_takeoff_runway = false; ///< Whether a large-safe runway accepts takeoffs; only meaningful while !modular_large_safe_runway_dirty
+	mutable bool modular_large_safe_runway_dirty = true; ///< Whether the large-safe runway answers need recompute
 	mutable uint8_t modular_catchment_cache = 0; ///< Cached catchment radius for modular airports
 	mutable bool modular_catchment_dirty = true; ///< Whether the modular catchment radius needs recompute
 	mutable uint8_t modular_noise_cache = 0; ///< Cached layout-derived noise level for modular airports
@@ -445,6 +448,7 @@ struct Airport : public TileArea {
 		this->modular_noise_dirty = true;
 		this->modular_has_hangar_dirty = true;
 		this->modular_capability_dirty = true;
+		this->modular_large_safe_runway_dirty = true;
 	}
 
 	/**

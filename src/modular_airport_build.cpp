@@ -92,6 +92,7 @@ void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool hor
 
 	/* Walk from low end to high end, splitting into family sub-segments. */
 	TileIndex cur = first;
+	bool retyped_any = false;
 	while (true) {
 		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
 		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
@@ -111,11 +112,19 @@ void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool hor
 				td->piece_type = new_type;
 				SetStationGfx(Tile(seg[i]), new_type);
 				MarkTileDirtyByTile(seg[i]);
+				retyped_any = true;
 			}
 		}
 
 		cur = seg.back() + diff;
 	}
+
+	/* Retyping a tile is a layout change in its own right: which tiles are runway
+	 * *ends* decides whether the airport has a large-safe runway, among other cached
+	 * answers. Callers already mark the layout dirty for the add/remove that brought
+	 * us here, but they do so before this runs, so a read in between would cache a
+	 * pre-normalization answer and never be invalidated again. */
+	if (retyped_any) st->airport.MarkLayoutDirty();
 }
 
 uint8_t GetStockFenceEdgeMask(uint8_t stock_gfx)

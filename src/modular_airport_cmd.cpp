@@ -357,10 +357,12 @@ static bool IsBigTerminalPiece(uint8_t piece_type)
 }
 
 /**
- * Check whether a modular airport has at least one runway safe for large aircraft
- * for the specified operation (landing or takeoff).
+ * Scan the layout for a runway safe for large aircraft that permits the given
+ * operation. Walks every runway end, so each call is a whole-airport sweep with a
+ * runway walk per end; go through ModularAirportHasSafeRunwayFor rather than
+ * calling this directly.
  */
-static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
+static bool ScanModularAirportForSafeRunway(const Station *st, bool landing)
 {
 	if (st->airport.modular_tile_data == nullptr) return false;
 
@@ -372,6 +374,28 @@ static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
 	}
 
 	return false;
+}
+
+/**
+ * Check whether a modular airport has at least one runway safe for large aircraft
+ * for the specified operation (landing or takeoff).
+ *
+ * Layout-derived, so cached behind Airport::MarkLayoutDirty. The answer is asked
+ * once per candidate runway end and once per holding gate while an aircraft is in
+ * the air, which is a per-tick path — the underlying sweep is far too expensive to
+ * repeat there. Both operations are computed together because the sweep costs the
+ * same either way and the callers that ask for one usually ask for the other.
+ */
+static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
+{
+	if (st->airport.modular_large_safe_runway_dirty) {
+		st->airport.modular_has_large_safe_landing_runway = ScanModularAirportForSafeRunway(st, true);
+		st->airport.modular_has_large_safe_takeoff_runway = ScanModularAirportForSafeRunway(st, false);
+		st->airport.modular_large_safe_runway_dirty = false;
+	}
+
+	return landing ? st->airport.modular_has_large_safe_landing_runway :
+			st->airport.modular_has_large_safe_takeoff_runway;
 }
 
 /**
