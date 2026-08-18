@@ -137,6 +137,9 @@ Notes:
 - Hangars: `APT_DEPOT_SE/SW/NW/NE` (large) and `APT_SMALL_DEPOT_SE/SW/NW/NE` (small) — four rotations each. Hangars are multi-capacity (multiple aircraft can park in one).
 - One-way flags only apply to `IsTaxiwayPiece` types. Stands, hangars, and runways cannot be one-way.
 - Reservation, retention, and landing admission use the same forward horizon to the aircraft's goal or first future safe stop. Segment boundaries do not define separate acquisition rules.
+- Two structural invariants hold for every contiguous runway, and landing/takeoff eligibility code depends on both:
+  - **Both extremities are end pieces.** `NormalizeRunwaySegmentVisuals` recanonicalizes the whole segment on every placement, removal and upgrade (stock conversion does the same inline), so extending a runway caps the new extremity and demotes the old cap to a middle piece. A runway with a bare `APT_RUNWAY_5` at an extremity is not reachable through the build commands.
+  - **Exactly one direction bit is set.** `SetRunwayFlags_Check` rejects zero-mode and non-single-direction flags; `NormalizeModularRunwayFlags` canonicalizes template values. So of a runway's two ends, exactly one is a legal landing end — landing at the low end rolls toward high and needs `RUF_DIR_HIGH`, and vice versa.
 
 ## Aircraft Crashes (modular)
 
@@ -159,6 +162,7 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 ## Common Pitfalls
 
 - `GetModularTileData(tile)` returns `nullptr` if the tile isn't in the modular layout — always null-check.
+- Layout-derived answers (catchment, noise, hangar presence, accepted aircraft types, large-safe runways, holding loop, heli tiles) are cached in `mutable` fields on `Airport` and invalidated **only** by `MarkLayoutDirty()`. Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or the cached answer silently stays stale. Retyping a tile counts as a layout change: mark dirty *after* the retype, since callers that mark before it leave a window where a read caches a pre-normalization answer.
 - `FindAirportGroundPath` with `v=nullptr` ignores stand occupancy (topology only); with `v=aircraft` avoids occupied stands that aren't the goal.
 - Path cost has a non-goal stand/parking penalty (`+5`), so routes may prefer slightly longer taxiways over cutting through stands.
 - Runway flags (`RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`) propagate to all tiles in a contiguous runway via `CmdSetRunwayFlags`.
