@@ -2688,13 +2688,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	 * large-safe runway end serves its takeoff direction. Determine this up front,
 	 * ignoring transient occupancy — if a good runway is merely busy, the aircraft waits
 	 * (returns a reachable-but-blocked end) rather than downgrading to a short runway. */
-	bool good_takeoff_runway_exists = false;
-	if (large_takeoff_required) {
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (ClassifyModularTakeoffEnd(st, data.tile, data.piece_type) != ModularTakeoffEndStatus::OK) continue;
-			if (IsRunwaySafeForLarge(st, data.tile)) { good_takeoff_runway_exists = true; break; }
-		}
-	}
+	const bool good_takeoff_runway_exists = large_takeoff_required && ModularAirportHasSafeRunwayFor(st, false);
 
 	/* Try runway ends in two passes: first strict (no intermediate runway crossing),
 	 * then with crossing allowed. This prevents crossing paths from being selected
