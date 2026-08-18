@@ -405,15 +405,21 @@ static bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing)
  * large-safe landing runway at all. The decision deliberately ignores transient
  * reservations: if the suitable runway is busy, the jet must keep holding rather
  * than divert to a short strip. Small aircraft remain free to use either runway.
+ *
+ * The fallback leans on an invariant maintained elsewhere: both extremities of a
+ * contiguous runway are end pieces, because NormalizeRunwaySegmentVisuals
+ * recanonicalizes the whole segment on every placement, removal and upgrade.
+ * That is what makes the airport-wide question here equivalent to the
+ * directionally-filtered scan its caller runs. Were a runway ever left with a
+ * bare middle piece at the extremity its direction flags point landings at,
+ * ModularAirportHasSafeRunwayFor would still count the runway's other, unusable
+ * end and a jet would be refused the short strip with nowhere else to go.
  */
 bool CanAircraftUseModularRunwayForLanding(const Station *st, const Aircraft *v, TileIndex runway_tile)
 {
 	const ModularAirportTileData *data = st->airport.GetModularTileData(runway_tile);
 	if (data == nullptr || !IsModularRunwayEndPiece(data->piece_type)) return false;
 
-	/* Bare test aircraft can have no engine assigned. Real aircraft always do; keep
-	 * the topology/reservation helpers usable for those engine-agnostic tests. */
-	if (v->engine_type == EngineID::Invalid()) return true;
 	if ((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) == 0) return true;
 
 	return IsRunwaySafeForLarge(st, runway_tile) || !ModularAirportHasSafeRunwayFor(st, true);

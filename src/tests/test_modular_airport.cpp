@@ -1562,6 +1562,13 @@ TEST_CASE("ModularAirportLandingChain")
 	Station *st = SetupModularAirport(base, 10, 10);
 	REQUIRE(st != nullptr);
 
+	/* The landing helpers read the engine's subtype to tell a fast jet from
+	 * everything else, so these aircraft need a real engine. A plain non-fast one
+	 * keeps the runway-class rule out of the way of what is under test here. */
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
 	SECTION("Rejects path through occupied stand") {
 		/* Layout (rotation 0, runway extends East along X):
 		 *   Row 0: RWY_END  RWY_5    RWY_END     (rollout runway, tiles only)
@@ -1576,6 +1583,7 @@ TEST_CASE("ModularAirportLandingChain")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
 		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(2, 1));
@@ -1610,6 +1618,7 @@ TEST_CASE("ModularAirportLandingChain")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
 		TileIndex touchdown = base;
@@ -1640,6 +1649,7 @@ TEST_CASE("ModularAirportLandingChain")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
 		/* Another ground movement owns a different tile on the same runway. */
@@ -1666,6 +1676,7 @@ TEST_CASE("ModularAirportLandingChain")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 		CreateBlockerOnTile(st, VehicleID(11), base + TileDiffXY(2, 2));
 
@@ -1698,6 +1709,7 @@ TEST_CASE("ModularAirportLandingChain")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
 		TileIndex touchdown = base;
@@ -1837,6 +1849,13 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 	Station *st = SetupModularAirport(base, 16, 8);
 	REQUIRE(st != nullptr);
 
+	/* The landing helpers read the engine's subtype to tell a fast jet from
+	 * everything else, so these aircraft need a real engine. A plain non-fast one
+	 * keeps the runway-class rule out of the way of what is under test here. */
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
 	/* Fort Bronhill-shaped overlap: the landing runway's rollout end is adjacent
 	 * to the far end of a second parallel runway, which is the only route to the
 	 * stand.
@@ -1857,6 +1876,7 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 	SECTION("Landing admission is one atomic runway-to-stand transaction") {
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 		CreateBlockerOnTile(st, VehicleID(11), lower_high);
 
@@ -1871,6 +1891,7 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 	SECTION("The real movement step releases the runway behind and never reacquires it") {
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 		v->ground_path_goal = stand;
 		v->modular_ground_target = MGT_TERMINAL;
