@@ -47,6 +47,7 @@ class ModularAirportAI extends AIController
 		           + " max_airports=" + this.max_airports + " variety=" + this.variety);
 
 		local last_report = 0;
+		local last_month = -1;
 		while (true) {
 			this.ManageLoan();
 
@@ -69,7 +70,14 @@ class ModularAirportAI extends AIController
 			}
 			this.TryGrowAirports(airports);
 
-			local year = AIDate.GetYear(AIDate.GetCurrentDate());
+			local current_date = AIDate.GetCurrentDate();
+			local month = AIDate.GetMonth(current_date);
+			if (month != last_month) {
+				last_month = month;
+				SellStoppedAircraft();
+			}
+
+			local year = AIDate.GetYear(current_date);
 			if (year != last_report) {
 				last_report = year;
 				this.Report(year);

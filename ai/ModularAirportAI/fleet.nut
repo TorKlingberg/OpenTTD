@@ -133,6 +133,20 @@ function BuyAircraft(hangar, engine, from_tile, to_tile)
 	return v;
 }
 
+/** Sell aircraft that have stopped in a hangar (sent there to be retired). */
+function SellStoppedAircraft()
+{
+	local sold = 0;
+	local list = AIVehicleList();
+	foreach (v, _ in list) {
+		if (AIVehicle.GetVehicleType(v) != AIVehicle.VT_AIR) continue;
+		if (AIVehicle.IsStoppedInDepot(v)) {
+			if (AIVehicle.SellVehicle(v)) sold++;
+		}
+	}
+	return sold;
+}
+
 /**
  * Sell aircraft that spent a whole year losing money.
  *
@@ -145,21 +159,19 @@ function BuyAircraft(hangar, engine, from_tile, to_tile)
  * aircraft then sits stopped in the hangar for the rest of the game, still
  * counting against its stations' aircraft ceilings.
  *
- * So the arrival check comes first and is unconditional. Nothing else in this
- * AI stops a vehicle, so "stopped in a depot" means "this function put it
- * there"; anything that parks aircraft for another reason must not use a plain
- * SendVehicleToDepot, or it will find them sold.
+ * So the arrival check (SellStoppedAircraft) runs monthly, while the condemnation
+ * check below runs at the year boundary. Nothing else in this AI stops a vehicle,
+ * so "stopped in a depot" means "this function put it there"; anything that parks
+ * aircraft for another reason must not use a plain SendVehicleToDepot, or it will
+ * find them sold.
  */
 function RetireLosers()
 {
-	local sold = 0;
+	local sold = SellStoppedAircraft();
 	local list = AIVehicleList();
 	foreach (v, _ in list) {
 		if (AIVehicle.GetVehicleType(v) != AIVehicle.VT_AIR) continue;
-		if (AIVehicle.IsStoppedInDepot(v)) {
-			if (AIVehicle.SellVehicle(v)) sold++;
-			continue;
-		}
+		if (AIVehicle.IsStoppedInDepot(v)) continue;
 		if (AIVehicle.GetAge(v) < 730) continue;
 		/* Last year only. This runs at the year boundary, moments after
 		 * profit_this_year was reset, so this year's figure is a day or two of
