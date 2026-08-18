@@ -3287,3 +3287,85 @@ TEST_CASE("ModularAirportNearestHangarRespectsHelicopterCapability")
 	CHECK(depot.found);
 	CHECK(depot.location == st->xy);
 }
+
+TEST_CASE("ModularAirportTakeoffRetargetsUnreachableRunway")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Prunfingbridge Woods shape: two parallel runways whose only connection is a
+	 * pair of stands, with a hangar opening onto one of them.
+	 *   y=0  runway A (x 0..4)
+	 *   y=1  .  HANGAR APRON
+	 *   y=2  .  STAND  STAND   <- the only link between the halves
+	 *   y=3  .  APRON  APRON  APRON
+	 *   y=4  runway B (x 0..4) */
+	AddLargeRunway(st, base + TileDiffXY(0, 0), 5, 0, RUF_DEFAULT);
+	AddModularTile(st, base + TileDiffXY(1, 1), APT_DEPOT_SE, 0);
+	AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(1, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(2, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(1, 3), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(3, 3), APT_APRON, 0);
+	AddLargeRunway(st, base + TileDiffXY(0, 4), 5, 0, RUF_DEFAULT);
+
+	const TileIndex own_stand = base + TileDiffXY(1, 2);
+	const TileIndex link_stand = base + TileDiffXY(2, 2);
+	const TileIndex runway_a_end = base + TileDiffXY(4, 0);
+
+	auto on_runway_b = [&](TileIndex tile) {
+		return IsValidTile(tile) && TileY(tile) == TileY(base) + 4;
+	};
+
+	/* A prop keeps the runway-class rule out of the way of what is under test here. */
+	extern EnginePool _engine_pool;
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	SECTION("A takeoff end cut off after selection is replaced by a reachable one") {
+		SetupAircraftPool();
+		Aircraft *blocker = CreateAircraft(VehicleID(11));
+		blocker->targetairport = st->index;
+		blocker->engine_type = prop_engine;
+		blocker->tile = link_stand;
+		SetTaxiReservation(blocker, link_stand);
+
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = prop_engine;
+		v->tile = own_stand;
+		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		v->modular_takeoff_tile = runway_a_end;
+		v->ground_path_goal = runway_a_end;
+
+		/* Runway A was a valid pick when it was made; the blocker has since taken the
+		 * only tile connecting the two halves. */
+		REQUIRE_FALSE(FindAirportGroundPath(st, own_stand, runway_a_end, v, true, false).found);
+
+		CHECK(TryRetargetModularGroundGoal(v, st));
+		CHECK(on_runway_b(v->ground_path_goal));
+		CHECK(v->modular_takeoff_tile == v->ground_path_goal);
+	}
+
+	SECTION("A still-reachable takeoff end is left alone") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = prop_engine;
+		v->tile = own_stand;
+		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+
+		const TileIndex chosen = FindModularRunwayTileForTakeoff(st, v);
+		REQUIRE(chosen != INVALID_TILE);
+		v->modular_takeoff_tile = chosen;
+		v->ground_path_goal = chosen;
+
+		/* Nothing about the layout changed, so re-deciding must not churn the goal. */
+		CHECK_FALSE(TryRetargetModularGroundGoal(v, st));
+		CHECK(v->ground_path_goal == chosen);
+		CHECK(v->modular_takeoff_tile == chosen);
+	}
+}

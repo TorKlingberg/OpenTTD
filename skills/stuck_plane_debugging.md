@@ -129,8 +129,18 @@ Important patterns:
 
 **Note:** a *permanently* stuck aircraft whose `stuck(reserve)` line shows every blocker false (`reserved_by_other=false occupied_by_other=false runway_busy=false`) is never contention. Check `runway-transit-debug status=` first — an unsatisfiable entry contract looks exactly like traffic otherwise, and the wait counter wraps at 16 bits so a huge `wait=` can cycle back to a small one.
 
-### Takeoff retarget caveat
-`TryRetargetModularGroundGoal` does not retarget `MGT_RUNWAY_TAKEOFF`. If takeoff-side movement stalls, focus on reservation contention and segment progression, not alternate-goal retarget.
+### Takeoff retarget
+`TryRetargetModularGroundGoal` re-runs `FindModularRunwayTileForTakeoff` for
+`MGT_RUNWAY_TAKEOFF`, so a takeoff end that stops being reachable after it was
+picked gets replaced. The selector distinguishes unreachable ends (skipped,
+`takeoff-path invalid`) from reachable-but-blocked ones, so ordinary contention
+still waits rather than switching runways.
+
+Before this, takeoff goals were never retargeted: `modular_takeoff_tile` is only
+re-selected when it is `INVALID_TILE`, so an aircraft that picked a runway end
+while standing on that runway, then taxied behind a chokepoint, kept an
+unreachable goal forever. A permanent `stuck(no-path)` with `tgt=4` and no
+`retarget failed` line alongside it is the signature.
 
 `FindModularRunwayTileForTakeoff` found a runway end but `FindModularTakeoffQueueTile` can't path to it. Common causes:
 - **Unreachable fallback runway**: The only runway returned was the Manhattan-distance fallback, which may be across an intervening runway with no ground path. Check `takeoff-fallback-runway` logs.

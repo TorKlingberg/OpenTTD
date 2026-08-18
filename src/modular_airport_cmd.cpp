@@ -3139,6 +3139,12 @@ bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 			alt_goal = FindFreeModularHangar(st, v);
 			alt_target = MGT_HANGAR;
 			break;
+		case MGT_RUNWAY_TAKEOFF:
+			/* The chosen end can stop being reachable after it was selected. */
+			alt_goal = FindModularRunwayTileForTakeoff(st, v);
+			alt_takeoff_tile = alt_goal;
+			alt_target = MGT_RUNWAY_TAKEOFF;
+			break;
 		case MGT_ROLLOUT:
 			alt_goal = FindModularLandingGroundGoal(st, v, &alt_target);
 			break;

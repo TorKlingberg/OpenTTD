@@ -118,7 +118,7 @@ The computed path is stored in `landing_chain_path` and reused after touchdown w
 ## 6. Path rebuilding and retargeting
 
 - Taxi path is rebuilt when invalid or out of sync with current tile/goal.
-- After waiting >64 ticks, `TryRetargetModularGroundGoal` can reroute to a different terminal/helipad/hangar/rollout. Reservations stay until retarget actually succeeds and replaces them. Takeoff goals (`MGT_RUNWAY_TAKEOFF`) are intentionally **not** retargeted — focus debugging effort on contention and segment progression there.
+- After waiting >64 ticks, `TryRetargetModularGroundGoal` can reroute to a different terminal/helipad/hangar/rollout, and re-picks the takeoff end for `MGT_RUNWAY_TAKEOFF`. Reservations stay until retarget actually succeeds and replaces them; the stale whole-runway claim is released on the next tick because `ShouldRetainRunwayReservation` compares it against the new `modular_takeoff_tile`.
 
 ## 7. Hangars
 
