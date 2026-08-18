@@ -358,11 +358,16 @@ class ModularAirportAI extends AIController
 		AILog.Info("    town search: " + this.town_search_stats);
 
 		local vl = AIVehicleList();
-		local stuck = 0, moving = 0;
+		local stuck = 0, moving = 0, parked = 0;
 		foreach (v, _ in vl) {
+			if (AIVehicle.IsStoppedInDepot(v)) parked++;
 			if (AIVehicle.GetCurrentSpeed(v) > 0) moving++;
 			else stuck++;
 		}
+		/* Aircraft halted in a hangar. RetireLosers parks the ones it is about to
+		 * sell, so a small transient count is normal and a count that only ever
+		 * grows means they are being parked and then not sold. */
+		if (parked > 0) AILog.Info("    parked in hangar: " + parked + " of " + vl.Count());
 		if (stuck > 0 && moving == 0 && vl.Count() > 0) {
 			local v = vl.Begin();
 			AILog.Warning("all " + vl.Count() + " aircraft stationary; first is at "

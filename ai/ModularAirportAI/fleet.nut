@@ -133,21 +133,40 @@ function BuyAircraft(hangar, engine, from_tile, to_tile)
 	return v;
 }
 
-/** Sell aircraft that have been losing money for two years running. */
+/**
+ * Sell aircraft that spent a whole year losing money.
+ *
+ * Retiring one takes two passes — send it to a hangar, sell it once it arrives
+ * — and the two passes must not be gated on the same test, because parking the
+ * aircraft destroys the evidence that condemned it. A halted aircraft never
+ * accumulates running_ticks, so its profit stops moving: the year rolls over,
+ * profit_this_year resets to 0, profit_last_year follows a year later, and a
+ * profit-based guard in front of the sell can never be true again. The
+ * aircraft then sits stopped in the hangar for the rest of the game, still
+ * counting against its stations' aircraft ceilings.
+ *
+ * So the arrival check comes first and is unconditional. Nothing else in this
+ * AI stops a vehicle, so "stopped in a depot" means "this function put it
+ * there"; anything that parks aircraft for another reason must not use a plain
+ * SendVehicleToDepot, or it will find them sold.
+ */
 function RetireLosers()
 {
 	local sold = 0;
 	local list = AIVehicleList();
 	foreach (v, _ in list) {
 		if (AIVehicle.GetVehicleType(v) != AIVehicle.VT_AIR) continue;
-		if (AIVehicle.GetAge(v) < 730) continue;
-		if (AIVehicle.GetProfitLastYear(v) >= 0) continue;
-		if (AIVehicle.GetProfitThisYear(v) >= 0) continue;
-		if (!AIVehicle.IsStoppedInDepot(v)) {
-			AIVehicle.SendVehicleToDepot(v);
+		if (AIVehicle.IsStoppedInDepot(v)) {
+			if (AIVehicle.SellVehicle(v)) sold++;
 			continue;
 		}
-		if (AIVehicle.SellVehicle(v)) sold++;
+		if (AIVehicle.GetAge(v) < 730) continue;
+		/* Last year only. This runs at the year boundary, moments after
+		 * profit_this_year was reset, so this year's figure is a day or two of
+		 * running cost with no delivery income yet — negative for most aircraft
+		 * in flight, and evidence of nothing. */
+		if (AIVehicle.GetProfitLastYear(v) >= 0) continue;
+		AIVehicle.SendVehicleToDepot(v);
 	}
 	return sold;
 }
