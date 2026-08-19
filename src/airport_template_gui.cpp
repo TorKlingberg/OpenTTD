@@ -45,6 +45,7 @@
 
 #include "widgets/airport_widget.h"
 
+#include "table/sprites.h"
 #include "table/strings.h"
 
 #include "safeguards.h"
@@ -245,12 +246,39 @@ static const DrawTileSprites *GetTileLayoutForTemplateTile(const AirportTemplate
 	return GetAirportTileLayoutWithModularOverrides(gfx, t.piece_type, t.rotation, 0);
 }
 
-static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom)
+/** Sub-tile placement of the four perimeter fence sprites, mirroring DrawModularAirportPerimeterFences(). */
+static constexpr struct { uint8_t dir_bit; SpriteID spr; int8_t fx, fy; } _preview_fence_edges[] = {
+	{ 0x01, SPR_AIRPORT_FENCE_X,  0,  0 },
+	{ 0x02, SPR_AIRPORT_FENCE_Y, 15,  0 },
+	{ 0x04, SPR_AIRPORT_FENCE_X,  0, 15 },
+	{ 0x08, SPR_AIRPORT_FENCE_Y,  0,  0 },
+};
+
+/**
+ * Walk every sprite of a tile layout as it would be drawn at a GUI zoom level.
+ * @param x,y Screen position of the tile origin.
+ * @param layout Tile layout to walk.
+ * @param pal Company palette for recolourable sprites.
+ * @param zoom Zoom level to lay the sprites out for.
+ * @param fence_mask Edges to draw a perimeter fence along.
+ * @param fn Called as fn(image, pal, x, y) for each sprite, in draw order.
+ */
+template <typename F>
+static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask, F fn)
 {
 	Point child_offset = {0, 0};
 	bool skip_childs = false;
 
-	DrawSprite(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, zoom);
+	fn(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
+
+	/* Fences are ground sprites, so they go on top of the ground but below
+	 * whatever is built on the tile, exactly as in the viewport. */
+	for (const auto &e : _preview_fence_edges) {
+		if ((fence_mask & e.dir_bit) == 0) continue;
+		Point pt = RemapCoords(e.fx, e.fy, 0);
+		fn(e.spr | (1U << PALETTE_MODIFIER_COLOUR), pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom));
+	}
+
 	for (const DrawTileSeqStruct &dtss : layout->GetSequence()) {
 		SpriteID image = dtss.image.sprite;
 		PaletteID seq_pal = dtss.image.pal;
@@ -268,17 +296,23 @@ static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout,
 		seq_pal = SpriteLayoutPaletteTransform(image, seq_pal, pal);
 		if (dtss.IsParentSprite()) {
 			Point pt = RemapCoords(dtss.origin.x, dtss.origin.y, dtss.origin.z);
-			DrawSprite(image, seq_pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom), nullptr, zoom);
+			fn(image, seq_pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom));
 			const Sprite *spr = GetSprite(image & SPRITE_MASK, SpriteType::Normal);
 			child_offset.x = UnScaleByZoom(pt.x + spr->x_offs, zoom);
 			child_offset.y = UnScaleByZoom(pt.y + spr->y_offs, zoom);
 		} else {
-			DrawSprite(image, seq_pal,
+			fn(image, seq_pal,
 					x + child_offset.x + UnScaleByZoom(dtss.origin.x * ZOOM_BASE, zoom),
-					y + child_offset.y + UnScaleByZoom(dtss.origin.y * ZOOM_BASE, zoom),
-					nullptr, zoom);
+					y + child_offset.y + UnScaleByZoom(dtss.origin.y * ZOOM_BASE, zoom));
 		}
 	}
+}
+
+static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask)
+{
+	ForEachTileLayoutSpriteInGUIZoom(x, y, layout, pal, zoom, fence_mask, [zoom](SpriteID image, PaletteID sprite_pal, int sx, int sy) {
+		DrawSprite(image, sprite_pal, sx, sy, nullptr, zoom);
+	});
 }
 
 static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &tiles)
@@ -337,6 +371,44 @@ static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &ti
 }
 
 /**
+ * Work out along which edges a preview tile draws a perimeter fence.
+ *
+ * Mirrors DrawModularAirportPerimeterFences(): an edge gets a fence when the piece
+ * does not suppress fences there and either an explicit partition is stored on it or
+ * the neighbouring tile is not part of the layout.
+ * @param tiles All tiles of the layout.
+ * @param index Index of the tile to inspect.
+ * @return Mask of edge bits to draw a fence along.
+ */
+static uint8_t GetPreviewFenceMask(std::span<const AirportTemplateTile> tiles, size_t index)
+{
+	const AirportTemplateTile &t = tiles[index];
+	const uint8_t open_mask = GetModularTileFenceOpenMask(t.piece_type, t.rotation);
+
+	static constexpr struct { int8_t dx, dy; uint8_t dir_bit; } edges[] = {
+		{  0, -1, 0x01 },
+		{ +1,  0, 0x02 },
+		{  0, +1, 0x04 },
+		{ -1,  0, 0x08 },
+	};
+
+	uint8_t mask = 0;
+	for (const auto &e : edges) {
+		if ((open_mask & e.dir_bit) != 0) continue;
+		if ((t.edge_block_mask & e.dir_bit) == 0) {
+			const int nx = static_cast<int>(t.dx) + e.dx;
+			const int ny = static_cast<int>(t.dy) + e.dy;
+			const bool perimeter = std::none_of(tiles.begin(), tiles.end(), [=](const AirportTemplateTile &o) {
+				return static_cast<int>(o.dx) == nx && static_cast<int>(o.dy) == ny;
+			});
+			if (!perimeter) continue;
+		}
+		mask |= e.dir_bit;
+	}
+	return mask;
+}
+
+/**
  * Draw an isometric preview of a modular airport layout inside a widget rect.
  *
  * Zooms out until the layout fits the available area, then paints the tiles
@@ -358,21 +430,23 @@ void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTempl
 	if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
 	AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
 
-	/* Pick a zoom level that fits larger templates into the preview area. */
+	/* Which edges carry a fence depends on the layout only, not on the zoom level. */
+	std::vector<uint8_t> fence_masks;
+	fence_masks.reserve(tiles.size());
+	for (size_t i = 0; i < tiles.size(); i++) fence_masks.push_back(GetPreviewFenceMask(tiles, i));
+
+	/* Pick a zoom level that fits larger layouts into the preview area. */
 	ZoomLevel preview_zoom = _gui_zoom;
-	Point so;
-	Dimension sd;
-	int tile_w = 0, tile_h = 0, half_w = 0, half_h = 0;
 	std::vector<IsoTile> iso_tiles;
 	int bb_left = 0, bb_right = 0, bb_top = 0, bb_bottom = 0;
 
 	auto BuildIsoTilesForZoom = [&](ZoomLevel zoom) {
-		so = {};
-		sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so, zoom);
-		tile_w = static_cast<int>(sd.width) - so.x;
-		tile_h = static_cast<int>(sd.height) - so.y;
-		half_w = tile_w / 2;
-		half_h = tile_h / 2;
+		Point so{};
+		const Dimension sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so, zoom);
+		const int tile_w = static_cast<int>(sd.width) - so.x;
+		const int tile_h = static_cast<int>(sd.height) - so.y;
+		const int half_w = tile_w / 2;
+		const int half_h = tile_h / 2;
 
 		iso_tiles.clear();
 		iso_tiles.reserve(tiles.size());
@@ -388,10 +462,21 @@ void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTempl
 			int iso_x = (dy - dx) * half_w;
 			int iso_y = (dx + dy) * half_h;
 			iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
-			bb_left = std::min(bb_left, iso_x + so.x);
-			bb_right = std::max(bb_right, iso_x + so.x + tile_w);
-			bb_top = std::min(bb_top, iso_y + so.y);
-			bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
+
+			/* Bound the sprites that actually get painted, not just the ground tiles:
+			 * buildings, towers and hangars stick out well above their own tile, and
+			 * centring on the ground grid alone would push the picture upwards. */
+			const DrawTileSprites *layout = GetTileLayoutForTemplateTile(tiles[i]);
+			ForEachTileLayoutSpriteInGUIZoom(iso_x, iso_y, layout, PAL_NONE, zoom, fence_masks[i],
+					[&](SpriteID image, PaletteID, int sx, int sy) {
+				const Sprite *spr = GetSprite(image & SPRITE_MASK, SpriteType::Normal);
+				const int left = sx + UnScaleByZoom(spr->x_offs, zoom);
+				const int top = sy + UnScaleByZoom(spr->y_offs, zoom);
+				bb_left = std::min(bb_left, left);
+				bb_right = std::max(bb_right, left + UnScaleByZoom(spr->width, zoom));
+				bb_top = std::min(bb_top, top);
+				bb_bottom = std::max(bb_bottom, top + UnScaleByZoom(spr->height, zoom));
+			});
 		}
 	};
 
@@ -420,7 +505,7 @@ void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTempl
 		const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
 		int x = it.iso_x + off_x;
 		int y = it.iso_y + off_y;
-		DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom);
+		DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom, fence_masks[it.idx]);
 	}
 }
 

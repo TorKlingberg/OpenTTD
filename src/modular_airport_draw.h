@@ -15,6 +15,7 @@
 #include "viewport_type.h"
 
 void DrawModularAirportPerimeterFences(const TileInfo *ti, PaletteID palette);
+uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation);
 void DrawModularAirportDirectionOverlays(const TileInfo *ti);
 const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame = 0);
 const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation);
