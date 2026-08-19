@@ -72,39 +72,6 @@ inline bool ModularAircraftWantsHangar(const Aircraft *v, const Station *st)
  */
 bool IsModularPadWithHangarAccess(const Station *st, TileIndex tile);
 
-/**
- * Whether a HelicopterDirectDescent flag found on a loaded aircraft must be stale.
- *
- * The flag means "descending onto its destination right now", and CmdStartStopVehicle
- * refuses to start or stop a vehicle carrying it. One left behind therefore blocks manual
- * start/stop and autoreplace, which stops and restarts the vehicle around the swap and
- * reports "Aircraft is in flight" on a machine sitting on the ground.
- *
- * State alone cannot decide this, which is the trap. A stock helicopter takes its heading
- * state — HELIPAD1/2/3, or HANGAR — from AircraftEventHandler_HeliEndLanding *before* it
- * physically descends, and holds it throughout the descent. Those are exactly the states a
- * modular-parked helicopter occupies, so the two are indistinguishable by state. The
- * airport separates them: a stock landing always clears the flag once the rotors reach
- * full speed, so only the modular path could ever leave one set after touchdown.
- *
- * Callers pass @p target_is_modular for an invalid target too. RemoveAirport refuses to
- * demolish an airport while an aircraft targets it in a non-FLYING state, so outside the
- * band an invalid target cannot be a live descent — except at an oil rig, whose station
- * dies with the industry regardless. A save caught in that window loses a technically
- * live flag, harmlessly: the descent it guarded no longer has an airport, and HeliLower
- * re-raises the flag and aborts to FLYING on the next tick anyway.
- *
- * @param state Aircraft FTA state.
- * @param target_is_modular Whether the aircraft's target airport is a modular one.
- */
-inline bool IsStaleHeliDescentFlag(uint8_t state, bool target_is_modular)
-{
-	/* Inside the band CmdStartStopVehicle already treats as in flight, the flag may
-	 * well be describing a real descent. Leave it alone. */
-	if (state >= TAKEOFF && state < TERM7) return false;
-	return target_is_modular;
-}
-
 inline bool IsModularRunwayPiece(uint8_t gfx)
 {
 	switch (gfx) {

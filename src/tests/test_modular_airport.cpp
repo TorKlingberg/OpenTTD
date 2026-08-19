@@ -222,6 +222,8 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 	CHECK(modular->grf_prop.override_id == AT_INVALID);
 	CHECK(modular->badges.empty());
 
+	/* A savegame from before modular airports existed can persist a NewGRF airport in
+	 * runtime slot 127; it has to be moved aside before it overwrites the modular spec. */
 	_airport_mngr.mappings[AT_MODULAR] = {0xAABBCCDD, 17, AT_SMALL};
 	CHECK(_airport_mngr.RelocateLegacyModularID() == NEW_AIRPORT_OFFSET);
 	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].grfid == 0xAABBCCDD);
@@ -229,6 +231,8 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
 	_airport_mngr.ResetMapping();
 
+	/* AT_MODULAR's slot stays reserved for new mappings, and with every other slot taken
+	 * there is nowhere to relocate a legacy one to. */
 	for (uint16_t i = 0; i < 117; i++) {
 		CHECK(_airport_mngr.AddEntityID(i + 1, 0xA0000000U + i, AT_SMALL) == NEW_AIRPORT_OFFSET + i);
 	}
@@ -2798,53 +2802,6 @@ TEST_CASE("ModularAirportHeliServiceTile")
 
 		heli->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::Service);
 		CHECK(FindModularLandingTarget(st, heli) == far_apron);
-	}
-}
-
-TEST_CASE("ModularAirportStaleHeliDescentFlag")
-{
-	/* HelicopterDirectDescent blocks start/stop and autoreplace, so a leftover strands an
-	 * aircraft on the ground. The load repair has to tell a leftover from a live descent
-	 * using state plus airport, because state alone cannot: a stock helicopter takes its
-	 * heading state before it physically descends and keeps it all the way down. */
-
-	SECTION("Grounded at a modular airport, the flag can only be a leftover") {
-		/* Modular touchdown clears the flag, so one still set here predates that. */
-		CHECK(IsStaleHeliDescentFlag(HELIPAD1, true));
-		CHECK(IsStaleHeliDescentFlag(HELIPAD3, true));
-		CHECK(IsStaleHeliDescentFlag(HANGAR, true));
-		CHECK(IsStaleHeliDescentFlag(TERM1, true));
-	}
-
-	SECTION("The same states at a stock airport are a live descent") {
-		/* AircraftEventHandler_HeliEndLanding assigns HELIPAD1/2/3 or HANGAR before the
-		 * HeliLower descent runs, so the flag is real and clearing it would let the game
-		 * start or stop a helicopter hanging in mid-air. */
-		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD1, false));
-		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD2, false));
-		CHECK_FALSE(IsStaleHeliDescentFlag(HELIPAD3, false));
-		CHECK_FALSE(IsStaleHeliDescentFlag(HANGAR, false));
-	}
-
-	SECTION("Inside the in-flight band the state test already covers it") {
-		for (bool modular : {true, false}) {
-			CHECK_FALSE(IsStaleHeliDescentFlag(TAKEOFF, modular));
-			CHECK_FALSE(IsStaleHeliDescentFlag(HELITAKEOFF, modular));
-			CHECK_FALSE(IsStaleHeliDescentFlag(FLYING, modular));
-			CHECK_FALSE(IsStaleHeliDescentFlag(HELILANDING, modular));
-			CHECK_FALSE(IsStaleHeliDescentFlag(HELIENDLANDING, modular));
-		}
-	}
-
-	SECTION("Both edges of the band are exact") {
-		/* HELIENDLANDING(18) is the last in-band state and TERM7(19) the first out of it,
-		 * so an off-by-one at the top would either strand parked aircraft or clear live
-		 * descents. The lower edge is HELIPAD2(9) against TAKEOFF(10). */
-		CHECK_FALSE(IsStaleHeliDescentFlag(HELIENDLANDING, true));
-		CHECK(IsStaleHeliDescentFlag(TERM7, true));
-		CHECK(IsStaleHeliDescentFlag(TERM8, true));
-		CHECK(IsStaleHeliDescentFlag(HELIPAD2, true));
-		CHECK_FALSE(IsStaleHeliDescentFlag(TAKEOFF, true));
 	}
 }
 

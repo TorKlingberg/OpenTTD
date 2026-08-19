@@ -134,11 +134,9 @@ void AfterLoadStations()
 		RoadStopUpdateCachedTriggers(st);
 	}
 
-	/* Keep modular reservation map bits and metadata consistent after load.
-	 * Older branch-local saves stored the owner in m7/m8; migrate that owner into
-	 * ModularAirportTileData before m7 resumes being airport animation state.
-	 * Before reservation vectors existed, map reservations cannot be tied back to
-	 * aircraft deterministically, so clear them. */
+	/* Keep modular reservation map bits and metadata consistent after load: a
+	 * reservation must name a live aircraft, and the map bit and the owner field must
+	 * agree. */
 	for (Station *sta2 : Station::Iterate()) {
 		if (sta2->airport.modular_tile_data == nullptr) continue;
 
@@ -154,16 +152,9 @@ void AfterLoadStations()
 				continue;
 			}
 
-			if (!HasAirportTileReservation(t) || IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_RESERVATION_VECTORS)) {
-				SetAirportTileReservation(t, false);
+			if (!HasAirportTileReservation(t)) {
 				data.reservation_owner = VehicleID::Invalid().base();
 				continue;
-			}
-
-			if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_STATE_FIXES)) {
-				data.reservation_owner = static_cast<uint32_t>(t.m8()) | (static_cast<uint32_t>(t.m7()) << 16);
-				t.m7() = 0;
-				t.m8() = 0;
 			}
 
 			Vehicle *veh = Vehicle::GetIfValid(VehicleID{data.reservation_owner});

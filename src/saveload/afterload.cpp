@@ -799,46 +799,23 @@ bool AfterLoadGame()
 		_settings_game.linkgraph.recalc_time     *= CalendarTime::SECONDS_PER_DAY;
 	}
 
-	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT_TYPE)) {
-		/* ID 127 was a NewGRF slot before it became AT_MODULAR. Relocate that
-		 * mapping before GfxLoadSprites finalises airport specs, otherwise a GRF
-		 * can overwrite the modular spec. A full mapping table cannot be reduced
-		 * safely: even a mapping with no directly typed station may override a
-		 * stock airport that is in use through its substitute ID. */
+	if (IsSavegameVersionBefore(SLV_MODULAR_AIRPORT)) {
+		/* Runtime airport ID 127 was an ordinary NewGRF slot before it became AT_MODULAR,
+		 * and the mapping table is persisted, so a savegame from before modular airports
+		 * existed can carry a NewGRF airport there. Relocate that mapping before
+		 * GfxLoadSprites finalises airport specs, otherwise the GRF overwrites the modular
+		 * spec. A full mapping table cannot be reduced safely: even a mapping with no
+		 * directly typed station may override a stock airport that is in use through its
+		 * substitute ID. */
 		const uint16_t relocated_airport_id = _airport_mngr.RelocateLegacyModularID();
 		if (relocated_airport_id == AT_MODULAR) SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
-		if (relocated_airport_id != AT_INVALID) {
-			for (Station *st : Station::Iterate()) {
-				if (!st->facilities.Test(StationFacility::Airport)) continue;
-				if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
-				if (st->airport.type == AT_MODULAR) st->airport.type = static_cast<uint8_t>(relocated_airport_id);
-			}
-		} else {
-			for (const Station *st : Station::Iterate()) {
-				if (!st->facilities.Test(StationFacility::Airport)) continue;
-				if (st->airport.blocks.Test(AirportBlock::Modular)) continue;
-				if (st->airport.type == AT_MODULAR) SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
-			}
-		}
 
-		std::set<StationID> retyped_airports;
 		for (Station *st : Station::Iterate()) {
 			if (!st->facilities.Test(StationFacility::Airport)) continue;
-			if (!st->airport.blocks.Test(AirportBlock::Modular)) continue;
-			st->airport.type = AT_MODULAR;
-			st->airport.layout = 0;
-			retyped_airports.insert(st->index);
-		}
-
-		/* From-stock modular airports used to retain the preset FSM position.
-		 * Intercontinental entry positions reach 46, while AT_MODULAR deliberately
-		 * uses the 22-position country FSM. Repair both saved indices in the same
-		 * pass as the retype, before any code can index the new FSM with an old pos. */
-		for (Aircraft *v : Aircraft::Iterate()) {
-			if (!v->IsNormalAircraft()) continue;
-			if (!retyped_airports.contains(v->targetairport)) continue;
-			v->pos = 0;
-			v->previous_pos = 0;
+			if (st->airport.type != AT_MODULAR) continue;
+			/* A station typed 127 with nothing mapped there cannot be reinterpreted. */
+			if (relocated_airport_id == AT_INVALID) SlError(STR_GAME_SAVELOAD_ERROR_TOO_MANY_NEWGRF_AIRPORTS);
+			st->airport.type = static_cast<uint8_t>(relocated_airport_id);
 		}
 	}
 
@@ -3466,20 +3443,6 @@ bool AfterLoadGame()
 	AfterLoadLinkGraphs();
 
 	CheckGroundVehiclesAtCorrectZ();
-
-	/* Restore the invariant that no aircraft holds a hangar order for an airport without
-	 * a hangar. Stock enforces it at every entry point, but modular airports used to
-	 * derive hangar presence from their preset type, so orders could be issued for
-	 * airports that had none — leaving the aircraft to land, find nothing it would
-	 * park on, take off, and
-	 * repeat forever. Deliberately not version-gated: the game can no longer create such
-	 * an order, so this is a cheap invariant check rather than a one-shot migration, and
-	 * it repairs a save whatever wrote it. */
-	for (const Station *st : Station::Iterate()) {
-		if (!st->facilities.Test(StationFacility::Airport)) continue;
-		if (st->airport.HasHangar()) continue;
-		RemoveOrderFromAllVehicles(OT_GOTO_DEPOT, st->index, true);
-	}
 
 	/* Start the scripts. This MUST happen after everything else except
 	 * starting a new company. */
