@@ -15,6 +15,7 @@
 #include "tile_type.h"
 #include "airport_template.h"
 
+#include <span>
 #include <vector>
 
 struct Window;
@@ -27,6 +28,8 @@ void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotat
 void ResetSavedTemplateGuiState();
 bool ShouldDrawSavedTemplatePreviewAtTileInternal(TileIndex tile);
 bool IsSavedTemplateCoverageTileInternal(TileIndex tile);
+
+void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTemplateTile> tiles);
 
 void ShowBuildAirportTemplateManagerWindow(Window *parent);
 

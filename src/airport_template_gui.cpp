@@ -336,6 +336,94 @@ static void NormalizePreviewSmallRunwayEnds(std::vector<AirportTemplateTile> &ti
 	}
 }
 
+/**
+ * Draw an isometric preview of a modular airport layout inside a widget rect.
+ *
+ * Zooms out until the layout fits the available area, then paints the tiles
+ * back-to-front. Shared by the template manager and the stock airport picker's
+ * "build as modular" preview.
+ * @param r Rectangle of the widget to draw in.
+ * @param tiles Tiles to draw, dx/dy relative to the layout's top-left corner.
+ *              Rotation and runway-end normalization are the caller's job.
+ */
+void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTemplateTile> tiles)
+{
+	if (tiles.empty()) return;
+
+	struct IsoTile { int iso_x; int iso_y; size_t idx; int depth; };
+
+	/* Set up clipped draw area. */
+	DrawPixelInfo tmp_dpi;
+	Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
+	if (!FillDrawPixelInfo(&tmp_dpi, ir)) return;
+	AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
+
+	/* Pick a zoom level that fits larger templates into the preview area. */
+	ZoomLevel preview_zoom = _gui_zoom;
+	Point so;
+	Dimension sd;
+	int tile_w = 0, tile_h = 0, half_w = 0, half_h = 0;
+	std::vector<IsoTile> iso_tiles;
+	int bb_left = 0, bb_right = 0, bb_top = 0, bb_bottom = 0;
+
+	auto BuildIsoTilesForZoom = [&](ZoomLevel zoom) {
+		so = {};
+		sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so, zoom);
+		tile_w = static_cast<int>(sd.width) - so.x;
+		tile_h = static_cast<int>(sd.height) - so.y;
+		half_w = tile_w / 2;
+		half_h = tile_h / 2;
+
+		iso_tiles.clear();
+		iso_tiles.reserve(tiles.size());
+		bb_left = INT_MAX;
+		bb_right = INT_MIN;
+		bb_top = INT_MAX;
+		bb_bottom = INT_MIN;
+		for (size_t i = 0; i < tiles.size(); i++) {
+			int dx = tiles[i].dx;
+			int dy = tiles[i].dy;
+			/* Match in-game isometric projection handedness.
+			 * Using (dx - dy) here mirrors the whole preview. */
+			int iso_x = (dy - dx) * half_w;
+			int iso_y = (dx + dy) * half_h;
+			iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
+			bb_left = std::min(bb_left, iso_x + so.x);
+			bb_right = std::max(bb_right, iso_x + so.x + tile_w);
+			bb_top = std::min(bb_top, iso_y + so.y);
+			bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
+		}
+	};
+
+	constexpr int PREVIEW_OVERSIZE_TOLERANCE = 16;
+	BuildIsoTilesForZoom(preview_zoom);
+	while (preview_zoom < ZoomLevel::Max &&
+			((bb_right - bb_left) > (ir.Width() + PREVIEW_OVERSIZE_TOLERANCE) ||
+			 (bb_bottom - bb_top) > (ir.Height() + PREVIEW_OVERSIZE_TOLERANCE))) {
+		++preview_zoom;
+		BuildIsoTilesForZoom(preview_zoom);
+	}
+
+	/* Centre the bounding box in the widget. */
+	int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
+	int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
+
+	/* Sort back-to-front (painter's algorithm). */
+	std::sort(iso_tiles.begin(), iso_tiles.end(), [](const IsoTile &a, const IsoTile &b) {
+		return a.depth < b.depth;
+	});
+
+	/* Draw each tile. */
+	PaletteID pal = GetCompanyPalette(_local_company);
+	for (const IsoTile &it : iso_tiles) {
+		const AirportTemplateTile &t = tiles[it.idx];
+		const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
+		int x = it.iso_x + off_x;
+		int y = it.iso_y + off_y;
+		DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom);
+	}
+}
+
 enum TemplateManagerHotkeys {
 	TMHK_ROTATE_LEFT = 1,
 	TMHK_ROTATE_RIGHT,
@@ -661,78 +749,7 @@ public:
 				}
 				NormalizePreviewSmallRunwayEnds(tiles);
 
-				struct IsoTile { int iso_x; int iso_y; size_t idx; int depth; };
-
-				/* Set up clipped draw area. */
-				DrawPixelInfo tmp_dpi;
-				Rect ir = r.Shrink(WidgetDimensions::scaled.bevel);
-				if (!FillDrawPixelInfo(&tmp_dpi, ir)) break;
-				AutoRestoreBackup dpi_backup(_cur_dpi, &tmp_dpi);
-
-				/* Pick a zoom level that fits larger templates into the preview area. */
-				ZoomLevel preview_zoom = _gui_zoom;
-				Point so;
-				Dimension sd;
-				int tile_w = 0, tile_h = 0, half_w = 0, half_h = 0;
-				std::vector<IsoTile> iso_tiles;
-				int bb_left = 0, bb_right = 0, bb_top = 0, bb_bottom = 0;
-
-				auto BuildIsoTilesForZoom = [&](ZoomLevel zoom) {
-					so = {};
-					sd = GetSpriteSize(SPR_FLAT_GRASS_TILE, &so, zoom);
-					tile_w = static_cast<int>(sd.width) - so.x;
-					tile_h = static_cast<int>(sd.height) - so.y;
-					half_w = tile_w / 2;
-					half_h = tile_h / 2;
-
-					iso_tiles.clear();
-					iso_tiles.reserve(tiles.size());
-					bb_left = INT_MAX;
-					bb_right = INT_MIN;
-					bb_top = INT_MAX;
-					bb_bottom = INT_MIN;
-					for (size_t i = 0; i < tiles.size(); i++) {
-						int dx = tiles[i].dx;
-						int dy = tiles[i].dy;
-						/* Match in-game isometric projection handedness.
-						 * Using (dx - dy) here mirrors the whole preview. */
-						int iso_x = (dy - dx) * half_w;
-						int iso_y = (dx + dy) * half_h;
-						iso_tiles.push_back({iso_x, iso_y, i, dx + dy});
-						bb_left = std::min(bb_left, iso_x + so.x);
-						bb_right = std::max(bb_right, iso_x + so.x + tile_w);
-						bb_top = std::min(bb_top, iso_y + so.y);
-						bb_bottom = std::max(bb_bottom, iso_y + so.y + tile_h);
-					}
-				};
-
-				constexpr int PREVIEW_OVERSIZE_TOLERANCE = 16;
-				BuildIsoTilesForZoom(preview_zoom);
-				while (preview_zoom < ZoomLevel::Max &&
-						((bb_right - bb_left) > (ir.Width() + PREVIEW_OVERSIZE_TOLERANCE) ||
-						 (bb_bottom - bb_top) > (ir.Height() + PREVIEW_OVERSIZE_TOLERANCE))) {
-					++preview_zoom;
-					BuildIsoTilesForZoom(preview_zoom);
-				}
-
-				/* Centre the bounding box in the widget. */
-				int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
-				int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
-
-				/* Sort back-to-front (painter's algorithm). */
-				std::sort(iso_tiles.begin(), iso_tiles.end(), [](const IsoTile &a, const IsoTile &b) {
-					return a.depth < b.depth;
-				});
-
-				/* Draw each tile. */
-				PaletteID pal = GetCompanyPalette(_local_company);
-				for (const IsoTile &it : iso_tiles) {
-					const AirportTemplateTile &t = tiles[it.idx];
-					const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
-					int x = it.iso_x + off_x;
-					int y = it.iso_y + off_y;
-					DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom);
-				}
+				DrawModularAirportLayoutPreview(r, tiles);
 				break;
 			}
 
