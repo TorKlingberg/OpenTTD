@@ -208,6 +208,8 @@ struct GoodsEntry {
 		 */
 		AcceptedBigtick = 5,
 	};
+
+	/** Bitset of \c State elements. */
 	using States = EnumBitSet<State, uint8_t>;
 
 	struct GoodsEntryData {
@@ -402,7 +404,7 @@ struct Airport : public TileArea {
 	AirportBlocks blocks{}; ///< stores which blocks on the airport are taken. was 16 bit earlier on, then 32
 	uint8_t type = 0; ///< Type of this airport, @see AirportTypes
 	uint8_t layout = 0; ///< Airport layout number.
-	Direction rotation = INVALID_DIR; ///< How this airport is rotated.
+	Direction rotation = Direction::Invalid; ///< How this airport is rotated.
 
 	PersistentStorage *psa = nullptr; ///< Persistent storage for NewGRF airports.
 	std::vector<ModularAirportTileData> *modular_tile_data = nullptr; ///< Tile data for modular airports
@@ -473,7 +475,10 @@ struct Airport : public TileArea {
 		return this->GetSpec()->fsm;
 	}
 
-	/** Check if this airport has at least one hangar. */
+	/**
+	 * Check if this airport has at least one hangar.
+	 * @return \c true iff there are one or more hangars.
+	 */
 	inline bool HasHangar() const
 	{
 		/* A modular airport's hangars are layout data, not type-level data. */
@@ -493,13 +498,13 @@ struct Airport : public TileArea {
 	{
 		const AirportSpec *as = this->GetSpec();
 		switch (this->rotation) {
-			case DIR_N: return this->tile + ToTileIndexDiff(tidc);
+			case Direction::N: return this->tile + ToTileIndexDiff(tidc);
 
-			case DIR_E: return this->tile + TileDiffXY(tidc.y, as->size_x - 1 - tidc.x);
+			case Direction::E: return this->tile + TileDiffXY(tidc.y, as->size_x - 1 - tidc.x);
 
-			case DIR_S: return this->tile + TileDiffXY(as->size_x - 1 - tidc.x, as->size_y - 1 - tidc.y);
+			case Direction::S: return this->tile + TileDiffXY(as->size_x - 1 - tidc.x, as->size_y - 1 - tidc.y);
 
-			case DIR_W: return this->tile + TileDiffXY(as->size_y - 1 - tidc.y, tidc.x);
+			case Direction::W: return this->tile + TileDiffXY(as->size_y - 1 - tidc.y, tidc.x);
 
 			default: NOT_REACHED();
 		}
@@ -549,7 +554,10 @@ struct Airport : public TileArea {
 		return htt->hangar_num;
 	}
 
-	/** Get the number of hangars on this airport. */
+	/**
+	 * Get the number of hangars on this airport.
+	 * @return The number of unique hangars.
+	 */
 	inline uint GetNumHangars() const
 	{
 		if (this->blocks.Test(AirportBlock::Modular)) return ModularAirportGetNumHangars(*this);
@@ -644,6 +652,7 @@ struct IndustryCompare {
 };
 
 typedef std::set<IndustryListEntry, IndustryCompare> IndustryList;
+struct RoadVehicle;
 
 /** Station data structure */
 struct Station final : SpecializedStation<Station, false> {
@@ -653,7 +662,7 @@ public:
 		return type == RoadStopType::Bus ? bus_stops : truck_stops;
 	}
 
-	RoadStop *GetPrimaryRoadStop(const struct RoadVehicle *v) const;
+	RoadStop *GetPrimaryRoadStop(const RoadVehicle *v) const;
 
 	RoadStop *bus_stops = nullptr; ///< All the road stops
 	TileArea bus_station{}; ///< Tile area the bus 'station' part covers
@@ -668,12 +677,12 @@ public:
 
 	BitmapTileArea catchment_tiles{}; ///< NOSAVE: Set of individual tiles covered by catchment area
 
-	StationHadVehicleOfType had_vehicle_of_type{};
+	StationVehicleTypes had_vehicle_of_type{};
 
 	uint8_t time_since_load = 0;
 	uint8_t time_since_unload = 0;
 
-	uint8_t last_vehicle_type = 0;
+	VehicleType last_vehicle_type = VehicleType::Invalid;
 	std::list<Vehicle *> loading_vehicles{};
 	std::array<GoodsEntry, NUM_CARGO> goods; ///< Goods at this station
 
@@ -771,7 +780,7 @@ void RebuildStationKdtree();
 /**
  * Call a function on all stations that have any part of the requested area within their catchment.
  * @tparam Func The type of function to call
- * @param area The TileArea to check
+ * @param ta The TileArea to check.
  * @param func The function to call, must take two parameters: Station* and TileIndex and return true
  *             if coverage of that tile is acceptable for a given station or false if search should continue
  */

@@ -26,7 +26,7 @@
 inline DiagDirection GetTunnelBridgeDirection(Tile t)
 {
 	assert(IsTileType(t, TileType::TunnelBridge));
-	return (DiagDirection)GB(t.m5(), 0, 2);
+	return static_cast<DiagDirection>(GB(t.m5(), 0, 2));
 }
 
 /**
@@ -39,7 +39,7 @@ inline DiagDirection GetTunnelBridgeDirection(Tile t)
 inline TransportType GetTunnelBridgeTransportType(Tile t)
 {
 	assert(IsTileType(t, TileType::TunnelBridge));
-	return (TransportType)GB(t.m5(), 2, 2);
+	return static_cast<TransportType>(GB(t.m5(), 2, 2));
 }
 
 /**
@@ -84,39 +84,39 @@ inline TileIndex GetOtherTunnelBridgeEnd(Tile t)
 
 /**
  * Get the reservation state of the rail tunnel/bridge
- * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TRANSPORT_RAIL
+ * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TransportType::Rail
  * @param t the tile
  * @return reservation state
  */
 inline bool HasTunnelBridgeReservation(Tile t)
 {
 	assert(IsTileType(t, TileType::TunnelBridge));
-	assert(GetTunnelBridgeTransportType(t) == TRANSPORT_RAIL);
+	assert(GetTunnelBridgeTransportType(t) == TransportType::Rail);
 	return HasBit(t.m5(), 4);
 }
 
 /**
  * Set the reservation state of the rail tunnel/bridge
- * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TRANSPORT_RAIL
+ * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TransportType::Rail
  * @param t the tile
  * @param b the reservation state
  */
 inline void SetTunnelBridgeReservation(Tile t, bool b)
 {
 	assert(IsTileType(t, TileType::TunnelBridge));
-	assert(GetTunnelBridgeTransportType(t) == TRANSPORT_RAIL);
+	assert(GetTunnelBridgeTransportType(t) == TransportType::Rail);
 	AssignBit(t.m5(), 4, b);
 }
 
 /**
  * Get the reserved track bits for a rail tunnel/bridge
- * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TRANSPORT_RAIL
+ * @pre IsTileType(t, TileType::TunnelBridge) && GetTunnelBridgeTransportType(t) == TransportType::Rail
  * @param t the tile
  * @return reserved track bits
  */
 inline TrackBits GetTunnelBridgeReservationTrackBits(Tile t)
 {
-	return HasTunnelBridgeReservation(t) ? DiagDirToDiagTrackBits(GetTunnelBridgeDirection(t)) : TRACK_BIT_NONE;
+	return HasTunnelBridgeReservation(t) ? DiagDirToDiagTrack(GetTunnelBridgeDirection(t)) : TrackBits{};
 }
 
 #endif /* TUNNELBRIDGE_MAP_H */

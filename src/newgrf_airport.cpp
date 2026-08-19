@@ -30,10 +30,10 @@
 template <>
 /* static */ void AirportClass::InsertDefaults()
 {
-	AirportClass::Get(AirportClass::Allocate('SMAL'))->name = STR_AIRPORT_CLASS_SMALL;
-	AirportClass::Get(AirportClass::Allocate('LARG'))->name = STR_AIRPORT_CLASS_LARGE;
-	AirportClass::Get(AirportClass::Allocate('HUB_'))->name = STR_AIRPORT_CLASS_HUB;
-	AirportClass::Get(AirportClass::Allocate('HELI'))->name = STR_AIRPORT_CLASS_HELIPORTS;
+	AirportClass::Get(AirportClass::Allocate("SMAL"))->name = STR_AIRPORT_CLASS_SMALL;
+	AirportClass::Get(AirportClass::Allocate("LARG"))->name = STR_AIRPORT_CLASS_LARGE;
+	AirportClass::Get(AirportClass::Allocate("HUB_"))->name = STR_AIRPORT_CLASS_HUB;
+	AirportClass::Get(AirportClass::Allocate("HELI"))->name = STR_AIRPORT_CLASS_HELIPORTS;
 }
 
 template <>
@@ -43,7 +43,7 @@ bool AirportClass::IsUIAvailable(uint) const
 }
 
 /* Instantiate AirportClass. */
-template class NewGRFClass<AirportSpec, AirportClassID, APC_MAX>;
+template class NewGRFClass<AirportSpec, AirportClassID>;
 
 
 AirportOverrideManager _airport_mngr(NEW_AIRPORT_OFFSET, NUM_AIRPORTS, AT_INVALID);
@@ -61,7 +61,7 @@ AirportSpec AirportSpec::specs[NUM_AIRPORTS]; ///< Airport specifications.
 	assert(type < lengthof(AirportSpec::specs));
 	const AirportSpec *as = &AirportSpec::specs[type];
 	if (type >= NEW_AIRPORT_OFFSET && !as->enabled) {
-		if (_airport_mngr.GetGRFID(type) == 0) return as;
+		if (_airport_mngr.GetGRFID(type).Empty()) return as;
 		uint8_t subst_id = _airport_mngr.GetSubstituteID(type);
 		if (subst_id == AT_INVALID) return as;
 		as = &AirportSpec::specs[subst_id];
@@ -82,7 +82,10 @@ AirportSpec AirportSpec::specs[NUM_AIRPORTS]; ///< Airport specifications.
 	return &AirportSpec::specs[type];
 }
 
-/** Check whether this airport is available to build. */
+/**
+ * Check whether this airport is available to build.
+ * @return \c true iff the airport is available.
+ */
 bool AirportSpec::IsAvailable() const
 {
 	if (!this->enabled) return false;
@@ -103,7 +106,7 @@ bool AirportSpec::IsWithinMapBounds(uint8_t table, TileIndex tile) const
 
 	uint8_t w = this->size_x;
 	uint8_t h = this->size_y;
-	if (this->layouts[table].rotation == DIR_E || this->layouts[table].rotation == DIR_W) std::swap(w, h);
+	if (this->layouts[table].rotation == Direction::E || this->layouts[table].rotation == Direction::W) std::swap(w, h);
 
 	return TileX(tile) + w < Map::SizeX() &&
 		TileY(tile) + h < Map::SizeY();
@@ -161,11 +164,11 @@ uint16_t AirportOverrideManager::RelocateLegacyModularID()
 	static_assert(RESERVED_MODULAR_ID == AT_MODULAR);
 
 	EntityIDMapping &legacy = this->mappings[AT_MODULAR];
-	if (legacy.grfid == 0 && legacy.entity_id == 0) return AT_INVALID;
+	if (legacy.grfid.Empty() && legacy.entity_id == 0) return AT_INVALID;
 
 	for (uint16_t id = NEW_AIRPORT_OFFSET; id < AT_MODULAR; id++) {
 		EntityIDMapping &candidate = this->mappings[id];
-		if (candidate.grfid != 0 || candidate.entity_id != 0) continue;
+		if (!candidate.grfid.Empty() || candidate.entity_id != 0) continue;
 		candidate = legacy;
 		legacy = {};
 		return id;
@@ -195,7 +198,7 @@ void AirportOverrideManager::SetEntitySpec(AirportSpec &&as)
 		overridden_as->grf_prop.override_id = airport_id;
 		overridden_as->enabled = false;
 		this->entity_overrides[i] = this->invalid_id;
-		this->grfid_overrides[i] = 0;
+		this->grfid_overrides[i] = {};
 	}
 }
 
@@ -225,7 +228,7 @@ void AirportOverrideManager::SetEntitySpec(AirportSpec &&as)
 
 GrfSpecFeature AirportResolverObject::GetFeature() const
 {
-	return GSF_AIRPORTS;
+	return GrfSpecFeature::Airports;
 }
 
 uint32_t AirportResolverObject::GetDebugID() const
@@ -252,9 +255,9 @@ uint32_t AirportResolverObject::GetDebugID() const
 		if (value == 0) return;
 
 		/* Create storage on first modification. */
-		uint32_t grfid = (this->ro.grffile != nullptr) ? this->ro.grffile->grfid : 0;
+		GrfID grfid = (this->ro.grffile != nullptr) ? this->ro.grffile->grfid : GrfID{};
 		assert(PersistentStorage::CanAllocateItem());
-		this->st->airport.psa = PersistentStorage::Create(grfid, GSF_AIRPORTS, this->st->airport.tile);
+		this->st->airport.psa = PersistentStorage::Create(grfid, GrfSpecFeature::Airports, this->st->airport.tile);
 	}
 	this->st->airport.psa->StoreValue(pos, value);
 }

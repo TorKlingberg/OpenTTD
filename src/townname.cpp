@@ -30,9 +30,9 @@ TownNameParams::TownNameParams(const Town *t) :
 		grfid(t->townnamegrfid), // by default, use supplied data
 		type(t->townnametype)
 {
-	if (t->townnamegrfid != 0 && GetGRFTownName(t->townnamegrfid) == nullptr) {
+	if (!t->townnamegrfid.Empty() && GetGRFTownName(t->townnamegrfid) == nullptr) {
 		/* Fallback to the first built in town name (English). */
-		this->grfid = 0;
+		this->grfid = {};
 		this->type = SPECSTR_TOWNNAME_START;
 		return;
 	}
@@ -47,9 +47,9 @@ TownNameParams::TownNameParams(const Town *t) :
  */
 static void GetTownName(StringBuilder &builder, const TownNameParams *par, uint32_t townnameparts)
 {
-	if (par->grfid == 0) {
+	if (par->grfid.Empty()) {
 		auto tmp_params = MakeParameters(townnameparts);
-		GetStringWithArgs(builder, par->type, tmp_params);
+		GetStringWithArgs(builder, static_cast<StringID>(par->type), tmp_params);
 		return;
 	}
 
@@ -701,25 +701,9 @@ static void MakeCzechTownName(StringBuilder &builder, uint32_t seed)
 			std::string_view poststr = _name_czech_subst_postfix[postfix];
 			std::string_view endstr = _name_czech_subst_ending[ending].name;
 
-			size_t postlen = poststr.size();
-			size_t endlen = endstr.size();
-			assert(postlen > 0 && endlen > 0);
-
 			/* Kill the "avava" and "Jananna"-like cases */
-			if (postlen < 2 || postlen > endlen ||
-					((poststr[1] != 'v' || poststr[1] != endstr[1]) &&
-					poststr[2] != endstr[1])) {
+			if (poststr[1] != 'v' || poststr[1] != endstr[1]) {
 				builder += poststr;
-
-				/* k-i -> c-i, h-i -> z-i */
-				if (endstr[0] == 'i') {
-					std::string &str = builder.GetString();
-					switch (str.back()) {
-						case 'k': str.back() = 'c'; break;
-						case 'h': str.back() = 'z'; break;
-						default: break;
-					}
-				}
 			}
 		}
 		builder += _name_czech_subst_ending[ending].name;

@@ -36,11 +36,11 @@ void ClearAllStationCachedNames();
 using CatchmentTileFilter = bool (*)(TileIndex);
 
 CargoArray GetProductionAroundTiles(TileIndex tile, int w, int h, int rad, CatchmentTileFilter filter = nullptr);
-CargoArray GetAcceptanceAroundTiles(TileIndex tile, int w, int h, int rad, CargoTypes *always_accepted = nullptr, CatchmentTileFilter filter = nullptr);
+std::pair<CargoArray, CargoTypes> GetAcceptanceAroundTiles(TileIndex tile, int w, int h, int rad, CatchmentTileFilter filter = nullptr);
 
 void UpdateStationAcceptance(Station *st, bool show_msg);
 CargoTypes GetAcceptanceMask(const Station *st);
-CargoTypes GetEmptyMask(const Station *st);
+CargoTypes GetCargoWaitingMask(const Station *st);
 
 void SetRailStationTileFlags(TileIndex tile, const StationSpec *statspec);
 const DrawTileSprites *GetStationTileLayout(StationType st, uint8_t gfx);

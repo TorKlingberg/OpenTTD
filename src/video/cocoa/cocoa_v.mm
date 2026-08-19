@@ -117,7 +117,7 @@ std::optional<std::string_view> VideoDriver_Cocoa::Initialize()
 
 /**
  * Set dirty a rectangle managed by a cocoa video subdriver.
- * @param left Left x cooordinate of the dirty rectangle.
+ * @param left Left x coordinate of the dirty rectangle.
  * @param top Upper y coordinate of the dirty rectangle.
  * @param width Width of the dirty rectangle.
  * @param height Height of the dirty rectangle.
@@ -187,7 +187,7 @@ bool VideoDriver_Cocoa::ToggleFullscreen(bool full_screen)
 		[ NSMenu setMenuBarVisible:!full_screen ];
 
 		this->UpdateVideoModes();
-		InvalidateWindowClassesData(WC_GAME_OPTIONS, 3);
+		InvalidateWindowClassesData(WindowClass::GameOptions, 3);
 		return true;
 	}
 
@@ -626,10 +626,6 @@ NSView *VideoDriver_CocoaQuartz::AllocateDrawView()
 	return [ [ OTTD_QuartzView alloc ] initWithFrame:[ this->cocoaview bounds ] andDriver:this ];
 }
 
-/**
- * Resize the window.
- * @param force If true window resizing will be forced.
- */
 void VideoDriver_CocoaQuartz::AllocateBackingStore([[maybe_unused]] bool force)
 {
 	if (this->window == nil || this->cocoaview == nil || this->setup) return;
@@ -750,7 +746,7 @@ void VideoDriver_CocoaQuartz::CheckPaletteAnim()
 /** Draw window */
 void VideoDriver_CocoaQuartz::Paint()
 {
-	PerformanceMeasurer framerate(PFE_VIDEO);
+	PerformanceMeasurer framerate(PerformanceElement::Video);
 
 	/* Check if we need to do anything */
 	if (IsEmptyRect(this->dirty_rect) || [ this->window isMiniaturized ]) return;

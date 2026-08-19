@@ -797,6 +797,8 @@ STR_CONFIG_SETTING_REALISTIC                                    :खरेखु
 
 
 
+###length 3
+
 
 
 ###setting-zero-is-special
@@ -863,6 +865,8 @@ STR_CONFIG_SETTING_WARN_LOST_VEHICLE                            : वाहन �
 
 ###setting-zero-is-special
 
+
+###setting-zero-is-special
 
 
 ###length 2
@@ -989,6 +993,7 @@ STR_CONFIG_SETTING_COMMAND_PAUSE_LEVEL_ALL_ACTIONS              :सर्व �
 
 
 
+
 ###length 3
 
 
@@ -1051,7 +1056,7 @@ STR_CONFIG_SETTING_STATUSBAR_POS                                :स्टेट
 
 # Config errors
 
-# Video initalization errors
+# Video initialization errors
 
 # Intro window
 
@@ -1120,7 +1125,7 @@ STR_NETWORK_SERVER_LIST_DATE_CAPTION                            :{BLACK}ति�
 STR_NETWORK_CONNECTING_DOWNLOADING_1                            :{BLACK}आत्तापर्यंत {BYTES} डाऊनलोड झाल्या आहेत.
 STR_NETWORK_CONNECTING_DOWNLOADING_2                            :{BLACK}{BYTES} / {BYTES} डाऊनलोड झालं आहे
 
-###length 8
+###length 6
 
 
 
@@ -1192,6 +1197,8 @@ STR_NETWORK_SERVER_MESSAGE                                      :*** {STRING}
 # Rail waypoint construction window
 
 # Rail station construction window
+
+
 
 
 
@@ -1411,6 +1418,7 @@ STR_LOCAL_AUTHORITY_COMPANY_RATING                              :{YELLOW}{COMPAN
 STR_GOALS_TEXT                                                  :{ORANGE}{STRING}
 
 # Goal question window
+###length 4
 
 # Goal Question button list
 ###length 18
@@ -1540,6 +1548,8 @@ STR_PURCHASE_INFO_COST                                          :{BLACK}कि�
 STR_PURCHASE_INFO_WEIGHT_CWEIGHT                                :{BLACK}वजन: {GOLD}{WEIGHT_SHORT} ({WEIGHT_SHORT})
 STR_PURCHASE_INFO_COST_SPEED                                    :{BLACK}किंमत: {GOLD}{CURRENCY_LONG}{BLACK} गती: {GOLD}{VELOCITY}
 
+# Vehicle sort details
+
 ###length 3
 
 ###length VEHICLE_TYPES
@@ -1598,6 +1608,7 @@ STR_DEPOT_VEHICLE_TOOLTIP_CARGO                                 :{}{CARGO_LONG} 
 
 
 # Engine preview window
+
 
 
 
@@ -1689,7 +1700,7 @@ STR_ORDER_INDEX                                                 :{COMMA}:{NBSP}
 
 
 # Conditional order variables, must follow order of OrderConditionVariable enum
-###length 8
+###length 9
 ###next-name-looks-similar
 
 

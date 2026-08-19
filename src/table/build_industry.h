@@ -10,8 +10,6 @@
 #ifndef BUILD_INDUSTRY_H
 #define BUILD_INDUSTRY_H
 
-#include "table/strings.h"
-
 /**
  * Definition of an industry tiles layout.
  * @param x offset x of this tile
@@ -236,58 +234,58 @@ static const IndustryTileLayout _tile_table_oil_rig_0 {
 	MK(1, 0, 26),
 	MK(1, 1, 27),
 	MK(1, 2, 28),
-	MK(-4, -4, 255),
-	MK(-4, -3, 255),
-	MK(-4, -2, 255),
-	MK(-4, -1, 255),
-	MK(-4, 0, 255),
-	MK(-4, 1, 255),
-	MK(-4, 2, 255),
-	MK(-4, 3, 255),
-	MK(-4, 4, 255),
-	MK(-4, 5, 255),
-	MK(-4, 6, 255),
-	MK(-3, 6, 255),
-	MK(-2, 6, 255),
-	MK(-1, 6, 255),
-	MK(0, 6, 255),
-	MK(1, 6, 255),
-	MK(2, 6, 255),
-	MK(3, 6, 255),
-	MK(4, 6, 255),
-	MK(5, 6, 255),
-	MK(5, 5, 255),
-	MK(5, 4, 255),
-	MK(5, 3, 255),
-	MK(5, 2, 255),
-	MK(5, 1, 255),
-	MK(5, 0, 255),
-	MK(5, -1, 255),
-	MK(5, -2, 255),
-	MK(5, -3, 255),
-	MK(5, -4, 255),
-	MK(4, -4, 255),
-	MK(3, -4, 255),
-	MK(2, -4, 255),
-	MK(1, -4, 255),
-	MK(0, -4, 255),
-	MK(-1, -4, 255),
-	MK(-2, -4, 255),
-	MK(-3, -4, 255),
-	MK(2, 0, 255),
-	MK(2, -1, 255),
-	MK(1, -1, 255),
-	MK(0, -1, 255),
-	MK(-1, -1, 255),
-	MK(-1, 0, 255),
-	MK(-1, 1, 255),
-	MK(-1, 2, 255),
-	MK(-1, 3, 255),
-	MK(0, 3, 255),
-	MK(1, 3, 255),
-	MK(2, 3, 255),
-	MK(2, 2, 255),
-	MK(2, 1, 255),
+	MK(-4, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, -3, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, -2, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 0, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 1, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 2, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 4, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 5, GFX_WATERTILE_SPECIALCHECK),
+	MK(-4, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(-3, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(-2, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(0, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(1, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(3, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(4, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 6, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 5, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 4, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 2, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 1, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, 0, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, -2, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, -3, GFX_WATERTILE_SPECIALCHECK),
+	MK(5, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(4, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(3, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(1, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(0, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(-2, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(-3, -4, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, 0, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(1, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(0, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, -1, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, 0, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, 1, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, 2, GFX_WATERTILE_SPECIALCHECK),
+	MK(-1, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(0, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(1, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, 3, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, 2, GFX_WATERTILE_SPECIALCHECK),
+	MK(2, 1, GFX_WATERTILE_SPECIALCHECK),
 };
 
 static const std::vector<IndustryTileLayout> _tile_table_oil_rig {
@@ -1089,7 +1087,6 @@ enum IndustryTypes : uint8_t {
 /**
  * Writes the properties of an industry into the IndustrySpec struct.
  * @param tbl  tile table
- * @param sndc number of sounds
  * @param snd  sounds table
  * @param d    cost multiplier
  * @param pc   prospecting chance
@@ -1147,10 +1144,10 @@ enum IndustryTypes : uint8_t {
 	   industry behaviours
 	   industry name                           building text
 	   messages : Closure                      production up                      production down   */
-static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
+extern const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 	MI(_tile_table_coal_mine,                  {},
 	   210,  0xB3333333,                       2, 3, 0, 0,    8, 8, 0, 0,          1,
-	   IT_POWER_STATION,  IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_POWER_STATION,  IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_COAL,       15, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic}),
@@ -1160,7 +1157,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_power_station,              {},
 	   240,  0xFFFFFFFF,                       2, 2, 0, 0,    5, 5, 0, 0,        184,
-	   IT_COAL_MINE,      IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_COAL_MINE,      IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_INVALID,     0, CT_INVALID,       0, 5,
 	   CT_COAL,      256, CT_INVALID,     256, CT_INVALID,   256,
 	   INDUSTRYLIFE_BLACK_HOLE,                LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic}),
@@ -1170,7 +1167,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_sawmill,                    _sawmill_sounds,
 	   224,  0xFFFFFFFF,                       2, 0, 0, 0,    5, 0, 0, 0,        194,
-	   IT_FOREST,         IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_FOREST,         IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_GOODS,       0, CT_INVALID,       0, 5,
 	   CT_WOOD,      256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Temperate,
@@ -1180,7 +1177,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_forest,                     {},
 	   200,  0xBFFFFFFF,                       3, 4, 0, 0,    5, 5, 0, 0,         86,
-	   IT_SAWMILL,        IT_PAPER_MILL,       IT_INVALID,       CHECK_FOREST,
+	   IT_SAWMILL,        IT_PAPER_MILL,       IT_INVALID,       IndustryCheck::Forest,
 	   CT_WOOD,       13, CT_INVALID,       0, 30,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic}),
@@ -1190,7 +1187,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_oil_refinery,               {},
 	   244,  0xFFFFFFFF,                       2, 2, 2, 0,    4, 4, 4, 0,        191,
-	   IT_OIL_RIG,        IT_INVALID,          IT_INVALID,       CHECK_REFINERY,
+	   IT_OIL_RIG,        IT_INVALID,          IT_INVALID,       IndustryCheck::Refinery,
 	   CT_GOODS,       0, CT_INVALID,       0, 5,
 	   CT_OIL,       256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic, LandscapeType::Tropic}),
@@ -1200,7 +1197,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_oil_rig,                    {},
 	   240,  0x99999999,                       6, 0, 0, 0,    0, 0, 0, 0,        152,
-	   IT_OIL_REFINERY,   IT_INVALID,          IT_INVALID,       CHECK_OIL_RIG,
+	   IT_OIL_REFINERY,   IT_INVALID,          IT_INVALID,       IndustryCheck::OilRig,
 	   CT_OIL,        15, CT_PASSENGERS,    2, 5,
 	   CT_INVALID,     0, CT_INVALID,       0, CT_INVALID,     0,
 	   IndustryLifeType::Extractive,                LandscapeType::Temperate,
@@ -1210,7 +1207,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_factory,                    _factory_sounds,
 	   208,  0xFFFFFFFF,                       2, 0, 0, 0,    5, 0, 0, 0,        174,
-	   IT_FARM,           IT_STEEL_MILL,       IT_INVALID,       CHECK_NOTHING,
+	   IT_FARM,           IT_STEEL_MILL,       IT_INVALID,       IndustryCheck::None,
 	   CT_GOODS,       0, CT_INVALID,       0, 5,
 	   MCT_LIVESTOCK_FRUIT, 256, MCT_GRAIN_WHEAT_MAIZE,       256, CT_STEEL,    256,
 	   IndustryLifeType::Processing,                LandscapeType::Temperate,
@@ -1220,7 +1217,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_printing_works,             _factory_sounds,
 	   208,  0xFFFFFFFF,                       0, 2, 0, 0,    0, 5, 0, 0,        174,
-	   IT_PAPER_MILL,     IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_PAPER_MILL,     IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_GOODS,       0, CT_INVALID,       0, 5,
 	   CT_PAPER,     256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Arctic,
@@ -1230,7 +1227,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_steel_mill,                 {},
 	   215,  0xFFFFFFFF,                       2, 0, 0, 0,    5, 0, 0, 0,         10,
-	   IT_IRON_MINE,      IT_FACTORY,          IT_INVALID,       CHECK_NOTHING,
+	   IT_IRON_MINE,      IT_FACTORY,          IT_INVALID,       IndustryCheck::None,
 	   CT_STEEL,       0, CT_INVALID,       0, 5,
 	   CT_IRON_ORE,  256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Temperate,
@@ -1240,7 +1237,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_farm,                       _farm_sounds,
 	   250,  0xD9999999,                       2, 4, 0, 0,    9, 9, 0, 0,         48,
-	   IT_FACTORY,        IT_FOOD_PROCESS,     IT_INVALID,       CHECK_FARM,
+	   IT_FACTORY,        IT_FOOD_PROCESS,     IT_INVALID,       IndustryCheck::Farm,
 	   MCT_GRAIN_WHEAT_MAIZE,      10, MCT_LIVESTOCK_FRUIT,    10, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic}),
@@ -1250,7 +1247,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_copper_mine,                {},
 	   205,  0xB3333333,                       0, 0, 3, 0,    0, 0, 4, 0,         10,
-	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_COPPER_ORE, 10, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Tropic,
@@ -1260,7 +1257,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_oil_well,                   {},
 	   220,  0x99999999,                       0, 5, 3, 0,    4, 5, 5, 0,        152,
-	   IT_OIL_REFINERY,   IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_OIL_REFINERY,   IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_OIL,        12, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeTypes({LandscapeType::Temperate, LandscapeType::Arctic, LandscapeType::Tropic}),
@@ -1270,7 +1267,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_bank,                       {},
 	   255,  0xA6666666,                       7, 0, 0, 0,    0, 0, 0, 0,         15,
-	   IT_BANK_TEMP,      IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_BANK_TEMP,      IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   MCT_VALUABLES_GOLD_DIAMONDS,   6, CT_INVALID,       0, 5,
 	   MCT_VALUABLES_GOLD_DIAMONDS,   0, CT_INVALID,       0, CT_INVALID,     0,
 	   INDUSTRYLIFE_BLACK_HOLE,                LandscapeType::Temperate,
@@ -1280,7 +1277,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_food_process,               {},
 	   206,  0xFFFFFFFF,                       0, 2, 2, 0,    0, 3, 4, 0,         55,
-	   IT_FRUIT_PLANTATION, IT_FARM,           IT_FARM_2,        CHECK_NOTHING,
+	   IT_FRUIT_PLANTATION, IT_FARM,           IT_FARM_2,        IndustryCheck::None,
 	   CT_FOOD,        0, CT_INVALID,       0, 5,
 	   MCT_LIVESTOCK_FRUIT,     256, MCT_GRAIN_WHEAT_MAIZE,       256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeTypes({LandscapeType::Arctic, LandscapeType::Tropic}),
@@ -1290,7 +1287,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_paper_mill,                 _sawmill_sounds,
 	   227,  0xFFFFFFFF,                       0, 2, 0, 0,    0, 5, 0, 0,         10,
-	   IT_FOREST,         IT_PRINTING_WORKS,   IT_INVALID,       CHECK_NOTHING,
+	   IT_FOREST,         IT_PRINTING_WORKS,   IT_INVALID,       IndustryCheck::None,
 	   CT_PAPER,       0, CT_INVALID,       0, 5,
 	   CT_WOOD,      256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Arctic,
@@ -1300,7 +1297,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_gold_mine,                  {},
 	   208,  0x99999999,                       0, 3, 0, 0,    0, 4, 0, 0,        194,
-	   IT_BANK_TROPIC_ARCTIC, IT_INVALID,      IT_INVALID,       CHECK_NOTHING,
+	   IT_BANK_TROPIC_ARCTIC, IT_INVALID,      IT_INVALID,       IndustryCheck::None,
 	   MCT_VALUABLES_GOLD_DIAMONDS,        7, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Arctic,
@@ -1310,7 +1307,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_bank2,                      {},
 	   151,  0xA6666666,                       0, 3, 3, 0,    0, 6, 5, 0,         15,
-	   IT_GOLD_MINE,      IT_DIAMOND_MINE,     IT_INVALID,       CHECK_NOTHING,
+	   IT_GOLD_MINE,      IT_DIAMOND_MINE,     IT_INVALID,       IndustryCheck::None,
 	   CT_INVALID,     0, CT_INVALID,       0, 5,
 	   MCT_VALUABLES_GOLD_DIAMONDS,      256, CT_INVALID,     256, CT_INVALID,   256,
 	   INDUSTRYLIFE_BLACK_HOLE,                LandscapeTypes({LandscapeType::Arctic, LandscapeType::Tropic}),
@@ -1320,7 +1317,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_diamond_mine,               {},
 	   213,  0x99999999,                       0, 0, 3, 0,    0, 0, 4, 0,        184,
-	   IT_BANK_TROPIC_ARCTIC, IT_INVALID,      IT_INVALID,       CHECK_NOTHING,
+	   IT_BANK_TROPIC_ARCTIC, IT_INVALID,      IT_INVALID,       IndustryCheck::None,
 	   MCT_VALUABLES_GOLD_DIAMONDS,    7, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Tropic,
@@ -1330,7 +1327,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_iron_mine,                  {},
 	   220,  0xB3333333,                       2, 0, 0, 0,    5, 0, 0, 0,         55,
-	   IT_STEEL_MILL,     IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_STEEL_MILL,     IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_IRON_ORE,   10, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Temperate,
@@ -1340,7 +1337,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_fruit_plantation,           {},
 	   225,  0xBFFFFFFF,                       0, 0, 2, 0,    0, 0, 4, 0,         86,
-	   IT_FOOD_PROCESS,   IT_INVALID,          IT_INVALID,       CHECK_PLANTATION,
+	   IT_FOOD_PROCESS,   IT_INVALID,          IT_INVALID,       IndustryCheck::Plantation,
 	   MCT_LIVESTOCK_FRUIT,      10, CT_INVALID,       0, 15,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeType::Tropic,
@@ -1350,7 +1347,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_rubber_plantation,          {},
 	   218,  0xBFFFFFFF,                       0, 0, 3, 0,    0, 0, 4, 0,         39,
-	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       CHECK_PLANTATION,
+	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       IndustryCheck::Plantation,
 	   CT_RUBBER,     10, CT_INVALID,       0, 15,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeType::Tropic,
@@ -1360,7 +1357,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_water_supply,               {},
 	   199,  0xB3333333,                       0, 0, 3, 0,    0, 0, 4, 0,         37,
-	   IT_WATER_TOWER,    IT_INVALID,          IT_INVALID,       CHECK_WATER,
+	   IT_WATER_TOWER,    IT_INVALID,          IT_INVALID,       IndustryCheck::Water,
 	   CT_WATER,      12, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Tropic,
@@ -1370,7 +1367,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_water_tower,                {},
 	   115,  0xFFFFFFFF,                       0, 0, 4, 0,    0, 0, 8, 0,        208,
-	   IT_WATER_SUPPLY,   IT_INVALID,          IT_INVALID,       CHECK_WATER,
+	   IT_WATER_SUPPLY,   IT_INVALID,          IT_INVALID,       IndustryCheck::Water,
 	   CT_INVALID,     0, CT_INVALID,       0, 5,
 	   CT_WATER,     256, CT_INVALID,     256, CT_INVALID,   256,
 	   INDUSTRYLIFE_BLACK_HOLE,                LandscapeType::Tropic,
@@ -1380,7 +1377,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_factory2,                   _factory_sounds,
 	   208,  0xFFFFFFFF,                       0, 0, 2, 0,    0, 0, 4, 0,        174,
-	   IT_RUBBER_PLANTATION, IT_COPPER_MINE,   IT_LUMBER_MILL,   CHECK_PLANTATION,
+	   IT_RUBBER_PLANTATION, IT_COPPER_MINE,   IT_LUMBER_MILL,   IndustryCheck::Plantation,
 	   CT_GOODS,       0, CT_INVALID,       0, 5,
 	   CT_RUBBER,    256, CT_COPPER_ORE,  256, CT_WOOD,      256,
 	   IndustryLifeType::Processing,                LandscapeType::Tropic,
@@ -1390,7 +1387,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_farm2,                      {},
 	   250,  0xD9999999,                       0, 0, 1, 0,    0, 0, 2, 0,         48,
-	   IT_FOOD_PROCESS,   IT_INVALID,          IT_INVALID,       CHECK_PLANTATION,
+	   IT_FOOD_PROCESS,   IT_INVALID,          IT_INVALID,       IndustryCheck::Plantation,
 	   MCT_GRAIN_WHEAT_MAIZE,      11, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeType::Tropic,
@@ -1400,7 +1397,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_lumber_mill,                {},
 	   135,  0xFFFFFFFF,                       0, 0, 0, 0,    0, 0, 0, 0,        194,
-	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       CHECK_LUMBERMILL,
+	   IT_FACTORY_2,      IT_INVALID,          IT_INVALID,       IndustryCheck::Lumbermill,
 	   CT_WOOD,        0, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Tropic,
@@ -1410,7 +1407,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_cotton_candy,               {},
 	   195,  0xBFFFFFFF,                       0, 0, 0, 3,    0, 0, 0, 5,         48,
-	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_COTTON_CANDY, 13, CT_INVALID,    0, 30,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeType::Toyland,
@@ -1420,7 +1417,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_candy_factory,              {},
 	   206,  0xFFFFFFFF,                       0, 0, 0, 3,    0, 0, 0, 5,        174,
-	   IT_COTTON_CANDY,   IT_TOFFEE_QUARRY,    IT_SUGAR_MINE,    CHECK_NOTHING,
+	   IT_COTTON_CANDY,   IT_TOFFEE_QUARRY,    IT_SUGAR_MINE,    IndustryCheck::None,
 	   CT_CANDY,       0, CT_INVALID,       0, 5,
 	   CT_SUGAR,     256, CT_TOFFEE,      256, CT_COTTON_CANDY, 256,
 	   IndustryLifeType::Processing,                LandscapeType::Toyland,
@@ -1430,7 +1427,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_battery_farm,               {},
 	   187,  0xB3333333,                       0, 0, 0, 3,    0, 0, 0, 4,         39,
-	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_BATTERIES,  11, CT_INVALID,       0, 30,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Organic,                   LandscapeType::Toyland,
@@ -1440,7 +1437,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_cola_wells,                 {},
 	   193,  0x99999999,                       0, 0, 0, 3,    0, 0, 0, 5,         55,
-	   IT_FIZZY_DRINK_FACTORY, IT_INVALID,     IT_INVALID,       CHECK_NOTHING,
+	   IT_FIZZY_DRINK_FACTORY, IT_INVALID,     IT_INVALID,       IndustryCheck::None,
 	   CT_COLA,       12, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Toyland,
@@ -1450,7 +1447,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_toy_shop,                   {},
 	   133,  0xFFFFFFFF,                       0, 0, 0, 3,    0, 0, 0, 4,        208,
-	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_INVALID,     0, CT_INVALID,       0, 5,
 	   CT_TOYS,      256, CT_INVALID,     256, CT_INVALID,   256,
 	   INDUSTRYLIFE_BLACK_HOLE,                LandscapeType::Toyland,
@@ -1460,7 +1457,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_toy_factory,                {},
 	   163,  0xFFFFFFFF,                       0, 0, 0, 3,    0, 0, 0, 5,          10,
-	   IT_PLASTIC_FOUNTAINS, IT_BATTERY_FARM,  IT_TOY_SHOP,     CHECK_NOTHING,
+	   IT_PLASTIC_FOUNTAINS, IT_BATTERY_FARM,  IT_TOY_SHOP,     IndustryCheck::None,
 	   CT_TOYS,        0, CT_INVALID,       0, 5,
 	   CT_PLASTIC,   256, CT_BATTERIES,   256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Toyland,
@@ -1470,7 +1467,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_plastic_fountain,           _plastic_mine_sounds,
 	   192,  0xA6666666,                       0, 0, 0, 3,    0, 0, 0, 5,         37,
-	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_TOY_FACTORY,    IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_PLASTIC,    14, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Toyland,
@@ -1480,7 +1477,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_fizzy_drink,                {},
 	   177,  0xFFFFFFFF,                       0, 0, 0, 3,    0, 0, 0, 4,        184,
-	   IT_COLA_WELLS,     IT_BUBBLE_GENERATOR, IT_INVALID,       CHECK_NOTHING,
+	   IT_COLA_WELLS,     IT_BUBBLE_GENERATOR, IT_INVALID,       IndustryCheck::None,
 	   CT_FIZZY_DRINKS, 0, CT_INVALID,      0, 5,
 	   CT_COLA,       256, CT_BUBBLES,    256, CT_INVALID,   256,
 	   IndustryLifeType::Processing,                LandscapeType::Toyland,
@@ -1490,7 +1487,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_bubble_generator,           {},
 	   203,  0xB3333333,                       0, 0, 0, 3,    0, 0, 0, 5,        152,
-	   IT_FIZZY_DRINK_FACTORY, IT_INVALID,     IT_INVALID,       CHECK_BUBBLEGEN,
+	   IT_FIZZY_DRINK_FACTORY, IT_INVALID,     IT_INVALID,       IndustryCheck::BubbleGen,
 	   CT_BUBBLES,    13, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Toyland,
@@ -1500,7 +1497,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_toffee_quarry,              {},
 	   213,  0xCCCCCCCC,                       0, 0, 0, 3,    0, 0, 0, 5,        194,
-	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_TOFFEE,     10, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Toyland,
@@ -1510,7 +1507,7 @@ static const IndustrySpec _origin_industry_specs[NEW_INDUSTRYOFFSET] = {
 
 	MI(_tile_table_sugar_mine,                 {},
 	   210,  0xBFFFFFFF,                       0, 0, 0, 2,    0, 0, 0, 4,         15,
-	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       CHECK_NOTHING,
+	   IT_CANDY_FACTORY,  IT_INVALID,          IT_INVALID,       IndustryCheck::None,
 	   CT_SUGAR,      11, CT_INVALID,       0, 5,
 	   CT_INVALID,   256, CT_INVALID,     256, CT_INVALID,   256,
 	   IndustryLifeType::Extractive,                LandscapeType::Toyland,
@@ -1579,7 +1576,7 @@ static const IndustryTileSpec _origin_industry_tile_specs[NEW_INDUSTRYTILEOFFSET
 	MT(0, CT_INVALID,      0, CT_INVALID,      0, CT_INVALID,     SLOPE_STEEP, INDUSTRYTILE_NOANIM, INDUSTRYTILE_NOANIM, false),
 	MT(0, CT_INVALID,      0, CT_INVALID,      0, CT_INVALID,     SLOPE_STEEP, INDUSTRYTILE_NOANIM, INDUSTRYTILE_NOANIM, false),
 
-	/* Oil Wells artic, temperate and sub-tropical */
+	/* Oil Wells arctic, temperate and sub-tropical */
 	MT(0, CT_INVALID,      0, CT_INVALID,      0, CT_INVALID,     SLOPE_STEEP, INDUSTRYTILE_NOANIM, INDUSTRYTILE_NOANIM, false),
 	MT(0, CT_INVALID,      0, CT_INVALID,      0, CT_INVALID,     SLOPE_STEEP, INDUSTRYTILE_NOANIM, INDUSTRYTILE_NOANIM, true ),
 	MT(0, CT_INVALID,      0, CT_INVALID,      0, CT_INVALID,     SLOPE_STEEP, INDUSTRYTILE_NOANIM, INDUSTRYTILE_NOANIM, true ),

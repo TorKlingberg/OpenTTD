@@ -25,7 +25,13 @@ public:
 	using BaseType = Tstorage; ///< Storage type of this BaseBitSet, be ConvertibleThroughBase
 	static constexpr Tstorage MASK = Tmask; ///< Mask of valid values.
 
+	/** Create an empty bitset. */
 	constexpr BaseBitSet() : data(0) {}
+
+	/**
+	 * Create a bitset with a given bits that are within the mask of valid values.
+	 * @param data The initial set bits.
+	 */
 	explicit constexpr BaseBitSet(Tstorage data) : data(data & Tmask) {}
 
 	constexpr auto operator <=>(const BaseBitSet &) const noexcept = default;
@@ -42,13 +48,15 @@ public:
 
 	/**
 	 * Set the value-th bit.
+	 * @tparam Treturn_type The returned type to which this bit set will be cast.
 	 * @param value Bit to set.
 	 * @returns The bit set
 	 */
-	inline constexpr Timpl &Set(Tvalue_type value)
+	template <typename Treturn_type = Timpl> requires std::is_base_of_v<BaseBitSet<Timpl, Tvalue_type, Tstorage, Tmask>, Treturn_type>
+	inline constexpr Treturn_type &Set(Tvalue_type value)
 	{
 		this->data |= (1ULL << Timpl::DecayValueType(value));
-		return static_cast<Timpl&>(*this);
+		return static_cast<Treturn_type &>(*this);
 	}
 
 	/**
@@ -103,6 +111,16 @@ public:
 	{
 		this->data &= ~other.data;
 		return static_cast<Timpl&>(*this);
+	}
+
+	/**
+	 * Flip all bits.
+	 * @returns The bit set
+	 */
+	inline constexpr Timpl &Flip()
+	{
+		this->data ^= Tmask;
+		return static_cast<Timpl &>(*this);
 	}
 
 	/**
@@ -251,7 +269,16 @@ public:
 		return std::nullopt;
 	}
 
+	/**
+	 * Returns an iterator to begin of the set bits.
+	 * @return The iterator.
+	 */
 	auto begin() const { return SetBitIterator<Tvalue_type, Tstorage>(this->data).begin(); }
+
+	/**
+	 * Returns an iterator to the end of the set bits.
+	 * @return The iterator past the last set bit.
+	 */
 	auto end() const { return SetBitIterator<Tvalue_type, Tstorage>(this->data).end(); }
 
 private:

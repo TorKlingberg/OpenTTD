@@ -36,6 +36,7 @@ void BaseSet<T>::LogError(std::string_view full_filename, std::string_view detai
  * @param full_filename the full filename of the loaded file (for error reporting purposes)
  * @param group ini group to read from
  * @param name the name of the item to fetch.
+ * @return The item or \c nullptr.
  */
 template <class T>
 const IniItem *BaseSet<T>::GetMandatoryItem(std::string_view full_filename, const IniGroup &group, std::string_view name) const
@@ -44,6 +45,22 @@ const IniItem *BaseSet<T>::GetMandatoryItem(std::string_view full_filename, cons
 	if (item != nullptr && item->value.has_value() && !item->value->empty()) return item;
 	this->LogError(full_filename, fmt::format("{}.{} field missing.", group.name, name));
 	return nullptr;
+}
+
+/**
+ * Helper to decode a 4 character short name into an uint32_t representation.
+ * @param shortname The short name.
+ * @return The uint32_t representation.
+ */
+constexpr uint32_t DecodeShortName(std::string_view shortname)
+{
+	/* The short name is documented to be exactly 4 characters long, see docs/ob[gms]_format.txt. */
+	shortname = shortname.substr(0, 4);
+	uint32_t encoded = 0;
+	for (size_t i = 0; i < shortname.size(); i++) {
+		encoded |= static_cast<uint8_t>(shortname[i]) << (i * 8);
+	}
+	return encoded;
 }
 
 /**
@@ -84,9 +101,7 @@ bool BaseSet<T>::FillSetDetails(const IniFile &ini, const std::string &path, con
 
 	item = this->GetMandatoryItem(full_filename, *metadata, "shortname");
 	if (item == nullptr) return false;
-	for (uint i = 0; (*item->value)[i] != '\0' && i < 4; i++) {
-		this->shortname |= ((uint8_t)(*item->value)[i]) << (i * 8);
-	}
+	this->shortname = DecodeShortName(*item->value);
 
 	item = this->GetMandatoryItem(full_filename, *metadata, "version");
 	if (item == nullptr) return false;
@@ -110,10 +125,10 @@ bool BaseSet<T>::FillSetDetails(const IniFile &ini, const std::string &path, con
 	const IniGroup *origin = ini.GetGroup("origin");
 	auto file_names = BaseSet<T>::GetFilenames();
 	bool original_set =
-		std::byteswap(this->shortname) == 'TTDD' || // TTD DOS graphics, TTD DOS music
-		std::byteswap(this->shortname) == 'TTDW' || // TTD WIN graphics, TTD WIN music
-		std::byteswap(this->shortname) == 'TTDO' || // TTD sound
-		std::byteswap(this->shortname) == 'TTOD'; // TTO music
+		this->shortname == DecodeShortName("TTDD") || // TTD DOS graphics, TTD DOS music
+		this->shortname == DecodeShortName("TTDW") || // TTD WIN graphics, TTD WIN music
+		this->shortname == DecodeShortName("TTDO") || // TTD sound
+		this->shortname == DecodeShortName("TTOD"); // TTO music
 
 	for (uint i = 0; i < BaseSet<T>::NUM_FILES; i++) {
 		MD5File *file = &this->files[i];
@@ -156,23 +171,23 @@ bool BaseSet<T>::FillSetDetails(const IniFile &ini, const std::string &path, con
 			file->missing_warning = item->value.value();
 		}
 
-		file->check_result = T::CheckMD5(file, BASESET_DIR);
+		file->check_result = T::CheckMD5(file, Subdirectory::Baseset);
 		switch (file->check_result) {
-			case MD5File::CR_UNKNOWN:
+			case MD5File::ChecksumResult::Unknown:
 				break;
 
-			case MD5File::CR_MATCH:
+			case MD5File::ChecksumResult::Match:
 				this->valid_files++;
 				this->found_files++;
 				break;
 
-			case MD5File::CR_MISMATCH:
+			case MD5File::ChecksumResult::Mismatch:
 				/* This is normal for original sample.cat, which either matches with orig_dos or orig_win. */
 				this->LogError(full_filename, fmt::format("MD5 checksum mismatch for: {}", filename), original_set ? 1 : 0);
 				this->found_files++;
 				break;
 
-			case MD5File::CR_NO_FILE:
+			case MD5File::ChecksumResult::NoFile:
 				/* Missing files is normal for the original basesets. Use lower debug level */
 				this->LogError(full_filename, fmt::format("File is missing: {}", filename), original_set ? 1 : 0);
 				break;
@@ -190,7 +205,7 @@ bool BaseMedia<Tbase_set>::AddFile(const std::string &filename, size_t basepath_
 	auto set = std::make_unique<Tbase_set>();
 	IniFile ini{};
 	std::string path{ filename, basepath_length };
-	ini.LoadFromDisk(path, BASESET_DIR);
+	ini.LoadFromDisk(path, Subdirectory::Baseset);
 
 	auto psep = path.rfind(PATHSEPCHAR);
 	if (psep != std::string::npos) {
@@ -376,8 +391,9 @@ template <class Tbase_set>
 }
 
 /**
- * Get the name of the graphics set at the specified index
- * @return the name of the set
+ * Get the base set at a specified index. When the index is out of range, a #FatalError is triggered.
+ * @param index The index of the sets.
+ * @return The set.
  */
 template <class Tbase_set>
 /* static */ const Tbase_set *BaseMedia<Tbase_set>::GetSet(int index)

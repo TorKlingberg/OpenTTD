@@ -22,7 +22,7 @@ extern StationPool _station_pool;
 template <typename T>
 struct SpecMapping {
 	const T *spec = nullptr; ///< Custom spec.
-	uint32_t grfid = 0; ///< GRF ID of this custom spec.
+	GrfID grfid{}; ///< GRF ID of this custom spec.
 	uint16_t localidx = 0; ///< Local ID within GRF of this custom spec.
 };
 
@@ -94,6 +94,7 @@ struct BaseStation : StationPool::PoolItem<&_station_pool> {
 	TimerGameCalendar::Date build_date{}; ///< Date of construction
 
 	uint16_t random_bits = 0; ///< Random bits assigned to this station
+	std::unordered_map<TileIndex, StationRandomTriggers> tile_waiting_random_triggers;
 	StationRandomTriggers waiting_random_triggers; ///< Waiting triggers (NewGRF), shared by all station parts/tiles, road stops, ... essentially useless and broken by design.
 	StationAnimationTriggers cached_anim_triggers; ///< NOSAVE: Combined animation trigger bitmask, used to determine if trigger processing should happen.
 	StationAnimationTriggers cached_roadstop_anim_triggers; ///< NOSAVE: Combined animation trigger bitmask for road stops, used to determine if trigger processing should happen.
@@ -112,6 +113,7 @@ struct BaseStation : StationPool::PoolItem<&_station_pool> {
 	 */
 	BaseStation(StationID index, TileIndex tile) : StationPool::PoolItem<&_station_pool>(index), xy(tile) {}
 
+	/** Ensure the destructor of the sub classes are called as well. */
 	virtual ~BaseStation();
 
 	/**
@@ -143,6 +145,10 @@ struct BaseStation : StationPool::PoolItem<&_station_pool> {
 		return this->cached_name;
 	}
 
+	/**
+	 * Move this station's main coordinate somewhere else.
+	 * @param new_xy New tile location of the sign.
+	 */
 	virtual void MoveSign(TileIndex new_xy)
 	{
 		this->xy = new_xy;
@@ -265,6 +271,7 @@ struct SpecializedStation : public BaseStation {
 
 	/**
 	 * Gets station with given index
+	 * @param index The pool index to look for.
 	 * @return pointer to station with given index cast to T *
 	 */
 	static inline T *Get(auto index)
@@ -274,6 +281,7 @@ struct SpecializedStation : public BaseStation {
 
 	/**
 	 * Returns station if the index is a valid index for this station type
+	 * @param index The pool index to look for.
 	 * @return pointer to station with given index if it's a station of this type
 	 */
 	static inline T *GetIfValid(auto index)
@@ -293,7 +301,7 @@ struct SpecializedStation : public BaseStation {
 
 	/**
 	 * Creates a new T-object in the station pool.
-	 * @param args... The arguments to the constructor.
+	 * @param args The arguments to the constructor.
 	 * @return The created object.
 	 */
 	template <typename... Targs>
@@ -305,7 +313,7 @@ struct SpecializedStation : public BaseStation {
 	/**
 	 * Creates a new T-object in the station pool.
 	 * @param index The index allocate the object at.
-	 * @param args... The arguments to the constructor.
+	 * @param args The arguments to the constructor.
 	 * @return The created object.
 	 */
 	template <typename... Targs>
@@ -351,7 +359,9 @@ struct SpecializedStation : public BaseStation {
  * @return Speclist of custom spec type.
  */
 template <class T> std::vector<SpecMapping<T>> &GetStationSpecList(BaseStation *bst);
+/** @copydoc GetStationSpecList */
 template <> inline std::vector<SpecMapping<StationSpec>> &GetStationSpecList<StationSpec>(BaseStation *bst) { return bst->speclist; }
+/** @copydoc GetStationSpecList */
 template <> inline std::vector<SpecMapping<RoadStopSpec>> &GetStationSpecList<RoadStopSpec>(BaseStation *bst) { return bst->roadstop_speclist; }
 
 #endif /* BASE_STATION_BASE_H */

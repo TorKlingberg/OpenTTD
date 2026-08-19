@@ -83,7 +83,7 @@
 	EnforcePrecondition(false, IsValidAirportType(type));
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
-	return ScriptObject::Command<CMD_BUILD_AIRPORT>::Do(tile, type, 0, (ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()), station_id != ScriptStation::STATION_JOIN_ADJACENT);
+	return ScriptObject::Command<Commands::BuildAirport>::Do(tile, type, 0, (ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()), station_id != ScriptStation::STATION_JOIN_ADJACENT);
 }
 
 /* static */ bool ScriptAirport::RemoveAirport(TileIndex tile)
@@ -92,7 +92,7 @@
 	EnforcePrecondition(false, ::IsValidTile(tile))
 	EnforcePrecondition(false, IsAirportTile(tile) || IsHangarTile(tile));
 
-	return ScriptObject::Command<CMD_LANDSCAPE_CLEAR>::Do(tile);
+	return ScriptObject::Command<Commands::LandscapeClear>::Do(tile);
 }
 
 /* static */ SQInteger ScriptAirport::GetNumHangars(TileIndex tile)
@@ -489,7 +489,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 		for (const ModularCompoundPieceTile &ct : compound) {
 			data.tiles.push_back({static_cast<uint16_t>(ct.dx), static_cast<uint16_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
 		}
-		return ScriptObject::Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(tile,
+		return ScriptObject::Command<Commands::PlaceModularAirportTemplate>::Do(tile,
 				(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
 				station_id != ScriptStation::STATION_JOIN_ADJACENT, data);
 	}
@@ -497,7 +497,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	/* Taxi directions and one-way are left at their defaults; SetModularTaxiwayFlags
 	 * changes them afterwards. Runway orientation comes from the rotation the caller
 	 * gave rather than from the neighbouring tiles, so a script gets what it asked for. */
-	return ScriptObject::Command<CMD_BUILD_MODULAR_AIRPORT_TILE>::Do(tile, gfx,
+	return ScriptObject::Command<Commands::BuildModularAirportTile>::Do(tile, gfx,
 			(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
 			station_id != ScriptStation::STATION_JOIN_ADJACENT, static_cast<uint8_t>(rotation),
 			static_cast<uint8_t>(0x0F), false, false);
@@ -509,7 +509,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, IsModularAirportTile(tile));
 
-	return ScriptObject::Command<CMD_UPGRADE_MODULAR_AIRPORT_TILE>::Do(tile, tile);
+	return ScriptObject::Command<Commands::UpgradeModularAirportTile>::Do(tile, tile);
 }
 
 /* static */ bool ScriptAirport::UpgradeModularAirportArea(TileIndex start_tile, TileIndex end_tile)
@@ -518,7 +518,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforcePrecondition(false, ::IsValidTile(start_tile));
 	EnforcePrecondition(false, ::IsValidTile(end_tile));
 
-	return ScriptObject::Command<CMD_UPGRADE_MODULAR_AIRPORT_TILE>::Do(end_tile, start_tile);
+	return ScriptObject::Command<Commands::UpgradeModularAirportTile>::Do(end_tile, start_tile);
 }
 
 /* static */ bool ScriptAirport::SetModularRunwayFlags(TileIndex tile, SQInteger flags)
@@ -532,7 +532,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	const SQInteger dir_flags = flags & (MRF_DIR_LOW | MRF_DIR_HIGH);
 	EnforcePrecondition(false, dir_flags == MRF_DIR_LOW || dir_flags == MRF_DIR_HIGH);
 
-	return ScriptObject::Command<CMD_SET_RUNWAY_FLAGS>::Do(tile, static_cast<uint8_t>(flags));
+	return ScriptObject::Command<Commands::SetRunwayFlags>::Do(tile, static_cast<uint8_t>(flags));
 }
 
 /* static */ bool ScriptAirport::SetModularTaxiwayFlags(TileIndex tile, SQInteger dir_mask, bool one_way)
@@ -543,7 +543,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	/* A one-way taxiway runs in one direction, so exactly one bit is meaningful. */
 	EnforcePrecondition(false, !one_way || HasExactlyOneBit(static_cast<uint8_t>(dir_mask)));
 
-	return ScriptObject::Command<CMD_SET_TAXIWAY_FLAGS>::Do(tile, static_cast<uint8_t>(dir_mask), one_way);
+	return ScriptObject::Command<Commands::SetTaxiwayFlags>::Do(tile, static_cast<uint8_t>(dir_mask), one_way);
 }
 
 /* static */ bool ScriptAirport::PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout)
@@ -566,7 +566,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	data.height = static_cast<uint16_t>(height);
 	data.rotation = static_cast<uint8_t>(rotation);
 
-	return ScriptObject::Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(tile,
+	return ScriptObject::Command<Commands::PlaceModularAirportTemplate>::Do(tile,
 			(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
 			station_id != ScriptStation::STATION_JOIN_ADJACENT, data);
 }

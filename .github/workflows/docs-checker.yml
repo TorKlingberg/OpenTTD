@@ -14,26 +14,15 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 4
 
     - name: Get pull-request commits
       uses: OpenTTD/actions/checkout-pull-request@v6
 
-    - name: Install dependencies
-      run: |
-        echo "::group::Update apt"
-        sudo apt-get update
-        echo "::endgroup::"
-
-        echo "::group::Install dependencies"
-        sudo apt-get install -y --no-install-recommends \
-          doxygen \
-          # EOF
-        echo "::endgroup::"
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Install Doxygen
+      uses: ./.github/install-doxygen
 
     - name: Build docs for PR
       run: |
@@ -45,21 +34,20 @@ jobs:
 
         echo "::group::Build Source"
         cmake --build build --target docs_source
-        mv build/Warnings.source doxygen_warnings.PR
+        python3 .github/sort_doxygen_warnings.py build/Warnings.source doxygen_warnings.PR
         echo "::endgroup::"
 
         echo "::group::Build AI"
         cmake --build build --target docs_ai
-        mv build/Warnings.AI doxygen_AI_warnings.PR
+        python3 .github/sort_doxygen_warnings.py build/Warnings.AI doxygen_AI_warnings.PR
         echo "::endgroup::"
 
         echo "::group::Build GS"
         cmake --build build --target docs_game
-        mv build/Warnings.GS doxygen_GS_warnings.PR
+        python3 .github/sort_doxygen_warnings.py build/Warnings.GS doxygen_GS_warnings.PR
         echo "::endgroup::"
 
         rm -r build
-        git restore Doxyfile.in src/script/api/Doxyfile_AI.in src/script/api/Doxyfile_GS.in
 
     - name: Build docs for base branch
       run: |
@@ -72,17 +60,17 @@ jobs:
 
         echo "::group::Build Source"
         cmake --build build --target docs_source
-        mv build/Warnings.source doxygen_warnings.base
+        python3 .github/sort_doxygen_warnings.py build/Warnings.source doxygen_warnings.base
         echo "::endgroup::"
 
         echo "::group::Build AI"
         cmake --build build --target docs_ai
-        mv build/Warnings.AI doxygen_AI_warnings.base
+        python3 .github/sort_doxygen_warnings.py build/Warnings.AI doxygen_AI_warnings.base
         echo "::endgroup::"
 
         echo "::group::Build GS"
         cmake --build build --target docs_game
-        mv build/Warnings.GS doxygen_GS_warnings.base
+        python3 .github/sort_doxygen_warnings.py build/Warnings.GS doxygen_GS_warnings.base
         echo "::endgroup::"
 
         rm -r build

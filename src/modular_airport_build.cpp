@@ -59,7 +59,7 @@ static void InitializeNewModularAirport(Airport &airport)
 	airport.layout = 0;
 	airport.blocks = {};
 	airport.blocks.Set(AirportBlock::Modular);
-	airport.rotation = DIR_N;
+	airport.rotation = Direction::N;
 }
 
 static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDiff diff, bool horizontal, bool family_large, std::vector<TileIndex> &tiles)
@@ -458,8 +458,8 @@ void ApplyModularAirportNoiseChange(const Station *st, const ModularAirportNoise
 	if (after.town != nullptr) after.town->noise_reached += after.level;
 
 	if (_settings_game.economy.station_noise_level) {
-		if (before.town != nullptr) SetWindowDirty(WC_TOWN_VIEW, before.town->index);
-		if (after.town != nullptr && after.town != before.town) SetWindowDirty(WC_TOWN_VIEW, after.town->index);
+		if (before.town != nullptr) SetWindowDirty(WindowClass::TownView, before.town->index);
+		if (after.town != nullptr && after.town != before.town) SetWindowDirty(WindowClass::TownView, after.town->index);
 	}
 }
 
@@ -553,7 +553,7 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 		}
 	}
 
-	CommandCost cost(EXPENSES_CONSTRUCTION);
+	CommandCost cost(ExpensesType::Construction);
 	for (size_t i = 0; i < tiles_to_remove.size(); ++i) {
 		cost.AddCost(_price[Price::ClearStationAirport]);
 	}
@@ -574,13 +574,13 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
 			if (md != nullptr && IsModularHangarPiece(md->piece_type)) {
 				OrderBackup::Reset(t, false);
-				CloseWindowById(WC_VEHICLE_DEPOT, t);
+				CloseWindowById(WindowClass::VehicleDepot, t);
 			}
 		}
 
 		for (TileIndex t : tiles_to_remove) {
 			DoClearSquare(t);
-			DeleteNewGRFInspectWindow(GSF_AIRPORTTILES, t.base());
+			DeleteNewGRFInspectWindow(GrfSpecFeature::AirportTiles, t.base());
 		}
 
 		if (st->airport.modular_tile_data != nullptr) {
@@ -638,14 +638,14 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 			st->airport.Clear();
 			st->facilities.Reset(StationFacility::Airport);
-			SetWindowClassesDirty(WC_VEHICLE_ORDERS);
+			SetWindowClassesDirty(WindowClass::VehicleOrders);
 			Company::Get(st->owner)->infrastructure.airport--;
 			st->AfterStationTileSetChange(false, StationType::Airport);
-			DeleteNewGRFInspectWindow(GSF_AIRPORTS, st->index);
+			DeleteNewGRFInspectWindow(GrfSpecFeature::Airports, st->index);
 		}
 		ApplyModularAirportNoiseChange(st, noise_before);
 
-		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+		InvalidateWindowData(WindowClass::StationView, st->index, -1);
 	}
 
 	return cost;
@@ -689,7 +689,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 		uint8_t new_piece;
 	};
 
-	CommandCost cost(EXPENSES_CONSTRUCTION);
+	CommandCost cost(ExpensesType::Construction);
 	std::vector<UpgradeTarget> targets;
 	std::set<StationID> affected_stations;
 	std::map<StationID, ModularAirportNoiseSnapshot> noise_before;
@@ -765,7 +765,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 			CancelModularHangarOrdersIfNoneLeft(st);
 			ApplyModularAirportNoiseChange(st, noise_before.at(sid));
 			st->AfterStationTileSetChange(true, StationType::Airport);
-			InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+			InvalidateWindowData(WindowClass::StationView, st->index, -1);
 		}
 	}
 
@@ -845,7 +845,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		cost.AddCost(ret.GetCost());
 
 		/* Always test landscape clear in Check phase. Apply path will do the real clear. */
-		ret = Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), tile);
+		ret = Command<Commands::LandscapeClear>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), tile);
 		if (ret.Failed()) return ret;
 		cost.AddCost(ret.GetCost());
 	}
@@ -923,7 +923,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	 * happens to be a helipad still comes out "Heliport". What this does buy is the
 	 * case that matters — a hand-built heliport now gets the same name as the stock
 	 * heliport built as modular. */
-	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? STATIONNAMING_HELIPORT : STATIONNAMING_AIRPORT;
+	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? StationNaming::Heliport : StationNaming::Airport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
@@ -948,7 +948,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	const bool new_facility = !st->facilities.Test(StationFacility::Airport);
 
 	if (!is_modular_replace) {
-		CommandCost ret = Command<CMD_LANDSCAPE_CLEAR>::Do(DoCommandFlag::Execute, tile);
+		CommandCost ret = Command<Commands::LandscapeClear>::Do(DoCommandFlag::Execute, tile);
 		assert(ret.Succeeded());
 	}
 
@@ -1090,14 +1090,14 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	if (TileY(tile) > 0) MarkTileDirtyByTile(tile - TileDiffXY(0, 1));
 
 	st->AfterStationTileSetChange(true, StationType::Airport);
-	InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+	InvalidateWindowData(WindowClass::StationView, st->index, -1);
 }
 
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
 	Station *st = nullptr;
 	bool is_modular_replace = false;
-	CommandCost cost(EXPENSES_CONSTRUCTION);
+	CommandCost cost(ExpensesType::Construction);
 
 	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, station_to_join, allow_adjacent, st, is_modular_replace, cost);
 	if (ret.Failed()) return ret;
@@ -1290,7 +1290,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 	Direction rotation = as->layouts[layout].rotation;
 	int w = as->size_x;
 	int h = as->size_y;
-	if (rotation == DIR_E || rotation == DIR_W) std::swap(w, h);
+	if (rotation == Direction::E || rotation == Direction::W) std::swap(w, h);
 	TileArea airport_area = TileArea(tile, w, h);
 
 	if (w > _settings_game.station.station_spread || h > _settings_game.station.station_spread) {
@@ -1338,7 +1338,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
-	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
+	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? StationNaming::Airport : StationNaming::Heliport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
@@ -1378,7 +1378,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 		Company::Get(st->owner)->infrastructure.airport++;
 
 		st->AfterStationTileSetChange(true, StationType::Airport);
-		InvalidateWindowData(WC_STATION_VIEW, st->index, -1);
+		InvalidateWindowData(WindowClass::StationView, st->index, -1);
 		ApplyModularAirportNoiseChange(st, {});
 
 		if (_show_holding_overlay) MarkWholeScreenDirty();

@@ -17,7 +17,7 @@
 #include "safeguards.h"
 
 /** Table of canal 'feature' sprite groups */
-std::array<WaterFeature, CF_END> _water_feature;
+EnumIndexArray<WaterFeature, CanalFeature, CanalFeature::End> _water_feature;
 
 /** Scope resolver of a canal tile. */
 struct CanalScopeResolver : public ScopeResolver {
@@ -40,10 +40,10 @@ struct CanalResolverObject : public ResolverObject {
 	CanalResolverObject(CanalFeature feature, TileIndex tile,
 			CallbackID callback = CBID_NO_CALLBACK, uint32_t callback_param1 = 0, uint32_t callback_param2 = 0);
 
-	ScopeResolver *GetScope(VarSpriteGroupScope scope = VSG_SCOPE_SELF, uint8_t relative = 0) override
+	ScopeResolver *GetScope(VarSpriteGroupScope scope = VarSpriteGroupScope::Self, uint8_t relative = 0) override
 	{
 		switch (scope) {
-			case VSG_SCOPE_SELF: return &this->canal_scope;
+			case VarSpriteGroupScope::Self: return &this->canal_scope;
 			default: return ResolverObject::GetScope(scope, relative);
 		}
 	}
@@ -84,14 +84,14 @@ struct CanalResolverObject : public ResolverObject {
 		 */
 		case 0x82: {
 			uint32_t connectivity =
-				  (!IsWateredTile(TileAddXY(tile, -1,  0), DIR_SW) << 0)  // NE
-				+ (!IsWateredTile(TileAddXY(tile,  0,  1), DIR_NW) << 1)  // SE
-				+ (!IsWateredTile(TileAddXY(tile,  1,  0), DIR_NE) << 2)  // SW
-				+ (!IsWateredTile(TileAddXY(tile,  0, -1), DIR_SE) << 3)  // NW
-				+ (!IsWateredTile(TileAddXY(tile, -1,  1), DIR_W)  << 4)  // E
-				+ (!IsWateredTile(TileAddXY(tile,  1,  1), DIR_N)  << 5)  // S
-				+ (!IsWateredTile(TileAddXY(tile,  1, -1), DIR_E)  << 6)  // W
-				+ (!IsWateredTile(TileAddXY(tile, -1, -1), DIR_S)  << 7); // N
+				  (!IsWateredTile(TileAddXY(tile, -1,  0), Direction::SW) << 0)  // NE
+				+ (!IsWateredTile(TileAddXY(tile,  0,  1), Direction::NW) << 1)  // SE
+				+ (!IsWateredTile(TileAddXY(tile,  1,  0), Direction::NE) << 2)  // SW
+				+ (!IsWateredTile(TileAddXY(tile,  0, -1), Direction::SE) << 3)  // NW
+				+ (!IsWateredTile(TileAddXY(tile, -1,  1), Direction::W)  << 4)  // E
+				+ (!IsWateredTile(TileAddXY(tile,  1,  1), Direction::N)  << 5)  // S
+				+ (!IsWateredTile(TileAddXY(tile,  1, -1), Direction::E)  << 6)  // W
+				+ (!IsWateredTile(TileAddXY(tile, -1, -1), Direction::S)  << 7); // N
 			return connectivity;
 		}
 
@@ -107,12 +107,12 @@ struct CanalResolverObject : public ResolverObject {
 
 GrfSpecFeature CanalResolverObject::GetFeature() const
 {
-	return GSF_CANALS;
+	return GrfSpecFeature::Canals;
 }
 
 uint32_t CanalResolverObject::GetDebugID() const
 {
-	return this->feature;
+	return to_underlying(this->feature);
 }
 
 /**

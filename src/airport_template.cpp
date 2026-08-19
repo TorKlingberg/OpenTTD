@@ -12,6 +12,7 @@
 #include "fileio_func.h"
 #include "fileio_type.h"
 #include "newgrf_airporttiles.h"
+#include "newgrf.h"
 #include "modular_airport_cmd.h"
 #include "debug.h"
 #include "string_func.h"
@@ -33,7 +34,7 @@ static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 
 static std::string GetTemplatesDirectory()
 {
-	std::string dir = FioGetDirectory(SP_PERSONAL_DIR, BASE_DIR);
+	std::string dir = FioGetDirectory(Searchpath::PersonalDir, Subdirectory::Base);
 	AppendPathSeparator(dir);
 	dir += "airport_templates";
 	AppendPathSeparator(dir);
@@ -45,7 +46,7 @@ static std::optional<uint8_t> ResolveAirportTileIndexByGRF(uint32_t grfid, uint1
 	for (uint16_t gfx = NEW_AIRPORTTILE_OFFSET; gfx < NUM_AIRPORTTILES; gfx++) {
 		const AirportTileSpec *ats = AirportTileSpec::Get(static_cast<StationGfx>(gfx));
 		if (ats == nullptr) continue;
-		if (ats->grf_prop.grfid == grfid && ats->grf_prop.local_id == local_id) return static_cast<uint8_t>(gfx);
+		if (FlattenNewGRFLabel(ats->grf_prop.grfid) == grfid && ats->grf_prop.local_id == local_id) return static_cast<uint8_t>(gfx);
 	}
 	return std::nullopt;
 }

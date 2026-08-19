@@ -12,7 +12,7 @@
 #include "../../fileio_func.h"
 #include "../../string_func.h"
 #include "../../gamelog.h"
-#include "../../saveload/saveload.h"
+#include "../../saveload/saveload_func.h"
 #include "../../video/video_driver.hpp"
 #include "macos.h"
 
@@ -94,7 +94,7 @@ class CrashLogOSX : public CrashLog {
 	}
 #endif
 
-	/* virtual */ bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
+	bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
 	{
 		this->try_execute_active = true;
 

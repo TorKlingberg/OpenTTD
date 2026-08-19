@@ -96,7 +96,7 @@ inline uint TilePixelHeightOutsideMap(int x, int y)
 [[debug_inline]] inline static TileType GetTileType(Tile tile)
 {
 	assert(tile < Map::Size());
-	return TileType(GB(tile.type(), 4, 4));
+	return TileType(GB(tile.type(), 4, TILE_TYPE_BITS));
 }
 
 /**
@@ -135,7 +135,7 @@ inline void SetTileType(Tile tile, TileType type)
 	 * edges of the map. If _settings_game.construction.freeform_edges is true,
 	 * the upper edges of the map are also VOID tiles. */
 	assert(IsInnerTile(tile) == (type != TileType::Void));
-	SB(tile.type(), 4, 4, to_underlying(type));
+	SB(tile.type(), 4, TILE_TYPE_BITS, to_underlying(type));
 }
 
 /**
@@ -181,7 +181,7 @@ inline Owner GetTileOwner(Tile tile)
 	assert(!IsTileType(tile, TileType::House));
 	assert(!IsTileType(tile, TileType::Industry));
 
-	return (Owner)GB(tile.m1(), 0, 5);
+	return static_cast<Owner>(GB(tile.m1(), 0, 5));
 }
 
 /**
@@ -225,8 +225,8 @@ inline bool IsTileOwner(Tile tile, Owner owner)
 inline void SetTropicZone(Tile tile, TropicZone type)
 {
 	assert(tile < Map::Size());
-	assert(!IsTileType(tile, TileType::Void) || type == TROPICZONE_NORMAL);
-	SB(tile.type(), 0, 2, type);
+	assert(!IsTileType(tile, TileType::Void) || type == TropicZone::Normal);
+	SB(tile.type(), 0, 2, to_underlying(type));
 }
 
 /**
@@ -238,7 +238,7 @@ inline void SetTropicZone(Tile tile, TropicZone type)
 inline TropicZone GetTropicZone(Tile tile)
 {
 	assert(tile < Map::Size());
-	return (TropicZone)GB(tile.type(), 0, 2);
+	return static_cast<TropicZone>(GB(tile.type(), 0, 2));
 }
 
 /**
@@ -278,7 +278,7 @@ bool IsTileFlat(TileIndex tile, int *h = nullptr);
  */
 inline Slope GetTileSlope(TileIndex tile)
 {
-	return std::get<0>(GetTileSlopeZ(tile));
+	return std::get<Slope>(GetTileSlopeZ(tile));
 }
 
 /**

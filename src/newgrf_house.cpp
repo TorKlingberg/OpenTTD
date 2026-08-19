@@ -77,7 +77,7 @@ HouseSpec *HouseSpec::Get(size_t house_id)
 	return &_house_specs[house_id];
 }
 
-/* Reset and initialise house specs. */
+/** Reset and initialise house specs. */
 void ResetHouses()
 {
 	_house_specs.clear();
@@ -103,6 +103,7 @@ void ResetHouses()
  * @param not_yet_constructed House is still under construction.
  * @param initial_random_bits Random bits during construction checks.
  * @param watched_cargo_triggers Cargo types that triggered the watched cargo callback.
+ * @param view The house's 'view'.
  */
 HouseResolverObject::HouseResolverObject(HouseID house_id, TileIndex tile, Town *town,
 		CallbackID callback, uint32_t param1, uint32_t param2,
@@ -119,7 +120,7 @@ HouseResolverObject::HouseResolverObject(HouseID house_id, TileIndex tile, Town 
 
 GrfSpecFeature HouseResolverObject::GetFeature() const
 {
-	return GSF_HOUSES;
+	return GrfSpecFeature::Houses;
 }
 
 uint32_t HouseResolverObject::GetDebugID() const
@@ -135,7 +136,13 @@ void ResetHouseClassIDs()
 	_class_mapping.emplace_back();
 }
 
-HouseClassID AllocateHouseClassID(uint8_t grf_class_id, uint32_t grfid)
+/**
+ * Allocate a house class for the given NewGRF and ID.
+ * @param grf_class_id The class id within the NewGRF.
+ * @param grfid The GRF this class belongs to.
+ * @return The existing allocation, or a new one when it did not exist yet.
+ */
+HouseClassID AllocateHouseClassID(uint8_t grf_class_id, GrfID grfid)
 {
 	/* Start from 1 because 0 means that no class has been assigned. */
 	auto it = std::find_if(std::next(std::begin(_class_mapping)), std::end(_class_mapping), [grf_class_id, grfid](const HouseClassMapping &map) { return map.class_id == grf_class_id && map.grfid == grfid; });
@@ -304,9 +311,6 @@ static uint32_t GetDistanceFromNearbyHouse(uint8_t parameter, TileIndex start_ti
 	return 0;
 }
 
-/**
- * @note Used by the resolver to get values for feature 07 deterministic spritegroups.
- */
 /* virtual */ uint32_t HouseScopeResolver::GetVariable(uint8_t variable, [[maybe_unused]] uint32_t parameter, bool &available) const
 {
 	if (this->tile == INVALID_TILE) {
@@ -402,7 +406,7 @@ static uint32_t GetDistanceFromNearbyHouse(uint8_t parameter, TileIndex start_ti
 			}
 
 			/* Cargo triggered CB 148? */
-			if (HasBit(this->watched_cargo_triggers, cargo_type)) SetBit(res, 4);
+			if (this->watched_cargo_triggers.Test(cargo_type)) SetBit(res, 4);
 
 			return res;
 		}
@@ -441,7 +445,7 @@ static uint32_t GetDistanceFromNearbyHouse(uint8_t parameter, TileIndex start_ti
 			if (house_id < NEW_HOUSE_OFFSET) return 0;
 			/* Checking the grffile information via HouseSpec doesn't work
 			 * in case the newgrf was removed. */
-			return _house_mngr.GetGRFID(house_id);
+			return FlattenNewGRFLabel(_house_mngr.GetGRFID(house_id));
 		}
 
 		case 0x7A: return GetBadgeVariableResult(*this->ro.grffile, HouseSpec::Get(this->house_id)->badges, parameter);
@@ -453,6 +457,21 @@ static uint32_t GetDistanceFromNearbyHouse(uint8_t parameter, TileIndex start_ti
 	return UINT_MAX;
 }
 
+/**
+ * Get the result of a house callback.
+ * @param callback Callback ID.
+ * @param param1 First parameter (var 10) of the callback.
+ * @param param2 Second parameter (var 18) of the callback.
+ * @param house_id House to query.
+ * @param town %Town containing the house.
+ * @param tile %Tile containing the house.
+ * @param[out] regs100 Additional result values from registers 100+.
+ * @param not_yet_constructed House is still under construction.
+ * @param initial_random_bits Random bits during construction checks.
+ * @param watched_cargo_triggers Cargo types that triggered the watched cargo callback.
+ * @param view The house's 'view'.
+ * @return The NewGRF result of the callback.
+ */
 uint16_t GetHouseCallback(CallbackID callback, uint32_t param1, uint32_t param2, HouseID house_id, Town *town, TileIndex tile, std::span<int32_t> regs100,
 		bool not_yet_constructed, uint8_t initial_random_bits, CargoTypes watched_cargo_triggers, int view)
 {
@@ -483,7 +502,7 @@ static void DrawTileLayout(const TileInfo *ti, const DrawTileSpriteSpan &dts, ui
 		DrawGroundSprite(image, GroundSpritePaletteTransform(image, pal, palette));
 	}
 
-	DrawNewGRFTileSeq(ti, &dts, TO_HOUSES, stage, palette);
+	DrawNewGRFTileSeq(ti, &dts, TransparencyOption::Houses, stage, palette);
 }
 
 void DrawNewHouseTile(TileInfo *ti, HouseID house_id)
@@ -498,7 +517,7 @@ void DrawNewHouseTile(TileInfo *ti, HouseID house_id)
 			if (callback_res != CALLBACK_FAILED) draw_old_one = ConvertBooleanCallback(hs->grf_prop.grffile, CBID_HOUSE_DRAW_FOUNDATIONS, callback_res);
 		}
 
-		if (draw_old_one) DrawFoundation(ti, FOUNDATION_LEVELED);
+		if (draw_old_one) DrawFoundation(ti, Foundation::Leveled);
 	}
 
 	HouseResolverObject object(house_id, ti->tile, Town::GetByTile(ti->tile));
@@ -591,15 +610,19 @@ bool CanDeleteHouse(TileIndex tile)
 
 	/* Humans are always allowed to remove buildings, as is water and disasters and
 	 * anyone using the scenario editor. */
-	if (Company::IsValidHumanID(_current_company) || _current_company == OWNER_WATER || _current_company == OWNER_NONE || _game_mode == GM_EDITOR || _generating_world) {
+	if (Company::IsValidHumanID(_current_company) || _current_company == OWNER_WATER || _current_company == OWNER_NONE || _game_mode == GameMode::Editor || _generating_world) {
 		return true;
 	}
 
+	/* The house might be placed by a player. */
+	if (IsHousePlayerProtected(tile)) return false;
+
+	/* Houses can be protected by a NewGRF property or a callback. The callback overrides the property. */
 	if (hs->callback_mask.Test(HouseCallbackMask::DenyDestruction)) {
 		uint16_t callback_res = GetHouseCallback(CBID_HOUSE_DENY_DESTRUCTION, 0, 0, GetHouseType(tile), Town::GetByTile(tile), tile);
 		return (callback_res == CALLBACK_FAILED || !ConvertBooleanCallback(hs->grf_prop.grffile, CBID_HOUSE_DENY_DESTRUCTION, callback_res));
 	} else {
-		return !IsHouseProtected(tile);
+		return !hs->extra_flags.Test(HouseExtraFlag::BuildingIsProtected);
 	}
 }
 
@@ -739,9 +762,9 @@ void TriggerHouseAnimation_WatchedCargoAccepted(TileIndex tile, CargoTypes trigg
 	HouseID id = GetHouseType(tile);
 	const HouseSpec *hs = HouseSpec::Get(id);
 
-	trigger_cargoes &= hs->watched_cargoes;
+	trigger_cargoes = trigger_cargoes & hs->watched_cargoes;
 	/* None of the trigger cargoes is watched? */
-	if (trigger_cargoes == 0) return;
+	if (trigger_cargoes.None()) return;
 
 	/* Same random value for all tiles of a multi-tile house. */
 	uint16_t r = Random();

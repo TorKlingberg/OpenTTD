@@ -68,7 +68,7 @@ enum class LockPart : uint8_t {
 	Upper = 2, ///< Upper part of a lock.
 	End, ///< End marker.
 };
-DECLARE_INCREMENT_DECREMENT_OPERATORS(LockPart);
+DECLARE_INCREMENT_DECREMENT_OPERATORS(LockPart)
 
 bool IsPossibleDockingTile(Tile t);
 
@@ -245,7 +245,7 @@ inline bool IsShipDepotTile(Tile t)
 inline Axis GetShipDepotAxis(Tile t)
 {
 	assert(IsShipDepotTile(t));
-	return (Axis)GB(t.m5(), WBL_DEPOT_AXIS, 1);
+	return static_cast<Axis>(GB(t.m5(), WBL_DEPOT_AXIS, 1));
 }
 
 /**
@@ -316,7 +316,7 @@ inline bool IsLock(Tile t)
 inline DiagDirection GetLockDirection(Tile t)
 {
 	assert(IsLock(t));
-	return (DiagDirection)GB(t.m5(), WBL_LOCK_ORIENT_BEGIN, WBL_LOCK_ORIENT_COUNT);
+	return static_cast<DiagDirection>(GB(t.m5(), WBL_LOCK_ORIENT_BEGIN, WBL_LOCK_ORIENT_COUNT));
 }
 
 /**
@@ -346,6 +346,7 @@ inline uint8_t GetWaterTileRandomBits(Tile t)
 /**
  * Checks whether the tile has water at the ground.
  * That is, it is either some plain water tile, or a object/industry/station/... with water under it.
+ * @param t The tile to query.
  * @return true iff the tile has water at the ground.
  * @note Coast tiles are not considered waterish, even if there is water on a halftile.
  */
@@ -368,6 +369,7 @@ inline void SetDockingTile(Tile t, bool b)
 
 /**
  * Checks whether the tile is marked as a dockling tile.
+ * @param t The tile to query.
  * @return true iff the tile is marked as a docking tile.
  */
 inline bool IsDockingTile(Tile t)
@@ -468,7 +470,7 @@ inline void MakeShipDepot(Tile t, Owner o, DepotID did, DepotPart part, Axis a, 
 	t.m2() = did.base();
 	t.m3() = 0;
 	t.m4() = 0;
-	t.m5() = to_underlying(part) << WBL_DEPOT_PART | a << WBL_DEPOT_AXIS;
+	t.m5() = to_underlying(part) << WBL_DEPOT_PART | to_underlying(a) << WBL_DEPOT_AXIS;
 	SetWaterTileType(t, WaterTileType::Depot);
 	SB(t.m6(), 2, 6, 0);
 	t.m7() = 0;
@@ -493,7 +495,7 @@ inline void MakeLockTile(Tile t, Owner o, LockPart part, DiagDirection dir, Wate
 	t.m2() = 0;
 	t.m3() = 0;
 	t.m4() = 0;
-	t.m5() = to_underlying(part) << WBL_LOCK_PART_BEGIN | dir << WBL_LOCK_ORIENT_BEGIN;
+	t.m5() = to_underlying(part) << WBL_LOCK_PART_BEGIN | to_underlying(dir) << WBL_LOCK_ORIENT_BEGIN;
 	SetWaterTileType(t, WaterTileType::Lock);
 	SB(t.m6(), 2, 6, 0);
 	t.m7() = 0;
@@ -534,6 +536,7 @@ inline void SetNonFloodingWaterTile(Tile t, bool b)
 }
 /**
  * Checks whether the tile is marked as a non-flooding water tile.
+ * @param t The tile to query.
  * @return true iff the tile is marked as a non-flooding water tile.
  */
 inline bool IsNonFloodingWaterTile(Tile t)

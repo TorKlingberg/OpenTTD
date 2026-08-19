@@ -27,7 +27,7 @@ static const size_t LEN_OLD_STRINGS = 32; ///< The number of characters per stri
  */
 StringID RemapOldStringID(StringID s)
 {
-	switch (s) {
+	switch (s.base()) {
 		case 0x0006: return STR_SV_EMPTY;
 		case 0x7000: return STR_SV_UNNAMED;
 		case 0x70E4: return SPECSTR_COMPANY_NAME_START;
@@ -61,8 +61,8 @@ std::string CopyFromOldName(StringID id)
 	/* Is this name an (old) custom name? */
 	if (GetStringTab(id) != TEXT_TAB_OLD_CUSTOM) return std::string();
 
-	if (IsSavegameVersionBefore(SLV_37)) {
-		const std::string &strfrom = _old_name_array[GB(id, 0, 9)];
+	if (IsSavegameVersionBefore(SaveLoadVersion::Utf8)) {
+		const std::string &strfrom = _old_name_array[GB(id.base(), 0, 9)];
 
 		std::string result;
 		StringBuilder builder(result);
@@ -89,7 +89,7 @@ std::string CopyFromOldName(StringID id)
 		return result;
 	} else {
 		/* Name will already be in UTF-8. */
-		return StrMakeValid(_old_name_array[GB(id, 0, 9)]);
+		return StrMakeValid(_old_name_array[GB(id.base(), 0, 9)]);
 	}
 }
 
@@ -111,7 +111,7 @@ void InitializeOldNames()
 }
 
 struct NAMEChunkHandler : ChunkHandler {
-	NAMEChunkHandler() : ChunkHandler('NAME', CH_READONLY) {}
+	NAMEChunkHandler() : ChunkHandler("NAME", ChunkType::ReadOnly) {}
 
 	void Load() const override
 	{

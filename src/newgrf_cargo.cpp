@@ -26,12 +26,12 @@ struct CargoResolverObject : public ResolverObject {
 
 GrfSpecFeature CargoResolverObject::GetFeature() const
 {
-	return GSF_CARGOES;
+	return GrfSpecFeature::Cargoes;
 }
 
 uint32_t CargoResolverObject::GetDebugID() const
 {
-	return this->cargospec->label.base();
+	return FlattenNewGRFLabel(this->cargospec->label);
 }
 
 /**

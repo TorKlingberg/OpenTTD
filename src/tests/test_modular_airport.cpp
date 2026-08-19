@@ -8,6 +8,7 @@
 /** @file test_modular_airport.cpp Unit tests for modular airport logic. */
 
 #include "../stdafx.h"
+#include "../newgrf.h"
 #include "../3rdparty/catch2/catch.hpp"
 
 #include "../modular_airport_cmd.h"
@@ -94,7 +95,7 @@ static Aircraft *CreateAircraft(VehicleID index)
  * assigning to Aircraft::engine_type. */
 static EngineID CreateAircraftEngine(EngineID index, uint8_t subtype)
 {
-	Engine *e = Engine::CreateAtIndex(index, VEH_AIRCRAFT, 0xFFFF);
+	Engine *e = Engine::CreateAtIndex(index, VehicleType::Aircraft, 0xFFFF);
 	e->VehInfo<AircraftVehicleInfo>().subtype = subtype;
 	return index;
 }
@@ -224,21 +225,22 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 
 	/* A savegame from before modular airports existed can persist a NewGRF airport in
 	 * runtime slot 127; it has to be moved aside before it overwrites the modular spec. */
-	_airport_mngr.mappings[AT_MODULAR] = {0xAABBCCDD, 17, AT_SMALL};
+	const GrfID test_grfid = UnflattenNewGRFLabel<GrfID>(0xAABBCCDD);
+	_airport_mngr.mappings[AT_MODULAR] = {test_grfid, 17, AT_SMALL};
 	CHECK(_airport_mngr.RelocateLegacyModularID() == NEW_AIRPORT_OFFSET);
-	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].grfid == 0xAABBCCDD);
+	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].grfid == test_grfid);
 	CHECK(_airport_mngr.mappings[NEW_AIRPORT_OFFSET].entity_id == 17);
-	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
+	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid.Empty());
 	_airport_mngr.ResetMapping();
 
 	/* AT_MODULAR's slot stays reserved for new mappings, and with every other slot taken
 	 * there is nowhere to relocate a legacy one to. */
 	for (uint16_t i = 0; i < 117; i++) {
-		CHECK(_airport_mngr.AddEntityID(i + 1, 0xA0000000U + i, AT_SMALL) == NEW_AIRPORT_OFFSET + i);
+		CHECK(_airport_mngr.AddEntityID(i + 1, UnflattenNewGRFLabel<GrfID>(0xA0000000U + i), AT_SMALL) == NEW_AIRPORT_OFFSET + i);
 	}
-	CHECK(_airport_mngr.AddEntityID(200, 0xB0000000U, AT_SMALL) == AT_INVALID);
-	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid == 0);
-	_airport_mngr.mappings[AT_MODULAR] = {0xAABBCCDD, 17, AT_SMALL};
+	CHECK(_airport_mngr.AddEntityID(200, UnflattenNewGRFLabel<GrfID>(0xB0000000U), AT_SMALL) == AT_INVALID);
+	CHECK(_airport_mngr.mappings[AT_MODULAR].grfid.Empty());
+	_airport_mngr.mappings[AT_MODULAR] = {test_grfid, 17, AT_SMALL};
 	CHECK(_airport_mngr.RelocateLegacyModularID() == AT_MODULAR);
 	_airport_mngr.ResetMapping();
 }
@@ -1534,15 +1536,15 @@ TEST_CASE("ModularAirportMetadata")
 TEST_CASE("ModularAirportMovementHelpers")
 {
 	SECTION("DirectionsWithin45") {
-		CHECK(DirectionsWithin45(DIR_N, DIR_N));
-		CHECK(DirectionsWithin45(DIR_N, DIR_NE));
-		CHECK(DirectionsWithin45(DIR_N, DIR_NW));
-		CHECK_FALSE(DirectionsWithin45(DIR_N, DIR_E));
-		CHECK_FALSE(DirectionsWithin45(DIR_N, DIR_S));
+		CHECK(DirectionsWithin45(Direction::N, Direction::N));
+		CHECK(DirectionsWithin45(Direction::N, Direction::NE));
+		CHECK(DirectionsWithin45(Direction::N, Direction::NW));
+		CHECK_FALSE(DirectionsWithin45(Direction::N, Direction::E));
+		CHECK_FALSE(DirectionsWithin45(Direction::N, Direction::S));
 
 		// Wrap around
-		CHECK(DirectionsWithin45(DIR_NW, DIR_N));
-		CHECK(DirectionsWithin45(DIR_NW, DIR_W));
+		CHECK(DirectionsWithin45(Direction::NW, Direction::N));
+		CHECK(DirectionsWithin45(Direction::NW, Direction::W));
 	}
 }
 
@@ -3059,18 +3061,18 @@ TEST_CASE("ModularAirportHangarAccessors")
 		}
 
 		/* APT_DEPOT_SE is the generic piece the stored rotation still speaks for. At
-		 * rotation 0 its door faces dy=+1, which is DIR_SE for the leaving aircraft. */
+		 * rotation 0 its door faces dy=+1, which is Direction::SE for the leaving aircraft. */
 		st->airport.modular_tile_data->clear();
 		st->airport.modular_tile_index_dirty = true;
 		st->airport.MarkLayoutDirty();
 		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
-		CHECK(st->airport.GetHangarExitDirection(hangar) == DIR_SE);
+		CHECK(st->airport.GetHangarExitDirection(hangar) == Direction::SE);
 	}
 
 	SECTION("Rotating a hangar piece rotates its exit direction by the same amount") {
 		const TileIndex hangar = base + TileDiffXY(4, 3);
 
-		/* Deliberately not asserting that APT_DEPOT_SW exits DIR_SW: the suffixes are
+		/* Deliberately not asserting that APT_DEPOT_SW exits Direction::SW: the suffixes are
 		 * graphic-orientation labels and arguing from them is what got this wrong in
 		 * the first place. This asserts only self-consistency, which holds whatever
 		 * the labels mean — turning the piece a quarter-turn must turn the door a
@@ -3099,7 +3101,7 @@ TEST_CASE("ModularAirportHangarAccessors")
 				/* One quarter-turn is two steps of the eight-way Direction enum. The
 				 * sign follows from rotation 0's own mapping, so it is derived rather
 				 * than assumed. */
-				const Direction want = (Direction)((base_dir + 8 - 2 * r) % 8);
+				const Direction want = static_cast<Direction>((to_underlying(base_dir) + 8 - 2 * r) % 8);
 				CHECK(GetModularHangarExitDirection(st, hangar) == want);
 			}
 		}
@@ -3128,10 +3130,10 @@ TEST_CASE("ModularAirportHangarAccessors")
 
 			int want_bit = -1;
 			switch (exit) {
-				case DIR_SE: want_bit = 2; break; // (0, +1)
-				case DIR_SW: want_bit = 1; break; // (+1, 0)
-				case DIR_NW: want_bit = 0; break; // (0, -1)
-				case DIR_NE: want_bit = 3; break; // (-1, 0)
+				case Direction::SE: want_bit = 2; break; // (0, +1)
+				case Direction::SW: want_bit = 1; break; // (+1, 0)
+				case Direction::NW: want_bit = 0; break; // (0, -1)
+				case Direction::NE: want_bit = 3; break; // (-1, 0)
 				default: break;
 			}
 			REQUIRE(want_bit >= 0);

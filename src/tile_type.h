@@ -36,6 +36,7 @@ static constexpr uint MAX_SNOWLINE_HEIGHT = (MAX_TILE_HEIGHT - 2); ///< Maximum 
 static constexpr uint DEF_SNOW_COVERAGE = 40;                      ///< Default snow coverage.
 static constexpr uint DEF_DESERT_COVERAGE = 50;                    ///< Default desert coverage.
 
+static constexpr size_t TILE_TYPE_BITS = 4; ///< How many bits in map array are dedicated for type of each tile.
 
 /**
  * The different types of tiles.
@@ -57,7 +58,10 @@ enum class TileType : uint8_t {
 	TunnelBridge, ///< Tunnel entry/exit and bridge heads.
 	Object, ///< Contains objects such as transmitters and owned land.
 	End, ///< End marker.
+	MaxSize = 1U << TILE_TYPE_BITS, ///< The maximum possible number of tile types to be stored in map.
 };
+
+static_assert(TileType::End <= TileType::MaxSize);
 
 /**
  * Additional infos of a tile on a tropic game.
@@ -65,19 +69,19 @@ enum class TileType : uint8_t {
  * The tropiczone is not modified during gameplay. It mainly affects tree growth. (desert tiles are visible though)
  *
  * In randomly generated maps:
- *  TROPICZONE_DESERT: Generated everywhere, if there is neither water nor mountains (TileHeight >= 4) in a certain distance from the tile.
- *  TROPICZONE_RAINFOREST: Generated everywhere, if there is no desert in a certain distance from the tile.
- *  TROPICZONE_NORMAL: Everywhere else, i.e. between desert and rainforest and on sea (if you clear the water).
+ *  TropicZone::Desert: Generated everywhere, if there is neither water nor mountains (TileHeight >= 4) in a certain distance from the tile.
+ *  TropicZone::Rainforest: Generated everywhere, if there is no desert in a certain distance from the tile.
+ *  TropicZone::Normal: Everywhere else, i.e. between desert and rainforest and on sea (if you clear the water).
  *
  * In scenarios:
- *  TROPICZONE_NORMAL: Default value.
- *  TROPICZONE_DESERT: Placed manually.
- *  TROPICZONE_RAINFOREST: Placed if you plant certain rainforest-trees.
+ *  TropicZone::Normal: Default value.
+ *  TropicZone::Desert: Placed manually.
+ *  TropicZone::Rainforest: Placed if you plant certain rainforest-trees.
  */
-enum TropicZone : uint8_t {
-	TROPICZONE_NORMAL     = 0,      ///< Normal tropiczone
-	TROPICZONE_DESERT     = 1,      ///< Tile is desert
-	TROPICZONE_RAINFOREST = 2,      ///< Rainforest tile
+enum class TropicZone : uint8_t {
+	Normal = 0, ///< Normal tropiczone
+	Desert = 1, ///< Tile is desert
+	Rainforest = 2, ///< Rainforest tile
 };
 
 /**

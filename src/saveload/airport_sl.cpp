@@ -17,19 +17,19 @@
 #include "../safeguards.h"
 
 static const SaveLoad _modular_airport_crossing_path_cache_desc[] = {
-	SLEG_CONDVECTOR("keys", _modular_airport_crossing_required_path_cache, SLE_UINT64, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
+	SLEG_CONDVECTOR("keys", _modular_airport_crossing_required_path_cache, VarTypes::U64, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
 };
 
 struct APIDChunkHandler : NewGRFMappingChunkHandler {
-	APIDChunkHandler() : NewGRFMappingChunkHandler('APID', _airport_mngr) {}
+	APIDChunkHandler() : NewGRFMappingChunkHandler("APID", _airport_mngr) {}
 };
 
 struct ATIDChunkHandler : NewGRFMappingChunkHandler {
-	ATIDChunkHandler() : NewGRFMappingChunkHandler('ATID', _airporttile_mngr) {}
+	ATIDChunkHandler() : NewGRFMappingChunkHandler("ATID", _airporttile_mngr) {}
 };
 
 struct MACPChunkHandler : ChunkHandler {
-	MACPChunkHandler() : ChunkHandler('MACP', CH_TABLE) {}
+	MACPChunkHandler() : ChunkHandler("MACP", ChunkType::Table) {}
 
 	void Save() const override
 	{

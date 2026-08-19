@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 #include "../debug.h"
 #include "../newgrf_text.h"
+#include "../string_func.h"
 #include "../strings_func.h"
 #include "newgrf_bytereader.h"
 #include "newgrf_internal.h"
@@ -18,7 +19,10 @@
 
 #include "../safeguards.h"
 
-/** Action 0x13 */
+/**
+ * Action 0x13 - Load translation.
+ * @param buf Reader of the NewGRF.
+ */
 static void TranslateGRFStrings(ByteReader &buf)
 {
 	/* <13> <grfid> <num-ent> <offset> <text...>
@@ -28,14 +32,14 @@ static void TranslateGRFStrings(ByteReader &buf)
 	 * W   offset    First text ID
 	 * S   text...   Zero-terminated strings */
 
-	uint32_t grfid = buf.ReadDWord();
+	GrfID grfid = buf.ReadLabel<GrfID>();
 	const GRFConfig *c = GetGRFConfig(grfid);
-	if (c == nullptr || (c->status != GCS_INITIALISED && c->status != GCS_ACTIVATED)) {
-		GrfMsg(7, "TranslateGRFStrings: GRFID 0x{:08X} unknown, skipping action 13", std::byteswap(grfid));
+	if (c == nullptr || (c->status != GRFStatus::Initialised && c->status != GRFStatus::Activated)) {
+		GrfMsg(7, "TranslateGRFStrings: GRFID {} unknown, skipping action 13", FormatArrayAsHex(grfid));
 		return;
 	}
 
-	if (c->status == GCS_INITIALISED) {
+	if (c->status == GRFStatus::Initialised) {
 		/* If the file is not active but will be activated later, give an error
 		 * and disable this file. */
 		GRFError *error = DisableGrf(STR_NEWGRF_ERROR_LOAD_AFTER);
@@ -71,9 +75,15 @@ static void TranslateGRFStrings(ByteReader &buf)
 	}
 }
 
+/** @copybrief GrfActionHandler::FileScan */
 template <> void GrfActionHandler<0x13>::FileScan(ByteReader &) { }
+/** @copybrief GrfActionHandler::SafetyScan */
 template <> void GrfActionHandler<0x13>::SafetyScan(ByteReader &) { }
+/** @copybrief GrfActionHandler::LabelScan */
 template <> void GrfActionHandler<0x13>::LabelScan(ByteReader &) { }
+/** @copybrief GrfActionHandler::Init */
 template <> void GrfActionHandler<0x13>::Init(ByteReader &) { }
+/** @copybrief GrfActionHandler::Reserve */
 template <> void GrfActionHandler<0x13>::Reserve(ByteReader &) { }
+/** @copydoc GrfActionHandler::Activation */
 template <> void GrfActionHandler<0x13>::Activation(ByteReader &buf) { TranslateGRFStrings(buf); }

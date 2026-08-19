@@ -15,18 +15,20 @@
 #include "rail_type.h"
 #include "road_type.h"
 #include "station_type.h"
-#include <vector>
+#include "newgrf_roadstop.h"
+#include "newgrf_station.h"
 
 struct Town;
 class AirportTileTableIterator;
 
-enum StationNaming : uint8_t {
-	STATIONNAMING_RAIL,
-	STATIONNAMING_ROAD,
-	STATIONNAMING_AIRPORT,
-	STATIONNAMING_OILRIG,
-	STATIONNAMING_DOCK,
-	STATIONNAMING_HELIPORT,
+/** Station types a station could be named after. */
+enum class StationNaming : uint8_t {
+	Rail, ///< Railway station.
+	Road, ///< Truck or bus stop.
+	Airport, ///< Airport for fixed wing aircraft.
+	Oilrig, ///< Heliport of an oilrig.
+	Dock, ///< Ship dock.
+	Heliport, ///< Standalone heliport.
 };
 
 CommandCost GetStationAroundModular(TileArea ta, StationID closest_station, CompanyID company, struct Station **st);
@@ -34,9 +36,6 @@ CommandCost CheckBuildableTile(TileIndex tile, DiagDirections invalid_dirs, int 
 CommandCost FindJoiningStation(StationID existing_station, StationID station_to_join, bool adjacent, TileArea ta, Station **st);
 CommandCost BuildStationPart(Station **st, DoCommandFlags flags, bool reuse, TileArea area, StationNaming name_class);
 CommandCost CheckFlatLandAirport(AirportTileTableIterator tile_iter, DoCommandFlags flags);
-
-enum StationClassID : uint16_t;
-enum RoadStopClassID : uint16_t;
 
 struct ModularTemplatePlacementTile {
 	uint16_t dx = 0;
@@ -80,24 +79,24 @@ CommandCost CmdRenameStation(DoCommandFlags flags, StationID station_id, const s
 std::tuple<CommandCost, StationID> CmdMoveStationName(DoCommandFlags flags, StationID station_id, TileIndex tile);
 CommandCost CmdOpenCloseAirport(DoCommandFlags flags, StationID station_id);
 
-DEF_CMD_TRAIT(CMD_BUILD_AIRPORT,            CmdBuildAirport,          CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_BUILD_MODULAR_AIRPORT_TILE, CmdBuildModularAirportTile, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_SET_RUNWAY_FLAGS,          CmdSetRunwayFlags,          {}, CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_SET_TAXIWAY_FLAGS,         CmdSetTaxiwayFlags,         {}, CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_BUILD_MODULAR_AIRPORT_FROM_STOCK, CmdBuildModularAirportFromStock, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_SET_MODULAR_AIRPORT_EDGE_FENCE, CmdSetModularAirportEdgeFence, {}, CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_PLACE_MODULAR_AIRPORT_TEMPLATE, CmdPlaceModularAirportTemplate, CommandFlags({CommandFlag::Auto, CommandFlag::NoTest, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_UPGRADE_MODULAR_AIRPORT_TILE, CmdUpgradeModularAirportTile, {}, CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_BUILD_DOCK,               CmdBuildDock,             CommandFlag::Auto,                CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_BUILD_RAIL_STATION,       CmdBuildRailStation,      CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_REMOVE_FROM_RAIL_STATION, CmdRemoveFromRailStation, {},                       CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_BUILD_ROAD_STOP,          CmdBuildRoadStop,         CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_REMOVE_ROAD_STOP,         CmdRemoveRoadStop,        {},                       CommandType::LandscapeConstruction)
-DEF_CMD_TRAIT(CMD_RENAME_STATION,           CmdRenameStation,         {},                       CommandType::OtherManagement)
-DEF_CMD_TRAIT(CMD_MOVE_STATION_NAME,        CmdMoveStationName,       {},                       CommandType::OtherManagement)
-DEF_CMD_TRAIT(CMD_OPEN_CLOSE_AIRPORT,       CmdOpenCloseAirport,      {},                       CommandType::RouteManagement)
+DEF_CMD_TRAIT(Commands::BuildAirport, CmdBuildAirport, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::BuildModularAirportTile, CmdBuildModularAirportTile, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::SetRunwayFlags, CmdSetRunwayFlags, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::SetTaxiwayFlags, CmdSetTaxiwayFlags, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::BuildModularAirportFromStock, CmdBuildModularAirportFromStock, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::SetModularAirportEdgeFence, CmdSetModularAirportEdgeFence, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::PlaceModularAirportTemplate, CmdPlaceModularAirportTemplate, CommandFlags({CommandFlag::Auto, CommandFlag::NoTest, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::UpgradeModularAirportTile, CmdUpgradeModularAirportTile, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::BuildDock, CmdBuildDock, CommandFlag::Auto, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::BuildRailStation, CmdBuildRailStation, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::RemoveFromRailStation, CmdRemoveFromRailStation, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::BuildRoadStop, CmdBuildRoadStop, CommandFlags({CommandFlag::Auto, CommandFlag::NoWater}), CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::RemoveRoadStop, CmdRemoveRoadStop, {}, CommandType::LandscapeConstruction)
+DEF_CMD_TRAIT(Commands::RenameStation, CmdRenameStation, {}, CommandType::OtherManagement)
+DEF_CMD_TRAIT(Commands::MoveStationName, CmdMoveStationName, {}, CommandType::OtherManagement)
+DEF_CMD_TRAIT(Commands::OpenCloseAirport, CmdOpenCloseAirport, {}, CommandType::RouteManagement)
 
-void CcMoveStationName(Commands cmd, const CommandCost &result, StationID station_id);
+void CcMoveStationName(Commands, const CommandCost &result, StationID station_id);
 
 template <typename Tcont, typename Titer>
 inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, Titer> &buffer, const ModularTemplatePlacementTile &tile)

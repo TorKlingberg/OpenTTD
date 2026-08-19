@@ -29,7 +29,7 @@ typedef uint8_t StationGfx; ///< Index of station graphics. @see _station_displa
 inline StationID GetStationIndex(Tile t)
 {
 	assert(IsTileType(t, TileType::Station));
-	return (StationID)t.m2();
+	return static_cast<StationID>(t.m2());
 }
 
 
@@ -45,7 +45,7 @@ static const int GFX_TRUCK_BUS_DRIVETHROUGH_OFFSET =  4; ///< The offset for the
 inline StationType GetStationType(Tile t)
 {
 	assert(IsTileType(t, TileType::Station));
-	return (StationType)GB(t.m6(), 3, 4);
+	return static_cast<StationType>(GB(t.m6(), 3, 4));
 }
 
 /**
@@ -504,7 +504,7 @@ inline void SetStationTileHavePylons(Tile t, bool b)
 inline Axis GetRailStationAxis(Tile t)
 {
 	assert(HasStationRail(t));
-	return HasBit(GetStationGfx(t), 0) ? AXIS_Y : AXIS_X;
+	return HasBit(GetStationGfx(t), 0) ? Axis::Y : Axis::X;
 }
 
 /**
@@ -516,17 +516,6 @@ inline Axis GetRailStationAxis(Tile t)
 inline Track GetRailStationTrack(Tile t)
 {
 	return AxisToTrack(GetRailStationAxis(t));
-}
-
-/**
- * Get the trackbits of a rail station tile.
- * @param t Tile to query
- * @pre HasStationRail(t)
- * @return The trackbits of the rails on tile \a t.
- */
-inline TrackBits GetRailStationTrackBits(Tile t)
-{
-	return AxisToTrackBits(GetRailStationAxis(t));
 }
 
 /**
@@ -611,7 +600,7 @@ inline void SetRailStationReservation(Tile t, bool b)
  */
 inline TrackBits GetStationReservationTrackBits(Tile t)
 {
-	return HasStationReservation(t) ? GetRailStationTrackBits(t) : TRACK_BIT_NONE;
+	return HasStationReservation(t) ? GetRailStationTrack(t) : TrackBits{};
 }
 
 /**
@@ -625,11 +614,14 @@ inline DiagDirection GetDockDirection(Tile t)
 {
 	StationGfx gfx = GetStationGfx(t);
 	assert(IsDock(t) && gfx < GFX_DOCK_BASE_WATER_PART);
-	return (DiagDirection)(gfx);
+	return static_cast<DiagDirection>(gfx);
 }
 
 /**
  * Check whether a dock tile is the tile on water.
+ * @param t Tile to query.
+ * @pre IsDockTile(t)
+ * @return \c true iff the given tile is the water part.
  */
 inline bool IsDockWaterPart(Tile t)
 {
@@ -771,7 +763,7 @@ inline void MakeStation(Tile t, Owner o, StationID sid, StationType st, uint8_t 
  */
 inline void MakeRailStation(Tile t, Owner o, StationID sid, Axis a, uint8_t section, RailType rt)
 {
-	MakeStation(t, o, sid, StationType::Rail, section + a);
+	MakeStation(t, o, sid, StationType::Rail, section + to_underlying(a));
 	SetRailType(t, rt);
 	SetRailStationReservation(t, false);
 }
@@ -787,7 +779,7 @@ inline void MakeRailStation(Tile t, Owner o, StationID sid, Axis a, uint8_t sect
  */
 inline void MakeRailWaypoint(Tile t, Owner o, StationID sid, Axis a, uint8_t section, RailType rt)
 {
-	MakeStation(t, o, sid, StationType::RailWaypoint, section + a);
+	MakeStation(t, o, sid, StationType::RailWaypoint, section + to_underlying(a));
 	SetRailType(t, rt);
 	SetRailStationReservation(t, false);
 }
@@ -804,10 +796,10 @@ inline void MakeRailWaypoint(Tile t, Owner o, StationID sid, Axis a, uint8_t sec
  */
 inline void MakeRoadStop(Tile t, Owner o, StationID sid, RoadStopType rst, RoadType road_rt, RoadType tram_rt, DiagDirection d)
 {
-	MakeStation(t, o, sid, (rst == RoadStopType::Bus ? StationType::Bus : StationType::Truck), d);
+	MakeStation(t, o, sid, (rst == RoadStopType::Bus ? StationType::Bus : StationType::Truck), to_underlying(d));
 	SetRoadTypes(t, road_rt, tram_rt);
-	SetRoadOwner(t, RTT_ROAD, o);
-	SetRoadOwner(t, RTT_TRAM, o);
+	SetRoadOwner(t, RoadTramType::Road, o);
+	SetRoadOwner(t, RoadTramType::Tram, o);
 }
 
 /**
@@ -824,10 +816,10 @@ inline void MakeRoadStop(Tile t, Owner o, StationID sid, RoadStopType rst, RoadT
  */
 inline void MakeDriveThroughRoadStop(Tile t, Owner station, Owner road, Owner tram, StationID sid, StationType rst, RoadType road_rt, RoadType tram_rt, Axis a)
 {
-	MakeStation(t, station, sid, rst, GFX_TRUCK_BUS_DRIVETHROUGH_OFFSET + a);
+	MakeStation(t, station, sid, rst, GFX_TRUCK_BUS_DRIVETHROUGH_OFFSET + to_underlying(a));
 	SetRoadTypes(t, road_rt, tram_rt);
-	SetRoadOwner(t, RTT_ROAD, road);
-	SetRoadOwner(t, RTT_TRAM, tram);
+	SetRoadOwner(t, RoadTramType::Road, road);
+	SetRoadOwner(t, RoadTramType::Tram, tram);
 }
 
 /**
@@ -867,8 +859,8 @@ inline void MakeBuoy(Tile t, StationID sid, WaterClass wc)
  */
 inline void MakeDock(Tile t, Owner o, StationID sid, DiagDirection d, WaterClass wc)
 {
-	MakeStation(t, o, sid, StationType::Dock, d);
-	MakeStation(TileIndex(t) + TileOffsByDiagDir(d), o, sid, StationType::Dock, GFX_DOCK_BASE_WATER_PART + DiagDirToAxis(d), wc);
+	MakeStation(t, o, sid, StationType::Dock, to_underlying(d));
+	MakeStation(TileIndex(t) + TileOffsByDiagDir(d), o, sid, StationType::Dock, GFX_DOCK_BASE_WATER_PART + to_underlying(DiagDirToAxis(d)), wc);
 }
 
 /**

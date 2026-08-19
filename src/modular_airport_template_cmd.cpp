@@ -377,7 +377,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		if (rotated_tiles[i - 1].dx == rotated_tiles[i].dx && rotated_tiles[i - 1].dy == rotated_tiles[i].dy) return CMD_ERROR;
 	}
 
-	CommandCost total(EXPENSES_CONSTRUCTION);
+	CommandCost total(ExpensesType::Construction);
 	CommandCost ret;
 	std::vector<TileIndex> abs_tiles;
 	abs_tiles.reserve(rotated_tiles.size());
@@ -442,7 +442,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 				IsModularRunwayPiece(rotated_tiles[i].piece_type) ? NormalizeModularRunwayFlags(rotated_tiles[i].runway_flags) : RUF_DEFAULT});
 	}
 	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
-	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? STATIONNAMING_AIRPORT : STATIONNAMING_HELIPORT;
+	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? StationNaming::Airport : StationNaming::Heliport;
 	ret = CheckModularAirportNoiseChange(noise_before, noise_after);
 	if (ret.Failed()) return ret;
 

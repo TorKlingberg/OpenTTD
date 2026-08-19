@@ -15,7 +15,7 @@
 #include "../../fileio_func.h"
 #include "../../strings_func.h"
 #include "../../gamelog.h"
-#include "../../saveload/saveload.h"
+#include "../../saveload/saveload_func.h"
 #include "../../video/video_driver.hpp"
 #include "../../library_loader.h"
 
@@ -115,7 +115,7 @@ public:
 #endif
 
 #if defined(_MSC_VER)
-	/* virtual */ bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
+	bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
 	{
 		this->try_execute_active = true;
 		bool res;
@@ -131,7 +131,7 @@ public:
 		return res;
 	}
 #else
-	/* virtual */ bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
+	bool TryExecute(std::string_view section_name, std::function<bool()> &&func) override
 	{
 		this->try_execute_active = true;
 

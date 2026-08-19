@@ -12,6 +12,7 @@
 #include "../newgrf_house.h"
 #include "../newgrf_sound.h"
 #include "../spritecache.h"
+#include "../string_func.h"
 #include "newgrf_bytereader.h"
 #include "newgrf_internal.h"
 
@@ -24,7 +25,7 @@
 static void ImportGRFSound(SoundEntry *sound)
 {
 	const GRFFile *file;
-	uint32_t grfid = _cur_gps.file->ReadDword();
+	GrfID grfid = UnflattenNewGRFLabel<GrfID>(_cur_gps.file->ReadDword());
 	SoundID sound_id = _cur_gps.file->ReadWord();
 
 	file = GetFileByGRFID(grfid);
@@ -38,7 +39,7 @@ static void ImportGRFSound(SoundEntry *sound)
 		return;
 	}
 
-	GrfMsg(2, "ImportGRFSound: Copying sound {} ({}) from file {:x}", sound_id, file->sound_offset + sound_id, grfid);
+	GrfMsg(2, "ImportGRFSound: Copying sound {} ({}) from file {}", sound_id, file->sound_offset + sound_id, FormatArrayAsHex(grfid));
 
 	*sound = *GetSound(file->sound_offset + sound_id);
 
@@ -110,7 +111,7 @@ static void GRFSound(ByteReader &buf)
 				file.SkipBytes(len);
 			} else {
 				uint32_t id = file.ReadDword();
-				if (_cur_gps.stage == GLS_INIT) LoadGRFSound(GetGRFSpriteOffset(id), sound + i);
+				if (_cur_gps.stage == GrfLoadingStage::Init) LoadGRFSound(GetGRFSpriteOffset(id), sound + i);
 			}
 			continue;
 		}
@@ -131,7 +132,7 @@ static void GRFSound(ByteReader &buf)
 		switch (action) {
 			case 0xFF:
 				/* Allocate sound only in init stage. */
-				if (_cur_gps.stage == GLS_INIT) {
+				if (_cur_gps.stage == GrfLoadingStage::Init) {
 					if (grf_container_version >= 2) {
 						GrfMsg(1, "GRFSound: Inline sounds are not supported for container version >= 2");
 					} else {
@@ -142,7 +143,7 @@ static void GRFSound(ByteReader &buf)
 				break;
 
 			case 0xFE:
-				if (_cur_gps.stage == GLS_ACTIVATION) {
+				if (_cur_gps.stage == GrfLoadingStage::Activation) {
 					/* XXX 'Action 0xFE' isn't really specified. It is only mentioned for
 					 * importing sounds, so this is probably all wrong... */
 					if (file.ReadByte() != 0) GrfMsg(1, "GRFSound: Import type mismatch");
@@ -172,9 +173,15 @@ static void SkipAct11(ByteReader &buf)
 	GrfMsg(3, "SkipAct11: Skipping {} sprites", _cur_gps.skip_sprites);
 }
 
+/** @copydoc GrfActionHandler::FileScan */
 template <> void GrfActionHandler<0x11>::FileScan(ByteReader &buf) { SkipAct11(buf); }
+/** @copydoc GrfActionHandler::SafetyScan */
 template <> void GrfActionHandler<0x11>::SafetyScan(ByteReader &buf) { GRFUnsafe(buf); }
+/** @copydoc GrfActionHandler::LabelScan */
 template <> void GrfActionHandler<0x11>::LabelScan(ByteReader &buf) { SkipAct11(buf); }
+/** @copydoc GrfActionHandler::Init */
 template <> void GrfActionHandler<0x11>::Init(ByteReader &buf) { GRFSound(buf); }
+/** @copydoc GrfActionHandler::Reserve */
 template <> void GrfActionHandler<0x11>::Reserve(ByteReader &buf) { SkipAct11(buf); }
+/** @copydoc GrfActionHandler::Activation */
 template <> void GrfActionHandler<0x11>::Activation(ByteReader &buf) { GRFSound(buf); }

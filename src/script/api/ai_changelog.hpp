@@ -20,6 +20,7 @@
  * This version is not yet released. The following changes are not set in stone yet.
  *
  * API additions:
+ * \li AIRail.RemoveRailDepot
  * \li AIAirport::ModularPiece
  * \li AIAirport::ModularRunwayFlags
  * \li AIAirport::ModularSafety

@@ -1865,7 +1865,7 @@ void GetModularLandingApproachPoint(const Station *st, TileIndex runway_tile, in
 bool DirectionsWithin45(Direction dir_a, Direction dir_b)
 {
 	DirDiff diff = DirDifference(dir_a, dir_b);
-	return diff == DIRDIFF_SAME || diff == DIRDIFF_45LEFT || diff == DIRDIFF_45RIGHT;
+	return diff == DirDiff::Same || diff == DirDiff::Left45 || diff == DirDiff::Right45;
 }
 
 Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
@@ -1878,17 +1878,17 @@ Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
 
 	const int dx = threshold_x - approach_x;
 	const int dy = threshold_y - approach_y;
-	if (dx == 0 && dy == 0) return DIR_N;
+	if (dx == 0 && dy == 0) return Direction::N;
 
 	/* Match the vehicle movement vectors (see GetNewVehiclePos delta table). */
-	static constexpr int8_t dir_dx[DIR_END] = {-1, -1, -1, 0, 1, 1, 1, 0};
-	static constexpr int8_t dir_dy[DIR_END] = {-1, 0, 1, 1, 1, 0, -1, -1};
+	static constexpr int8_t dir_dx[to_underlying(Direction::End)] = {-1, -1, -1, 0, 1, 1, 1, 0};
+	static constexpr int8_t dir_dy[to_underlying(Direction::End)] = {-1, 0, 1, 1, 1, 0, -1, -1};
 
-	Direction best_dir = DIR_N;
+	Direction best_dir = Direction::N;
 	int64_t best_dot = INT64_MIN;
 	int64_t best_cross_abs = INT64_MAX;
 
-	for (int d = DIR_BEGIN; d < DIR_END; ++d) {
+	for (int d = to_underlying(Direction::Begin); d < to_underlying(Direction::End); ++d) {
 		const int64_t vx = dir_dx[d];
 		const int64_t vy = dir_dy[d];
 		const int64_t dot = vx * dx + vy * dy;
@@ -2137,7 +2137,7 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 		/* If single tile runway, end_tile == start_tile.
 		   Fallback to rotation-based direction if we can't determine direction from length. */
 		if (end_tile == v->modular_takeoff_tile) {
-			Direction dir = horizontal ? DIR_SE : DIR_SW;
+			Direction dir = horizontal ? Direction::SE : Direction::SW;
 			v->direction = dir;
 		} else {
 			v->direction = GetDirectionTowards(v, end_x, end_y);
@@ -2276,7 +2276,7 @@ bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, Veh
 	if (!st->TileBelongsToAirport(tile)) return false;
 
 	return HasVehicleOnTile(tile, [self](const Vehicle *v) {
-		if (v->type != VEH_AIRCRAFT) return false;
+		if (v->type != VehicleType::Aircraft) return false;
 		if (v->index == self) return false;
 		return Aircraft::From(v)->IsNormalAircraft();
 	});
@@ -2516,7 +2516,7 @@ bool IsModularReservationOwnerGone(TileIndex tile)
 	const VehicleID owner = GetModularAirportTileReservationOwner(tile);
 	if (owner == VehicleID::Invalid()) return true;
 	const Vehicle *veh = Vehicle::GetIfValid(owner);
-	if (veh == nullptr || veh->type != VEH_AIRCRAFT) return true;
+	if (veh == nullptr || veh->type != VehicleType::Aircraft) return true;
 	return !Aircraft::From(veh)->IsNormalAircraft();
 }
 
@@ -2528,7 +2528,7 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 	if (!IsModularAirportTileReservedBy(tile, reserver)) return false;
 
 	Vehicle *veh = Vehicle::GetIfValid(reserver);
-	if (veh == nullptr || veh->type != VEH_AIRCRAFT) {
+	if (veh == nullptr || veh->type != VehicleType::Aircraft) {
 		Debug(misc, 2, "[ModAp] [FALLBACK] stale-clear: st={} name='{}' tile={} reserver={} reason=invalid_vehicle",
 			st->index, GetModularAirportDebugName(st), tile.base(), reserver.base());
 		ClearModularAirportTileReservation(tile);

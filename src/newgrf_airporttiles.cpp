@@ -86,7 +86,7 @@ void AirportTileOverrideManager::SetEntitySpec(AirportTileSpec &&airpts)
 		overridden_airpts->grf_prop.override_id = airpt_id;
 		overridden_airpts->enabled = false;
 		this->entity_overrides[i] = this->invalid_id;
-		this->grfid_overrides[i] = 0;
+		this->grfid_overrides[i] = {};
 	}
 }
 
@@ -126,7 +126,7 @@ static uint32_t GetNearbyAirportTileInformation(uint8_t parameter, TileIndex til
  * @param cur_grfid GRFID of the current callback
  * @return value encoded as per NFO specs
  */
-static uint32_t GetAirportTileIDAtOffset(TileIndex tile, const Station *st, uint32_t cur_grfid)
+static uint32_t GetAirportTileIDAtOffset(TileIndex tile, const Station *st, GrfID cur_grfid)
 {
 	if (!st->TileBelongsToAirport(tile)) {
 		return 0xFFFF;
@@ -227,7 +227,7 @@ AirportTileResolverObject::AirportTileResolverObject(const AirportTileSpec *ats,
 
 GrfSpecFeature AirportTileResolverObject::GetFeature() const
 {
-	return GSF_AIRPORTTILES;
+	return GrfSpecFeature::AirportTiles;
 }
 
 uint32_t AirportTileResolverObject::GetDebugID() const
@@ -254,7 +254,7 @@ static void AirportDrawTileLayout(const TileInfo *ti, const DrawTileSpriteSpan &
 		}
 	}
 
-	DrawNewGRFTileSeq(ti, &dts, TO_BUILDINGS, 0, GetColourPalette(colour));
+	DrawNewGRFTileSeq(ti, &dts, TransparencyOption::Buildings, 0, GetColourPalette(colour));
 }
 
 bool DrawNewAirportTile(TileInfo *ti, Station *st, const AirportTileSpec *airts)
@@ -267,7 +267,7 @@ bool DrawNewAirportTile(TileInfo *ti, Station *st, const AirportTileSpec *airts)
 			if (callback_res != CALLBACK_FAILED) draw_old_one = ConvertBooleanCallback(airts->grf_prop.grffile, CBID_AIRPTILE_DRAW_FOUNDATIONS, callback_res);
 		}
 
-		if (draw_old_one) DrawFoundation(ti, FOUNDATION_LEVELED);
+		if (draw_old_one) DrawFoundation(ti, Foundation::Leveled);
 	}
 
 	AirportTileResolverObject object(airts, ti->tile, st);

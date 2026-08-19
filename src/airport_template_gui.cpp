@@ -8,6 +8,7 @@
 /** @file airport_template_gui.cpp GUI window for saved modular airport templates. */
 
 #include "stdafx.h"
+#include "newgrf.h"
 
 #include "airport_template_gui.h"
 #include "window_gui.h"
@@ -218,7 +219,7 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
 		if (tile.piece_type >= NEW_AIRPORTTILE_OFFSET) {
 			const AirportTileSpec *ats = AirportTileSpec::Get(tile.piece_type);
 			if (ats != nullptr) {
-				tile.grfid = ats->grf_prop.grfid;
+				tile.grfid = FlattenNewGRFLabel(ats->grf_prop.grfid);
 				tile.local_id = ats->grf_prop.local_id;
 			}
 		}
@@ -693,7 +694,7 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr) return;
 		if (!templ->is_available) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), {}, WarningLevel::Info);
 			return;
 		}
 		this->mode = TemplateManagerMode::LoadingPlace;
@@ -714,7 +715,7 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 
 		int deleted_index = this->selected_template_index;
 		if (!AirportTemplateManager::DeleteTemplateByFileStem(this->pending_delete_stem)) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_DELETE_FAILED), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_DELETE_FAILED), {}, WarningLevel::Info);
 			return false;
 		}
 
@@ -749,7 +750,7 @@ public:
 	{
 		this->mode = TemplateManagerMode::None;
 		this->UpdateCursor();
-		CloseWindowById(WC_SELECT_STATION, 0);
+		CloseWindowById(WindowClass::JoinStation, 0);
 		Window *parent = this->parent;
 		this->PickerWindowBase::Close();
 		if (parent != nullptr) parent->InvalidateData();
@@ -781,7 +782,7 @@ public:
 					if (!templ->is_available) label += " (NewGRF missing)";
 					size.width = std::max(size.width, GetStringBoundingBox(label).width + padding.width);
 				}
-				this->line_height = GetCharacterHeight(FS_NORMAL) + padding.height;
+				this->line_height = GetCharacterHeight(FontSize::Normal) + padding.height;
 				size.height = 6 * this->line_height;
 				break;
 
@@ -846,13 +847,13 @@ public:
 				for (auto it = first; it != last; ++it) {
 					const AirportTemplate *templ = it->get();
 					std::string label = templ->name;
-					TextColour tc = TC_BLACK;
+					TextColour tc = TextColour::Black;
 					if (!templ->is_available) {
 						label += " (NewGRF missing)";
-						GfxFillRect(row, PC_BLACK, FILLRECT_CHECKER);
-						tc = TC_RED;
+						GfxFillRect(row, PC_BLACK, FillRectMode::Checker);
+						tc = TextColour::Red;
 					}
-					if (static_cast<int>(std::distance(templates.begin(), it)) == this->selected_template_index) tc = TC_WHITE;
+					if (static_cast<int>(std::distance(templates.begin(), it)) == this->selected_template_index) tc = TextColour::White;
 					DrawString(text, label, tc);
 					row = row.Translate(0, this->line_height);
 					text = text.Translate(0, this->line_height);
@@ -865,10 +866,10 @@ public:
 				if (templ == nullptr) break;
 				uint16_t w, h;
 				templ->GetRotatedDimensions(this->selected_rotation, w, h);
-				DrawString(r, GetString(STR_OBJECT_BUILD_SIZE, w, h), TC_BLACK);
+				DrawString(r, GetString(STR_OBJECT_BUILD_SIZE, w, h), TextColour::Black);
 				if (!templ->is_available) {
-					Rect line2 = r.Translate(0, GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal);
-					DrawString(line2, GetString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), TC_RED);
+					Rect line2 = r.Translate(0, GetCharacterHeight(FontSize::Normal) + WidgetDimensions::scaled.vsep_normal);
+					DrawString(line2, GetString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), TextColour::Red);
 				}
 				break;
 			}
@@ -974,13 +975,13 @@ public:
 	{
 		if (this->mode == TemplateManagerMode::SavingPickAirport) {
 			if (!IsTileType(tile, TileType::Station) || !IsAirport(tile)) {
-				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WL_INFO);
+				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WarningLevel::Info);
 				return;
 			}
 
 			Station *st = Station::GetByTile(tile);
 			if (st == nullptr || st->owner != _local_company || !st->airport.blocks.Test(AirportBlock::Modular)) {
-				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WL_INFO);
+				ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WarningLevel::Info);
 				return;
 			}
 
@@ -994,7 +995,7 @@ public:
 
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr || !templ->is_available) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING), {}, WarningLevel::Info);
 			return;
 		}
 
@@ -1019,9 +1020,9 @@ public:
 		bool adjacent = _ctrl_pressed;
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
-				return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Do(CommandFlagsToDCFlags(GetCommandFlags<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>()), tile, StationID::Invalid(), adjacent, data).Succeeded();
+				return Command<Commands::PlaceModularAirportTemplate>::Do(CommandFlagsToDCFlags(GetCommandFlags<Commands::PlaceModularAirportTemplate>()), tile, StationID::Invalid(), adjacent, data).Succeeded();
 			}
-			return Command<CMD_PLACE_MODULAR_AIRPORT_TEMPLATE>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, to_join, adjacent, data);
+			return Command<Commands::PlaceModularAirportTemplate>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport, tile, to_join, adjacent, data);
 		};
 
 		uint16_t w, h;
@@ -1055,14 +1056,14 @@ public:
 			return std::isspace(static_cast<unsigned char>(c)) != 0;
 		});
 		if (name.empty() || all_ws) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY), {}, WarningLevel::Info);
 			this->has_save_pick_tile = false;
 			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
 		if (!IsValidTile(this->save_pick_tile) || !IsTileType(this->save_pick_tile, TileType::Station) || !IsAirport(this->save_pick_tile)) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WarningLevel::Info);
 			this->has_save_pick_tile = false;
 			this->save_pick_tile = INVALID_TILE;
 			return;
@@ -1071,7 +1072,7 @@ public:
 		Station *st = Station::GetByTile(this->save_pick_tile);
 		AirportTemplate templ;
 		if (st == nullptr || st->owner != _local_company || !BuildTemplateFromStation(st, templ)) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WarningLevel::Info);
 			this->has_save_pick_tile = false;
 			this->save_pick_tile = INVALID_TILE;
 			return;
@@ -1080,7 +1081,7 @@ public:
 		templ.name = name;
 		std::string saved_stem;
 		if (!AirportTemplateManager::SaveTemplate(templ, &saved_stem)) {
-			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WL_INFO);
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WarningLevel::Info);
 			this->has_save_pick_tile = false;
 			this->save_pick_tile = INVALID_TILE;
 			return;
@@ -1100,13 +1101,13 @@ public:
 	{
 		switch (hotkey) {
 			case TMHK_ROTATE_LEFT:
-				return this->RotateSelection(-1) ? ES_HANDLED : ES_NOT_HANDLED;
+				return this->RotateSelection(-1) ? EventState::Handled : EventState::NotHandled;
 
 			case TMHK_ROTATE_RIGHT:
-				return this->RotateSelection(1) ? ES_HANDLED : ES_NOT_HANDLED;
+				return this->RotateSelection(1) ? EventState::Handled : EventState::NotHandled;
 
 			default:
-				return ES_NOT_HANDLED;
+				return EventState::NotHandled;
 		}
 	}
 
@@ -1118,40 +1119,40 @@ public:
 
 static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_template_manager_widgets = {
 	NWidget(NWID_HORIZONTAL),
-		NWidget(WWT_CLOSEBOX, COLOUR_DARK_GREEN),
-		NWidget(WWT_CAPTION, COLOUR_DARK_GREEN, WID_TM_CAPTION), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
-		NWidget(WWT_STICKYBOX, COLOUR_DARK_GREEN),
+		NWidget(WWT_CLOSEBOX, Colours::DarkGreen),
+		NWidget(WWT_CAPTION, Colours::DarkGreen, WID_TM_CAPTION), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_MANAGER_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
+		NWidget(WWT_STICKYBOX, Colours::DarkGreen),
 	EndContainer(),
-	NWidget(WWT_PANEL, COLOUR_DARK_GREEN),
+	NWidget(WWT_PANEL, Colours::DarkGreen),
 		NWidget(NWID_VERTICAL), SetPadding(WidgetDimensions::unscaled.picker), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
-			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_PREVIEW), SetFill(1, 0), SetMinimalSize(150, 100),
+			NWidget(WWT_EMPTY, Colours::Invalid, WID_TM_PREVIEW), SetFill(1, 0), SetMinimalSize(150, 100),
 			NWidget(NWID_HORIZONTAL),
-				NWidget(WWT_MATRIX, COLOUR_GREY, WID_TM_TEMPLATE_LIST), SetFill(1, 1), SetMatrixDataTip(1, 6, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP), SetScrollbar(WID_TM_SCROLLBAR),
-				NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WID_TM_SCROLLBAR),
+				NWidget(WWT_MATRIX, Colours::Grey, WID_TM_TEMPLATE_LIST), SetFill(1, 1), SetMatrixDataTip(1, 6, STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LIST_TOOLTIP), SetScrollbar(WID_TM_SCROLLBAR),
+				NWidget(NWID_VSCROLLBAR, Colours::Grey, WID_TM_SCROLLBAR),
 			EndContainer(),
 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 1, 1),
-				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_SAVE), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_SAVE),
-				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_LOAD), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LOAD),
-				NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_DELETE), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_DELETE),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_TM_SAVE), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_SAVE),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_TM_LOAD), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_LOAD),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_TM_DELETE), SetMinimalSize(70, 12), SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_DELETE),
 			EndContainer(),
 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
-				NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_TM_ROTATE_LEFT), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_DECREASE),
-				NWidget(WWT_LABEL, INVALID_COLOUR, WID_TM_ROTATION), SetResize(1, 0), SetFill(1, 0),
-				NWidget(WWT_PUSHARROWBTN, COLOUR_GREY, WID_TM_ROTATE_RIGHT), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(AWV_INCREASE),
+				NWidget(WWT_PUSHARROWBTN, Colours::Grey, WID_TM_ROTATE_LEFT), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(ArrowWidgetType::Decrease),
+				NWidget(WWT_LABEL, Colours::Invalid, WID_TM_ROTATION), SetResize(1, 0), SetFill(1, 0),
+				NWidget(WWT_PUSHARROWBTN, Colours::Grey, WID_TM_ROTATE_RIGHT), SetMinimalSize(12, 0), SetArrowWidgetTypeTip(ArrowWidgetType::Increase),
 			EndContainer(),
-			NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_INFO), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
-			NWidget(NWID_SELECTION, INVALID_COLOUR, WID_TM_COVERAGE_SEL),
+			NWidget(WWT_EMPTY, Colours::Invalid, WID_TM_INFO), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
+			NWidget(NWID_SELECTION, Colours::Invalid, WID_TM_COVERAGE_SEL),
 				NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
-					NWidget(WWT_LABEL, INVALID_COLOUR), SetStringTip(STR_STATION_BUILD_COVERAGE_AREA_TITLE), SetFill(1, 0),
+					NWidget(WWT_LABEL, Colours::Invalid), SetStringTip(STR_STATION_BUILD_COVERAGE_AREA_TITLE), SetFill(1, 0),
 					NWidget(NWID_HORIZONTAL), SetPIP(14, 0, 14), SetPIPRatio(1, 0, 1),
 						NWidget(NWID_HORIZONTAL, NWidContainerFlag::EqualSize),
-							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_BTN_DONTHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
+							NWidget(WWT_TEXTBTN, Colours::Grey, WID_TM_BTN_DONTHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
 														SetStringTip(STR_STATION_BUILD_COVERAGE_OFF, STR_STATION_BUILD_COVERAGE_AREA_OFF_TOOLTIP),
-							NWidget(WWT_TEXTBTN, COLOUR_GREY, WID_TM_BTN_DOHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
+							NWidget(WWT_TEXTBTN, Colours::Grey, WID_TM_BTN_DOHILIGHT), SetMinimalSize(60, 12), SetFill(1, 0),
 														SetStringTip(STR_STATION_BUILD_COVERAGE_ON, STR_STATION_BUILD_COVERAGE_AREA_ON_TOOLTIP),
 						EndContainer(),
 					EndContainer(),
-					NWidget(WWT_EMPTY, INVALID_COLOUR, WID_TM_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
+					NWidget(WWT_EMPTY, Colours::Invalid, WID_TM_ACCEPTANCE), SetResize(0, 1), SetFill(1, 0), SetMinimalTextLines(2, WidgetDimensions::unscaled.vsep_normal),
 				EndContainer(),
 			EndContainer(),
 		EndContainer(),
@@ -1159,8 +1160,8 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_templa
 };
 
 static WindowDesc _build_modular_template_manager_desc(
-	WDP_AUTO, "build_modular_template_manager", 0, 0,
-	WC_AIRPORT_TEMPLATE_MANAGER, WC_BUILD_TOOLBAR,
+	WindowPosition::Automatic, "build_modular_template_manager", 0, 0,
+	WindowClass::AirportTemplateManager, WindowClass::BuildToolbar,
 	WindowDefaultFlag::Construction,
 	_nested_build_modular_template_manager_widgets,
 	&BuildModularTemplateManagerWindow::hotkeys
@@ -1168,6 +1169,6 @@ static WindowDesc _build_modular_template_manager_desc(
 
 void ShowBuildAirportTemplateManagerWindow(Window *parent)
 {
-	CloseWindowById(WC_AIRPORT_TEMPLATE_MANAGER, 0);
+	CloseWindowById(WindowClass::AirportTemplateManager, 0);
 	new BuildModularTemplateManagerWindow(_build_modular_template_manager_desc, parent);
 }

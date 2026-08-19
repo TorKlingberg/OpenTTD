@@ -24,7 +24,7 @@
 /** Cached current locale. */
 static CFAutoRelease<CFLocaleRef> _osx_locale;
 /** CoreText cache for font information, cleared when OTTD changes fonts. */
-static CFAutoRelease<CTFontRef> _font_cache[FS_END];
+static EnumIndexArray<CFAutoRelease<CTFontRef>, FontSize, FontSize::End> _font_cache;
 
 
 /**
@@ -61,7 +61,7 @@ public:
 
 		const Font *GetFont() const override { return this->font;  }
 		int GetLeading() const override { return this->font->fc->GetHeight(); }
-		int GetGlyphCount() const override { return (int)this->glyphs.size(); }
+		size_t GetGlyphCount() const override { return this->glyphs.size(); }
 		int GetAdvance() const { return this->total_advance; }
 	};
 
@@ -84,8 +84,8 @@ public:
 
 		int GetLeading() const override;
 		int GetWidth() const override;
-		int CountRuns() const override { return this->size(); }
-		const VisualRun &GetVisualRun(int run) const override { return this->at(run);  }
+		size_t CountRuns() const override { return this->size(); }
+		const VisualRun &GetVisualRun(size_t run) const override { return this->at(run);  }
 
 		int GetInternalCharLength(char32_t c) const override
 		{
@@ -108,7 +108,11 @@ public:
 };
 
 
-/** Get the width of an encoded sprite font character.  */
+/**
+ * Get the width of an encoded sprite font character.
+ * @param ref_con Arbitrary data passed through CTRunDelegateCallbacks, in this case font size and character.
+ * @return The width of the specific given character.
+ */
 static CGFloat SpriteFontGetWidth(void *ref_con)
 {
 	FontSize fs = (FontSize)((size_t)ref_con >> 24);
@@ -160,14 +164,14 @@ static const CTRunDelegateCallbacks _sprite_font_callback = {
 		}
 		CFAttributedStringSetAttribute(str.get(), CFRangeMake(last, position - last), kCTFontAttributeName, font_handle);
 
-		CGColorRef colour = CGColorCreateGenericGray((uint8_t)font->colour / 255.0f, 1.0f); // We don't care about the real colours, just that they are different.
+		CGColorRef colour = CGColorCreateGenericGray(to_underlying(font->colour.colour) / 255.0f, 1.0f); // We don't care about the real colours, just that they are different.
 		CFAttributedStringSetAttribute(str.get(), CFRangeMake(last, position - last), kCTForegroundColorAttributeName, colour);
 		CGColorRelease(colour);
 
 		/* Install a size callback for our special private-use sprite glyphs in case the font does not provide them. */
 		for (ssize_t c = last; c < position; c++) {
 			if (buff[c] >= SCC_SPRITE_START && buff[c] <= SCC_SPRITE_END && font->fc->MapCharToGlyph(buff[c], false) == 0) {
-				CFAutoRelease<CTRunDelegateRef> del(CTRunDelegateCreate(&_sprite_font_callback, (void *)(size_t)(buff[c] | (font->fc->GetSize() << 24))));
+				CFAutoRelease<CTRunDelegateRef> del(CTRunDelegateCreate(&_sprite_font_callback, (void *)(size_t)(buff[c] | (to_underlying(font->fc->GetSize()) << 24))));
 				/* According to the official documentation, if a run delegate is used, the char should always be 0xFFFC. */
 				CFAttributedStringReplaceString(str.get(), CFRangeMake(c, 1), replacement_str.get());
 				CFAttributedStringSetAttribute(str.get(), CFRangeMake(c, 1), kCTRunDelegateAttributeName, del.get());
@@ -265,13 +269,19 @@ int CoreTextParagraphLayout::CoreTextLine::GetWidth() const
 }
 
 
-/** Delete CoreText font reference for a specific font size. */
+/**
+ * Delete CoreText font reference for a specific font size.
+ * @param size The font size to delete.
+ */
 void MacOSResetScriptCache(FontSize size)
 {
 	_font_cache[size].reset();
 }
 
-/** Register an external font file with the CoreText system. */
+/**
+ * Register an external font file with the CoreText system.
+ * @param file_path UTF-8 encoded path of the font.
+ */
 void MacOSRegisterExternalFont(std::string_view file_path)
 {
 	CFAutoRelease<CFStringRef> path(CFStringCreateWithBytes(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(file_path.data()), file_path.size(), kCFStringEncodingUTF8, false));
@@ -280,7 +290,10 @@ void MacOSRegisterExternalFont(std::string_view file_path)
 	CTFontManagerRegisterFontsForURL(url.get(), kCTFontManagerScopeProcess, nullptr);
 }
 
-/** Store current language locale as a CoreFoundation locale. */
+/**
+ * Store current language locale as a CoreFoundation locale.
+ * @param iso_code The ISO language code to set.
+ */
 void MacOSSetCurrentLocaleName(std::string_view iso_code)
 {
 	CFAutoRelease<CFStringRef> iso(CFStringCreateWithBytes(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(iso_code.data()), iso_code.size(), kCFStringEncodingUTF8, false));

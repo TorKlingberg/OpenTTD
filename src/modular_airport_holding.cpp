@@ -60,14 +60,14 @@ struct DubinsPath {
 static void DirToVecFixed(Direction d, int64_t &dx, int64_t &dy)
 {
 	/* Precomputed normalized vectors for the 8 directions in 16.16.
-	 * Order matches Direction enum: DIR_N..DIR_NW.
+	 * Order matches Direction enum: Direction::N..Direction::NW.
 	 * Raw (dx,dy) per direction: {-1,-1}, {-1,0}, {-1,1}, {0,1}, {1,1}, {1,0}, {1,-1}, {0,-1}
 	 * Diagonal entries are 1/sqrt(2) * 65536 = 46341. Cardinal entries are 65536.
 	 */
 	static const int64_t v_dx[] = {-46341, -65536, -46341,      0,  46341,  65536,  46341,      0};
 	static const int64_t v_dy[] = {-46341,      0,  46341,  65536,  46341,      0, -46341, -65536};
-	dx = v_dx[d % 8];
-	dy = v_dy[d % 8];
+	dx = v_dx[to_underlying(d) % 8];
+	dy = v_dy[to_underlying(d) % 8];
 }
 
 static void AddWaypoint(std::vector<ModularHoldingLoop::Waypoint> &out, int64_t x, int64_t y, int64_t cx, int64_t cy)
@@ -760,7 +760,7 @@ uint ModularAirportGetHangarNum(const Airport &ap, TileIndex tile)
 Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile)
 {
 	const ModularAirportTileData *data = ap.GetModularTileData(tile);
-	if (data == nullptr) return DIR_SE; // Fallback
+	if (data == nullptr) return Direction::SE; // Fallback
 
 	/* Convention: 0=SE, 1=NE, 2=NW, 3=SW, as built by kLargeByRot in
 	 * BuildModularAirportTile_Apply and rotated by SwapBuildingPieceForRotation.
@@ -778,7 +778,7 @@ Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile
 		default: break;
 	}
 
-	return (Direction)((DIR_SE + ((4 - hangar_rot) % 4) * 2) % 8);
+	return static_cast<Direction>((to_underlying(Direction::SE) + ((4 - hangar_rot) % 4) * 2) % 8);
 }
 
 void EnsureModularHeliTilesValid(const Station *st)

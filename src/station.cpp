@@ -54,10 +54,10 @@ BaseStation::~BaseStation()
 {
 	if (CleaningPool()) return;
 
-	CloseWindowById(WC_TRAINS_LIST,   VehicleListIdentifier(VL_STATION_LIST, VEH_TRAIN,    this->owner, this->index).ToWindowNumber());
-	CloseWindowById(WC_ROADVEH_LIST,  VehicleListIdentifier(VL_STATION_LIST, VEH_ROAD,     this->owner, this->index).ToWindowNumber());
-	CloseWindowById(WC_SHIPS_LIST,    VehicleListIdentifier(VL_STATION_LIST, VEH_SHIP,     this->owner, this->index).ToWindowNumber());
-	CloseWindowById(WC_AIRCRAFT_LIST, VehicleListIdentifier(VL_STATION_LIST, VEH_AIRCRAFT, this->owner, this->index).ToWindowNumber());
+	CloseWindowById(WindowClass::TrainList, VehicleListIdentifier(VehicleListType::Station, VehicleType::Train, this->owner, this->index).ToWindowNumber());
+	CloseWindowById(WindowClass::RoadVehicleList, VehicleListIdentifier(VehicleListType::Station, VehicleType::Road, this->owner, this->index).ToWindowNumber());
+	CloseWindowById(WindowClass::ShipList, VehicleListIdentifier(VehicleListType::Station, VehicleType::Ship, this->owner, this->index).ToWindowNumber());
+	CloseWindowById(WindowClass::AircraftList, VehicleListIdentifier(VehicleListType::Station, VehicleType::Aircraft, this->owner, this->index).ToWindowNumber());
 
 	this->sign.MarkDirty();
 }
@@ -70,7 +70,7 @@ Station::Station(StationID index, TileIndex tile) :
 	indtype(IT_INVALID),
 	time_since_load(255),
 	time_since_unload(255),
-	last_vehicle_type(VEH_INVALID)
+	last_vehicle_type(VehicleType::Invalid)
 {
 	/* this->random_bits is set in Station::AddFacility() */
 }
@@ -101,7 +101,7 @@ Station::~Station()
 		if (a->targetairport == this->index) a->targetairport = StationID::Invalid();
 	}
 
-	for (CargoType cargo = 0; cargo < NUM_CARGO; ++cargo) {
+	for (CargoType cargo : EnumRange(NUM_CARGO)) {
 		LinkGraph *lg = LinkGraph::GetIfValid(this->goods[cargo].link_graph);
 		if (lg == nullptr) continue;
 
@@ -142,12 +142,12 @@ Station::~Station()
 
 	if (this->owner == OWNER_NONE) {
 		/* Invalidate all in case of oil rigs. */
-		InvalidateWindowClassesData(WC_STATION_LIST, 0);
+		InvalidateWindowClassesData(WindowClass::StationList, 0);
 	} else {
-		InvalidateWindowData(WC_STATION_LIST, this->owner, 0);
+		InvalidateWindowData(WindowClass::StationList, this->owner, 0);
 	}
 
-	CloseWindowById(WC_STATION_VIEW, index);
+	CloseWindowById(WindowClass::StationView, index);
 
 	/* Now delete all orders that go to the station */
 	RemoveOrderFromAllVehicles(OT_GOTO_STATION, this->index);
@@ -170,10 +170,11 @@ Station::~Station()
 /**
  * Invalidating of the JoinStation window has to be done
  * after removing item from the pool.
+ * @copydoc Pool::PoolItem::PostDestructor
  */
-void BaseStation::PostDestructor(size_t)
+void BaseStation::PostDestructor([[maybe_unused]] size_t index)
 {
-	InvalidateWindowData(WC_SELECT_STATION, 0, 0);
+	InvalidateWindowData(WindowClass::JoinStation, 0, 0);
 }
 
 bool BaseStation::SetRoadStopTileData(TileIndex tile, uint8_t data, bool animation)
@@ -230,6 +231,8 @@ RoadStop *Station::GetPrimaryRoadStop(const RoadVehicle *v) const
 /**
  * Called when new facility is built on the station. If it is the first facility
  * it initializes also 'xy' and 'random_bits' members
+ * @param new_facility_bit The new facility.
+ * @param facil_xy The location where this facility is built.
  */
 void Station::AddFacility(StationFacility new_facility_bit, TileIndex facil_xy)
 {
@@ -240,12 +243,12 @@ void Station::AddFacility(StationFacility new_facility_bit, TileIndex facil_xy)
 	this->facilities.Set(new_facility_bit);
 	this->owner = _current_company;
 	this->build_date = TimerGameCalendar::date;
-	SetWindowClassesDirty(WC_VEHICLE_ORDERS);
+	SetWindowClassesDirty(WindowClass::VehicleOrders);
 }
 
 /**
  * Marks the tiles of the station as dirty.
- *
+ * @param cargo_change Whether only cargo amounts changed.
  * @ingroup dirty
  */
 void Station::MarkTilesDirty(bool cargo_change) const
@@ -295,7 +298,7 @@ void Station::MarkTilesDirty(bool cargo_change) const
 	TileIndex start_tile = tile;
 	uint length = 0;
 	assert(IsRailStationTile(tile));
-	assert(dir < DIAGDIR_END);
+	assert(dir < DiagDirection::End);
 
 	do {
 		length++;
