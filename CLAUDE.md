@@ -125,6 +125,7 @@ Run only modular airport tests:
 - `skills/crash_debugging.md` — crash log and stacktrace triage steps.
 - `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.
 - `skills/performance_profiling.md` — macOS `sample` profiling + `quick_test.sh`/`regression_test.sh` validation.
+- `skills/savegame_fixture_resave.md` — `scripts/resave.sh`: migrate savegames to the current format without advancing the sim.
 - `skills/reservations-design.md` — segment types, safe-stop invariant, reservation lifecycle, and entry-contract pitfalls.
 
 ## Tile Classification
