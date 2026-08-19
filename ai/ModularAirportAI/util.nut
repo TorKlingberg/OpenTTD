@@ -158,10 +158,36 @@ function IsCosmeticPiece(piece)
 /** Whether a piece is a real airport feature and not just empty ground. */
 function IsNonEmptyAirportPiece(piece)
 {
-	return piece != AIAirport.MP_EMPTY;
+	return piece != AIAirport.MP_EMPTY && piece != AIAirport.MP_GRASS;
 }
 
-/** Maximum Manhattan distance from any occupied non-filler cell to its nearest hangar. */
+/**
+ * The piece that closes a hole in the bounding rectangle, or null if this
+ * climate/date offers neither kind of bare ground.
+ */
+function InfillGroundPiece()
+{
+	if (AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY)) return AIAirport.MP_EMPTY;
+	if (AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS)) return AIAirport.MP_GRASS;
+	return null;
+}
+
+/**
+ * The piece for a hole well inside the field, where apron joins the taxiway
+ * network up rather than leaving a pocket. Falls back to bare ground.
+ */
+function InfillApronPiece()
+{
+	if (AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON)) return AIAirport.MP_APRON;
+	return InfillGroundPiece();
+}
+
+/**
+ * Maximum Manhattan distance from any functional cell to its nearest hangar.
+ *
+ * Compound filler and bounding-box infill are skipped: neither is a place an
+ * aircraft ever taxis to, so neither should be able to demand another hangar.
+ */
 function MaxDistanceToHangar(grid)
 {
 	local hangars = [];
@@ -172,7 +198,7 @@ function MaxDistanceToHangar(grid)
 
 	local max_d = 0;
 	foreach (c in grid.Ordered()) {
-		if (c.filler) continue;
+		if (c.filler || c.infill) continue;
 		local min_h = 999;
 		foreach (h in hangars) {
 			local d = (c.x > h.x ? c.x - h.x : h.x - c.x) + (c.y > h.y ? c.y - h.y : h.y - c.y);
@@ -249,8 +275,22 @@ class Grid
 		this.cells[this.Key(x, y)] <- {
 			x = x, y = y, piece = piece, rot = rot, rwy = rwy,
 			one_way = 0, taxi = 15, fence = 0, optional = optional,
-			span = 1, filler = false
+			span = 1, filler = false, infill = false
 		};
+	}
+
+	/**
+	 * Place a cell that only exists to close a hole in the bounding rectangle.
+	 *
+	 * Marked so scoring can tell it apart from the design proper: infill has no
+	 * operational value, so it must not make an otherwise identical functional
+	 * design score better or worse.
+	 */
+	function SetInfill(x, y, piece)
+	{
+		this.Set(x, y, piece, 0, 0, true);
+		local c = this.Get(x, y);
+		if (c != null) c.infill = true;
 	}
 
 	/**
@@ -398,7 +438,7 @@ class Grid
 			g.cells[g.Key(c.x, c.y)] <- {
 				x = c.x, y = c.y, piece = c.piece, rot = c.rot, rwy = c.rwy,
 				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
-				span = c.span, filler = c.filler
+				span = c.span, filler = c.filler, infill = c.infill
 			};
 		}
 		return g;
@@ -437,13 +477,13 @@ class Grid
 			g.cells[g.Key(nx, c.y)] <- {
 				x = nx, y = c.y, piece = piece, rot = rot, rwy = rwy,
 				one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
-				span = c.span, filler = false
+				span = c.span, filler = false, infill = c.infill
 			};
 			for (local i = 1; i < c.span; i++) {
 				g.cells[g.Key(nx + i, c.y)] <- {
 					x = nx + i, y = c.y, piece = piece, rot = rot, rwy = rwy,
 					one_way = c.one_way, taxi = c.taxi, fence = c.fence, optional = c.optional,
-					span = c.span, filler = true
+					span = c.span, filler = true, infill = c.infill
 				};
 			}
 		}
@@ -509,7 +549,7 @@ class Grid
 				x = nx, y = ny, piece = piece, rot = (c.rot + r) & 3, rwy = rwy,
 				one_way = c.one_way, taxi = RotateDirMask(c.taxi, r),
 				fence = RotateDirMask(c.fence, r), optional = c.optional,
-				span = c.span, filler = c.filler
+				span = c.span, filler = c.filler, infill = c.infill
 			};
 		}
 		return out;

@@ -58,9 +58,11 @@ function FitGridToMask(grid, allowed)
 		if (c.y > maxy) maxy = c.y;
 	}
 	if (maxx >= minx && maxy >= miny) {
-		local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
-		local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
-		local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
+		/* Decide every hole against the trimmed design, then place. Deciding and
+		 * placing in one pass would let a hole that just became apron count as a
+		 * neighbour for the next hole, so a large gap would grow a chain of apron
+		 * across itself in whatever order the scan happened to run. */
+		local plan = [];
 		for (local y = miny; y <= maxy; y++) {
 			for (local x = minx; x <= maxx; x++) {
 				if (g.Get(x, y) != null) continue;
@@ -70,16 +72,20 @@ function FitGridToMask(grid, allowed)
 					local n = g.Get(x + d[0], y + d[1]);
 					if (n != null && IsNonEmptyAirportPiece(n.piece)) non_empty++;
 				}
-				if (non_empty >= 3 && has_apron) {
-					g.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
-				} else if (has_empty) {
-					g.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
-				} else if (has_grass) {
-					g.Set(x, y, AIAirport.MP_GRASS, 0, 0, true);
-				}
+				plan.append({ x = x, y = y, apron = non_empty >= 3 });
 			}
 		}
+		local plain = InfillGroundPiece();
+		local dense = InfillApronPiece();
+		foreach (h in plan) {
+			local want = h.apron ? dense : plain;
+			if (want != null) g.SetInfill(h.x, h.y, want);
+		}
 	}
+
+	/* Infill can put an apron in front of a hangar that had nothing to face when
+	 * RepairHangars last ran, so give it that chance before validating. */
+	RepairHangars(g);
 
 	if (ValidateGrid(g) != null) return null;
 	return g;
@@ -201,12 +207,13 @@ function ScoreGrid(grid, want_large_safe)
 	score += (touching > 2 ? 2 : touching) * 10;
 	score += catchment * 40;
 	score += LongestLargeRunway(grid) * 8;
-	/* Optional empty ground improves the visual footprint but has no operational
-	 * value. Do not let infill make the same functional design score worse. */
+	/* Bounding-box infill improves the visual footprint but has no operational
+	 * value, whether it came out as empty ground or as apron. Do not let it make
+	 * the same functional design score worse: count only the design proper. */
 	local functional_tiles = 0;
 	local minx = 9999, miny = 9999, maxx = -1, maxy = -1;
 	foreach (c in grid.Ordered()) {
-		if (c.piece != AIAirport.MP_EMPTY) functional_tiles++;
+		if (!c.infill) functional_tiles++;
 		if (c.x < minx) minx = c.x;
 		if (c.y < miny) miny = c.y;
 		if (c.x > maxx) maxx = c.x;

@@ -174,10 +174,9 @@ function TryAddSecondHangar(station)
  */
 function TryFillEmptyBounds(station)
 {
-	local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
-	local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
-	local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
-	if (!has_empty && !has_apron && !has_grass) return false;
+	local plain = InfillGroundPiece();
+	local dense = InfillApronPiece();
+	if (plain == null && dense == null) return false;
 
 	local tiles = AITileList_StationType(station, AIStation.STATION_AIRPORT);
 	local minx = 99999, miny = 99999, maxx = -1, maxy = -1, base = -1;
@@ -194,7 +193,11 @@ function TryFillEmptyBounds(station)
 	}
 	if (base < 0 || maxx < 0) return false;
 
-	local built_any = false;
+	/* Decide every gap against the airport as it stands, then build. Deciding and
+	 * building in one pass would let a gap that just became apron count as a
+	 * neighbour for the next gap, growing a chain of apron across the field in
+	 * whatever order the scan happened to run. */
+	local plan = [];
 	for (local y = miny; y <= maxy; y++) {
 		for (local x = minx; x <= maxx; x++) {
 			local t = AIMap.GetTileIndex(x, y);
@@ -215,13 +218,14 @@ function TryFillEmptyBounds(station)
 			}
 			if (!touches) continue;
 
-			local piece = (non_empty >= 3 && has_apron) ? AIAirport.MP_APRON :
-			              (has_empty ? AIAirport.MP_EMPTY : AIAirport.MP_GRASS);
-			if (AIAirport.BuildModularAirportTile(t, piece, 0, station)) {
-				ours[t] <- piece;
-				built_any = true;
-			}
+			local piece = (non_empty >= 3) ? dense : plain;
+			if (piece != null) plan.append({ tile = t, piece = piece });
 		}
+	}
+
+	local built_any = false;
+	foreach (h in plan) {
+		if (AIAirport.BuildModularAirportTile(h.tile, h.piece, 0, station)) built_any = true;
 	}
 	return built_any;
 }

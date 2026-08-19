@@ -70,7 +70,6 @@ function DefaultParams()
 		stands        = 3,
 		helipads      = 0,
 		large_safe    = true,
-		hangar_at_end = true,  ///< hangar at the low-x end of the service row
 		terminal      = AIAirport.MP_TERMINAL,
 		helipad_style = 0,   ///< 0 MP_HELIPAD, 1 plain "H", 2 rooftop heliport
 		pier_depth    = 3,
@@ -78,7 +77,6 @@ function DefaultParams()
 		cosmetics     = 2,   ///< how many decorative tiles to try to add
 		small_terminal = false, ///< try to fit the three-tile terminal into the decoration
 		extra_terminals = 0, ///< optional additional full-size terminal buildings
-		strip_compact = false, ///< four-tile strip with stands directly on the runway
 		cosmetic_kind = AIAirport.MP_RADAR_GRASS,
 		apron_rows    = 2,
 		mirror        = false,
@@ -608,7 +606,11 @@ function EnsureHangarsWithinDistance(grid, max_dist = 10)
 					local x = farthest.x + dx, y = farthest.y + dy;
 					if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) continue;
 					local c = grid.Get(x, y);
-					if (c != null && (!c.optional || IsStandPiece(c.piece) || IsRunwayPiece(c.piece))) continue;
+					/* Optional does not mean spare: a helipad is capacity and a stand or
+					 * runway is the airport. Only ground with no operational value may
+					 * be traded for a hangar. */
+					if (c != null && (!c.optional || IsStandPiece(c.piece)
+							|| IsRunwayPiece(c.piece) || IsHelipadPiece(c.piece))) continue;
 
 					foreach (rot in [FACE_NW, FACE_SE, FACE_NE, FACE_SW]) {
 						local off = FaceOffset(rot);
@@ -634,11 +636,15 @@ function EnsureHangarsWithinDistance(grid, max_dist = 10)
  */
 function FillEmptyBounds(grid)
 {
-	local has_empty = AIAirport.IsModularPieceAvailable(AIAirport.MP_EMPTY);
-	local has_apron = AIAirport.IsModularPieceAvailable(AIAirport.MP_APRON);
-	local has_grass = AIAirport.IsModularPieceAvailable(AIAirport.MP_GRASS);
-	if (!has_empty && !has_apron && !has_grass) return;
+	local plain = InfillGroundPiece();
+	local dense = InfillApronPiece();
+	if (plain == null && dense == null) return;
 
+	/* Decide every hole against the finished design first. Deciding and placing
+	 * in one pass would let a hole that just became apron count as a neighbour
+	 * for the next hole, growing a chain of apron across a large gap in whatever
+	 * order the scan happened to run. */
+	local plan = [];
 	for (local y = 0; y < grid.h; y++) {
 		for (local x = 0; x < grid.w; x++) {
 			if (grid.Get(x, y) != null) continue;
@@ -647,14 +653,12 @@ function FillEmptyBounds(grid)
 				local n = grid.Get(x + d[0], y + d[1]);
 				if (n != null && IsNonEmptyAirportPiece(n.piece)) non_empty_neighbors++;
 			}
-			if (non_empty_neighbors >= 3 && has_apron) {
-				grid.Set(x, y, AIAirport.MP_APRON, 0, 0, true);
-			} else if (has_empty) {
-				grid.Set(x, y, AIAirport.MP_EMPTY, 0, 0, true);
-			} else if (has_grass) {
-				grid.Set(x, y, AIAirport.MP_GRASS, 0, 0, true);
-			}
+			plan.append({ x = x, y = y, apron = non_empty_neighbors >= 3 });
 		}
+	}
+	foreach (h in plan) {
+		local want = h.apron ? dense : plain;
+		if (want != null) grid.SetInfill(h.x, h.y, want);
 	}
 }
 
@@ -729,7 +733,6 @@ function RandomParams(family, scale)
 	/* Roughly one airport in three, so it reads as a feature of some airports
 	 * rather than as the house style. */
 	p.small_terminal = AIBase.RandRange(3) == 0;
-	p.hangar_at_end = AIBase.RandRange(2) == 0;
 	p.mirror = AIBase.RandRange(2) == 0;
 	p.helipad_style = AIBase.RandRange(3);
 	p.pier_double = AIBase.RandRange(4) != 0;
