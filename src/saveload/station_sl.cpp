@@ -581,54 +581,6 @@ public:
 	std::vector<RoadStopTileData> &GetVector(BaseStation *bst) const override { return bst->custom_roadstop_tile_data; }
 };
 
-class SlLegacyModularAirportTileData : public DefaultSaveLoadHandler<SlLegacyModularAirportTileData, BaseStation> {
-public:
-	static inline const SaveLoad description[] = {
-	    SLE_VAR(ModularAirportTileData, tile,                SLE_UINT32),
-	    SLE_VAR(ModularAirportTileData, piece_type,          SLE_UINT8),
-	    SLE_VAR(ModularAirportTileData, rotation,            SLE_UINT8),
-	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  SLE_UINT8),
-	    SLE_VAR(ModularAirportTileData, one_way_taxi,        SLE_BOOL),
-	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  SLE_UINT8),
-	    SLE_VAR(ModularAirportTileData, runway_flags,        SLE_UINT8),
-	    SLE_CONDVAR(ModularAirportTileData, edge_block_mask,  SLE_UINT8, SLV_MODULAR_AIRPORT_FENCE, SL_MAX_VERSION),
-	};
-	static inline const SaveLoadCompatTable compat_description = {};
-
-	void Save(BaseStation *bst) const override
-	{
-		if (bst->facilities.Test(StationFacility::Waypoint)) return;
-		Station *st = Station::From(bst);
-		if (st->airport.modular_tile_data == nullptr) {
-			SlSetStructListLength(0);
-			return;
-		}
-		SlSetStructListLength(st->airport.modular_tile_data->size());
-		for (ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			SlObject(&data, this->GetDescription());
-		}
-	}
-
-	void Load(BaseStation *bst) const override
-	{
-		if (bst->facilities.Test(StationFacility::Waypoint)) return;
-		Station *st = Station::From(bst);
-		size_t count = SlGetStructListLength(Map::Size());
-		if (count == 0) return;
-
-		st->airport.EnsureModularDataExists();
-		st->airport.modular_tile_data->clear();
-		st->airport.modular_tile_data->reserve(count);
-
-		for (size_t i = 0; i < count; i++) {
-			ModularAirportTileData data;
-			SlObject(&data, this->GetLoadDescription());
-			st->airport.modular_tile_data->push_back(data);
-		}
-		st->airport.modular_tile_index_dirty = true;
-	}
-};
-
 class SlModularAirportTileData : public DefaultSaveLoadHandler<SlModularAirportTileData, BaseStation> {
 public:
 	static inline const SaveLoad description[] = {
@@ -639,8 +591,8 @@ public:
 	    SLE_VAR(ModularAirportTileData, one_way_taxi,        SLE_BOOL),
 	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  SLE_UINT8),
 	    SLE_VAR(ModularAirportTileData, runway_flags,        SLE_UINT8),
-	    SLE_CONDVAR(ModularAirportTileData, edge_block_mask,  SLE_UINT8, SLV_MODULAR_AIRPORT_FENCE, SL_MAX_VERSION),
-	    SLE_CONDVAR(ModularAirportTileData, reservation_owner, SLE_UINT32, SLV_MODULAR_AIRPORT_STATE_FIXES, SL_MAX_VERSION),
+	    SLE_CONDVAR(ModularAirportTileData, edge_block_mask,  SLE_UINT8, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
+	    SLE_CONDVAR(ModularAirportTileData, reservation_owner, SLE_UINT32, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
 	};
 	static inline const SaveLoadCompatTable compat_description = {};
 
@@ -769,10 +721,10 @@ public:
 		SLEG_CONDSTRUCTLIST("speclist", SlRoadStopTileData,                          SLV_NEWGRF_ROAD_STOPS, SLV_ROAD_STOP_TILE_DATA),
 		SLEG_STRUCTLIST("goods", SlStationGoods),
 
-		SLE_CONDVAR(Station, airport_arrivals_this_month,   SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
-		SLE_CONDVAR(Station, airport_arrivals_last_month,   SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
-		SLE_CONDVAR(Station, airport_departures_this_month, SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
-		SLE_CONDVAR(Station, airport_departures_last_month, SLE_UINT16, SLV_AIRPORT_THROUGHPUT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_arrivals_this_month,   SLE_UINT16, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_arrivals_last_month,   SLE_UINT16, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_departures_this_month, SLE_UINT16, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
+		SLE_CONDVAR(Station, airport_departures_last_month, SLE_UINT16, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
 	};
 	static inline const SaveLoadCompatTable compat_description = _station_normal_sl_compat;
 
@@ -837,8 +789,7 @@ static const SaveLoad _station_desc[] = {
 	SLEG_CONDSTRUCTLIST("speclist", SlStationSpecList<StationSpec>, SLV_27, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstopspeclist", SlStationSpecList<RoadStopSpec>, SLV_NEWGRF_ROAD_STOPS, SL_MAX_VERSION),
 	SLEG_CONDSTRUCTLIST("roadstoptiledata", SlRoadStopTileData, SLV_ROAD_STOP_TILE_DATA, SL_MAX_VERSION),
-	SLEG_CONDSTRUCT("modularairporttiledata", SlLegacyModularAirportTileData, SLV_MODULAR_AIRPORT_PATHFINDING, SLV_MODULAR_AIRPORT_STATE_FIXES),
-	SLEG_CONDSTRUCTLIST("modularairporttiledata", SlModularAirportTileData, SLV_MODULAR_AIRPORT_STATE_FIXES, SL_MAX_VERSION),
+	SLEG_CONDSTRUCTLIST("modularairporttiledata", SlModularAirportTileData, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
 };
 
 struct STNNChunkHandler : ChunkHandler {

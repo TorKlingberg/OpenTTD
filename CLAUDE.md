@@ -188,7 +188,7 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 - **Year-gated picker availability**: if year changes while builder/pickers are open (e.g. Sandbox year change), re-run gating and invalidate picker windows so disabled states update immediately.
 - **Sub-tile click position**: use `_tile_fract_coords.x/.y` (0–15 in world X/Y), set by the viewport on every click. Same mechanism as the autoroad tool. Do NOT use `InverseRemapCoords` — it doesn't give tile-relative positions.
 - **Widget `SetPIPRatio(left, mid, right)`**: controls how extra space is distributed. `(0,0,1)` = left-aligned, `(1,0,1)` = centered, `(1,0,0)` = right-aligned.
-- **Helicopter landing commit**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` picks the modular landing target and sets `VehicleAirFlag::HelicopterDirectDescent` when `state == HELILANDING`. Helipad-specific overrides (like skipping the FAF approach) belong here at landing commit, not in the movement code (`AirportMoveModularLanding`). (`modular_landing_stage` is dead — kept only for saveload compat.)
+- **Helicopter landing commit**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` picks the modular landing target and sets `VehicleAirFlag::HelicopterDirectDescent` when `state == HELILANDING`. Helipad-specific overrides (like skipping the FAF approach) belong here at landing commit, not in the movement code (`AirportMoveModularLanding`).
 
 ## Holding Loop Pitfalls
 
