@@ -2687,7 +2687,13 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	/* Strict large-runway preference: a large aircraft only uses a short runway when NO
 	 * large-safe runway end serves its takeoff direction. Determine this up front,
 	 * ignoring transient occupancy — if a good runway is merely busy, the aircraft waits
-	 * (returns a reachable-but-blocked end) rather than downgrading to a short runway. */
+	 * (returns a reachable-but-blocked end) rather than downgrading to a short runway.
+	 *
+	 * The cached answer does not filter by direction, while the per-end loop below does.
+	 * The two agree only because of the runway invariants documented on
+	 * CanAircraftUseModularRunwayForLanding: flags propagate across a contiguous runway,
+	 * exactly one direction bit is set, and both extremities are end pieces, so a runway
+	 * has a takeoff-legal end exactly when it has a takeoff-flagged end at all. */
 	const bool good_takeoff_runway_exists = large_takeoff_required && ModularAirportHasSafeRunwayFor(st, false);
 
 	/* Try runway ends in two passes: first strict (no intermediate runway crossing),
