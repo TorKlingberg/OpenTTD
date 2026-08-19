@@ -34,6 +34,11 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 - `algorithm file not found` — missing `-DCMAKE_CXX_FLAGS` above
 - `cannot find libatomic` — apply fix to `cmake/3rdparty/llvm/CheckAtomic.cmake`: change `if(MSVC)` to `if(MSVC OR APPLE)` at lines 52 and 75
 
+**Working in a git worktree:**
+- Each worktree has its own `build/`, and it goes stale independently — check `build/openttd`'s mtime before trusting it; if stale, just run the main checkout's binary instead of rebuilding.
+- `build/ai/<Name>` is a symlink into the main checkout's `ai/<Name>`, not worktree-relative. To headless-test a worktree's edited AI script, copy it into a scratch dir under a different registered name (edit `GetName`/`GetShortName`/`CreateInstance` in `info.nut` and the class name in `main.nut`) rather than repointing the shared symlink.
+- A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from that other worktree's directory.
+
 ## Debugging
 
 The main runtime log is `/tmp/openttd.log`.
