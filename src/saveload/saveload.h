@@ -414,15 +414,21 @@ enum SaveLoadVersion : uint16_t {
 	SLV_ENGINE_MULTI_RAILTYPE,              ///< 362  PR#14357 v15.0 Train engines can have multiple railtypes.
 	SLV_SIGN_TEXT_COLOURS,                  ///< 363  PR#14743 Configurable sign text colors in scenario editor.
 	SLV_BUOYS_AT_0_0,                       ///< 364  PR#14983 Allow to build buoys at (0x0).
-	SLV_MODULAR_AIRPORT,                    ///< 365  Modular airports.
-	SLV_MODULAR_AIRPORT_PATHFINDING,        ///< 366  Modular airport pathfinding data.
-	SLV_AIRPORT_THROUGHPUT,                 ///< 367  Modular airport throughput counters.
-	SLV_MODULAR_AIRPORT_FENCE,             ///< 368  Modular airport edge fences.
-	SLV_MODULAR_AIRPORT_RESERVATION,        ///< 369  Modular airport reservation state for aircraft.
-	SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, ///< 370  Modular airport aircraft reservation vectors.
-	SLV_MODULAR_AIRPORT_CROSSING_CACHE,     ///< 371  Modular airport crossing-required path cache.
-	SLV_MODULAR_AIRPORT_STATE_FIXES,        ///< 372  Modular airport saved holding state, reservation owners, and tile-data list format.
-	SLV_MODULAR_AIRPORT_TYPE,               ///< 373  Modular airports have their own airport type.
+	SLV_MODULAR_AIRPORT,                    ///< 365  Modular airports. Every modular field is gated on this one version.
+
+	/* 366-373 versioned the modular airport branch while it was in development. None of
+	 * those savegames were ever published, so nothing gates on them any more and no
+	 * migration code remains. They are kept purely to hold the version numbering steady:
+	 * SAVEGAME_VERSION is SL_MAX_VERSION - 1, so deleting them would renumber the current
+	 * format downwards and existing savegames would be rejected as too new. */
+	SLV_MODULAR_AIRPORT_PATHFINDING,        ///< 366  Unused, retained for numbering.
+	SLV_AIRPORT_THROUGHPUT,                 ///< 367  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_FENCE,              ///< 368  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_RESERVATION,        ///< 369  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_RESERVATION_VECTORS, ///< 370  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_CROSSING_CACHE,     ///< 371  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_STATE_FIXES,        ///< 372  Unused, retained for numbering.
+	SLV_MODULAR_AIRPORT_TYPE,               ///< 373  Unused, retained for numbering.
 
 	SL_MAX_VERSION,                         ///< Highest possible saveload version
 };

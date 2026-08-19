@@ -17,7 +17,7 @@
 #include "../safeguards.h"
 
 static const SaveLoad _modular_airport_crossing_path_cache_desc[] = {
-	SLEG_CONDVECTOR("keys", _modular_airport_crossing_required_path_cache, SLE_UINT64, SLV_MODULAR_AIRPORT_CROSSING_CACHE, SL_MAX_VERSION),
+	SLEG_CONDVECTOR("keys", _modular_airport_crossing_required_path_cache, SLE_UINT64, SLV_MODULAR_AIRPORT, SL_MAX_VERSION),
 };
 
 struct APIDChunkHandler : NewGRFMappingChunkHandler {
