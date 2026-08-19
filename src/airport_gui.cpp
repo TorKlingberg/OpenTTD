@@ -51,6 +51,7 @@
 #include "timer/timer_game_calendar.h"
 #include "palette_func.h"
 #include "modular_airport_gui.h"
+#include "modular_airport_build.h"
 #include "airport_template_gui.h"
 
 #include "widgets/airport_widget.h"
@@ -276,6 +277,7 @@ Window *ShowBuildAirToolbar()
 
 class BuildAirportWindow : public PickerWindowBase {
 	SpriteID preview_sprite{}; ///< Cached airport preview sprite.
+	std::vector<AirportTemplateTile> modular_preview_tiles; ///< Modular conversion of the selection, empty unless previewing as modular.
 	int line_height = 0;
 	Scrollbar *vscroll = nullptr;
 
@@ -442,7 +444,9 @@ public:
 			}
 
 			case WID_AP_AIRPORT_SPRITE:
-				if (this->preview_sprite != 0) {
+				if (!this->modular_preview_tiles.empty()) {
+					DrawModularAirportLayoutPreview(r, this->modular_preview_tiles);
+				} else if (this->preview_sprite != 0) {
 					Dimension d = GetSpriteSize(this->preview_sprite);
 					DrawSprite(this->preview_sprite, GetCompanyPalette(_local_company), CentreBounds(r.left, r.right, d.width), CentreBounds(r.top, r.bottom, d.height));
 				}
@@ -518,6 +522,43 @@ public:
 		if (!show) _build_airport_as_modular = false;
 		this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
 		this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
+		this->UpdateModularPreview();
+	}
+
+	/**
+	 * Refresh the cached preview of the selected airport converted to modular pieces.
+	 * Cleared (falling back to the stock preview sprite) unless the airport would
+	 * actually be built as modular.
+	 */
+	void UpdateModularPreview()
+	{
+		this->modular_preview_tiles.clear();
+		if (!_build_airport_as_modular || _selected_airport_index == -1) return;
+
+		const AirportSpec *as = AirportClass::Get(_selected_airport_class)->GetSpec(_selected_airport_index);
+		const uint8_t airport_type = as->GetIndex();
+		if (airport_type >= NEW_AIRPORT_OFFSET || _selected_airport_layout >= as->layouts.size()) return;
+
+		/* ConvertStockAirportLayoutToModular() works in map tiles; anchor it away from
+		 * the map edges so neighbour lookups around the layout cannot wrap. */
+		const TileIndex base = TileXY(Map::SizeX() / 2, Map::SizeY() / 2);
+		const std::vector<ModularAirportTileData> data = ConvertStockAirportLayoutToModular(airport_type, _selected_airport_layout, base);
+
+		this->modular_preview_tiles.reserve(data.size());
+		for (const ModularAirportTileData &md : data) {
+			AirportTemplateTile tile{};
+			tile.dx = ClampTo<uint16_t>(TileX(md.tile) - TileX(base));
+			tile.dy = ClampTo<uint16_t>(TileY(md.tile) - TileY(base));
+			tile.piece_type = md.piece_type;
+			tile.rotation = md.rotation;
+			tile.runway_flags = md.runway_flags;
+			tile.one_way_taxi = md.one_way_taxi;
+			tile.user_taxi_dir_mask = md.user_taxi_dir_mask;
+			tile.edge_block_mask = md.edge_block_mask;
+			tile.grfid = 0;
+			tile.local_id = 0;
+			this->modular_preview_tiles.push_back(tile);
+		}
 	}
 
 	void UpdateSelectSize()
@@ -537,6 +578,7 @@ public:
 			SetTileSelectSize(w, h);
 
 			this->preview_sprite = GetCustomAirportSprite(as, _selected_airport_layout);
+			this->UpdateModularPreview();
 
 			this->SetWidgetDisabledState(WID_AP_LAYOUT_DECREASE, _selected_airport_layout == 0);
 			this->SetWidgetDisabledState(WID_AP_LAYOUT_INCREASE, _selected_airport_layout + 1U >= as->layouts.size());
@@ -587,6 +629,7 @@ public:
 				_build_airport_as_modular = (widget == WID_AP_BTN_MODULAR);
 				this->SetWidgetLoweredState(WID_AP_BTN_NOTMODULAR, !_build_airport_as_modular);
 				this->SetWidgetLoweredState(WID_AP_BTN_MODULAR, _build_airport_as_modular);
+				this->UpdateModularPreview();
 				this->SetDirty();
 				SndClickBeep();
 				break;

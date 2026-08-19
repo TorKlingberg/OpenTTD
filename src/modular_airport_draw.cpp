@@ -231,7 +231,13 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 	}
 }
 
-static uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
+/**
+ * Edges along which a piece never draws a perimeter fence.
+ * @param piece_type Modular piece type.
+ * @param rotation Piece rotation.
+ * @return Mask of edge bits (N/E/S/W = 0x01/0x02/0x04/0x08) that stay fence-free.
+ */
+uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
