@@ -20,6 +20,7 @@
 #include "newgrf_storage.h"
 #include "bitmap_type.h"
 #include <unordered_map>
+#include <utility>
 
 static const uint8_t INITIAL_STATION_RATING = 175;
 static const uint8_t MAX_STATION_RATING = 255;

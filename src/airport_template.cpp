@@ -193,7 +193,7 @@ void AirportTemplateManager::Refresh()
 			json j = json::parse(f);
 
 			auto t = std::make_unique<AirportTemplate>();
-			t->file_stem = FS2OTTD(entry.path().stem().string());
+			t->file_stem = FS2OTTD(entry.path().stem().native());
 			t->name = j.value("name", std::string{});
 			t->width = j.value("width", static_cast<uint16_t>(0));
 			t->height = j.value("height", static_cast<uint16_t>(0));
@@ -222,7 +222,7 @@ void AirportTemplateManager::Refresh()
 			t->CheckAvailability();
 			_templates.push_back(std::move(t));
 		} catch (const std::exception &e) {
-			Debug(misc, 1, "Failed to load airport template {}: {}", entry.path().string(), e.what());
+			Debug(misc, 1, "Failed to load airport template {}: {}", FS2OTTD(entry.path().native()), e.what());
 		}
 	}
 
@@ -324,7 +324,7 @@ bool AirportTemplateManager::DeleteTemplateByFileStem(const std::string &file_st
 	std::error_code ec;
 	if (!std::filesystem::remove(path, ec)) {
 		if (!ec) return false;
-		Debug(misc, 1, "Failed to delete airport template {}: {}", path.string(), ec.message());
+		Debug(misc, 1, "Failed to delete airport template {}: {}", FS2OTTD(path.native()), ec.message());
 		return false;
 	}
 
