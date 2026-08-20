@@ -217,7 +217,7 @@ void InitModularAirportHangarLayouts()
 }
 
 /**
- * Draw a modular hangar layout into the GUI at (@a x, @a y).
+ * Draw one modular airport tile's sprite layout into the GUI at (@a x, @a y).
  *
  * DrawCommonTileSeqInGUI() positions each parent sprite from its bounding box origin
  * alone, in layout order. Neither is enough here.
@@ -239,11 +239,11 @@ void InitModularAirportHangarLayouts()
  *
  * @param x Left edge of the tile to draw at.
  * @param y Top edge of the tile to draw at.
- * @param dts Hangar layout, from GetModularHangarTileLayout().
+ * @param dts Tile layout, e.g. from GetModularHangarTileLayout().
  * @param default_palette Company palette to recolour with.
  * @param zoom Zoom level to draw the sprites at.
  */
-void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom)
+void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom)
 {
 	std::vector<const DrawTileSeqStruct *> order;
 	for (const DrawTileSeqStruct &dtss : dts->GetSequence()) {
