@@ -1,13 +1,15 @@
 name: CodeQL
 
+# Fork-specific change: upstream runs this on every push and pull request. On
+# this fork that only duplicated the compile CI - Build already does (a broken
+# master failed CodeQL at its Build step, ~35 minutes after CI had already said
+# so), for a findings set that is almost entirely inherited upstream noise.
+# Weekly plus on-demand keeps the scanning and the Security tab alerts without
+# the duplicate build on every push.
 on:
-  push:
-    branches:
-    - master
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches:
-    - master
+  schedule:
+  - cron: '0 4 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
