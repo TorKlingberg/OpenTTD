@@ -162,7 +162,7 @@ struct CosmeticPiece {
 	SpriteID icon;    ///< Small icon at Out2x zoom (for toolbar button)
 	SpriteID ground;  ///< Optional ground sprite drawn behind icon (0 = none)
 	uint8_t apt_gfx;  ///< AirportTiles value for placement and full-size picker preview
-	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down.
+	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down. Unused by a multi-tile piece, whose preview is measured.
 	bool is_multi_tile = false; ///< True if this piece places multiple tiles at once.
 };
 
@@ -184,7 +184,7 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, 2666,                         0,                    APT_SMALL_BUILDING_2,    10, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_AIRFIELD_TERM_B,          0,                    APT_SMALL_BUILDING_2,     0, true},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -310,6 +310,112 @@ Dimension GetModularCompoundPieceSize(uint8_t gfx)
 		size.height = std::max<uint>(size.height, ct.dy + 1);
 	}
 	return size;
+}
+
+/** Screen box a compound piece's preview covers. Right and bottom edges are exclusive. */
+struct ModularCompoundPiecePreviewBox {
+	int left = 0;   ///< Leftmost pixel, relative to the drawing origin of the piece's first tile.
+	int top = 0;    ///< Topmost pixel, relative to that same origin.
+	int right = 0;  ///< One past the rightmost pixel.
+	int bottom = 0; ///< One past the bottom pixel.
+
+	int Width() const { return this->right - this->left; }
+	int Height() const { return this->bottom - this->top; }
+};
+
+/**
+ * Where one tile of a compound piece is drawn, relative to the piece's first tile.
+ *
+ * A compound piece's tiles sit on the map, so their preview follows the map's projection:
+ * a step along +X goes down-left on screen and a step along +Y down-right. Reading the
+ * step off a tile sprite's size instead would follow the base set, which is free to draw
+ * a tile sprite taller than the tile it covers — aBase's terminal reaches above its tile,
+ * and half of that overshoot went into the step and pulled the row apart into a staircase.
+ *
+ * @param ct Tile of the compound piece.
+ * @param zoom Zoom level the preview is drawn at.
+ * @return Offset in pixels from the first tile's drawing origin.
+ */
+static Point GetModularCompoundPieceTileOffset(const ModularCompoundPieceTile &ct, ZoomLevel zoom)
+{
+	const Point pt = RemapCoords(ct.dx * TILE_SIZE, ct.dy * TILE_SIZE, 0);
+	return {UnScaleByZoom(pt.x, zoom), UnScaleByZoom(pt.y, zoom)};
+}
+
+/** The tiles of a compound piece, back to front: the viewport paints a tile in front of
+ * another when it starts beyond it along an axis, which on a flat piece is their sum. */
+static std::vector<const ModularCompoundPieceTile *> GetModularCompoundPieceTilesBackToFront(uint8_t gfx)
+{
+	std::vector<const ModularCompoundPieceTile *> order;
+	for (const ModularCompoundPieceTile &ct : GetModularCompoundPieceTiles(gfx)) order.push_back(&ct);
+	std::stable_sort(order.begin(), order.end(), [](const ModularCompoundPieceTile *a, const ModularCompoundPieceTile *b) {
+		return a->dx + a->dy < b->dx + b->dy;
+	});
+	return order;
+}
+
+/**
+ * Measure what a compound piece's preview covers, so the button can be sized to hold it
+ * and the preview placed inside without guessing at either.
+ *
+ * Every sprite the preview draws is measured, buildings included: how far a piece reaches
+ * above its tiles is the base set's business, and a fixed allowance either crops aBase's
+ * terminal or leaves the others sitting in empty space.
+ *
+ * @param gfx Graphic naming the compound piece.
+ * @param zoom Zoom level the preview is drawn at.
+ * @return The box covered, or an empty box if @a gfx is not a compound piece.
+ */
+static ModularCompoundPiecePreviewBox GetModularCompoundPiecePreviewBox(uint8_t gfx, ZoomLevel zoom)
+{
+	ModularCompoundPiecePreviewBox box{INT_MAX, INT_MAX, INT_MIN, INT_MIN};
+
+	auto include = [&](SpriteID sprite, int x, int y) {
+		/* TTD sprite 0 means no sprite. */
+		if (GB(sprite, 0, SPRITE_WIDTH) == 0 && !HasBit(sprite, SPRITE_MODIFIER_CUSTOM_SPRITE)) return;
+
+		Point offset;
+		const Dimension d = GetSpriteSize(sprite & SPRITE_MASK, &offset, zoom);
+		box.left   = std::min(box.left,   x + offset.x);
+		box.top    = std::min(box.top,    y + offset.y);
+		box.right  = std::max(box.right,  x + static_cast<int>(d.width));
+		box.bottom = std::max(box.bottom, y + static_cast<int>(d.height));
+	};
+
+	for (const ModularCompoundPieceTile *ct : GetModularCompoundPieceTilesBackToFront(gfx)) {
+		const Point tile = GetModularCompoundPieceTileOffset(*ct, zoom);
+		const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(ct->gfx, ct->gfx, 0);
+		include(t->ground.sprite, tile.x, tile.y);
+		for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
+			if (!dtss.IsParentSprite()) continue;
+			const Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
+			include(dtss.image.sprite, tile.x + UnScaleByZoom(pt.x, zoom), tile.y + UnScaleByZoom(pt.y, zoom));
+		}
+	}
+
+	if (box.left > box.right) return {};
+	return box;
+}
+
+/**
+ * Draw a compound piece's preview, one tile at a time and each from its own layout, so
+ * that what the button shows is what the piece puts on the ground.
+ *
+ * @param x Drawing origin of the piece's first tile.
+ * @param y Drawing origin of the piece's first tile.
+ * @param gfx Graphic naming the compound piece.
+ * @param pal Company palette to recolour with.
+ * @param zoom Zoom level to draw at.
+ */
+static void DrawModularCompoundPiecePreview(int x, int y, uint8_t gfx, PaletteID pal, ZoomLevel zoom)
+{
+	for (const ModularCompoundPieceTile *ct : GetModularCompoundPieceTilesBackToFront(gfx)) {
+		const Point tile = GetModularCompoundPieceTileOffset(*ct, zoom);
+		const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(ct->gfx, ct->gfx, 0);
+		const SpriteID ground = t->ground.sprite;
+		DrawSprite(ground, HasBit(ground, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x + tile.x, y + tile.y, nullptr, zoom);
+		DrawModularTileSeqInGUI(x + tile.x, y + tile.y, t, pal, zoom);
+	}
 }
 
 static void ShowModularHangarPicker(Window *parent, bool is_large);
@@ -534,7 +640,7 @@ public:
 
 			const DrawTileSprites *t = GetModularHangarTileLayout(0, widget == WID_MA_PIECE_5);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
-			DrawModularHangarSeqInGUI(x, y, t, pal, icon_zoom);
+			DrawModularTileSeqInGUI(x, y, t, pal, icon_zoom);
 		} else {
 			SpriteID icon = piece.icon;
 			ZoomLevel icon_zoom = _gui_zoom;
@@ -1303,7 +1409,7 @@ public:
 			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
 			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
-			DrawModularHangarSeqInGUI(x, y, t, pal);
+			DrawModularTileSeqInGUI(x, y, t, pal);
 		}
 	}
 
@@ -1422,37 +1528,12 @@ public:
 		/* Fixed DPI-stable size matching the hangar picker (full tile view). */
 		size.width  = ScaleGUITrad(64) + WidgetDimensions::scaled.fullbevel.Horizontal();
 		size.height = ScaleGUITrad(48) + WidgetDimensions::scaled.fullbevel.Vertical();
-		/* 3-tile terminal: compute size from actual tile sprite bounding box. */
-		if (widget == WID_MACP_PIECE_10) {
-			ZoomLevel icon_zoom = _gui_zoom;
-			Point so;
-			Dimension sd = GetSpriteSize(SPR_AIRFIELD_TERM_A, &so, icon_zoom);
-			int tile_w = static_cast<int>(sd.width)  - so.x;
-			int tile_h = static_cast<int>(sd.height) - so.y;
-			int step_x = tile_w / 2;
-			int step_y = -(tile_h / 2);
-			int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
-			for (int i = 0; i < 3; i++) {
-				int tx = (i - 1) * step_x;
-				int ty = (i - 1) * step_y;
-				bb_left   = std::min(bb_left, tx + so.x);
-				bb_right  = std::max(bb_right, tx + so.x + tile_w);
-				bb_top    = std::min(bb_top, ty + so.y);
-				bb_bottom = std::max(bb_bottom, ty + so.y + tile_h);
-			}
-			/* Also account for TERM_C_BUILD overlay on tile 0. */
-			{
-				Point bo;
-				Dimension bd = GetSpriteSize(SPR_AIRFIELD_TERM_C_BUILD, &bo, icon_zoom);
-				int tx = (0 - 1) * step_x;
-				int ty = (0 - 1) * step_y;
-				bb_left   = std::min(bb_left, tx + bo.x);
-				bb_right  = std::max(bb_right, tx + bo.x + static_cast<int>(bd.width));
-				bb_top    = std::min(bb_top, ty + bo.y);
-				bb_bottom = std::max(bb_bottom, ty + bo.y + static_cast<int>(bd.height));
-			}
-			size.width  = std::max(size.width,  static_cast<uint>(bb_right - bb_left) + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
-			size.height = std::max(size.height, static_cast<uint>(bb_bottom - bb_top) + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
+		/* A compound piece shows its whole footprint, so it needs a button that holds it. */
+		const CosmeticPiece &piece = _cosmetic_pieces[widget - WID_MACP_PIECE_FIRST];
+		if (piece.is_multi_tile) {
+			const ModularCompoundPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, _gui_zoom);
+			size.width  = std::max<uint>(size.width,  box.Width()  + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
+			size.height = std::max<uint>(size.height, box.Height() + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
 		}
 	}
 
@@ -1468,62 +1549,11 @@ public:
 		ZoomLevel icon_zoom = _gui_zoom;
 		PaletteID pal = GetCompanyPalette(_local_company);
 
-		/* 3-tile terminal: draw all 3 tiles in isometric layout.
-		 * Tiles are: APT_SMALL_BUILDING_3 (TERM_A), APT_SMALL_BUILDING_2 (TERM_B),
-		 * APT_SMALL_BUILDING_1 (TERM_C_GROUND + TERM_C_BUILD overlay).
-		 * TERM_A and TERM_B are single full-tile sprites; TERM_C is ground + child building. */
-		if (piece_idx == 10) {
-			/* Derive isometric tile step from the ground sprite's full pixel extent.
-			 * GetSpriteSize returns d.width = max(0, x_offs + pixel_width), so the
-			 * full tile width = d.width - offset.x (e.g. 33 - (-31) = 64 at normal zoom). */
-			Point so;
-			Dimension sd = GetSpriteSize(SPR_AIRFIELD_TERM_A, &so, icon_zoom);
-			int tile_w = static_cast<int>(sd.width)  - so.x;  /* full tile pixel width  */
-			int tile_h = static_cast<int>(sd.height) - so.y;  /* full tile pixel height  */
-			int step_x = tile_w / 2;
-			int step_y = -(tile_h / 2);
-
-			/* Bounding box of all 3 ground tiles around origin. */
-			int bb_left = INT_MAX, bb_right = INT_MIN, bb_top = INT_MAX, bb_bottom = INT_MIN;
-			for (int i = 0; i < 3; i++) {
-				int tx = (i - 1) * step_x;
-				int ty = (i - 1) * step_y;
-				bb_left   = std::min(bb_left, tx + so.x);
-				bb_right  = std::max(bb_right, tx + so.x + tile_w);
-				bb_top    = std::min(bb_top, ty + so.y);
-				bb_bottom = std::max(bb_bottom, ty + so.y + tile_h);
-			}
-			/* Also account for TERM_C_BUILD overlay on tile 0 (bottom-left). */
-			{
-				Point bo;
-				Dimension bd = GetSpriteSize(SPR_AIRFIELD_TERM_C_BUILD, &bo, icon_zoom);
-				int tx = (0 - 1) * step_x;
-				int ty = (0 - 1) * step_y;
-				bb_left   = std::min(bb_left, tx + bo.x);
-				bb_right  = std::max(bb_right, tx + bo.x + static_cast<int>(bd.width));
-				bb_top    = std::min(bb_top, ty + bo.y);
-				bb_bottom = std::max(bb_bottom, ty + bo.y + static_cast<int>(bd.height));
-			}
-
-			/* Offset to centre the bounding box within the widget. */
-			int off_x = (ir.Width()  - (bb_right + bb_left)) / 2;
-			int off_y = (ir.Height() - (bb_bottom + bb_top)) / 2;
-			off_y += ScaleSpriteTrad(piece.preview_y_offset);
-
-			/* Draw back-to-front: tile 2 (top-right) first, tile 0 (bottom-left) last. */
-			for (int i = 2; i >= 0; i--) {
-				int tx = (i - 1) * step_x + off_x;
-				int ty = (i - 1) * step_y + off_y;
-				if (i == 2) {
-					/* APT_SMALL_BUILDING_1: ground + building overlay (the globe). */
-					DrawSprite(SPR_AIRFIELD_TERM_C_GROUND, pal, tx, ty, nullptr, icon_zoom);
-					DrawSprite(SPR_AIRFIELD_TERM_C_BUILD, pal, tx, ty, nullptr, icon_zoom);
-				} else if (i == 1) {
-					DrawSprite(SPR_AIRFIELD_TERM_B, pal, tx, ty, nullptr, icon_zoom);
-				} else {
-					DrawSprite(SPR_AIRFIELD_TERM_A, pal, tx, ty, nullptr, icon_zoom);
-				}
-			}
+		/* A compound piece is previewed as the tiles it places, centred on what they cover. */
+		if (piece.is_multi_tile) {
+			const ModularCompoundPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, icon_zoom);
+			DrawModularCompoundPiecePreview((ir.Width() - box.Width()) / 2 - box.left,
+					(ir.Height() - box.Height()) / 2 - box.top, piece.apt_gfx, pal, icon_zoom);
 			return;
 		}
 
