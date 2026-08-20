@@ -1237,7 +1237,7 @@ static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const St
 		SortAndUniqueTiles(operation_resource_tiles);
 	}
 
-	for (uint16_t i = start_index; i < path->tiles.size(); ++i) {
+	for (size_t i = start_index; i < path->tiles.size(); ++i) {
 		const TileIndex tile = path->tiles[i];
 		const bool on_operation_runway = ContainsSortedTile(operation_resource_tiles, tile);
 		if (on_operation_runway) {
@@ -2941,9 +2941,9 @@ void ClearTaxiPathState(Aircraft *v, TileIndex keep_tile)
 uint8_t FindTaxiSegmentIndex(const TaxiPath *path, uint16_t tile_index)
 {
 	if (path == nullptr) return 0;
-	for (uint8_t i = 0; i < path->segments.size(); ++i) {
+	for (size_t i = 0; i < path->segments.size(); ++i) {
 		const TaxiSegment &seg = path->segments[i];
-		if (tile_index >= seg.start_index && tile_index <= seg.end_index) return i;
+		if (tile_index >= seg.start_index && tile_index <= seg.end_index) return static_cast<uint8_t>(i);
 	}
 	return static_cast<uint8_t>(path->segments.size());
 }
