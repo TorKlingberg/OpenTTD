@@ -1,5 +1,7 @@
 # Working on OpenTTD (macOS)
 
+The fork lives at https://github.com/TorKlingberg/OpenTTD and an authenticated `gh` CLI is available. `gh repo set-default` has pinned it to the fork, so bare `gh run`/`gh release` calls work; the `upstream` remote (`OpenTTD/OpenTTD`) needs an explicit `-R`.
+
 ## Build
 
 The build directory is `OpenTTD/build/`. To rebuild after source changes:
