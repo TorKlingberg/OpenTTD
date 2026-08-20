@@ -28,3 +28,8 @@ Build cost, maintenance, noise, catchment area and such roughly match the stock 
 There are no new graphics. It uses the existing airport graphics. That means some limitations, like the old runway and hangar only exists in one direction. Most elements of the stock airports are available to build, except the diagonal taxiways of the City airport.
 
 There is also a new AI player, ModularAirportAI, that builds modular airports. It has a set of functional templates that it can rotate and tweak. It also expands airports over time with new runways and stands, but isn't very good at placing them efficiently. It doesn't build ground vehicles and is not competitive with AAAHogEx.
+
+
+Web demo: https://torklingberg.github.io/OpenTTD/
+Builds: 
+Source: https://github.com/TorKlingberg/OpenTTD
