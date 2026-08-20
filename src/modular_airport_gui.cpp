@@ -154,6 +154,7 @@ struct ModularAirportPiece {
 	StringID name;    ///< Full name (used as tooltip)
 	SpriteID icon;    ///< Toolbar button icon sprite
 	PixelColour colour;
+	bool ground_tile = false; ///< Icon is a whole ground tile, so draw it anchored on the tile.
 };
 
 struct CosmeticPiece {
@@ -196,18 +197,18 @@ static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE
 static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PIECE_FIRST + 1);
 
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY},    // 0
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       SPR_NSRUNWAY_END,           PC_DARK_GREY},    // 1
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, SPR_AIRFIELD_RUNWAY_MIDDLE, PC_DARK_GREY},    // 2  (smart-drag: auto-adds near/far ends)
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_CONCOURSE,      PC_ORANGE},       // 3 (cosmetic picker)
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           SPR_AIRPORT_HANGAR_FRONT,   PC_DARK_RED},     // 4
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     SPR_AIRFIELD_HANGAR_FRONT,  PC_DARK_RED},     // 5
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          SPR_NEWHELIPAD,             PC_LIGHT_YELLOW}, // 6
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            SPR_AIRPORT_AIRCRAFT_STAND, PC_YELLOW},       // 7
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            SPR_AIRPORT_APRON,          PC_GREY},         // 8
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            SPR_AIRFIELD_APRON_C,       PC_GREEN},        // 9
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            SPR_FLAT_GRASS_TILE,        PC_WHITE},        // 10
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            SPR_IMG_DYNAMITE,           PC_WHITE},        // 11
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY,     true},  // 0
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       SPR_NSRUNWAY_END,           PC_DARK_GREY,     true},  // 1
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID, SPR_AIRFIELD_RUNWAY_MIDDLE, PC_DARK_GREY,     true},  // 2  (smart-drag: auto-adds near/far ends)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_COSMETIC,         SPR_AIRPORT_CONCOURSE,      PC_ORANGE},               // 3 (cosmetic picker)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR,           SPR_AIRPORT_HANGAR_FRONT,   PC_DARK_RED},             // 4
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR,     SPR_AIRFIELD_HANGAR_FRONT,  PC_DARK_RED},             // 5
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HELIPAD,          SPR_NEWHELIPAD,             PC_LIGHT_YELLOW},         // 6 (an overlay, not a whole tile)
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND,            SPR_AIRPORT_AIRCRAFT_STAND, PC_YELLOW,        true},  // 7
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APRON,            SPR_AIRPORT_APRON,          PC_GREY,          true},  // 8
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_GRASS,            SPR_AIRFIELD_APRON_C,       PC_GREEN,         true},  // 9
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_EMPTY,            SPR_FLAT_GRASS_TILE,        PC_WHITE,         true},  // 10
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_ERASE,            SPR_IMG_DYNAMITE,           PC_WHITE},                // 11
 };
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
@@ -533,31 +534,29 @@ public:
 
 			const DrawTileSprites *t = GetModularHangarTileLayout(0, widget == WID_MA_PIECE_5);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
-			for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
-				SpriteID image = dtss.image.sprite;
-				PaletteID seq_pal = dtss.image.pal;
-
-				/* TTD sprite 0 means no sprite. */
-				if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) continue;
-
-				seq_pal = SpriteLayoutPaletteTransform(image, seq_pal, pal);
-				if (dtss.IsParentSprite()) {
-					/* Add the sprite offset: the rotated hangars carry their base set position
-					 * correction there, so that their bounding box stays the stock one. */
-					Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
-					DrawSprite(image, seq_pal, x + UnScaleByZoom(pt.x, icon_zoom), y + UnScaleByZoom(pt.y, icon_zoom), nullptr, icon_zoom);
-				}
-			}
+			DrawModularHangarSeqInGUI(x, y, t, pal, icon_zoom);
 		} else {
 			SpriteID icon = piece.icon;
 			ZoomLevel icon_zoom = _gui_zoom;
 			if (icon_zoom < ZoomLevel::Max) ++icon_zoom;
-			Dimension d = GetSpriteSize(icon, &offset, icon_zoom);
-			d.width  -= offset.x;
-			d.height -= offset.y;
-			int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
-			int y = (ir.Height() - static_cast<int>(d.height)) / 2;
-			DrawSprite(icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			if (piece.ground_tile) {
+				/* A ground tile sprite is anchored on the tile's northern corner, so place
+				 * that corner instead of centring the sprite's bounding box. A base set may
+				 * extend a tile sprite well above the tile it covers — aBase's runway and
+				 * stand tiles reach 96 and 48 pixels up — and centring the box then slides
+				 * the tile itself off the bottom of the button. */
+				int tile_w = UnScaleByZoom(64 * ZOOM_BASE, icon_zoom);
+				int tile_h = UnScaleByZoom(32 * ZOOM_BASE, icon_zoom);
+				int anchor = UnScaleByZoom(31 * ZOOM_BASE, icon_zoom);
+				DrawSprite(icon, pal, (ir.Width() - tile_w) / 2 + anchor, (ir.Height() - tile_h) / 2, nullptr, icon_zoom);
+			} else {
+				Dimension d = GetSpriteSize(icon, &offset, icon_zoom);
+				d.width  -= offset.x;
+				d.height -= offset.y;
+				int x = (ir.Width()  - static_cast<int>(d.width))  / 2;
+				int y = (ir.Height() - static_cast<int>(d.height)) / 2;
+				DrawSprite(icon, pal, x - offset.x, y - offset.y, nullptr, icon_zoom);
+			}
 		}
 	}
 

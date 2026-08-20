@@ -211,18 +211,32 @@ void InitModularAirportHangarLayouts()
  * Draw a modular hangar layout into the GUI at (@a x, @a y).
  *
  * DrawCommonTileSeqInGUI() positions each parent sprite from its bounding box origin
- * alone. That is not enough here: the rotated hangars keep the stock bounding box so the
- * world view sorts them against neighbouring buildings correctly, and carry their base
- * set specific position correction in the sprite offset instead. Every entry in these
- * layouts is a parent sprite, so there are no child offsets to accumulate.
+ * alone, in layout order. Neither is enough here.
+ *
+ * The rotated hangars keep the stock bounding box so the world view sorts them against
+ * neighbouring buildings correctly, and carry their base set specific position correction
+ * in the sprite offset instead, so the offset has to be added.
+ *
+ * And layout order is not painting order. A two-piece hangar lists the near half first,
+ * which the world view is free to do because it sorts by bounding box before painting;
+ * a GUI painter that follows the layout draws the far wall over the near building and
+ * shows the inside of the hangar. How badly that reads depends on how much the two
+ * sprites overlap, which is a base set's choice: openttd.grf and OpenGFX keep the far
+ * piece to a narrow wall, while aBase draws both halves full tile width. So sort back to
+ * front first, the way the viewport would.
+ *
+ * Every entry in these layouts is a parent sprite, so there are no child offsets to
+ * accumulate.
  *
  * @param x Left edge of the tile to draw at.
  * @param y Top edge of the tile to draw at.
  * @param dts Hangar layout, from GetModularHangarTileLayout().
  * @param default_palette Company palette to recolour with.
+ * @param zoom Zoom level to draw the sprites at.
  */
-void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette)
+void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom)
 {
+	std::vector<const DrawTileSeqStruct *> order;
 	for (const DrawTileSeqStruct &dtss : dts->GetSequence()) {
 		const SpriteID image = dtss.image.sprite;
 
@@ -230,9 +244,20 @@ void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, Palette
 		if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) continue;
 		if (!dtss.IsParentSprite()) continue;
 
-		const PaletteID pal = SpriteLayoutPaletteTransform(image, dtss.image.pal, default_palette);
-		const Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
-		DrawSprite(image, pal, x + UnScaleGUI(pt.x), y + UnScaleGUI(pt.y));
+		order.push_back(&dtss);
+	}
+
+	/* The viewport counts a sprite as being in front when its box starts beyond another's
+	 * along any axis; these layouts sit on one tile, so ordering on the sum agrees. */
+	std::stable_sort(order.begin(), order.end(), [](const DrawTileSeqStruct *a, const DrawTileSeqStruct *b) {
+		return a->origin.x + a->origin.y + a->origin.z < b->origin.x + b->origin.y + b->origin.z;
+	});
+
+	for (const DrawTileSeqStruct *dtss : order) {
+		const SpriteID image = dtss->image.sprite;
+		const PaletteID pal = SpriteLayoutPaletteTransform(image, dtss->image.pal, default_palette);
+		const Point pt = RemapCoords(dtss->origin.x + dtss->offset.x, dtss->origin.y + dtss->offset.y, dtss->origin.z + dtss->offset.z);
+		DrawSprite(image, pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom), nullptr, zoom);
 	}
 }
 

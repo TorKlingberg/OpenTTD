@@ -13,9 +13,10 @@
 #include "sprite.h"
 #include "station_map.h"
 #include "viewport_type.h"
+#include "zoom_type.h"
 
 void InitModularAirportHangarLayouts();
-void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette);
+void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom = _gui_zoom);
 void DrawModularAirportPerimeterFences(const TileInfo *ti, PaletteID palette);
 uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation);
 void DrawModularAirportDirectionOverlays(const TileInfo *ti);
