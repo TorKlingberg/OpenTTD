@@ -18,12 +18,14 @@
 #include "modular_airport_cmd.h"
 #include "modular_airport_gui.h"
 #include "newgrf_airporttiles.h"
+#include "sprite.h"
 #include "spritecache.h"
 #include "station_base.h"
 #include "station_func.h"
 #include "station_map.h"
 #include "tile_map.h"
 #include "viewport_func.h"
+#include "zoom_func.h"
 
 #include "table/airporttile_ids.h"
 #include "table/station_land.h"
@@ -94,19 +96,29 @@ static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalS
 static constexpr int HANGAR_BUILDING_SCREEN_X = -30;
 static constexpr int HANGAR_BUILDING_SCREEN_Y = -24;
 
+/** Tile origin the upstream hangar layouts give their building sprite. */
+static constexpr int HANGAR_BUILDING_ORIGIN_X = 14;
+static constexpr int HANGAR_BUILDING_ORIGIN_Y = 0;
+
 /**
- * Find the child-sprite origin that draws a hangar building at the canonical position.
+ * Find the sprite offset that draws a hangar building at the canonical position.
+ *
+ * The result is a SpriteBounds::offset rather than an origin, so the bounding box stays
+ * exactly where the upstream layouts put it. That matters: the origin and extent are what
+ * the viewport sorts tiles by, and moving the box off the stock slab makes the hangar
+ * draw on top of neighbouring buildings it belongs behind.
+ *
  * @param sprite Building sprite to place.
- * @param[out] origin_x Tile-local origin along the X axis.
- * @param[out] origin_y Tile-local origin along the Y axis.
- * @return Whether an origin within the tile was found; the outputs are untouched if not.
+ * @param[out] offset_x Offset along the X axis, relative to the canonical origin.
+ * @param[out] offset_y Offset along the Y axis, relative to the canonical origin.
+ * @return Whether an offset was found; the outputs are untouched if not.
  */
-static bool SolveHangarBuildingOrigin(SpriteID sprite, int &origin_x, int &origin_y)
+static bool SolveHangarBuildingOffset(SpriteID sprite, int &offset_x, int &offset_y)
 {
 	Point offset;
 	GetSpriteSize(sprite, &offset, ZoomLevel::Normal);
 
-	/* RemapCoords(x, y, 0) is ((y - x) * 2, y + x), so the origin follows from the sum
+	/* RemapCoords(x, y, 0) is ((y - x) * 2, y + x), so the position follows from the sum
 	 * and the difference of its two components. The sum is pinned exactly; the
 	 * difference only moves the sprite in steps of two pixels and has to have the same
 	 * parity as the sum, so take the closest one that keeps both components whole. */
@@ -115,18 +127,18 @@ static bool SolveHangarBuildingOrigin(SpriteID sprite, int &origin_x, int &origi
 
 	bool found = false;
 	int best_error = 0;
-	for (int diff = -15; diff <= 15; diff++) {
+	for (int diff = -64; diff <= 64; diff++) {
 		if (((diff + sum) % 2) != 0) continue;
-		const int y = (sum + diff) / 2;
-		const int x = (sum - diff) / 2;
-		if (x < 0 || x > 15 || y < 0 || y > 15) continue;
+		const int x = (sum - diff) / 2 - HANGAR_BUILDING_ORIGIN_X;
+		const int y = (sum + diff) / 2 - HANGAR_BUILDING_ORIGIN_Y;
+		if (x < INT8_MIN || x > INT8_MAX || y < INT8_MIN || y > INT8_MAX) continue;
 
 		const int error = abs(diff * 2 - wanted_screen_x);
 		if (found && error >= best_error) continue;
 		found = true;
 		best_error = error;
-		origin_x = x;
-		origin_y = y;
+		offset_x = x;
+		offset_y = y;
 	}
 	return found;
 }
@@ -141,24 +153,21 @@ static uint GetHangarSpriteHeight(SpriteID sprite)
 	return GetSprite(sprite, SpriteType::Normal)->height;
 }
 
-/** Point a hangar layout entry at @a sprite, positioned so the building lands on its tile. */
-static void SetHangarBuildingSprite(DrawTileSeqStruct &dtss, SpriteID sprite)
+/**
+ * Point a hangar layout entry at @a sprite, offset so the building lands on its tile.
+ * @param dtss Layout entry to fill in.
+ * @param extent_y Depth of the upstream bounding box for this layout.
+ * @param sprite Building sprite to draw.
+ */
+static void SetHangarBuildingSprite(DrawTileSeqStruct &dtss, uint8_t extent_y, SpriteID sprite)
 {
-	int origin_x = 14;
-	int origin_y = 0;
-	if (GetHangarSpriteHeight(sprite) != 0) {
-		int solved_x, solved_y;
-		if (SolveHangarBuildingOrigin(sprite, solved_x, solved_y)) {
-			origin_x = solved_x;
-			origin_y = solved_y;
-		}
-	}
-
-	/* Keep the thin slab shape of the upstream layouts, along whichever axis the
-	 * building ended up being offset on. */
-	const bool along_x = origin_x >= origin_y;
-	dtss = DrawTileSeqStruct(origin_x, origin_y, 0, along_x ? 2 : 17, along_x ? 17 : 2, 28,
+	dtss = DrawTileSeqStruct(HANGAR_BUILDING_ORIGIN_X, HANGAR_BUILDING_ORIGIN_Y, 0, 2, extent_y, 28,
 			PalSpriteID{sprite | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE});
+
+	int offset_x, offset_y;
+	if (GetHangarSpriteHeight(sprite) != 0 && SolveHangarBuildingOffset(sprite, offset_x, offset_y)) {
+		dtss.offset = {static_cast<int8_t>(offset_x), static_cast<int8_t>(offset_y), 0};
+	}
 }
 
 /**
@@ -190,12 +199,41 @@ void InitModularAirportHangarLayouts()
 	/* Wall piece ahead of its building means the whole run is in OpenGFX2 Classic's order. */
 	const bool pairs_swapped = GetHangarSpriteHeight(SPR_NEWHANGAR_W) < GetHangarSpriteHeight(SPR_NEWHANGAR_W_WALL);
 
-	SetHangarBuildingSprite(_modular_hangar_seq_sw[0], pairs_swapped ? SPR_NEWHANGAR_W_WALL : SPR_NEWHANGAR_W);
+	SetHangarBuildingSprite(_modular_hangar_seq_sw[0], 17, pairs_swapped ? SPR_NEWHANGAR_W_WALL : SPR_NEWHANGAR_W);
 	_modular_hangar_seq_sw[1] = DrawTileSeqStruct(0, 0, 0, 2, 17, 28,
 			PalSpriteID{(pairs_swapped ? SPR_NEWHANGAR_W : SPR_NEWHANGAR_W_WALL) | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE});
 
-	SetHangarBuildingSprite(_modular_hangar_seq_nw[0], pairs_swapped ? SPR_NEWHANGAR_E : SPR_NEWHANGAR_N);
-	SetHangarBuildingSprite(_modular_hangar_seq_ne[0], pairs_swapped ? SPR_NEWHANGAR_N : SPR_NEWHANGAR_E);
+	SetHangarBuildingSprite(_modular_hangar_seq_nw[0], 16, pairs_swapped ? SPR_NEWHANGAR_E : SPR_NEWHANGAR_N);
+	SetHangarBuildingSprite(_modular_hangar_seq_ne[0], 16, pairs_swapped ? SPR_NEWHANGAR_N : SPR_NEWHANGAR_E);
+}
+
+/**
+ * Draw a modular hangar layout into the GUI at (@a x, @a y).
+ *
+ * DrawCommonTileSeqInGUI() positions each parent sprite from its bounding box origin
+ * alone. That is not enough here: the rotated hangars keep the stock bounding box so the
+ * world view sorts them against neighbouring buildings correctly, and carry their base
+ * set specific position correction in the sprite offset instead. Every entry in these
+ * layouts is a parent sprite, so there are no child offsets to accumulate.
+ *
+ * @param x Left edge of the tile to draw at.
+ * @param y Top edge of the tile to draw at.
+ * @param dts Hangar layout, from GetModularHangarTileLayout().
+ * @param default_palette Company palette to recolour with.
+ */
+void DrawModularHangarSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette)
+{
+	for (const DrawTileSeqStruct &dtss : dts->GetSequence()) {
+		const SpriteID image = dtss.image.sprite;
+
+		/* TTD sprite 0 means no sprite. */
+		if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) continue;
+		if (!dtss.IsParentSprite()) continue;
+
+		const PaletteID pal = SpriteLayoutPaletteTransform(image, dtss.image.pal, default_palette);
+		const Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
+		DrawSprite(image, pal, x + UnScaleGUI(pt.x), y + UnScaleGUI(pt.y));
+	}
 }
 
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar)

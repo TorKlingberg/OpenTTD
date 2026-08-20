@@ -542,7 +542,9 @@ public:
 
 				seq_pal = SpriteLayoutPaletteTransform(image, seq_pal, pal);
 				if (dtss.IsParentSprite()) {
-					Point pt = RemapCoords(dtss.origin.x, dtss.origin.y, dtss.origin.z);
+					/* Add the sprite offset: the rotated hangars carry their base set position
+					 * correction there, so that their bounding box stays the stock one. */
+					Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
 					DrawSprite(image, seq_pal, x + UnScaleByZoom(pt.x, icon_zoom), y + UnScaleByZoom(pt.y, icon_zoom), nullptr, icon_zoom);
 				}
 			}
@@ -1302,7 +1304,7 @@ public:
 			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
 			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
-			DrawRailTileSeqInGUI(x, y, t, 0, 0, pal);
+			DrawModularHangarSeqInGUI(x, y, t, pal);
 		}
 	}
 
