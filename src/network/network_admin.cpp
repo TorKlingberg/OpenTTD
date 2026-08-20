@@ -645,7 +645,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendCmdNames()
  */
 NetworkRecvStatus ServerNetworkAdminSocketHandler::SendCmdLogging(ClientID client_id, const CommandPacket &cp)
 {
-	auto p = std::make_unique<Packet>(this, PacketAdminType::ServerCommandLogging);
+	auto p = std::make_unique<Packet>(this, PacketAdminType::ServerCommandLogging, COMMAND_MTU);
 
 	p->Send_uint32(to_underlying(client_id));
 	p->Send_uint8 (cp.company);

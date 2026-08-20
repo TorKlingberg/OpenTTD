@@ -92,7 +92,6 @@ struct SavedTemplateCoverage {
 
 static SavedTemplateCoverage _saved_template_coverage;
 
-static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
 
 const AirportTemplate *GetAirportTemplateByIndex(int index)
@@ -1070,6 +1069,14 @@ public:
 		}
 
 		Station *st = Station::GetByTile(this->save_pick_tile);
+		/* Report an oversized airport as such: it is the one failure here the player can act on. */
+		if (st != nullptr && st->airport.modular_tile_data != nullptr && st->airport.modular_tile_data->size() > MAX_TEMPLATE_TILES) {
+			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_TOO_MANY_TILES, st->airport.modular_tile_data->size(), MAX_TEMPLATE_TILES), {}, WarningLevel::Info);
+			this->has_save_pick_tile = false;
+			this->save_pick_tile = INVALID_TILE;
+			return;
+		}
+
 		AirportTemplate templ;
 		if (st == nullptr || st->owner != _local_company || !BuildTemplateFromStation(st, templ)) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WarningLevel::Info);

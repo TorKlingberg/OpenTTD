@@ -5349,6 +5349,7 @@ STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY                           :Template name c
 STR_ERROR_AIRPORT_TEMPLATE_IO                                   :Failed to save or load airport template
 STR_ERROR_AIRPORT_TEMPLATE_NEWGRF_MISSING                       :This template requires NewGRF airport tiles that are not available
 STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE                            :airport template is too large
+STR_ERROR_AIRPORT_TEMPLATE_TOO_MANY_TILES                       :Airport has {NUM} tiles; a template can hold at most {NUM}
 STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE                       :template contains pieces that cannot be rotated
 STR_ERROR_AIRPORT_TEMPLATE_DELETE_FAILED                        :Failed to delete airport template
 STR_ERROR_CAN_T_RENAME_STATION                                  :Can't rename station...

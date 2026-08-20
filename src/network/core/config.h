@@ -43,6 +43,34 @@ static const std::string NETWORK_SURVEY_DETAILS_LINK = "https://survey.openttd.o
 static const size_t TCP_MTU = 32767; ///< Number of bytes we can pack in a single TCP packet
 static const size_t COMPAT_MTU = 1460; ///< Number of bytes we can pack in a single packet for backward compatibility
 
+/**
+ * Number of bytes we can pack in a packet carrying a command.
+ *
+ * Most commands are a handful of bytes, but modular airport template placement
+ * sends a whole layout as one command, which does not fit COMPAT_MTU: at nine
+ * bytes per tile a 200-tile airport alone is over the limit. Placement has to
+ * stay a single command because it must preflight the entire final layout
+ * before executing, so the packet is what has to grow.
+ *
+ * The receiving side has always allocated TCP_MTU (see
+ * NetworkTCPSocketHandler::ReceivePacket), so only the send limit stands in the
+ * way. Peers must agree on the command set to interoperate at all, which makes
+ * this safe among builds that share these commands.
+ */
+static const size_t COMMAND_MTU = TCP_MTU;
+
+/**
+ * Bytes of a command packet that framing consumes, leaving the rest for the payload.
+ *
+ * Worst case over the three senders: packet size + MAC + type, the command
+ * header (company, command, error string, buffer length, callback), and the
+ * server's trailing frame + my_cmd. Rounded generously upwards.
+ */
+static const size_t COMMAND_PACKET_OVERHEAD = 64;
+
+/** Maximum size of a serialised command payload (CommandPacket::data). */
+static const size_t MAX_COMMAND_PAYLOAD_SIZE = COMMAND_MTU - COMMAND_PACKET_OVERHEAD;
+
 static const uint8_t NETWORK_GAME_ADMIN_VERSION        =    3;           ///< What version of the admin network do we use?
 static const uint8_t NETWORK_GAME_INFO_VERSION         =    7;           ///< What version of game-info do we use?
 static const uint8_t NETWORK_COORDINATOR_VERSION       =    6;           ///< What version of game-coordinator-protocol do we use?

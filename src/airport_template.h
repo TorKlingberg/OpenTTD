@@ -16,6 +16,17 @@
 #include <memory>
 #include "tile_type.h"
 
+/**
+ * Maximum number of tiles a saved airport template may hold.
+ *
+ * Placement sends the whole layout as one PlaceModularAirportTemplate command,
+ * so this is bounded by what a command payload can carry; see the static_assert
+ * against MAX_COMMAND_PAYLOAD_SIZE in modular_airport_template_cmd.cpp. The
+ * value below is far under that bound and only exists so a corrupt or hostile
+ * template file cannot ask for an unbounded allocation.
+ */
+static constexpr uint16_t MAX_TEMPLATE_TILES = 2048;
+
 /** Tile data within an airport template. */
 struct AirportTemplateTile {
 	uint16_t dx;

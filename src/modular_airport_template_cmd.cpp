@@ -10,6 +10,8 @@
 #include "stdafx.h"
 
 #include "station_cmd.h"
+#include "airport_template.h"
+#include "network/core/config.h"
 #include "command_func.h"
 #include "company_func.h"
 #include "modular_airport_cmd.h"
@@ -26,9 +28,26 @@
 
 #include <array>
 
-static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 static constexpr std::array<uint8_t, 4> kFenceEdgeBits = {0x01, 0x02, 0x04, 0x08};
 
+/**
+ * Bytes one ModularTemplatePlacementTile occupies on the wire.
+ * Must match operator<<(EndianBufferWriter &, const ModularTemplatePlacementTile &) in station_cmd.h.
+ */
+static constexpr size_t TEMPLATE_PLACEMENT_TILE_WIRE_SIZE =
+		sizeof(uint16_t) + sizeof(uint16_t) + // dx, dy
+		sizeof(uint8_t) * 5 +                 // piece_type, rotation, runway_flags, user_taxi_dir_mask, edge_block_mask
+		sizeof(uint8_t);                      // one_way_taxi, sent as a byte
+
+/** Fixed part of a PlaceModularAirportTemplate payload: tile, station_to_join, allow_adjacent, and the data header. */
+static constexpr size_t TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE =
+		sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t) + // tile, station_to_join, allow_adjacent
+		sizeof(uint16_t) * 2 + sizeof(uint8_t) + sizeof(uint16_t); // width, height, rotation, tile count
+
+/* A full template must fit in one command packet: placement preflights the whole
+ * layout before executing, so it cannot be split across commands. */
+static_assert(TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE + MAX_TEMPLATE_TILES * TEMPLATE_PLACEMENT_TILE_WIRE_SIZE <= MAX_COMMAND_PAYLOAD_SIZE,
+		"MAX_TEMPLATE_TILES template tiles no longer fit in a single command payload");
 
 static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint16_t width, uint16_t height)
 {

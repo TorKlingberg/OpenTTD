@@ -402,7 +402,7 @@ NetworkRecvStatus ClientNetworkGameSocketHandler::SendCommand(const CommandPacke
 {
 	Debug(net, 9, "Client::SendCommand(): cmd={}", cp.cmd);
 
-	auto p = std::make_unique<Packet>(my_client, PacketGameType::ClientCommand);
+	auto p = std::make_unique<Packet>(my_client, PacketGameType::ClientCommand, COMMAND_MTU);
 	my_client->NetworkGameSocketHandler::SendCommand(*p, cp);
 
 	my_client->SendPacket(std::move(p));

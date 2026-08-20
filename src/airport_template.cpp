@@ -30,7 +30,6 @@ using json = nlohmann::json;
 
 static std::vector<std::unique_ptr<AirportTemplate>> _templates;
 static bool _templates_dirty = true;
-static constexpr uint16_t MAX_TEMPLATE_TILES = 128;
 
 static std::string GetTemplatesDirectory()
 {

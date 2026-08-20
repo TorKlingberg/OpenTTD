@@ -696,7 +696,7 @@ NetworkRecvStatus ServerNetworkGameSocketHandler::SendCommand(const CommandPacke
 {
 	Debug(net, 9, "client[{}] SendCommand(): cmd={}", this->client_id, cp.cmd);
 
-	auto p = std::make_unique<Packet>(this, PacketGameType::ServerCommand);
+	auto p = std::make_unique<Packet>(this, PacketGameType::ServerCommand, COMMAND_MTU);
 
 	this->NetworkGameSocketHandler::SendCommand(*p, cp);
 	p->Send_uint32(cp.frame);
