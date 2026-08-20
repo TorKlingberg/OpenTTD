@@ -63,12 +63,12 @@
 #include "table/airporttile_ids.h"
 #include "table/strings.h"
 
-#include "safeguards.h"
-
 #include <cctype>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+
+#include "safeguards.h"
 
 void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
 

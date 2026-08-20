@@ -299,7 +299,7 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 	j["tiles"] = j_tiles;
 
 	try {
-		std::ofstream f(OTTD2FS(dir + filename));
+		std::ofstream f(OTTD2FS(dir + filename).c_str());
 		if (!f.is_open()) return false;
 		f << j.dump(4);
 		f.flush();

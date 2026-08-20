@@ -47,15 +47,16 @@
 #include "table/strings.h"
 #include "table/airporttile_ids.h"
 
-#include "safeguards.h"
-
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <chrono>
 #include <cmath>
 #include <algorithm>
 #include <array>
 #include <limits>
+
+#include "safeguards.h"
 
 /**
  * Special velocities for aircraft.

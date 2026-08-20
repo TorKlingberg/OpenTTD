@@ -305,7 +305,7 @@ struct DepotWindow : Window {
 
 	bool HasValidDepotTile() const
 	{
-		Tile tile(this->window_number);
+		TileIndex tile(this->window_number);
 		switch (this->type) {
 			case VehicleType::Train:    return IsRailDepotTile(tile);
 			case VehicleType::Road:     return IsRoadDepotTile(tile);

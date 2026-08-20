@@ -49,8 +49,6 @@
 #include "table/strings.h"
 #include "table/airporttile_ids.h"
 
-#include "safeguards.h"
-
 #include <map>
 #include <set>
 #include <chrono>
@@ -58,6 +56,8 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+
+#include "safeguards.h"
 
 static uint64_t _airport_landings_this_year = 0;
 static uint64_t _airport_takeoffs_this_year = 0;

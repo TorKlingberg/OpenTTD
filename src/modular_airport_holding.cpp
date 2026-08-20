@@ -26,13 +26,13 @@
 
 #include "table/airporttile_ids.h"
 
-#include "safeguards.h"
-
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
 #include <vector>
+
+#include "safeguards.h"
 
 struct DubinsArc {
 	int64_t cx;
