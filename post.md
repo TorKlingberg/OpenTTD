@@ -1,4 +1,4 @@
-Ever since I first played Transport Tycoon in the '90s I've wanted airports to be more interesting, and since I first encountered OpenTTD 20 years ago I've dreamt of modular airports. 
+Ever since I first played Transport Tycoon in the '90s I've wanted airports to be more interesting, and since I first encountered OpenTTD 20 years ago I've dreamt of modular airports. Now I've gone and done it.
 
 Features:
 * Manually build your airport by placing runways, stands, aprons (taxiways), hangars, terminals, etc.
@@ -8,7 +8,7 @@ Features:
 * Save your designs and templates
 * Chose the direction of runways, and mark them as takeoff or landing only
 
-It is AI coded. I have written C++ professionally, but I have not read all the code changes for this. It wasn't a single prompt though: I have worked on this over a couple of months in my spare time. I don't expect this to ever be merged into the main game. If any patch set maintainer is interested I'd be happy to work with them.
+It is AI coded. I have written C++ professionally, but I have not read all the code changes for this. It wasn't a single prompt though: I have worked on this over a couple of months in my spare time. This is a fork of OpenTTD, and I don't expect it to ever be merged into the main game. If any patch set maintainer is interested I'd be happy to work with them.
 
 The hardest part, as expected, was getting planes to taxi around the airports without getting stuck when it's busy. I won't promise it's 100% deadlock free, but it works quite well.
 
@@ -21,6 +21,7 @@ Tips for building efficient airports:
 * Use one-way aprons to create queues for planes that just landed or are waiting to take off.
 * To be safe for large planes an airport needs a 6-tile paved runway, a control tower and a big terminal building.
 * Adding a helipad or two really speed up helicopter operations and keep them out of the way of fixed wing planes.
+* Added fences to stop planes from taking bad shortcuts.
 
 Build cost, maintenance, noise, catchment area and such roughly match the stock airports.
 
