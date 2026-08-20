@@ -49,12 +49,18 @@ Debugger/logging workflows are documented in the skills list below.
 
 OpenTTD uses an isometric view. Tiles are on a rectangular (X, Y) grid; each tile is `TILE_SIZE` = 16 pixel-units wide.
 
-| Coordinate change | Screen appearance |
-|---|---|
-| X increases | moves right-down diagonally |
-| Y increases | moves left-down diagonally |
+`RemapCoords` (`src/landscape.h`) projects world to screen as `screen_x = (y - x) * 2` and `screen_y = y + x - z`, so **+X goes down-left and +Y goes down-right**:
 
-Use screen-relative terms (up/down/left/right), not compass directions — all axis-aligned moves appear diagonal on screen. See `coords.md` for details.
+| Coordinate change | `DiagDirection` | Screen appearance |
+|---|---|---|
+| X increases | SW | moves left-down diagonally |
+| X decreases | NE | moves right-up diagonally |
+| Y increases | SE | moves right-down diagonally |
+| Y decreases | NW | moves left-up diagonally |
+
+Swapping the two axes here mirrors everything and is easy to miss, because a mirrored model stays self-consistent. Check against `RemapCoords` and `_tileoffs_by_diagdir` (`src/map.cpp`) rather than intuition.
+
+In prose prefer screen-relative terms (up/down/left/right) over compass names, since all axis-aligned moves appear diagonal on screen. See `coords.md` for details.
 
 ---
 

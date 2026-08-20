@@ -10,6 +10,17 @@ OpenTTD uses a 2D tile-based map with integer coordinates (X, Y), both starting 
 
 The game displays the map in **isometric projection** - the rectangular grid is rotated 45° to appear as a diamond on screen. This means all coordinate-aligned movements appear as **diagonal movements** on your monitor.
 
+### The Projection
+
+`RemapCoords` in `src/landscape.h` is the authority:
+
+```cpp
+pt.x = (y - x) * 2;
+pt.y = (y + x - z);
+```
+
+So **+X moves down-left** (screen x -2, screen y +1) and **+Y moves down-right** (screen x +2, screen y +1). Getting these two the wrong way round mirrors every conclusion that follows, and a mirrored model stays perfectly self-consistent, so it can survive a lot of reasoning before anything looks wrong. Derive from `RemapCoords`, don't guess.
+
 ### Map Diamond Shape
 
 For a 100×100 map (coordinates 0-99), the four corners form a diamond:
@@ -22,7 +33,7 @@ Map corners in (X, Y) coordinates:
                  / \
                 /   \
                /     \
-      (0, 99) ◆       ◆ (99, 0)
+      (99, 0) ◆       ◆ (0, 99)
        left            right
               \       /
                \     /
@@ -32,6 +43,8 @@ Map corners in (X, Y) coordinates:
               (99, 99)
                bottom
 ```
+
+(Check: `(99, 0)` projects to screen x `(0 - 99) * 2 = -198`, i.e. far left; `(0, 99)` to `+198`, far right.)
 
 ## Orthogonal Movement (Pathfinding Directions)
 
@@ -127,34 +140,41 @@ For pieces with directional constraints (like hangars), rotation determines whic
 
 **Example - Hangar taxi directions by rotation:**
 
-At `rotation = 0`:
-- Hangar door faces down-right on screen
+Hangar rotations name the compass direction the door faces: `0=SE, 1=NE, 2=NW, 3=SW`. In the bitmask order above that open edge is bit `(rotation + 2) % 4` — see `CalculateAutoTaxiDirectionsForGfx` (`src/airport_pathfinder.cpp`) and `ModularAirportGetHangarExitDirection` (`src/modular_airport_holding.cpp`), which must stay in sync.
+
+At `rotation = 0` (door faces SE):
+- Door faces down-right on screen
 - Connects via dy=+1 (code's "South", 0x04)
 - Apron must be at (X, Y+1)
 
-At `rotation = 1`:
-- Hangar rotated 90° clockwise, door faces down-left
-- Should connect via dx=-1 (code's "West", 0x08)
+At `rotation = 1` (door faces NE):
+- Door faces up-right on screen
+- Connects via dx=-1 (code's "West", 0x08)
 - Apron must be at (X-1, Y)
 
-At `rotation = 2`:
-- Hangar rotated 180°, door faces up-left
-- Should connect via dy=-1 (code's "North", 0x01)
+At `rotation = 2` (door faces NW):
+- Door faces up-left on screen
+- Connects via dy=-1 (code's "North", 0x01)
 - Apron must be at (X, Y-1)
 
-At `rotation = 3`:
-- Hangar rotated 270° clockwise, door faces up-right
-- Should connect via dx=+1 (code's "East", 0x02)
+At `rotation = 3` (door faces SW):
+- Door faces down-left on screen
+- Connects via dx=+1 (code's "East", 0x02)
 - Apron must be at (X+1, Y)
+
+Note that rotations 1 and 3 are the pair that a mirrored mental model gets 180° wrong while leaving 0 and 2 looking fine — the same trap the pathfinder comment warns about.
 
 ## Common Pitfalls
 
-### 1. "SE" in `APT_DEPOT_SE` Does NOT Mean Southeast
+### 1. "SE" in `APT_DEPOT_SE` Names the Door, But Only at rotation=0
 
-The `_SE` suffix in piece type names like `APT_DEPOT_SE` refers to the **graphic's map orientation**, NOT compass directions or taxi directions.
+The `_SE` suffix does mean the game's SE: at `rotation = 0` an `APT_DEPOT_SE` opens onto (X, Y+1), which is SE in `_tileoffs_by_diagdir` and down-right on screen. The four suffixes match the four hangar rotations exactly (`SE/NE/NW/SW` = rotation `0/1/2/3`).
 
-**Incorrect:** `APT_DEPOT_SE` means the door faces southeast
-**Correct:** It's just the graphic ID. At rotation=0, the door faces down-right (dy=+1, code's "South")
+The trap is that the suffix is not the whole story. `APT_DEPOT_SE` is the *canonical* form, and a stored piece carries a rotation as well: `CalculateAutoTaxiDirectionsForGfx` takes `hangar_rot` from the rotation field for `APT_DEPOT_SE` and only overrides it for the three explicitly-named variants. So a tile whose gfx says `_SE` may still open NE, NW or SW.
+
+**Incorrect:** the suffix is an arbitrary graphic ID with no directional meaning
+**Incorrect:** the suffix alone tells you which way the door faces
+**Correct:** read the effective direction from piece type *and* rotation, exactly as `CalculateAutoTaxiDirectionsForGfx` does
 
 ### 2. Don't Use Compass Directions for Viewport
 
@@ -170,18 +190,20 @@ When you see `dir_bit = 0x04; // South` in the code, don't think "southward on a
 
 Test airport: Hangar at (36, 60) with gfx=24, rot=0
 
-Surrounding tiles (user's compass labels -> actual coordinates):
+The eight tiles around it, with screen positions derived from `RemapCoords`:
 
-| User Label | Visual Position | Coordinates | Delta from Hangar | Movement Type |
-|------------|----------------|-------------|-------------------|---------------|
-| SE         | Down-right     | (36, 61)    | (0, +1)          | Orthogonal ✓  |
-| E          | Right-ish      | (37, 60)    | (+1, 0)          | Orthogonal ✓  |
-| NE         | Up-right       | (37, 59)    | (+1, -1)         | Diagonal      |
-| N          | Up-ish         | (36, 59)    | (0, -1)          | Orthogonal ✓  |
-| NW         | Up-left        | (35, 60)    | (-1, 0)          | Orthogonal ✓  |
-| W          | Left-ish       | (35, 61)    | (-1, +1)         | Diagonal      |
-| SW         | Down-left      | (37, 61)    | (+1, +1)         | Diagonal      |
-| S          | Down           | (35, 59)    | (-1, -1)         | Diagonal      |
+| Neighbour | Coordinates | Delta from Hangar | Screen Position | Movement Type |
+|-----------|-------------|-------------------|-----------------|---------------|
+| SE        | (36, 61)    | (0, +1)          | Down-right      | Orthogonal ✓  |
+| SW        | (37, 60)    | (+1, 0)          | Down-left       | Orthogonal ✓  |
+| NW        | (36, 59)    | (0, -1)          | Up-left         | Orthogonal ✓  |
+| NE        | (35, 60)    | (-1, 0)          | Up-right        | Orthogonal ✓  |
+| —         | (37, 59)    | (+1, -1)         | Left            | Diagonal      |
+| —         | (35, 61)    | (-1, +1)         | Right           | Diagonal      |
+| —         | (37, 61)    | (+1, +1)         | Down            | Diagonal      |
+| —         | (35, 59)    | (-1, -1)         | Up              | Diagonal      |
+
+The four diagonal neighbours sit straight up/down/left/right on screen, which is the clearest reminder that screen "up" is not a map direction at all.
 
 **Result:** The SE position (0, +1) successfully connected to the hangar, confirming that rotation=0 hangars use dy=+1 (bitmask 0x04).
 
@@ -196,11 +218,13 @@ Surrounding tiles (user's compass labels -> actual coordinates):
 
 ## References
 
+- `src/landscape.h` - `RemapCoords`, the world-to-screen projection everything here derives from
+- `src/map.cpp` - `_tileoffs_by_diagdir`, the compass name for each coordinate step
 - `src/direction_type.h` - Direction enums (Note: these are for vehicles, NOT the same as pathfinder bitmasks)
 - `src/airport_ground_pathfinder.cpp` lines 86-91 - Direction bitmask definitions
 - `src/airport_pathfinder.cpp` - Taxi direction calculation for each piece type
 
 ---
 
-**Last Updated**: 2026-02-21
-**Author**: Based on empirical testing and finalized ground arrow verified mappings.
+**Last Updated**: 2026-08-20
+**Author**: Based on empirical testing and finalized ground arrow verified mappings. Screen directions corrected against `RemapCoords` on 2026-08-20; the X and Y axes had been documented the wrong way round.
