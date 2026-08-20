@@ -21,6 +21,7 @@
 #include "base_media_func.h"
 #include "base_media_graphics.h"
 #include "base_media_sounds.h"
+#include "modular_airport_draw.h"
 
 #include "table/sprites.h"
 
@@ -343,6 +344,10 @@ void GfxLoadSprites()
 	GfxInitPalettes();
 
 	UpdateCursorSize();
+
+	/* The rotated modular hangars are positioned from the base set's own sprite
+	 * offsets, which differ between base sets, so redo that after every load. */
+	InitModularAirportHangarLayouts();
 }
 
 /* instantiate here, because unique_ptr needs a complete type */

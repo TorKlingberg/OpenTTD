@@ -13,10 +13,12 @@
 
 #include "bridge_map.h"
 #include "airport_pathfinder.h"
+#include "gfx_func.h"
 #include "landscape.h"
 #include "modular_airport_cmd.h"
 #include "modular_airport_gui.h"
 #include "newgrf_airporttiles.h"
+#include "spritecache.h"
 #include "station_base.h"
 #include "station_func.h"
 #include "station_map.h"
@@ -30,14 +32,29 @@
 static const DrawTileSpriteSpan _station_display_modular_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_se);
 
+/* The three rotated hangars are rebuilt from the loaded sprites by
+ * InitModularAirportHangarLayouts(); see the comment there for why. These are the
+ * upstream _station_display_hangar_{sw,nw,ne} values, which are what that ends up
+ * with for openttd.grf and OpenGFX. */
+static DrawTileSeqStruct _modular_hangar_seq_sw[] = {
+	{14,  0,  0,  2, 17, 28, {SPR_NEWHANGAR_W | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE} },
+	{ 0,  0,  0,  2, 17, 28, {SPR_NEWHANGAR_W_WALL | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE} },
+};
+static DrawTileSeqStruct _modular_hangar_seq_nw[] = {
+	{14,  0,  0,  2, 16, 28, {SPR_NEWHANGAR_N | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE} },
+};
+static DrawTileSeqStruct _modular_hangar_seq_ne[] = {
+	{14,  0,  0,  2, 16, 28, {SPR_NEWHANGAR_E | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE} },
+};
+
 static const DrawTileSpriteSpan _station_display_modular_hangar_sw(
-	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_sw);
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _modular_hangar_seq_sw);
 
 static const DrawTileSpriteSpan _station_display_modular_hangar_nw(
-	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_nw);
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _modular_hangar_seq_nw);
 
 static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
-	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_ne);
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _modular_hangar_seq_ne);
 
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
@@ -68,6 +85,118 @@ static const DrawTileSpriteSpan _station_display_modular_ns_runway_end(PalSprite
 static const DrawTileSpriteSpan _station_display_modular_old_runway_near_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_NEAR_END, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_old_runway_middle(PalSpriteID{SPR_AIRFIELD_RUNWAY_MIDDLE, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_FAR_END, PAL_NONE});
+
+/**
+ * Screen position, relative to the tile origin, of a correctly placed hangar building.
+ * openttd.grf anchors its hangar building sprites at (-2,-38) and the upstream layout
+ * draws them from tile origin (14,0,0), which RemapCoords turns into (-28,+14).
+ */
+static constexpr int HANGAR_BUILDING_SCREEN_X = -30;
+static constexpr int HANGAR_BUILDING_SCREEN_Y = -24;
+
+/**
+ * Find the child-sprite origin that draws a hangar building at the canonical position.
+ * @param sprite Building sprite to place.
+ * @param[out] origin_x Tile-local origin along the X axis.
+ * @param[out] origin_y Tile-local origin along the Y axis.
+ * @return Whether an origin within the tile was found; the outputs are untouched if not.
+ */
+static bool SolveHangarBuildingOrigin(SpriteID sprite, int &origin_x, int &origin_y)
+{
+	Point offset;
+	GetSpriteSize(sprite, &offset, ZoomLevel::Normal);
+
+	/* RemapCoords(x, y, 0) is ((y - x) * 2, y + x), so the origin follows from the sum
+	 * and the difference of its two components. The sum is pinned exactly; the
+	 * difference only moves the sprite in steps of two pixels and has to have the same
+	 * parity as the sum, so take the closest one that keeps both components whole. */
+	const int sum = HANGAR_BUILDING_SCREEN_Y - offset.y;
+	const int wanted_screen_x = HANGAR_BUILDING_SCREEN_X - offset.x;
+
+	bool found = false;
+	int best_error = 0;
+	for (int diff = -15; diff <= 15; diff++) {
+		if (((diff + sum) % 2) != 0) continue;
+		const int y = (sum + diff) / 2;
+		const int x = (sum - diff) / 2;
+		if (x < 0 || x > 15 || y < 0 || y > 15) continue;
+
+		const int error = abs(diff * 2 - wanted_screen_x);
+		if (found && error >= best_error) continue;
+		found = true;
+		best_error = error;
+		origin_x = x;
+		origin_y = y;
+	}
+	return found;
+}
+
+/**
+ * Height of a sprite in its own pixels, or 0 if it isn't a drawable sprite.
+ * Used to tell a hangar building from the wall piece that goes with it.
+ */
+static uint GetHangarSpriteHeight(SpriteID sprite)
+{
+	if (!SpriteExists(sprite) || GetSpriteType(sprite) != SpriteType::Normal) return 0;
+	return GetSprite(sprite, SpriteType::Normal)->height;
+}
+
+/** Point a hangar layout entry at @a sprite, positioned so the building lands on its tile. */
+static void SetHangarBuildingSprite(DrawTileSeqStruct &dtss, SpriteID sprite)
+{
+	int origin_x = 14;
+	int origin_y = 0;
+	if (GetHangarSpriteHeight(sprite) != 0) {
+		int solved_x, solved_y;
+		if (SolveHangarBuildingOrigin(sprite, solved_x, solved_y)) {
+			origin_x = solved_x;
+			origin_y = solved_y;
+		}
+	}
+
+	/* Keep the thin slab shape of the upstream layouts, along whichever axis the
+	 * building ended up being offset on. */
+	const bool along_x = origin_x >= origin_y;
+	dtss = DrawTileSeqStruct(origin_x, origin_y, 0, along_x ? 2 : 17, along_x ? 17 : 2, 28,
+			PalSpriteID{sprite | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE});
+}
+
+/**
+ * Rebuild the rotated hangar layouts from the sprites the base set actually provides.
+ *
+ * The three rotated hangars are drawn from the six-sprite hangar run in the base set's
+ * AIRPORTX block (SPR_NEWHANGAR_*). Nothing in vanilla OpenTTD draws any of them — the
+ * upstream _station_display_hangar_{sw,nw,ne} tables are unreferenced — so base sets have
+ * been free to fill that run however they liked, and there are two conventions in the wild:
+ *
+ *   openttd.grf, OpenGFX  {S, S_WALL} {W, W_WALL} {N, E}: building first in each pair,
+ *                         all four buildings anchored at sprite offset (-2,-38), and
+ *                         E facing NE with N facing NW.
+ *   OpenGFX2 Classic      every pair the other way round: the wall piece first, the west
+ *                         and north buildings anchored half a tile further left at
+ *                         (-61,-39), and E facing NW with N facing NE.
+ *
+ * Hard-coding either one gets the other wrong. Under OpenGFX2 Classic the upstream tables
+ * draw the NW and SW hangars half a tile off their tile, and hand the NE and NW hangars
+ * each other's doors. So work both out from the sprites themselves: the W pair settles
+ * which order the run is in, because a wall piece is a fraction of a building's height,
+ * and that in turn settles the N/E pair, where both entries are same-sized buildings with
+ * nothing to tell them apart. Each building's origin then follows from its own offsets.
+ *
+ * Called whenever sprites are (re)loaded, since a NewGRF can replace this block too.
+ */
+void InitModularAirportHangarLayouts()
+{
+	/* Wall piece ahead of its building means the whole run is in OpenGFX2 Classic's order. */
+	const bool pairs_swapped = GetHangarSpriteHeight(SPR_NEWHANGAR_W) < GetHangarSpriteHeight(SPR_NEWHANGAR_W_WALL);
+
+	SetHangarBuildingSprite(_modular_hangar_seq_sw[0], pairs_swapped ? SPR_NEWHANGAR_W_WALL : SPR_NEWHANGAR_W);
+	_modular_hangar_seq_sw[1] = DrawTileSeqStruct(0, 0, 0, 2, 17, 28,
+			PalSpriteID{(pairs_swapped ? SPR_NEWHANGAR_W : SPR_NEWHANGAR_W_WALL) | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE});
+
+	SetHangarBuildingSprite(_modular_hangar_seq_nw[0], pairs_swapped ? SPR_NEWHANGAR_E : SPR_NEWHANGAR_N);
+	SetHangarBuildingSprite(_modular_hangar_seq_ne[0], pairs_swapped ? SPR_NEWHANGAR_N : SPR_NEWHANGAR_E);
+}
 
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar)
 {
