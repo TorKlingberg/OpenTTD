@@ -3,5 +3,7 @@ OpenGFX2:
 * Some fences render as double fences
 
 aBase:
-* Small terminal is messed up
+
+On web:
+* AI takes a long time to build anything.
 
