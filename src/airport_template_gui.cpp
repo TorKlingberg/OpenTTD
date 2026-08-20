@@ -1005,8 +1005,10 @@ public:
 		data.tiles.reserve(templ->tiles.size());
 		for (const AirportTemplateTile &tt : templ->tiles) {
 			ModularTemplatePlacementTile ct;
-			ct.dx = tt.dx;
-			ct.dy = tt.dy;
+			/* Narrowing is safe: template dimensions are bounded by MAX_TEMPLATE_DIM
+			 * and every tile offset lies inside them. */
+			ct.dx = static_cast<uint8_t>(tt.dx);
+			ct.dy = static_cast<uint8_t>(tt.dy);
 			ct.piece_type = tt.piece_type;
 			ct.rotation = tt.rotation;
 			ct.runway_flags = tt.runway_flags;
@@ -1096,6 +1098,7 @@ public:
 
 		this->has_save_pick_tile = false;
 		this->save_pick_tile = INVALID_TILE;
+		this->ExitPlacementMode();
 		this->RefreshTemplateList(saved_stem);
 	}
 

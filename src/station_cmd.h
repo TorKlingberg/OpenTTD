@@ -38,8 +38,12 @@ CommandCost BuildStationPart(Station **st, DoCommandFlags flags, bool reuse, Til
 CommandCost CheckFlatLandAirport(AirportTileTableIterator tile_iter, DoCommandFlags flags);
 
 struct ModularTemplatePlacementTile {
-	uint16_t dx = 0;
-	uint16_t dy = 0;
+	/* One byte each: these are offsets inside the layout's bounding box, and a
+	 * station's bounding box is limited to station_spread, whose own maximum is
+	 * far below 256. Keeping them narrow is what lets a full 64x64 layout fit in
+	 * a single command payload; see modular_airport_template_cmd.cpp. */
+	uint8_t dx = 0;
+	uint8_t dy = 0;
 	uint8_t piece_type = 0;
 	uint8_t rotation = 0;
 	uint8_t runway_flags = 0;
@@ -98,17 +102,52 @@ DEF_CMD_TRAIT(Commands::OpenCloseAirport, CmdOpenCloseAirport, {}, CommandType::
 
 void CcMoveStationName(Commands, const CommandCost &result, StationID station_id);
 
+/**
+ * Bit layout of the two packed flag bytes of a serialised
+ * ModularTemplatePlacementTile. Every one of these fields is narrower than a
+ * byte, and packing them is what keeps a full 64x64 layout inside a single
+ * command payload. CmdPlaceModularAirportTemplate rejects any tile whose fields
+ * do not fit these widths, so the packing is lossless: a locally executed
+ * command and one that made the round trip over the network see the same tile.
+ */
+enum ModularTemplatePlacementTilePacking : uint8_t {
+	MTPP_ROTATION_SHIFT      = 0, ///< Rotation, 0..3.
+	MTPP_ROTATION_MASK       = 0x03,
+	MTPP_RUNWAY_FLAGS_SHIFT  = 2, ///< RUF_* flags, four bits.
+	MTPP_RUNWAY_FLAGS_MASK   = 0x0F,
+	MTPP_ONE_WAY_TAXI_BIT    = 6, ///< One-way taxiway, one bit.
+
+	MTPP_TAXI_DIR_MASK_SHIFT = 0, ///< Allowed taxi directions, four bits.
+	MTPP_TAXI_DIR_MASK_MASK  = 0x0F,
+	MTPP_EDGE_BLOCK_SHIFT    = 4, ///< Fenced edges, four bits.
+	MTPP_EDGE_BLOCK_MASK     = 0x0F,
+};
+
 template <typename Tcont, typename Titer>
 inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, Titer> &buffer, const ModularTemplatePlacementTile &tile)
 {
-	return buffer << tile.dx << tile.dy << tile.piece_type << tile.rotation
-	              << tile.runway_flags << tile.one_way_taxi << tile.user_taxi_dir_mask << tile.edge_block_mask;
+	uint8_t packed_flags = static_cast<uint8_t>(
+			((tile.rotation & MTPP_ROTATION_MASK) << MTPP_ROTATION_SHIFT) |
+			((tile.runway_flags & MTPP_RUNWAY_FLAGS_MASK) << MTPP_RUNWAY_FLAGS_SHIFT) |
+			(tile.one_way_taxi ? (1 << MTPP_ONE_WAY_TAXI_BIT) : 0));
+	uint8_t packed_masks = static_cast<uint8_t>(
+			((tile.user_taxi_dir_mask & MTPP_TAXI_DIR_MASK_MASK) << MTPP_TAXI_DIR_MASK_SHIFT) |
+			((tile.edge_block_mask & MTPP_EDGE_BLOCK_MASK) << MTPP_EDGE_BLOCK_SHIFT));
+	return buffer << tile.dx << tile.dy << tile.piece_type << packed_flags << packed_masks;
 }
 
 inline EndianBufferReader &operator >>(EndianBufferReader &buffer, ModularTemplatePlacementTile &tile)
 {
-	return buffer >> tile.dx >> tile.dy >> tile.piece_type >> tile.rotation
-	              >> tile.runway_flags >> tile.one_way_taxi >> tile.user_taxi_dir_mask >> tile.edge_block_mask;
+	uint8_t packed_flags = 0;
+	uint8_t packed_masks = 0;
+	buffer >> tile.dx >> tile.dy >> tile.piece_type >> packed_flags >> packed_masks;
+
+	tile.rotation = (packed_flags >> MTPP_ROTATION_SHIFT) & MTPP_ROTATION_MASK;
+	tile.runway_flags = (packed_flags >> MTPP_RUNWAY_FLAGS_SHIFT) & MTPP_RUNWAY_FLAGS_MASK;
+	tile.one_way_taxi = HasBit(packed_flags, MTPP_ONE_WAY_TAXI_BIT);
+	tile.user_taxi_dir_mask = (packed_masks >> MTPP_TAXI_DIR_MASK_SHIFT) & MTPP_TAXI_DIR_MASK_MASK;
+	tile.edge_block_mask = (packed_masks >> MTPP_EDGE_BLOCK_SHIFT) & MTPP_EDGE_BLOCK_MASK;
+	return buffer;
 }
 
 template <typename Tcont, typename Titer>

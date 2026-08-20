@@ -199,6 +199,7 @@ void AirportTemplateManager::Refresh()
 			t->height = j.value("height", static_cast<uint16_t>(0));
 			t->schema_version = j.value("schema_version", static_cast<uint32_t>(1));
 			if (t->name.empty() || t->width == 0 || t->height == 0) continue;
+			if (t->width > MAX_TEMPLATE_DIM || t->height > MAX_TEMPLATE_DIM) continue;
 
 			for (const auto &jt : j.value("tiles", json::array())) {
 				AirportTemplateTile tile;
@@ -251,6 +252,7 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 {
 	if (template_to_save.name.empty() || template_to_save.tiles.empty()) return false;
 	if (template_to_save.width == 0 || template_to_save.height == 0) return false;
+	if (template_to_save.width > MAX_TEMPLATE_DIM || template_to_save.height > MAX_TEMPLATE_DIM) return false;
 	if (template_to_save.tiles.size() > MAX_TEMPLATE_TILES) return false;
 
 	std::string base_slug = SanitizedSlug(template_to_save.name);

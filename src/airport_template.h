@@ -19,13 +19,25 @@
 /**
  * Maximum number of tiles a saved airport template may hold.
  *
- * Placement sends the whole layout as one PlaceModularAirportTemplate command,
- * so this is bounded by what a command payload can carry; see the static_assert
- * against MAX_COMMAND_PAYLOAD_SIZE in modular_airport_template_cmd.cpp. The
- * value below is far under that bound and only exists so a corrupt or hostile
- * template file cannot ask for an unbounded allocation.
+ * A station's bounding box is limited to station_spread, which tops out at 64,
+ * so 64 * 64 is the largest airport that can exist to be saved. Placement sends
+ * the whole layout as one PlaceModularAirportTemplate command, and the
+ * static_assert against MAX_COMMAND_PAYLOAD_SIZE in
+ * modular_airport_template_cmd.cpp checks that this many tiles still fit in one
+ * payload -- so no buildable airport is ever too large for a template, and the
+ * cap only stops a corrupt or hostile template file from asking for an
+ * unbounded allocation.
  */
-static constexpr uint16_t MAX_TEMPLATE_TILES = 2048;
+static constexpr uint16_t MAX_TEMPLATE_TILES = 64 * 64;
+
+/**
+ * Maximum width or height of a saved airport template.
+ *
+ * Placement encodes each tile's offset within the bounding box in one byte, so
+ * the box cannot exceed 256 in either direction. station_spread's own maximum
+ * of 64 keeps real templates well inside this.
+ */
+static constexpr uint16_t MAX_TEMPLATE_DIM = 255;
 
 /** Tile data within an airport template. */
 struct AirportTemplateTile {

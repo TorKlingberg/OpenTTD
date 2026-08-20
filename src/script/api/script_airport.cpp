@@ -304,7 +304,7 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 
 	tiles.clear();
 	tiles.reserve(layout.size() / ScriptAirport::MLF_STRIDE);
-	std::map<std::pair<uint16_t, uint16_t>, size_t> occupied;
+	std::map<std::pair<uint8_t, uint8_t>, size_t> occupied;
 
 	auto append_tile = [&](const ModularTemplatePlacementTile &tile) {
 		const auto coord = std::make_pair(tile.dx, tile.dy);
@@ -322,7 +322,9 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		const SQInteger taxi_dir_mask = layout[i + ScriptAirport::MLF_TAXI_DIR_MASK];
 		const SQInteger edge_fence_mask = layout[i + ScriptAirport::MLF_EDGE_FENCE_MASK];
 
-		if (dx < 0 || dx > UINT16_MAX || dy < 0 || dy > UINT16_MAX) return false;
+		/* Offsets are one byte on the command wire. A layout wider than that could
+		 * never be built anyway: station_spread caps a station's box at 64. */
+		if (dx < 0 || dx > UINT8_MAX || dy < 0 || dy > UINT8_MAX) return false;
 		if (rotation < 0 || rotation > 3) return false;
 		if (runway_flags < 0 || runway_flags > 0x0F) return false;
 		if (taxi_dir_mask < 0 || taxi_dir_mask > 0x0F) return false;
@@ -335,8 +337,8 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		if (::IsLegacySmallHangarPiece(gfx) && rotation != 0) return false;
 
 		ModularTemplatePlacementTile tile{};
-		tile.dx = static_cast<uint16_t>(dx);
-		tile.dy = static_cast<uint16_t>(dy);
+		tile.dx = static_cast<uint8_t>(dx);
+		tile.dy = static_cast<uint8_t>(dy);
 		tile.piece_type = gfx;
 		tile.rotation = static_cast<uint8_t>(rotation);
 		tile.runway_flags = ::IsModularRunwayPiece(gfx) ?
@@ -363,10 +365,10 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		for (const ModularCompoundPieceTile &ct : compound) {
 			const uint32_t part_dx = static_cast<uint32_t>(dx) + ct.dx;
 			const uint32_t part_dy = static_cast<uint32_t>(dy) + ct.dy;
-			if (part_dx > UINT16_MAX || part_dy > UINT16_MAX) return false;
+			if (part_dx > UINT8_MAX || part_dy > UINT8_MAX) return false;
 			ModularTemplatePlacementTile part = tile;
-			part.dx = static_cast<uint16_t>(part_dx);
-			part.dy = static_cast<uint16_t>(part_dy);
+			part.dx = static_cast<uint8_t>(part_dx);
+			part.dy = static_cast<uint8_t>(part_dy);
 			part.piece_type = ct.gfx;
 			if (!append_tile(part)) return false;
 		}
@@ -382,8 +384,8 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		const bool horizontal = (tile.rotation % 2) == 0;
 		const uint32_t next_x = static_cast<uint32_t>(tile.dx) + (horizontal ? 1 : 0);
 		const uint32_t next_y = static_cast<uint32_t>(tile.dy) + (horizontal ? 0 : 1);
-		if (next_x > UINT16_MAX || next_y > UINT16_MAX) continue;
-		const auto it = occupied.find({static_cast<uint16_t>(next_x), static_cast<uint16_t>(next_y)});
+		if (next_x > UINT8_MAX || next_y > UINT8_MAX) continue;
+		const auto it = occupied.find({static_cast<uint8_t>(next_x), static_cast<uint8_t>(next_y)});
 		if (it == occupied.end()) continue;
 		const ModularTemplatePlacementTile &next = tiles[it->second];
 		if (!::IsModularRunwayPiece(next.piece_type) || ((next.rotation % 2) == 0) != horizontal) continue;
@@ -487,7 +489,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 		data.height = static_cast<uint16_t>(size.height);
 		data.rotation = 0;
 		for (const ModularCompoundPieceTile &ct : compound) {
-			data.tiles.push_back({static_cast<uint16_t>(ct.dx), static_cast<uint16_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
+			data.tiles.push_back({static_cast<uint8_t>(ct.dx), static_cast<uint8_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
 		}
 		return ScriptObject::Command<Commands::PlaceModularAirportTemplate>::Do(tile,
 				(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),
@@ -551,8 +553,9 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforceCompanyModeValid(false);
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, rotation >= 0 && rotation <= 3);
-	EnforcePrecondition(false, width > 0 && width <= UINT16_MAX);
-	EnforcePrecondition(false, height > 0 && height <= UINT16_MAX);
+	/* The command encodes offsets within the box in one byte each. */
+	EnforcePrecondition(false, width > 0 && width <= UINT8_MAX);
+	EnforcePrecondition(false, height > 0 && height <= UINT8_MAX);
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
 	ModularTemplatePlacementData data;

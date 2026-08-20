@@ -1016,7 +1016,7 @@ private:
 			data.height = static_cast<uint16_t>(GetModularCompoundPieceSize(piece.apt_gfx).height);
 			data.rotation = 0;
 			for (const ModularCompoundPieceTile &ct : compound) {
-				data.tiles.push_back({static_cast<uint16_t>(ct.dx), static_cast<uint16_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
+				data.tiles.push_back({static_cast<uint8_t>(ct.dx), static_cast<uint8_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
 			}
 
 			auto proc = [=](bool test, StationID to_join) -> bool {

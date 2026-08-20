@@ -24,6 +24,8 @@
 #include "../landscape.h"
 #include "../station_base.h"
 #include "../station_cmd.h"
+#include "../misc/endian_buffer.hpp"
+#include "../network/core/config.h"
 #include "../station_map.h"
 #include "../language.h"
 #include "../town.h"
@@ -3326,5 +3328,100 @@ TEST_CASE("ModularAirportTakeoffRetargetsUnreachableRunway")
 		CHECK_FALSE(TryRetargetModularGroundGoal(v, st));
 		CHECK(v->ground_path_goal == chosen);
 		CHECK(v->modular_takeoff_tile == chosen);
+	}
+}
+
+TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
+{
+	/* Placement tile fields are bit-packed to keep a full-size layout inside one
+	 * command payload. A field that did not survive the round trip would make a
+	 * network client build a different airport than the server. */
+	SECTION("every field survives the round trip")
+	{
+		ModularTemplatePlacementTile src{};
+		src.dx = 63;
+		src.dy = 42;
+		src.piece_type = APT_RUNWAY_END;
+		src.rotation = 3;
+		src.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH;
+		src.one_way_taxi = true;
+		src.user_taxi_dir_mask = 0x0A;
+		src.edge_block_mask = 0x05;
+
+		std::vector<uint8_t> buffer;
+		EndianBufferWriter writer(buffer);
+		writer << src;
+
+		ModularTemplatePlacementTile dst{};
+		EndianBufferReader reader(buffer);
+		reader >> dst;
+
+		CHECK(buffer.size() == 5);
+		CHECK(dst.dx == src.dx);
+		CHECK(dst.dy == src.dy);
+		CHECK(dst.piece_type == src.piece_type);
+		CHECK(dst.rotation == src.rotation);
+		CHECK(dst.runway_flags == src.runway_flags);
+		CHECK(dst.one_way_taxi == src.one_way_taxi);
+		CHECK(dst.user_taxi_dir_mask == src.user_taxi_dir_mask);
+		CHECK(dst.edge_block_mask == src.edge_block_mask);
+	}
+
+	SECTION("packed fields do not bleed into each other")
+	{
+		/* Set each packed field to its maximum in turn and check the others stay clear. */
+		for (int field = 0; field < 5; field++) {
+			ModularTemplatePlacementTile src{};
+			src.rotation = (field == 0) ? 3 : 0;
+			src.runway_flags = (field == 1) ? 0x0F : 0;
+			src.one_way_taxi = (field == 2);
+			src.user_taxi_dir_mask = (field == 3) ? 0x0F : 0;
+			src.edge_block_mask = (field == 4) ? 0x0F : 0;
+
+			std::vector<uint8_t> buffer;
+			EndianBufferWriter writer(buffer);
+			writer << src;
+
+			ModularTemplatePlacementTile dst{};
+			EndianBufferReader reader(buffer);
+			reader >> dst;
+
+			CHECK(dst.rotation == src.rotation);
+			CHECK(dst.runway_flags == src.runway_flags);
+			CHECK(dst.one_way_taxi == src.one_way_taxi);
+			CHECK(dst.user_taxi_dir_mask == src.user_taxi_dir_mask);
+			CHECK(dst.edge_block_mask == src.edge_block_mask);
+		}
+	}
+
+	SECTION("a full-size layout fits in one command payload")
+	{
+		ModularTemplatePlacementData data;
+		data.width = 64;
+		data.height = 64;
+		data.rotation = 0;
+		for (uint16_t i = 0; i < MAX_TEMPLATE_TILES; i++) {
+			ModularTemplatePlacementTile t{};
+			t.dx = static_cast<uint8_t>(i % 64);
+			t.dy = static_cast<uint8_t>(i / 64);
+			t.piece_type = APT_APRON;
+			data.tiles.push_back(t);
+		}
+		REQUIRE(data.tiles.size() == 64 * 64);
+
+		std::vector<uint8_t> buffer;
+		EndianBufferWriter writer(buffer);
+		writer << data;
+
+		CHECK(buffer.size() <= MAX_COMMAND_PAYLOAD_SIZE);
+
+		ModularTemplatePlacementData back;
+		EndianBufferReader reader(buffer);
+		reader >> back;
+		REQUIRE(back.tiles.size() == data.tiles.size());
+		CHECK(back.width == data.width);
+		CHECK(back.height == data.height);
+		CHECK(back.tiles.back().dx == data.tiles.back().dx);
+		CHECK(back.tiles.back().dy == data.tiles.back().dy);
 	}
 }

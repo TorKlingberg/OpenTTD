@@ -35,9 +35,8 @@ static constexpr std::array<uint8_t, 4> kFenceEdgeBits = {0x01, 0x02, 0x04, 0x08
  * Must match operator<<(EndianBufferWriter &, const ModularTemplatePlacementTile &) in station_cmd.h.
  */
 static constexpr size_t TEMPLATE_PLACEMENT_TILE_WIRE_SIZE =
-		sizeof(uint16_t) + sizeof(uint16_t) + // dx, dy
-		sizeof(uint8_t) * 5 +                 // piece_type, rotation, runway_flags, user_taxi_dir_mask, edge_block_mask
-		sizeof(uint8_t);                      // one_way_taxi, sent as a byte
+		sizeof(uint8_t) * 3 + // dx, dy, piece_type
+		sizeof(uint8_t) * 2;  // rotation, runway_flags, one_way_taxi, user_taxi_dir_mask and edge_block_mask, bit-packed
 
 /** Fixed part of a PlaceModularAirportTemplate payload: tile, station_to_join, allow_adjacent, and the data header. */
 static constexpr size_t TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE =
@@ -49,13 +48,20 @@ static constexpr size_t TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE =
 static_assert(TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE + MAX_TEMPLATE_TILES * TEMPLATE_PLACEMENT_TILE_WIRE_SIZE <= MAX_COMMAND_PAYLOAD_SIZE,
 		"MAX_TEMPLATE_TILES template tiles no longer fit in a single command payload");
 
-static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint16_t width, uint16_t height)
+/**
+ * Rotate one template tile in place.
+ * @param tile The tile to rotate.
+ * @param r Number of 90-degree clockwise steps.
+ * @param width Unrotated bounding-box width, at most MAX_TEMPLATE_DIM.
+ * @param height Unrotated bounding-box height, at most MAX_TEMPLATE_DIM.
+ */
+static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint8_t width, uint8_t height)
 {
 	r &= 3;
 	if (r == 0) return;
 
-	uint16_t ox = tile.dx;
-	uint16_t oy = tile.dy;
+	uint8_t ox = tile.dx;
+	uint8_t oy = tile.dy;
 	uint8_t old_rotation = tile.rotation;
 
 	switch (r) {
@@ -351,6 +357,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	if (!IsValidTile(tile)) return CMD_ERROR;
 	if (data.width == 0 || data.height == 0) return CMD_ERROR;
+	/* Tile offsets are one byte each on the wire, so a bigger box could not be
+	 * addressed; a box this big is far past station_spread's maximum anyway. */
+	if (data.width > MAX_TEMPLATE_DIM || data.height > MAX_TEMPLATE_DIM) return CMD_ERROR;
 	if (data.rotation > 3) return CMD_ERROR;
 
 	/* Templates containing non-rotatable compound pieces (e.g. 3-tile small terminal)
@@ -374,6 +383,17 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		return CommandCost(STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE);
 	}
 
+	/* Per-tile flags are bit-packed on the wire (see ModularTemplatePlacementTilePacking),
+	 * so a value too wide for its field would survive a local execution and be
+	 * truncated by the round trip over the network. Reject it in both paths
+	 * instead, so client and server always execute the same layout. */
+	for (const ModularTemplatePlacementTile &t : data.tiles) {
+		if (t.rotation > MTPP_ROTATION_MASK) return CMD_ERROR;
+		if (t.runway_flags > MTPP_RUNWAY_FLAGS_MASK) return CMD_ERROR;
+		if (t.user_taxi_dir_mask > MTPP_TAXI_DIR_MASK_MASK) return CMD_ERROR;
+		if (t.edge_block_mask > MTPP_EDGE_BLOCK_MASK) return CMD_ERROR;
+	}
+
 	uint16_t rotated_w = 0, rotated_h = 0;
 	GetRotatedTemplateDimensions(data.width, data.height, data.rotation, rotated_w, rotated_h);
 
@@ -382,7 +402,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	for (const ModularTemplatePlacementTile &src_tile : data.tiles) {
 		ModularTemplatePlacementTile rt = src_tile;
-		RotateTemplateTile(rt, data.rotation, data.width, data.height);
+		RotateTemplateTile(rt, data.rotation, static_cast<uint8_t>(data.width), static_cast<uint8_t>(data.height));
 		if (rt.dx >= rotated_w || rt.dy >= rotated_h) return CMD_ERROR;
 		rotated_tiles.push_back(rt);
 	}
