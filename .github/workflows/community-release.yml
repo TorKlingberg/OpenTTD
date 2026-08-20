@@ -1,0 +1,245 @@
+name: Publish community build
+
+# Fork-specific workflow: builds unsigned native community binaries and
+# publishes them as a GitHub pre-release. Not part of upstream OpenTTD's
+# release infrastructure; deliberately does not call release.yml and never
+# touches OpenTTD's CDN/Steam/GOG/Windows Store/code-signing services.
+#
+# Usage: Actions -> Publish community build -> Run workflow, supplying
+# ref (source revision), tag (new tag to create) and an optional title.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Source ref to build (branch, tag, or SHA)'
+        required: true
+        default: master
+        type: string
+      tag:
+        description: 'Tag to create for this release, e.g. modular-airports-test-1'
+        required: true
+        type: string
+      title:
+        description: 'Release title (optional; derived from tag if left empty)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate inputs
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      title: ${{ steps.check.outputs.title }}
+      sha: ${{ steps.check.outputs.sha }}
+
+    steps:
+    - name: Checkout ref
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.ref }}
+        fetch-depth: 1
+
+    - name: Validate tag and resolve commit
+      id: check
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REF: ${{ inputs.ref }}
+        TAG: ${{ inputs.tag }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        if [ -z "${TAG}" ]; then
+          echo "::error::The 'tag' input must not be empty."
+          exit 1
+        fi
+
+        SHA="$(git rev-parse HEAD)"
+        echo "Resolved ref '${REF}' to commit ${SHA}"
+
+        if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          echo "::error::A release already exists for tag '${TAG}'. Choose a different tag."
+          exit 1
+        fi
+
+        if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+          EXISTING_SHA="$(git ls-remote origin "refs/tags/${TAG}" | cut -f1)"
+          if [ "${EXISTING_SHA}" != "${SHA}" ]; then
+            echo "::error::Tag '${TAG}' already exists and points at a different commit than the requested ref. Choose a different tag."
+            exit 1
+          fi
+        fi
+
+        RESOLVED_TITLE="${TITLE}"
+        if [ -z "${RESOLVED_TITLE}" ]; then
+          RESOLVED_TITLE="Community build ${TAG}"
+        fi
+
+        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+        echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+        echo "title=${RESOLVED_TITLE}" >> "$GITHUB_OUTPUT"
+
+  source:
+    name: Source
+    needs: validate
+
+    uses: ./.github/workflows/release-source.yml
+    secrets: inherit
+
+  linux:
+    name: Linux (Generic)
+    needs: source
+
+    uses: ./.github/workflows/release-linux.yml
+    secrets: inherit
+
+    with:
+      survey_key: ${{ needs.source.outputs.survey_key }}
+
+  windows:
+    name: Windows
+    needs: source
+
+    uses: ./.github/workflows/release-windows.yml
+    secrets: inherit
+
+    with:
+      # Force the "no installer" path: this both skips NSIS packaging (so we
+      # only get the portable ZIP CPack always produces) and skips the
+      # installer-signing step entirely, since that step is gated on
+      # is_tag == 'true'. We never want signing here, regardless of whether
+      # this run is actually creating a tag.
+      is_tag: ${{ 'false' }}
+      survey_key: ${{ needs.source.outputs.survey_key }}
+
+  macos:
+    name: macOS
+    needs: source
+
+    uses: ./.github/workflows/release-macos.yml
+    secrets: inherit
+
+    with:
+      survey_key: ${{ needs.source.outputs.survey_key }}
+
+  publish:
+    name: Create release
+    needs:
+    - validate
+    - source
+    - linux
+    - windows
+    - macos
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download source bundle
+      uses: actions/download-artifact@v8
+      with:
+        name: openttd-source
+        path: artifacts/source
+
+    - name: Download Linux bundle
+      uses: actions/download-artifact@v8
+      with:
+        name: openttd-linux-generic
+        path: artifacts/linux
+
+    - name: Download Windows x64 bundle
+      uses: actions/download-artifact@v8
+      with:
+        name: openttd-windows-x64
+        path: artifacts/windows
+
+    - name: Download macOS bundle
+      uses: actions/download-artifact@v8
+      with:
+        name: openttd-macos-universal
+        path: artifacts/macos
+
+    - name: Stage release assets
+      run: |
+        set -euo pipefail
+        mkdir -p staging
+
+        # Linux generic package (CPack TXZ bundle).
+        find artifacts/linux -maxdepth 1 -iname '*.tar.xz' -exec cp -v {} staging/ \;
+
+        # Windows x64 portable ZIP (no installer was built, see the
+        # "windows" job above; nothing signed is ever attached).
+        find artifacts/windows -maxdepth 1 -iname '*.zip' -exec cp -v {} staging/ \;
+
+        # macOS universal ZIP.
+        find artifacts/macos -maxdepth 1 -iname '*.zip' -exec cp -v {} staging/ \;
+
+        # Source ZIP only (skip the .tar.xz/.tar.gz duplicate and the
+        # changelog/README metadata files also present in this artifact).
+        find artifacts/source -maxdepth 1 -iname '*-source.zip' -exec cp -v {} staging/ \;
+
+        echo "Staged assets:"
+        ls -la staging/
+
+        if [ -z "$(ls -A staging)" ]; then
+          echo "::error::No release assets were staged; aborting."
+          exit 1
+        fi
+
+        (cd staging && sha256sum -- * > SHA256SUMS)
+
+    - name: Write release notes
+      env:
+        REF: ${{ inputs.ref }}
+        SHA: ${{ needs.validate.outputs.sha }}
+      run: |
+        # Built with individual `echo` lines rather than a heredoc: a heredoc
+        # body here would inherit this step's YAML indentation, and GitHub
+        # renders 4+ leading spaces as a code block, breaking the notes.
+        {
+          echo "## Modular Airports experimental build"
+          echo ""
+          echo "This is an unofficial experimental OpenTTD fork for testing modular airports."
+          echo ""
+          echo "This build is intended for community testing and is not an official OpenTTD release."
+          echo ""
+          echo "Source ref: \`${REF}\`"
+          echo "Source commit: \`${SHA}\`"
+          echo ""
+          echo "The Windows and macOS packages, if present, are not official OpenTTD signed/notarized releases."
+          echo ""
+          echo "Please report modular-airport feedback through the project/community discussion linked from the repository."
+        } > release-notes.md
+
+    - name: Create release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ needs.validate.outputs.tag }}
+        TITLE: ${{ needs.validate.outputs.title }}
+        SHA: ${{ needs.validate.outputs.sha }}
+      run: |
+        gh release create "${TAG}" \
+          --repo "${{ github.repository }}" \
+          --target "${SHA}" \
+          --title "${TITLE}" \
+          --notes-file release-notes.md \
+          --prerelease
+
+    - name: Upload release assets
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ needs.validate.outputs.tag }}
+      run: |
+        # A non-zero exit here (e.g. one asset failing to upload) fails this
+        # step and the job, so a partially-uploaded release is never
+        # reported as a successful run.
+        gh release upload "${TAG}" staging/* \
+          --repo "${{ github.repository }}" \
+          --clobber

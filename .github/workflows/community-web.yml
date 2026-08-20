@@ -1,0 +1,132 @@
+name: Publish web demo
+
+# Fork-specific workflow: builds the Emscripten/WebAssembly browser demo and
+# publishes it to GitHub Pages for this fork. Not part of upstream OpenTTD's
+# CI/release infrastructure and does not touch any OpenTTD-owned services.
+#
+# Usage: Actions -> Publish web demo -> Run workflow (ref defaults to master).
+# Requires Settings -> Pages -> Source -> GitHub Actions to be configured once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Source ref to build (branch, tag, or SHA)'
+        required: true
+        default: master
+        type: string
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Emscripten)
+
+    runs-on: ubuntu-latest
+    container:
+      # Keep this in sync with .github/workflows/preview-build.yml,
+      # .github/workflows/ci-emscripten.yml and os/emscripten/Dockerfile.
+      image: emscripten/emsdk:6.0.1
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.ref }}
+
+    - name: Fix dubious ownership
+      run: |
+        git config --global --add safe.directory ${GITHUB_WORKSPACE}
+
+    - name: Setup cache
+      uses: actions/cache@v6
+      with:
+        path: /emsdk/upstream/emscripten/cache
+        key: 6.0.1-${{ runner.os }}
+
+    - name: Add liblzma support
+      run: |
+        cp ${GITHUB_WORKSPACE}/os/emscripten/ports/liblzma.py /emsdk/upstream/emscripten/tools/ports/contrib/
+
+    - name: Install GCC problem matcher
+      uses: ammaraskar/gcc-problem-matcher@master
+
+    - name: Build (host tools)
+      run: |
+        mkdir build-host
+        cd build-host
+
+        echo "::group::CMake"
+        cmake .. -DOPTION_TOOLS_ONLY=ON
+        echo "::endgroup::"
+
+        echo "::group::Build"
+        echo "Running on $(nproc) cores"
+        make -j$(nproc) tools
+        echo "::endgroup::"
+
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+
+        echo "::group::CMake"
+        emcmake cmake .. \
+          -DHOST_BINARY_DIR=../build-host \
+          -DCMAKE_BUILD_TYPE=Release \
+          # EOF
+        echo "::endgroup::"
+
+        echo "::group::Build"
+        echo "Running on $(nproc) cores"
+        cmake --build . -j $(nproc) --target openttd
+        echo "::endgroup::"
+
+    - name: Prepare Pages content
+      run: |
+        mkdir public
+
+        cp build/openttd.data public/
+        cp build/openttd.html public/
+        cp build/openttd.js public/
+        cp build/openttd.wasm public/
+
+        # Make the project root directly playable, without appending
+        # /openttd.html. Emscripten's generated openttd.js resolves the
+        # .wasm/.data siblings relative to its own URL, so this works
+        # unmodified from a GitHub Pages project path (e.g. /OpenTTD/).
+        cp build/openttd.html public/index.html
+
+        touch public/.nojekyll
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: public
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
