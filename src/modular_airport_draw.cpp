@@ -89,12 +89,20 @@ static const DrawTileSpriteSpan _station_display_modular_old_runway_middle(PalSp
 static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_FAR_END, PAL_NONE});
 
 /**
- * Screen position, relative to the tile origin, of a correctly placed hangar building.
+ * Screen position, relative to the tile origin, of a correctly placed hangar building:
+ * its left edge, and the ground line its foot stands on.
+ *
  * openttd.grf anchors its hangar building sprites at (-2,-38) and the upstream layout
- * draws them from tile origin (14,0,0), which RemapCoords turns into (-28,+14).
+ * draws them from tile origin (14,0,0), which RemapCoords turns into (-28,+14). Those
+ * sprites are 64 by 55, so they span -30 to +34 across and -24 to +31 down.
+ *
+ * The foot is the half to pin, not the top: base sets do not agree on how tall a hangar
+ * is (aBase draws 51 rows where openttd.grf draws 55), and pinning the top of a shorter
+ * building leaves it hanging in the air. Width they do agree on — all three of the base
+ * sets checked draw a full tile width — so the left edge is safe to pin as it is.
  */
 static constexpr int HANGAR_BUILDING_SCREEN_X = -30;
-static constexpr int HANGAR_BUILDING_SCREEN_Y = -24;
+static constexpr int HANGAR_BUILDING_SCREEN_BOTTOM = 31;
 
 /** Tile origin the upstream hangar layouts give their building sprite. */
 static constexpr int HANGAR_BUILDING_ORIGIN_X = 14;
@@ -116,13 +124,14 @@ static constexpr int HANGAR_BUILDING_ORIGIN_Y = 0;
 static bool SolveHangarBuildingOffset(SpriteID sprite, int &offset_x, int &offset_y)
 {
 	Point offset;
-	GetSpriteSize(sprite, &offset, ZoomLevel::Normal);
+	const Dimension size = GetSpriteSize(sprite, &offset, ZoomLevel::Normal);
+	const int height = static_cast<int>(size.height) - offset.y;
 
 	/* RemapCoords(x, y, 0) is ((y - x) * 2, y + x), so the position follows from the sum
 	 * and the difference of its two components. The sum is pinned exactly; the
 	 * difference only moves the sprite in steps of two pixels and has to have the same
 	 * parity as the sum, so take the closest one that keeps both components whole. */
-	const int sum = HANGAR_BUILDING_SCREEN_Y - offset.y;
+	const int sum = HANGAR_BUILDING_SCREEN_BOTTOM - height - offset.y;
 	const int wanted_screen_x = HANGAR_BUILDING_SCREEN_X - offset.x;
 
 	bool found = false;
