@@ -87,6 +87,17 @@ jobs:
         cmake --build . -j $(nproc) --target openttd
         echo "::endgroup::"
 
+    - name: Verify bundled AI is embedded
+      run: |
+        # ModularAirportAI is preloaded by CMakeLists.txt into openttd.data.
+        # It is easy to lose that entry silently: the demo still builds and
+        # runs, it just has no ModularAirportAI in the AI list. openttd.data
+        # holds the file contents, openttd.js the path metadata.
+        grep -qa 'ModularAirportAI' build/openttd.js build/openttd.data \
+          || { echo "::error::ModularAirportAI is not bundled in the web build"; exit 1; }
+        grep -qa 'MDAP' build/openttd.data \
+          || { echo "::error::ModularAirportAI info.nut is missing from openttd.data"; exit 1; }
+
     - name: Prepare Pages content
       run: |
         mkdir public

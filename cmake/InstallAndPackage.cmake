@@ -36,6 +36,15 @@ if (NOT EMSCRIPTEN)
             COMPONENT language_files
             REGEX "ai/[^\.]+$" EXCLUDE # Ignore subdirs in ai dir
     )
+
+    # Fork-specific: the rule above deliberately skips subdirs of ai/, and the
+    # build dir's ai/ only ever holds the API compat scripts. Install the
+    # bundled ModularAirportAI explicitly so every packaged build ships it.
+    install(DIRECTORY
+                    ${CMAKE_SOURCE_DIR}/ai/ModularAirportAI
+            DESTINATION ${DATA_DESTINATION_DIR}/ai
+            COMPONENT language_files
+    )
 else()
     install(FILES
                 ${CMAKE_BINARY_DIR}/openttd.js
