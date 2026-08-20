@@ -242,7 +242,7 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
  */
 static const DrawTileSprites *GetTileLayoutForTemplateTile(const AirportTemplateTile &t)
 {
-	uint8_t gfx = t.piece_type >= NEW_AIRPORTTILE_OFFSET ? APT_APRON : t.piece_type;
+	uint8_t gfx = t.piece_type >= NEW_AIRPORTTILE_OFFSET ? static_cast<uint8_t>(APT_APRON) : t.piece_type;
 	return GetAirportTileLayoutWithModularOverrides(gfx, t.piece_type, t.rotation, 0);
 }
 

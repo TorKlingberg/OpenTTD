@@ -70,8 +70,6 @@
 
 #include "safeguards.h"
 
-void CcBuildAirport(Commands, const CommandCost &result, TileIndex tile);
-
 StationID _last_modular_airport_station = StationID::Invalid();
 static uint8_t _modular_hangar_rotation = 0;   ///< 0=SE, 1=NE, 2=NW, 3=SW
 static uint8_t _modular_cosmetic_piece = 0;    ///< Selected cosmetic piece in _cosmetic_pieces.

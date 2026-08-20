@@ -3697,7 +3697,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		SetTaxiReservationUnlessOperationRunway(v, v->tile);
 	}
 
-	if (v->taxi_path == nullptr || v->taxi_path_index + 1 >= v->taxi_path->tiles.size()) {
+	if (v->taxi_path == nullptr || static_cast<size_t>(v->taxi_path_index) + 1 >= v->taxi_path->tiles.size()) {
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
 		HandleModularGroundArrival(v);
@@ -3841,7 +3841,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	BuildReservationKeepSet(v, st, keep_set);
 	ReconcileAircraftReservations(v, st, keep_set, "post-step");
 
-	if (v->tile == v->ground_path_goal || v->taxi_path_index + 1 >= v->taxi_path->tiles.size()) {
+	if (v->tile == v->ground_path_goal || static_cast<size_t>(v->taxi_path_index) + 1 >= v->taxi_path->tiles.size()) {
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
 		HandleModularGroundArrival(v);
