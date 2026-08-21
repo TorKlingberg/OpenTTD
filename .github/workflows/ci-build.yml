@@ -9,9 +9,14 @@ on:
 env:
   CTEST_OUTPUT_ON_FAILURE: 1
 
+# Fork-specific change: upstream keeps every master run alive, because upstream
+# master is shared and each commit needs its own verdict. Here master is a
+# single-developer branch, so a burst of commits only produced a queue of
+# superseded 17-minute runs to wait on. Cancel superseded runs on master too;
+# the newest commit is the one whose verdict matters.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: true
 
 jobs:
   emscripten:
