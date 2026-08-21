@@ -26,6 +26,6 @@
 
 ## Different base graphics
 
-[![The Modular Airport Builder and a large custom airport using aBase graphics](aBase.png)](aBase.png)
+[![The Modular Airport Builder and a large custom airport using aBase graphics](aBase.jpg)](aBase.jpg)
 
 [![A compact modular airport using OpenGFX2 graphics](opengfx2.png)](opengfx2.png)
