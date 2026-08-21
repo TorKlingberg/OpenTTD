@@ -138,7 +138,8 @@ static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_
 	}
 }
 
-CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st)
+CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st,
+		std::optional<uint8_t> piece_type = std::nullopt)
 {
 	/* Validate flags: at least one operation and exactly one direction must be set */
 	if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
@@ -155,7 +156,9 @@ CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *
 	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
 
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data != nullptr && !IsModularRunwayPiece(data->piece_type)) return CMD_ERROR;
+	const std::optional<uint8_t> checked_piece_type = piece_type.has_value() ? piece_type :
+			data != nullptr ? std::optional<uint8_t>{data->piece_type} : std::nullopt;
+	if (checked_piece_type.has_value() && !IsModularRunwayPiece(*checked_piece_type)) return CMD_ERROR;
 
 	return CommandCost();
 }
@@ -217,7 +220,8 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 	return CommandCost();
 }
 
-CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st, uint8_t piece_type = 0, uint8_t rotation = 0)
+CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st,
+		std::optional<uint8_t> piece_type = std::nullopt, uint8_t rotation = 0)
 {
 	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
 	 * BuildModularAirportTile_Check has already validated the placement. The taxi-direction
@@ -230,8 +234,9 @@ CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool on
 		if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
 	}
 
-	uint8_t current_piece_type = (data != nullptr) ? data->piece_type : piece_type;
-	uint8_t current_rotation = (data != nullptr) ? data->rotation : rotation;
+	const bool has_proposed_piece = piece_type.has_value();
+	const uint8_t current_piece_type = has_proposed_piece ? *piece_type : data != nullptr ? data->piece_type : 0;
+	const uint8_t current_rotation = has_proposed_piece ? rotation : data != nullptr ? data->rotation : 0;
 
 	if (current_piece_type != 0) {
 		if (!IsTaxiwayPiece(current_piece_type)) return CMD_ERROR;
@@ -569,7 +574,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
 			uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
-			ret = SetRunwayFlags_Check(t, runway_flags, st);
+			ret = SetRunwayFlags_Check(t, runway_flags, st, rt.piece_type);
 			if (ret.Failed()) return ret;
 		}
 

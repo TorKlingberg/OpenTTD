@@ -619,6 +619,98 @@ TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 	RebuildViewportKdtree();
 }
 
+TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+
+	const CompanyID saved_company = _current_company;
+	const bool saved_distant_join = _settings_game.station.distant_join_stations;
+	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const uint8_t saved_station_spread = _settings_game.station.station_spread;
+	const bool saved_noise = _settings_game.economy.station_noise_level;
+	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+
+	_settings_game.station.distant_join_stations = true;
+	_settings_game.station.never_expire_airports = true;
+	_settings_game.station.station_spread = 64;
+	_settings_game.economy.station_noise_level = false;
+	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	Map::Allocate(64, 64);
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildViewportKdtree();
+	AirportSpec::ResetAirports();
+
+	Company *company = Company::CreateAtIndex(CompanyID(0));
+	REQUIRE(company != nullptr);
+	company->money = INT64_MAX;
+	company->clear_limit = UINT32_MAX;
+	_current_company = company->index;
+
+	Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+	REQUIRE(town != nullptr);
+	town->cache.population = 10000;
+	RebuildTownKdtree();
+
+	const TileIndex base = TileXY(4, 4);
+	REQUIRE(CmdBuildModularAirportTile(DoCommandFlag::Execute, base, APT_APRON,
+			NEW_STATION, false, 0, 0x0F, false, false).Succeeded());
+	Station *st = Station::GetByTile(base);
+	REQUIRE(st != nullptr);
+
+	ModularTemplatePlacementData data;
+	data.width = 1;
+	data.height = 1;
+	data.tiles.emplace_back();
+	ModularTemplatePlacementTile &tile = data.tiles.back();
+	tile.piece_type = APT_RUNWAY_END;
+	tile.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH;
+
+	CommandCost result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, st->index, false, data);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(base);
+	REQUIRE(tile_data != nullptr);
+	CHECK(IsModularRunwayPiece(tile_data->piece_type));
+	CHECK(tile_data->runway_flags == tile.runway_flags);
+
+	tile.piece_type = APT_APRON;
+	tile.one_way_taxi = true;
+	tile.user_taxi_dir_mask = 0x02;
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, st->index, false, data);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	tile_data = st->airport.GetModularTileData(base);
+	REQUIRE(tile_data != nullptr);
+	CHECK(tile_data->piece_type == APT_APRON);
+	CHECK(tile_data->one_way_taxi);
+	CHECK(tile_data->user_taxi_dir_mask == 0x02);
+
+	_current_company = saved_company;
+	_settings_game.station.distant_join_stations = saved_distant_join;
+	_settings_game.station.never_expire_airports = saved_never_expire;
+	_settings_game.station.station_spread = saved_station_spread;
+	_settings_game.economy.station_noise_level = saved_noise;
+	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	TimerGameCalendar::year = saved_year;
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
+}
+
 TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 {
 	MockEnvironment::Instance();
