@@ -1,13 +1,21 @@
 # Modular Airports for OpenTTD
 Ever since I first played Transport Tycoon in the '90s I've wanted airports to be more interesting, and since I first encountered OpenTTD 20 years ago I've dreamt of modular airports.
 
-Features:
+![A large modular airport with multiple runways and terminal buildings](docs/images/modular-airports/big_airport.png)
+
+### Features
 * Manually build your airport by placing runways, stands, aprons (taxiways), hangars, terminals, etc.
 * Planes automatically find their way while taxiing on the ground, much like road vehicles.
 * To get started, you can place a modular version of a stock airport and then modify it.
 * Expand your airport over time.
 * Save your designs as templates.
 * Choose the direction of runways and allow landings, takeoffs, or both.
+
+### Building and templates
+
+![The modular airport builder and its airport-building picker](docs/images/modular-airports/build_ui.png)
+
+![The airport template manager previewing a saved modular airport](docs/images/modular-airports/templates.png)
 
 It is AI coded. It wasn't a single prompt though: I have worked on this over a couple of months in my spare time. This is a fork of OpenTTD, and I don't expect it to ever be merged into the main game.
 
