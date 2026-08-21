@@ -144,6 +144,17 @@ static std::map<VehicleID, ModularTakeoffFailLogState> _takeoff_fail_state;
  * a state may remain until the end of the pass, but every query rechecks their live
  * fields, making that harmless. Calls outside CallVehicleTicks use the uncached scan,
  * which keeps commands, save/load recovery, and unit-test state mutation exact.
+ *
+ * The soundness of all that rests on one invariant: **an aircraft only ever enters a
+ * runway-flow state during its own tick**, which CallVehicleTicks follows immediately
+ * with UpdateModularAirportRunwayStateCache. A superfluous candidate is harmless, but a
+ * missing one is a false negative that clears an aircraft onto a runway another aircraft
+ * is already using. Nothing moves another aircraft into one of these states mid-pass
+ * today: the cross-aircraft mutators (TeleportAircraftOnModularTile,
+ * UpdateAirplanesOnNewStation) only ever leave a state, and both run from commands,
+ * outside the pass. A go-around, runway preemption or similar added later would break
+ * it silently, so VerifyModularRunwayStateCache() re-derives the set at end of pass in
+ * debug builds and asserts nothing was missed.
  */
 struct ModularRunwayStateCache {
 	bool vehicle_tick_active = false;
@@ -200,9 +211,30 @@ void UpdateModularAirportRunwayStateCache(const Aircraft *v)
 	InsertModularRunwayStateCandidate(v->index);
 }
 
+/**
+ * Assert that no aircraft became a runway-state candidate without being recorded.
+ *
+ * Only meaningful once the set has been built: before that a query would derive it from
+ * live state anyway. Costs one pool walk per tick pass, against the per-query walk this
+ * cache removes, and only in debug builds.
+ */
+static void VerifyModularRunwayStateCache()
+{
+#ifdef _DEBUG
+	const auto &cache = _modular_runway_state_cache;
+	if (!cache.built) return;
+
+	for (const Aircraft *v : Aircraft::Iterate()) {
+		if (!IsModularRunwayStateCandidate(v)) continue;
+		assert(std::binary_search(cache.candidates.begin(), cache.candidates.end(), v->index));
+	}
+#endif
+}
+
 void EndModularAirportRunwayStateCache()
 {
 	auto &cache = _modular_runway_state_cache;
+	if (cache.vehicle_tick_active) VerifyModularRunwayStateCache();
 	cache.vehicle_tick_active = false;
 	cache.built = false;
 	cache.candidates.clear();

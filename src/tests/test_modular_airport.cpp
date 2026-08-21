@@ -1618,6 +1618,13 @@ TEST_CASE("ModularAirportMovementHelpers")
 	}
 }
 
+/* The candidate cache is process-global, so an aborted REQUIRE between Begin and End
+ * would leave it armed and silently switch every later test case onto the cached path. */
+struct ScopedModularRunwayStateCache {
+	ScopedModularRunwayStateCache() { BeginModularAirportRunwayStateCache(); }
+	~ScopedModularRunwayStateCache() { EndModularAirportRunwayStateCache(); }
+};
+
 TEST_CASE("ModularAirportRunwayStateCacheTracksSameTickTransitions")
 {
 	Map::Allocate(64, 64);
@@ -1639,7 +1646,7 @@ TEST_CASE("ModularAirportRunwayStateCacheTracksSameTickTransitions")
 
 	/* The first query lazily builds an empty candidate set. An aircraft that enters
 	 * landing later in the same vehicle-tick pass must become visible immediately. */
-	BeginModularAirportRunwayStateCache();
+	ScopedModularRunwayStateCache scoped_cache;
 	VehicleID found = VehicleID::Invalid();
 	CHECK_FALSE(IsContiguousModularRunwayReservedInStateByOther(requester, st, runway_tiles, &found));
 
@@ -1659,7 +1666,6 @@ TEST_CASE("ModularAirportRunwayStateCacheTracksSameTickTransitions")
 	blocker->modular_takeoff_tile = base;
 	UpdateModularAirportRunwayStateCache(blocker);
 	CHECK(IsContiguousModularRunwayQueuedForTakeoffByOther(requester, st, base));
-	EndModularAirportRunwayStateCache();
 }
 
 /* Mark a tile as occupied by another aircraft for landing-chain validation tests.
