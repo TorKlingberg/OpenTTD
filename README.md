@@ -40,6 +40,10 @@ There is also a new AI player, ModularAirportAI, that builds modular airports. I
 
 This is an experimental fork. Savegames written by it cannot be opened in official OpenTTD, and multiplayer participants must use the same fork build.
 
+Please send me any feedback, bug reports or feature requests.
+
+[More screenshots](docs/images/modular-airports/README.md)
+
 Web demo: https://torklingberg.github.io/OpenTTD/
 
 * * *
