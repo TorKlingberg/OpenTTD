@@ -110,9 +110,13 @@ Run only modular airport tests:
 
 | File | Purpose |
 |------|---------|
-| `src/modular_airport_cmd.cpp` | All modular airport movement, reservation, holding-loop, and pathfinding logic (~4200 lines). |
+| `src/modular_airport_cmd.cpp` | Modular movement, reservation, landing/takeoff selection, and layout-derived properties (noise, catchment, maintenance, safety). ~3900 lines. |
+| `src/modular_airport_holding.cpp` | Dubins holding loop, approach geometry, computed helicopter landing/takeoff/service tiles. |
+| `src/modular_airport_build.cpp` | `CmdBuildModularAirportTile`, `CmdBuildModularAirportFromStock`, `CmdUpgradeModularAirportTile`, `RemoveModularAirportTile`. |
+| `src/modular_airport_template_cmd.cpp` | `CmdSetRunwayFlags`, `CmdSetTaxiwayFlags`, `CmdSetModularAirportEdgeFence`, `CmdPlaceModularAirportTemplate`. |
+| `src/modular_airport_draw.cpp` | Sprite layout overrides, hangar layouts, perimeter fences, direction overlays. |
 | `src/modular_airport_cmd.h` | Declarations + inline helpers (`IsModularRunwayPiece`, `IsRunwayPieceOnAxis`, MGT_* constants). |
-| `src/modular_airport_gui.cpp` | Modular airport builder UI (`BuildModularAirportWindow` + hangar/cosmetic pickers). |
+| `src/modular_airport_gui.cpp` | Modular airport builder UI (`BuildModularAirportWindow` + hangar/cosmetic/helipad pickers, fence and upgrade tools, info overlays). |
 | `src/modular_airport_gui.h` | `ShowBuildModularAirportWindow` + shared GUI globals. |
 | `src/aircraft_cmd.cpp` | Classic FTA state machine, event handlers, shared mechanics (`UpdateAircraftSpeed`, etc.). |
 | `src/aircraft.h` | Aircraft struct. Modular fields are under the `Modular airport ground pathfinding` comment block. |
@@ -121,7 +125,10 @@ Run only modular airport tests:
 | `src/base_station_base.h` | `ModularAirportTileData` struct (per-tile metadata) |
 | `src/station_map.h`, `src/modular_airport_cmd.cpp` | Reservation flag helpers plus modular reservation owner helpers (`GetModularAirportTileReservationOwner`, etc.) |
 | `src/table/airporttile_ids.h` | `AirportTiles` enum: `APT_STAND`, `APT_APRON`, `APT_RUNWAY_*`, `APT_DEPOT_*`, etc. |
-| `src/station_cmd.cpp` | `CmdBuildModularAirportTile`, `CmdSetTaxiwayFlags`, `CmdSetRunwayFlags` |
+| `src/station_cmd.h` | Command declarations + `DEF_CMD_TRAIT` registrations (`Commands::BuildModularAirportTile` etc.), `ModularTemplatePlacementData`. |
+| `src/station_base.h` | `Airport`'s modular tile vector, index, and the layout-derived caches + `MarkLayoutDirty`. |
+| `src/airport.h` | `AT_MODULAR`, `AirportBlock::Modular`, `ModularHoldingLoop`, holding constants. |
+| `src/script/api/script_airport.hpp` | NoAI modular query/build API (`ModularPiece`, `MLF_*` layout arrays, `PlaceModularAirportLayout`). |
 | `src/airport_gui.cpp` | Shared airport toolbar + classic FTA airport picker UI |
 | `scripts/parse_airport_template.py` | Visualize template JSON files (`--grid`, `--detail`, `--runways`, `--raw`). |
 
