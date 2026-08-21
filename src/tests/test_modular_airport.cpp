@@ -1550,6 +1550,50 @@ TEST_CASE("ModularAirportMovementHelpers")
 	}
 }
 
+TEST_CASE("ModularAirportRunwayStateCacheTracksSameTickTransitions")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+	AddLargeRunway(st, base, 5, 0, RUF_DEFAULT);
+
+	SetupAircraftPool();
+	Aircraft *requester = CreateAircraft(VehicleID(10));
+	requester->targetairport = st->index;
+	Aircraft *blocker = CreateAircraft(VehicleID(11));
+	blocker->targetairport = st->index;
+	blocker->modular_landing_tile = base;
+	blocker->state = FLYING;
+
+	std::vector<TileIndex> runway_tiles;
+	REQUIRE(GetContiguousModularRunwayTiles(st, base, runway_tiles));
+
+	/* The first query lazily builds an empty candidate set. An aircraft that enters
+	 * landing later in the same vehicle-tick pass must become visible immediately. */
+	BeginModularAirportRunwayStateCache();
+	VehicleID found = VehicleID::Invalid();
+	CHECK_FALSE(IsContiguousModularRunwayReservedInStateByOther(requester, st, runway_tiles, &found));
+
+	blocker->state = LANDING;
+	UpdateModularAirportRunwayStateCache(blocker);
+	found = VehicleID::Invalid();
+	CHECK(IsContiguousModularRunwayReservedInStateByOther(requester, st, runway_tiles, &found));
+	CHECK(found == blocker->index);
+
+	/* Leaving a state does not need an erase: cached IDs are only candidates and
+	 * every query still evaluates the aircraft's current fields. */
+	blocker->state = FLYING;
+	CHECK_FALSE(IsContiguousModularRunwayReservedInStateByOther(requester, st, runway_tiles));
+
+	/* The same cache also serves the takeoff-queue check. */
+	blocker->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+	blocker->modular_takeoff_tile = base;
+	UpdateModularAirportRunwayStateCache(blocker);
+	CHECK(IsContiguousModularRunwayQueuedForTakeoffByOther(requester, st, base));
+	EndModularAirportRunwayStateCache();
+}
+
 /* Mark a tile as occupied by another aircraft for landing-chain validation tests.
  * Must register the tile in the blocker's taxi_reserved_tiles so that
  * TryClearStaleModularReservation does not auto-clear it. */

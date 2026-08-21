@@ -1010,6 +1010,7 @@ void CallVehicleTicks()
 	PerformanceAccumulator::Reset(PerformanceElement::GameLoopShips);
 	PerformanceAccumulator::Reset(PerformanceElement::GameLoopAircraft);
 
+	BeginModularAirportRunwayStateCache();
 	for (Vehicle *v : Vehicle::Iterate()) {
 		[[maybe_unused]] VehicleID vehicle_index = v->index;
 
@@ -1036,6 +1037,7 @@ void CallVehicleTicks()
 		}
 
 		assert(Vehicle::Get(vehicle_index) == v);
+		if (v->type == VehicleType::Aircraft) UpdateModularAirportRunwayStateCache(Aircraft::From(v));
 
 		switch (v->type) {
 			default: break;
@@ -1098,6 +1100,7 @@ void CallVehicleTicks()
 			}
 		}
 	}
+	EndModularAirportRunwayStateCache();
 
 	for (auto &it : _vehicles_to_autoreplace) {
 		Vehicle *v = Vehicle::Get(it.first);

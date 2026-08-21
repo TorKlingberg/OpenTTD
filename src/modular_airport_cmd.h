@@ -315,6 +315,10 @@ bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *
 bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
 bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker = nullptr);
 bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const Station *st, TileIndex runway_tile);
+/** Scope and update the runway-state candidate cache around one CallVehicleTicks pass. */
+void BeginModularAirportRunwayStateCache();
+void UpdateModularAirportRunwayStateCache(const Aircraft *v);
+void EndModularAirportRunwayStateCache();
 void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<TileIndex> &keep_set);
 void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<const TileIndex> keep_set, const char *reason);
 bool ShouldRetainRunwayReservation(const Aircraft *v, const Station *st);

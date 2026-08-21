@@ -131,11 +131,108 @@ struct ModularTakeoffFailLogState {
 static std::unordered_map<uint32_t, uint64_t> _rate_limit_last_tick;
 static std::map<VehicleID, ModularTakeoffFailLogState> _takeoff_fail_state;
 
+/**
+ * Aircraft that can affect a modular runway during the current vehicle-tick pass.
+ *
+ * Aircraft share the global vehicle pool with effects and every other vehicle type,
+ * so Aircraft::Iterate() walks the whole pool. Runway entry is revalidated before
+ * every taxi step; doing that pool walk for every check dominated busy saves.
+ *
+ * The cache is deliberately scoped to one CallVehicleTicks pass. It is built lazily
+ * from live state on the first runway query, then aircraft that enter a relevant
+ * state later in the same pass are inserted after their tick. Candidates that leave
+ * a state may remain until the end of the pass, but every query rechecks their live
+ * fields, making that harmless. Calls outside CallVehicleTicks use the uncached scan,
+ * which keeps commands, save/load recovery, and unit-test state mutation exact.
+ */
+struct ModularRunwayStateCache {
+	bool vehicle_tick_active = false;
+	bool built = false;
+	std::vector<VehicleID> candidates;
+};
+
+static ModularRunwayStateCache _modular_runway_state_cache;
+
+static bool IsModularRunwayFlowState(uint8_t state)
+{
+	return state == LANDING || state == ENDLANDING ||
+			state == HELILANDING || state == HELIENDLANDING ||
+			state == TAKEOFF || state == STARTTAKEOFF || state == ENDTAKEOFF;
+}
+
+static bool IsModularRunwayStateCandidate(const Aircraft *v)
+{
+	if (v == nullptr || !v->IsNormalAircraft()) return false;
+
+	return IsModularRunwayFlowState(v->state) || v->modular_ground_target == MGT_ROLLOUT ||
+			v->modular_ground_target == MGT_RUNWAY_TAKEOFF;
+}
+
+static void InsertModularRunwayStateCandidate(VehicleID id)
+{
+	auto &candidates = _modular_runway_state_cache.candidates;
+	const auto it = std::lower_bound(candidates.begin(), candidates.end(), id);
+	if (it == candidates.end() || *it != id) candidates.insert(it, id);
+}
+
+static void BuildModularRunwayStateCache()
+{
+	auto &cache = _modular_runway_state_cache;
+	cache.candidates.clear();
+	for (const Aircraft *v : Aircraft::Iterate()) {
+		if (IsModularRunwayStateCandidate(v)) cache.candidates.push_back(v->index);
+	}
+	cache.built = true;
+}
+
+void BeginModularAirportRunwayStateCache()
+{
+	auto &cache = _modular_runway_state_cache;
+	cache.vehicle_tick_active = true;
+	cache.built = false;
+	cache.candidates.clear();
+}
+
+void UpdateModularAirportRunwayStateCache(const Aircraft *v)
+{
+	auto &cache = _modular_runway_state_cache;
+	if (!cache.vehicle_tick_active || !cache.built || !IsModularRunwayStateCandidate(v)) return;
+	InsertModularRunwayStateCandidate(v->index);
+}
+
+void EndModularAirportRunwayStateCache()
+{
+	auto &cache = _modular_runway_state_cache;
+	cache.vehicle_tick_active = false;
+	cache.built = false;
+	cache.candidates.clear();
+}
+
+template <typename F>
+static bool ForEachModularRunwayStateCandidate(F &&func)
+{
+	auto &cache = _modular_runway_state_cache;
+	if (cache.vehicle_tick_active) {
+		if (!cache.built) BuildModularRunwayStateCache();
+		for (VehicleID id : cache.candidates) {
+			const Aircraft *v = Aircraft::GetIfValid(id);
+			if (v != nullptr && func(v)) return true;
+		}
+		return false;
+	}
+
+	for (const Aircraft *v : Aircraft::Iterate()) {
+		if (func(v)) return true;
+	}
+	return false;
+}
+
 /** Reset all static state in modular airport code; called after loading a save. */
 void ResetModularAirportStaticState()
 {
 	_rate_limit_last_tick.clear();
 	_takeoff_fail_state.clear();
+	EndModularAirportRunwayStateCache();
 }
 
 bool IsModularHelipadPiece(uint8_t gfx)
@@ -1461,22 +1558,19 @@ bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, 
 
 bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const Station *st, std::span<const TileIndex> runway_tiles, VehicleID *blocker)
 {
-	for (const Aircraft *other : Aircraft::Iterate()) {
-		if (other->index == v->index) continue;
-		if (!other->IsNormalAircraft()) continue;
+	return ForEachModularRunwayStateCandidate([&](const Aircraft *other) {
+		if (other->index == v->index) return false;
+		if (!other->IsNormalAircraft()) return false;
 
 		const bool tied_to_station = (other->targetairport == st->index || other->last_station_visited == st->index);
-		if (!tied_to_station) continue;
+		if (!tied_to_station) return false;
 
 		const ModularAirportTileData *other_tile_data = (IsValidTile(other->tile) ? st->airport.GetModularTileData(other->tile) : nullptr);
 		const bool other_on_runway = (other_tile_data != nullptr && IsModularRunwayPiece(other_tile_data->piece_type));
 
-		const bool in_runway_flow =
-				other->state == LANDING || other->state == ENDLANDING ||
-				other->state == HELILANDING || other->state == HELIENDLANDING ||
-				other->state == TAKEOFF || other->state == STARTTAKEOFF || other->state == ENDTAKEOFF ||
+		const bool in_runway_flow = IsModularRunwayFlowState(other->state) ||
 				(other->modular_ground_target == MGT_ROLLOUT && other_on_runway);
-		if (!in_runway_flow) continue;
+		if (!in_runway_flow) return false;
 
 		bool overlaps = false;
 		for (TileIndex tile : other->modular_runway_reservation) {
@@ -1499,9 +1593,8 @@ bool IsContiguousModularRunwayReservedInStateByOther(const Aircraft *v, const St
 			if (blocker != nullptr) *blocker = other->index;
 			return true;
 		}
-	}
-
-	return false;
+		return false;
+	});
 }
 
 bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const Station *st, TileIndex runway_tile)
@@ -1509,19 +1602,18 @@ bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const S
 	std::vector<TileIndex> runway_tiles;
 	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) return false;
 
-	for (const Aircraft *other : Aircraft::Iterate()) {
-		if (other->index == v->index) continue;
-		if (!other->IsNormalAircraft()) continue;
-		if (other->targetairport != st->index && other->last_station_visited != st->index) continue;
-		if (other->modular_ground_target != MGT_RUNWAY_TAKEOFF) continue;
-		if (!IsValidTile(other->modular_takeoff_tile)) continue;
+	return ForEachModularRunwayStateCandidate([&](const Aircraft *other) {
+		if (other->index == v->index) return false;
+		if (!other->IsNormalAircraft()) return false;
+		if (other->targetairport != st->index && other->last_station_visited != st->index) return false;
+		if (other->modular_ground_target != MGT_RUNWAY_TAKEOFF) return false;
+		if (!IsValidTile(other->modular_takeoff_tile)) return false;
 
 		if (std::find(runway_tiles.begin(), runway_tiles.end(), other->modular_takeoff_tile) != runway_tiles.end()) {
 			return true;
 		}
-	}
-
-	return false;
+		return false;
+	});
 }
 
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target, TileIndex rollout_tile)
