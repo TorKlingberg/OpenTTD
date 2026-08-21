@@ -164,7 +164,17 @@ Notes:
 
 ## Saveload
 
-Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved from `SLV_MODULAR_AIRPORT_RESERVATION_VECTORS` onward because map-level reservation bits affect multiplayer game state. The crossing-required ground-path cache is saved via the `MACP` chunk from `SLV_MODULAR_AIRPORT_CROSSING_CACHE` because it changes path choices. `modular_holding_wp_index` is saved from `SLV_MODULAR_AIRPORT_STATE_FIXES` because it affects aircraft movement. `taxi_path` and `landing_chain_path` are **not** saved — paths are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved because map-level reservation bits affect multiplayer game state; the crossing-required ground-path cache is saved via the `MACP` chunk because it changes path choices; `modular_holding_wp_index` is saved because it affects aircraft movement. `taxi_path` and `landing_chain_path` are **not** saved — paths are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+
+### Fork savegame versioning
+
+**Nothing of this fork's goes into `SaveLoadVersion`.** That enum is upstream's and is merged verbatim; appending to it renumbers on every upstream merge and puts fork savegames on upstream's ordering axis, where they claim to be newer than upstream features they were written without. Fork features are versioned on their own axis instead (`src/saveload/extended_version_sl.h`), following the shape of JGRPP's SLXI chunk so that porting a feature there is mechanical:
+
+- Savegames written here set `SAVEGAME_VERSION_EXT` (`0x8000`) in the header version word on top of an ordinary upstream version. Upstream rejects them with a plain "savegame too new" instead of misreading map bits; the bit is stripped on load.
+- The `XVER` chunk holds one `{name, uint16 version, flags}` row per fork feature (`upstream_version`, `modular_airport`). It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved flags say it may be dropped.
+- Gate on the feature, not the version: `IsModularAirportSaveFeaturePresent()` (→ `SlXvIsFeaturePresent(XSLFI_MODULAR_AIRPORT, n)` in a JGRPP port). Bump `MODULAR_AIRPORT_SL_VERSION` and test `min_version` for a format change within the feature.
+- Per-field conditions are usually unnecessary: `VEHS` and `STNN` are table chunks, so the savegame lists the fields it holds and a savegame written without ours simply does not load them.
+- `legacy_modular_version_sl.cpp` is **temporary** — it loads savegames stamped 367-375 from before this scheme. Its `static_assert` fails the build once an upstream merge reaches that range; delete the file, its CMakeLists entry, the declaration in `extended_version_sl.h`, and the call in `DetermineSaveLoadFormat()`.
 
 ## Modular Airport Invariants
 

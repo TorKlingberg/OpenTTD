@@ -49,6 +49,7 @@
 #include "../newgrf_roadtype.h"
 #include "../settings_internal.h"
 #include "saveload_internal.h"
+#include "extended_version_sl.h"
 #include "saveload_filter.h"
 
 #include <atomic>
@@ -220,6 +221,7 @@ static SaveLoadParams _sl; ///< Parameters used for/at saveload.
 static const std::vector<ChunkHandlerRef> &ChunkHandlers()
 {
 	/* These define the chunks */
+	extern const ChunkHandlerTable _extended_version_chunk_handlers;
 	extern const ChunkHandlerTable _gamelog_chunk_handlers;
 	extern const ChunkHandlerTable _map_chunk_handlers;
 	extern const ChunkHandlerTable _misc_chunk_handlers;
@@ -259,6 +261,9 @@ static const std::vector<ChunkHandlerRef> &ChunkHandlers()
 
 	/** List of all chunks in a savegame. */
 	static const ChunkHandlerTable _chunk_handler_tables[] = {
+		/* Must stay first: it says which fork features the savegame has, and chunks are
+		 * loaded in the order they were written. */
+		_extended_version_chunk_handlers,
 		_gamelog_chunk_handlers,
 		_map_chunk_handlers,
 		_misc_chunk_handlers,
@@ -3060,7 +3065,9 @@ static SaveLoadResult SaveFileToDisk(bool threaded)
 		/* We have written our stuff to memory, now write it to file! */
 		_sl.sf->Write(fmt.tag.data(), fmt.tag.size());
 
-		uint32_t version = TO_BE32(to_underlying(SAVEGAME_VERSION) << 16);
+		/* Mark the savegame as one of ours, so that a build without our features rejects it
+		 * with "savegame too new" instead of misreading it. See extended_version_sl.h. */
+		uint32_t version = TO_BE32((to_underlying(SAVEGAME_VERSION) | SAVEGAME_VERSION_EXT) << 16);
 		_sl.sf->Write(reinterpret_cast<uint8_t *>(&version), sizeof(version));
 
 		_sl.sf = fmt.init_write(_sl.sf, compression);
@@ -3118,6 +3125,7 @@ static SaveLoadResult DoSave(std::shared_ptr<SaveFilter> writer, bool threaded)
 	_sl.sf = std::move(writer);
 
 	_sl_version = SAVEGAME_VERSION;
+	SlxSetCurrentFeatureVersions();
 
 	SaveViewportBeforeSaveGame();
 	SlSaveChunks();
@@ -3166,13 +3174,22 @@ static const SaveLoadFormat *DetermineSaveLoadFormat(SaveLoadFormatTag tag, uint
 	auto fmt = std::ranges::find(_saveload_formats, tag, &SaveLoadFormat::tag);
 	if (fmt != std::end(_saveload_formats)) {
 		/* Check version number */
-		_sl_version = (SaveLoadVersion)(TO_BE32(raw_version) >> 16);
+		const uint16_t header_version = TO_BE32(raw_version) >> 16;
+		/* Savegames written by this fork have SAVEGAME_VERSION_EXT set on top of an ordinary
+		 * upstream version; their own feature versions come from the XVER chunk. */
+		const bool is_extended = (header_version & SAVEGAME_VERSION_EXT) != 0;
+		_sl_version = (SaveLoadVersion)(header_version & ~SAVEGAME_VERSION_EXT);
 		/* Minor is not used anymore from version 18.0, but it is still needed
 		 * in versions before that (4 cases) which can't be removed easy.
 		 * Therefore it is loaded, but never saved (or, it saves a 0 in any scenario). */
 		_sl_minor_version = (TO_BE32(raw_version) >> 8) & 0xFF;
 
-		Debug(sl, 1, "Loading savegame version {}", _sl_version);
+		SlxSetSavegameIsExtended(is_extended);
+		/* TEMPORARY: fork savegames from before the switch to feature versions have no marker
+		 * bit and no XVER chunk; recognise them by their version. See legacy_modular_version_sl.cpp. */
+		if (!is_extended) SlxHandleLegacyModularSavegameVersion();
+
+		Debug(sl, 1, "Loading savegame version {}{}", _sl_version, SlxIsExtendedSavegame() ? " (extended)" : "");
 
 		/* Is the version higher than the current? */
 		if (_sl_version > SAVEGAME_VERSION) SlError(STR_GAME_SAVELOAD_ERROR_TOO_NEW_SAVEGAME);
@@ -3205,6 +3222,8 @@ static const SaveLoadFormat *DetermineSaveLoadFormat(SaveLoadFormatTag tag, uint
 static SaveLoadResult DoLoad(std::shared_ptr<LoadFilter> reader, bool load_check)
 {
 	_sl.lf = std::move(reader);
+
+	SlxResetFeatureVersions();
 
 	if (load_check) {
 		/* Clear previous check data */
@@ -3340,6 +3359,7 @@ SaveLoadResult SaveOrLoad(std::string_view filename, SaveLoadOperation fop, Deta
 		/* Load a TTDLX or TTDPatch game */
 		if (fop == SaveLoadOperation::Load && dft == DetailedFileType::OldGameFile) {
 			ResetSaveloadData();
+			SlxResetFeatureVersions();
 
 			InitializeGame(256, 256, true, true); // set a mapsize of 256x256 for TTDPatch games or it might get confused
 

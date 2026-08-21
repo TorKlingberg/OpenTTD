@@ -982,20 +982,22 @@ public:
 		 SLE_CONDVAR(Aircraft, turn_counter, VarTypes::U8, SaveLoadVersion::SplitLoadWaitCounters, SaveLoadVersion::MaxVersion),
 		 SLE_CONDVAR(Aircraft, flags, VarTypes::U8, SaveLoadVersion::NewGRFAircraftRange, SaveLoadVersion::MaxVersion),
 
-		 /* Modular airport ground pathfinding - Note: taxi_path is not saved, will be recalculated */
-		 SLE_CONDVAR(Aircraft, taxi_path_index, VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, ground_path_goal, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
+		 /* Modular airport ground pathfinding - Note: taxi_path is not saved, will be recalculated.
+		  * These need no version condition: VEHS is a table chunk, so the savegame lists the fields
+		  * it holds and a savegame written without these simply does not load them. */
+		 SLE_VAR(Aircraft, taxi_path_index, VarTypes::U16),
+		 SLE_VAR(Aircraft, ground_path_goal, VarTypes::U32),
 
-		 SLE_CONDVAR(Aircraft, taxi_current_segment, VarTypes::U8, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, taxi_wait_counter, VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_landing_tile, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_landing_goal, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_ground_target, VarTypes::U8, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_takeoff_tile, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_takeoff_progress, VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVECTOR(Aircraft, taxi_reserved_tiles, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVECTOR(Aircraft, modular_runway_reservation, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		 SLE_CONDVAR(Aircraft, modular_holding_wp_index, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
+		 SLE_VAR(Aircraft, taxi_current_segment, VarTypes::U8),
+		 SLE_VAR(Aircraft, taxi_wait_counter, VarTypes::U16),
+		 SLE_VAR(Aircraft, modular_landing_tile, VarTypes::U32),
+		 SLE_VAR(Aircraft, modular_landing_goal, VarTypes::U32),
+		 SLE_VAR(Aircraft, modular_ground_target, VarTypes::U8),
+		 SLE_VAR(Aircraft, modular_takeoff_tile, VarTypes::U32),
+		 SLE_VAR(Aircraft, modular_takeoff_progress, VarTypes::U16),
+		 SLE_CONDVECTOR(Aircraft, taxi_reserved_tiles, VarTypes::U32, SaveLoadVersion::MinVersion, SaveLoadVersion::MaxVersion),
+		 SLE_CONDVECTOR(Aircraft, modular_runway_reservation, VarTypes::U32, SaveLoadVersion::MinVersion, SaveLoadVersion::MaxVersion),
+		 SLE_VAR(Aircraft, modular_holding_wp_index, VarTypes::U32),
 	};
 	static inline const SaveLoadCompatTable compat_description = _vehicle_aircraft_sl_compat;
 

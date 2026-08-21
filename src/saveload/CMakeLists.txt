@@ -13,6 +13,8 @@ add_files(
     depot_sl.cpp
     economy_sl.cpp
     engine_sl.cpp
+    extended_version_sl.cpp
+    extended_version_sl.h
     game_sl.cpp
     gamelog_sl.cpp
     goal_sl.cpp
@@ -20,6 +22,7 @@ add_files(
     industry_sl.cpp
     labelmaps_sl.cpp
     league_sl.cpp
+    legacy_modular_version_sl.cpp
     linkgraph_sl.cpp
     map_sl.cpp
     misc_sl.cpp

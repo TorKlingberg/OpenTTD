@@ -622,8 +622,8 @@ public:
 	    SLE_VAR(ModularAirportTileData, one_way_taxi,        VarTypes::BOOL),
 	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  VarTypes::U8),
 	    SLE_VAR(ModularAirportTileData, runway_flags,        VarTypes::U8),
-	    SLE_CONDVAR(ModularAirportTileData, edge_block_mask,  VarTypes::U8, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-	    SLE_CONDVAR(ModularAirportTileData, reservation_owner, VarTypes::U32, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
+	    SLE_VAR(ModularAirportTileData, edge_block_mask,    VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, reservation_owner,  VarTypes::U32),
 	};
 	static inline const SaveLoadCompatTable compat_description = {};
 
@@ -753,10 +753,10 @@ public:
 		SLEG_CONDSTRUCTLIST("speclist", SlRoadStopTileData, SaveLoadVersion::NewGRFRoadStops, SaveLoadVersion::RoadStopTileData),
 		SLEG_STRUCTLIST("goods", SlStationGoods),
 
-		SLE_CONDVAR(Station, airport_arrivals_this_month,   VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		SLE_CONDVAR(Station, airport_arrivals_last_month,   VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		SLE_CONDVAR(Station, airport_departures_this_month, VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
-		SLE_CONDVAR(Station, airport_departures_last_month, VarTypes::U16, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
+		SLE_VAR(Station, airport_arrivals_this_month,   VarTypes::U16),
+		SLE_VAR(Station, airport_arrivals_last_month,   VarTypes::U16),
+		SLE_VAR(Station, airport_departures_this_month, VarTypes::U16),
+		SLE_VAR(Station, airport_departures_last_month, VarTypes::U16),
 	};
 	static inline const SaveLoadCompatTable compat_description = _station_normal_sl_compat;
 
@@ -821,7 +821,7 @@ static const SaveLoad _station_desc[] = {
 	SLEG_CONDSTRUCTLIST("speclist", SlStationSpecList<StationSpec>, SaveLoadVersion::NewGRFStations, SaveLoadVersion::MaxVersion),
 	SLEG_CONDSTRUCTLIST("roadstopspeclist", SlStationSpecList<RoadStopSpec>, SaveLoadVersion::NewGRFRoadStops, SaveLoadVersion::MaxVersion),
 	SLEG_CONDSTRUCTLIST("roadstoptiledata", SlRoadStopTileData, SaveLoadVersion::RoadStopTileData, SaveLoadVersion::MaxVersion),
-	SLEG_CONDSTRUCTLIST("modularairporttiledata", SlModularAirportTileData, SaveLoadVersion::ModularAirport, SaveLoadVersion::MaxVersion),
+	SLEG_STRUCTLIST("modularairporttiledata", SlModularAirportTileData),
 };
 
 struct STNNChunkHandler : ChunkHandler {

@@ -421,21 +421,10 @@ enum class SaveLoadVersion : uint16_t {
 	DriveBackwards, ///< Saveload version: 365, GitHub pull request: 15379\n Trains can drive backwards.
 	DepotsUnderBridges, ///< Saveload version: 366, GitHub pull request: 15836\n Allow depots under bridges.
 
-	ModularAirport, ///< Saveload version: 367\n Modular airports. Every modular field is gated on this one version.
-
-	/* 368-375 versioned the modular airport branch while it was in development. None of
-	 * those savegames were ever published, so nothing gates on them any more and no
-	 * migration code remains. They are kept purely to hold the version numbering steady:
-	 * SAVEGAME_VERSION is MaxVersion - 1, so deleting them would renumber the current
-	 * format downwards and existing savegames would be rejected as too new. */
-	ModularAirportPathfinding, ///< Saveload version: 368\n Unused, retained for numbering.
-	AirportThroughput, ///< Saveload version: 369\n Unused, retained for numbering.
-	ModularAirportFence, ///< Saveload version: 370\n Unused, retained for numbering.
-	ModularAirportReservation, ///< Saveload version: 371\n Unused, retained for numbering.
-	ModularAirportReservationVectors, ///< Saveload version: 372\n Unused, retained for numbering.
-	ModularAirportCrossingCache, ///< Saveload version: 373\n Unused, retained for numbering.
-	ModularAirportStateFixes, ///< Saveload version: 374\n Unused, retained for numbering.
-	ModularAirportType, ///< Saveload version: 375\n Unused, retained for numbering.
+	/* This enum is upstream's, and nothing of this fork's belongs in it: appending here means
+	 * renumbering on every upstream merge, and it puts fork savegames on upstream's ordering
+	 * axis, where they claim to be newer than upstream features they were written without.
+	 * Fork features are versioned in the XVER chunk instead; see extended_version_sl.h. */
 
 	MaxVersion, ///< Highest possible saveload version.
 };
@@ -1368,28 +1357,6 @@ inline bool IsSavegameVersionBeforeOrAt(SaveLoadVersion major)
 {
 	extern SaveLoadVersion _sl_version;
 	return _sl_version <= major;
-}
-
-/**
- * Whether the savegame being loaded was written by the modular airport branch before it
- * was merged with upstream 16.0.
- *
- * Those saves are stamped with a version inside the modular block (367-374 after the
- * renumbering), but predate every upstream change from SaveLoadVersion::DriveBackwards
- * onwards, so a plain version comparison reports them as newer than they are. Only the
- * conversions that upstream gates on those versions need this; the modular fields
- * themselves are gated on SaveLoadVersion::ModularAirport and load normally.
- *
- * This is a one-off migration aid for the upstream merge and can be removed once no
- * pre-merge savegame needs loading.
- *
- * @return True when a pre-merge modular savegame is being loaded.
- */
-inline bool IsPreMergeModularSavegame()
-{
-	extern SaveLoadVersion _sl_version;
-	extern const SaveLoadVersion SAVEGAME_VERSION;
-	return _sl_version >= SaveLoadVersion::ModularAirport && _sl_version < SAVEGAME_VERSION;
 }
 
 /**

@@ -69,6 +69,7 @@
 #include "../picker_func.h"
 
 #include "saveload_internal.h"
+#include "extended_version_sl.h"
 
 #include <signal.h>
 
@@ -799,7 +800,7 @@ bool AfterLoadGame()
 		_settings_game.linkgraph.recalc_time     *= CalendarTime::SECONDS_PER_DAY;
 	}
 
-	if (IsSavegameVersionBefore(SaveLoadVersion::ModularAirport)) {
+	if (!IsModularAirportSaveFeaturePresent()) {
 		/* Runtime airport ID 127 was an ordinary NewGRF slot before it became AT_MODULAR,
 		 * and the mapping table is persisted, so a savegame from before modular airports
 		 * existed can carry a NewGRF airport there. Relocate that mapping before
@@ -2942,8 +2943,7 @@ bool AfterLoadGame()
 		}
 	}
 
-	/* Pre-merge modular savegames predate this change despite their higher version stamp. */
-	if (IsSavegameVersionBefore(SaveLoadVersion::DriveBackwards) || IsPreMergeModularSavegame()) {
+	if (IsSavegameVersionBefore(SaveLoadVersion::DriveBackwards)) {
 		/* Vehicles used to be reversed immediately when entering depot.
 		 * Now they are reversed when the whole consist has entered.
 		 * Find trains in the process of entering a depot and un-reverse them. */
@@ -3428,8 +3428,7 @@ bool AfterLoadGame()
 		}
 	}
 
-	if (!IsSavegameVersionBefore(SaveLoadVersion::StationsUnderBridges) &&
-			(IsSavegameVersionBeforeOrAt(SaveLoadVersion::DriveBackwards) || IsPreMergeModularSavegame())) {
+	if (!IsSavegameVersionBefore(SaveLoadVersion::StationsUnderBridges) && IsSavegameVersionBeforeOrAt(SaveLoadVersion::DriveBackwards)) {
 		/* Default waypoints were built with an incorrect layout that prevents building bridges over them. */
 		for (auto tile : Map::Iterate()) {
 			if (!IsRailWaypointTile(tile)) continue; // Not a waypoint.
