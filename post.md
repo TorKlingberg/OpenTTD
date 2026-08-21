@@ -31,5 +31,5 @@ There is also a new AI player, ModularAirportAI, that builds modular airports. I
 
 
 Web demo: https://torklingberg.github.io/OpenTTD/
-Builds: 
+Builds: https://github.com/TorKlingberg/OpenTTD/releases/tag/modular-airports-test-1 (not signed, so Windows and especially MacOS may refuse to run them)
 Source: https://github.com/TorKlingberg/OpenTTD
