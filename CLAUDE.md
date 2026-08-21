@@ -36,14 +36,9 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 - `algorithm file not found` — missing `-DCMAKE_CXX_FLAGS` above
 - `cannot find libatomic` — apply fix to `cmake/3rdparty/llvm/CheckAtomic.cmake`: change `if(MSVC)` to `if(MSVC OR APPLE)` at lines 52 and 75
 
-**Working in a git worktree:**
-- Each worktree has its own `build/`, and it goes stale independently — check `build/openttd`'s mtime before trusting it; if stale, just run the main checkout's binary instead of rebuilding.
-- `build/ai/<Name>` is a symlink into the main checkout's `ai/<Name>`, not worktree-relative. To headless-test a worktree's edited AI script, copy it into a scratch dir under a different registered name (edit `GetName`/`GetShortName`/`CreateInstance` in `info.nut` and the class name in `main.nut`) rather than repointing the shared symlink.
-- A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from that other worktree's directory.
-
 ## Before Committing
 
-The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; they check the staged diff and commit-message format automatically. After staging the intended changes, run the remaining checks:
+The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; they check the staged diff and commit-message format automatically. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
 
 ```bash
 python3 .github/file-descriptions.py <(git diff --cached --name-only) &&
@@ -53,6 +48,28 @@ cmake --build build --target openttd_test -j8 &&
 ```
 
 Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code.
+
+## Git Worktrees
+
+Worktrees live under `.claude/worktrees/<name>` and share the main checkout's `.git`.
+
+**Building and running:**
+- Each worktree has its own `build/`, and it goes stale independently — check `build/openttd`'s mtime before trusting it; if stale, just run the main checkout's binary instead of rebuilding. A worktree that has never been built needs a full `cmake` configure plus a from-scratch compile (~25 min), so prefer the main checkout for anything that does not need the worktree's own edits compiled.
+- `build/ai/<Name>` is a symlink into the main checkout's `ai/<Name>`, not worktree-relative. To headless-test a worktree's edited AI script, copy it into a scratch dir under a different registered name (edit `GetName`/`GetShortName`/`CreateInstance` in `info.nut` and the class name in `main.nut`) rather than repointing the shared symlink.
+
+**Committing:** the pre-commit hook resolves its helpers from `git rev-parse --git-dir`, which inside a worktree is `.git/worktrees/<name>` — a directory with no hooks in it, so the commit aborts with `check-diff.py: No such file or directory`. Point it at the real hooks instead of skipping them with `--no-verify`:
+
+```bash
+HOOKS_DIR=/Users/tor/ttd/OpenTTD/.git/hooks git commit -F <message-file>
+```
+
+**Merging back to master:** a branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from the main checkout. Fast-forward, no merge commit:
+
+```bash
+cd /Users/tor/ttd/OpenTTD && git merge --ff-only claude/<branch>
+```
+
+This works from a worktree branch like any other, and is preferred over `--no-ff`. A fast-forward creates no commit, so no commit-message hook runs; a merge commit would instead be rejected by the `commit-msg` hook, whose `<keyword>: <Details>` rule a "Merge branch ..." subject cannot satisfy. `--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master from the worktree first, then fast-forward.
 
 ## Debugging
 
