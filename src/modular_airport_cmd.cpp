@@ -1715,7 +1715,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		if (!IsValidTile(path_goal)) return log_chain_fail("no_goal_no_stand");
 	}
 
-	TaxiPath path = BuildTaxiPath(st, chain_origin, path_goal, nullptr);
+	TaxiPath path = BuildTaxiPath(st, chain_origin, path_goal, nullptr, false, GetGroundPathRestriction(v));
 	if (!path.valid || path.tiles.empty()) return log_chain_fail("path_invalid");
 
 	ForwardReservationPlan plan;
@@ -2358,14 +2358,16 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 {
 	if (!IsValidTile(start_tile) || st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
+	const GroundPathRestriction restriction = GetGroundPathRestriction(v);
 	TileIndex best_target = INVALID_TILE;
 	int best_cost = INT_MAX;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		/* A helipad is a service tile only for something that may stand on one. */
 		const bool is_service = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1 ||
 				IsModularHangarPiece(data.piece_type) ||
-				IsModularHelipadPiece(data.piece_type));
+				(IsModularHelipadPiece(data.piece_type) && restriction != GroundPathRestriction::FixedWing));
 		if (!is_service) continue;
-		AirportGroundPath p = FindAirportGroundPath(st, start_tile, data.tile, nullptr);
+		AirportGroundPath p = FindAirportGroundPath(st, start_tile, data.tile, nullptr, false, true, restriction);
 		if (!p.found) continue;
 		if (best_target == INVALID_TILE || p.cost < best_cost) {
 			best_target = data.tile;
@@ -2374,7 +2376,7 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 	}
 	if (best_target == INVALID_TILE) return INVALID_TILE;
 
-	TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr);
+	TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr, false, restriction);
 	if (!path.valid || path.tiles.size() < 2 || path.segments.empty()) return INVALID_TILE;
 
 	/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
@@ -2450,7 +2452,7 @@ TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileInde
 			/* Avoid assigning stands that are currently unreachable from our position. */
 			int score = 0;
 			if (can_ground_route && origin != INVALID_TILE) {
-				AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr);
+				AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr, false, true, GetGroundPathRestriction(v));
 				if (!path.found) continue;
 				score = path.cost;
 			} else if (from_tile != INVALID_TILE) {
@@ -2505,7 +2507,7 @@ TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v, TileIndex
 
 			int score = 0;
 			if (can_ground_route && origin != INVALID_TILE) {
-				AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr);
+				AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr, false, true, GetGroundPathRestriction(v));
 				if (!path.found) continue;
 				score = path.cost;
 			} else if (from_tile != INVALID_TILE) {
@@ -2563,7 +2565,7 @@ TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v, TileIndex 
 
 		if (!can_ground_route || origin == INVALID_TILE) continue;
 
-		AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr);
+		AirportGroundPath path = FindAirportGroundPath(st, origin, data.tile, nullptr, false, true, GetGroundPathRestriction(v));
 		if (!path.found) continue;
 		if (best_path_tile == INVALID_TILE || path.cost < best_path_score) {
 			best_path_score = path.cost;
@@ -3689,7 +3691,7 @@ void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v)
 			bool path_ok = false;
 			int path_cost = -1;
 			if (can_ground_route) {
-				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr, false, false);
+				AirportGroundPath path = FindAirportGroundPath(st, v->tile, data.tile, nullptr, false, false, GetGroundPathRestriction(v));
 				path_ok = path.found;
 				path_cost = path.found ? path.cost : -1;
 			}

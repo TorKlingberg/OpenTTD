@@ -30,9 +30,19 @@ static const int PASS_THROUGH_STAND_PENALTY = 5;
 static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
 std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
 
-static uint64_t BuildCrossingCacheKey(TileIndex start, TileIndex goal)
+/** Bit in a crossing-cache key marking a route planned under the fixed-wing restriction. */
+static constexpr uint64_t CROSSING_CACHE_FIXED_WING = 1ULL << 63;
+
+static uint64_t BuildCrossingCacheKey(TileIndex start, TileIndex goal, GroundPathRestriction restriction)
 {
-	return (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
+	/* The two restrictions are separate routing worlds -- a pair that only a runway
+	 * crossing connects for a fixed-wing aircraft may have an ordinary strict route for
+	 * a helicopter, which taxis across helipads. Keying them together would teach one
+	 * the other's failures. A tile index never reaches bit 31 (the largest map is
+	 * 4096x4096), so the top bit of the key is free to carry the distinction. */
+	uint64_t key = (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
+	if (restriction == GroundPathRestriction::FixedWing) key |= CROSSING_CACHE_FIXED_WING;
+	return key;
 }
 
 void NormalizeModularAirportCrossingPathCache()
@@ -124,6 +134,17 @@ static bool IsNonTaxiableBuilding(uint8_t piece_type)
 
 
 /**
+ * Restriction implied by an aircraft.
+ * @param v The aircraft, or nullptr.
+ * @return FixedWing for a fixed-wing aircraft, None otherwise.
+ */
+GroundPathRestriction GetGroundPathRestriction(const Aircraft *v)
+{
+	if (v == nullptr || v->subtype == AIR_HELICOPTER) return GroundPathRestriction::None;
+	return GroundPathRestriction::FixedWing;
+}
+
+/**
  * Check if a piece type is an aircraft parking tile that should not be used as pass-through route.
  * @param piece_type The airport piece type.
  * @return True if this tile is parking-only (stand variants).
@@ -185,9 +206,15 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
  * @param st The station.
  * @param from Source tile.
  * @param to Destination tile.
+ * @param from_data Tile data for @p from.
+ * @param to_data Tile data for @p to.
+ * @param v The aircraft (optional, for stand avoidance).
+ * @param restriction Aircraft-type restriction.
+ * @param goal The pathfinder goal, if any.
+ * @param allow_runway_crossing Whether the constrained runway-crossing fallback is active.
  * @return True if connection is allowed.
  */
-static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const ModularAirportTileData *from_data, const ModularAirportTileData *to_data, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
+static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const ModularAirportTileData *from_data, const ModularAirportTileData *to_data, const Aircraft *v, GroundPathRestriction restriction, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	/* Must be orthogonally adjacent */
 	int dx = TileX(to) - TileX(from);
@@ -251,6 +278,17 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
+
+	/* A helipad is helicopter parking, not pavement a fixed-wing aircraft may roll over.
+	 * Leaving one is still allowed -- only 'to' is tested -- because a plane can end up
+	 * standing on a pad (unstacking, or a pad built under it) and must be able to get off.
+	 * The goal exemption is the same escape valve the stand rule below uses: a goal that
+	 * cannot be routed to is a permanent stall, and no code path hands a fixed-wing
+	 * aircraft a helipad goal in the first place. */
+	if (restriction == GroundPathRestriction::FixedWing && to != goal && IsModularHelipadPiece(to_data->piece_type)) {
+		return false;
+	}
+
 	/* Stands are parking endpoints -- avoid routing through ones another aircraft has
 	 * claimed. Unclaimed stands are allowed so small airports without separate
 	 * taxiways still work.
@@ -315,9 +353,13 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
  * Get reachable neighbor tiles from a given tile.
  * @param st The station.
  * @param tile Current tile.
+ * @param v The aircraft (optional, for stand avoidance).
+ * @param restriction Aircraft-type restriction.
+ * @param goal The pathfinder goal, if any.
+ * @param allow_runway_crossing Whether the constrained runway-crossing fallback is active.
  * @return Vector of reachable neighbor tiles.
  */
-static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
+static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, GroundPathRestriction restriction, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	std::vector<std::pair<TileIndex, const ModularAirportTileData *>> neighbors;
 
@@ -361,7 +403,7 @@ static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReac
 		}
 
 		const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
-		if (CanTilesConnect(st, tile, neighbor, tile_data, nb_data, v, goal, allow_runway_crossing)) {
+		if (CanTilesConnect(st, tile, neighbor, tile_data, nb_data, v, restriction, goal, allow_runway_crossing)) {
 			neighbors.emplace_back(neighbor, nb_data);
 			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CONNECTED!");
 		} else {
@@ -403,10 +445,15 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex
  * @param start Starting tile.
  * @param goal Goal tile.
  * @param v The aircraft (optional, for reservation checking).
+ * @param allow_runway_goal_crossing Allow crossing-fallback paths when the goal is a runway.
+ * @param update_cache Whether the crossing-required cache may be written.
+ * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache, GroundPathRestriction restriction)
 {
+	if (restriction == GroundPathRestriction::FromAircraft) restriction = GetGroundPathRestriction(v);
+
 	/* Validate inputs */
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) {
 		return AirportGroundPath{};
@@ -456,7 +503,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 				return result;
 			}
 
-			auto neighbors = GetReachableNeighbors(st, current.tile, v, goal, allow_runway_crossing);
+			auto neighbors = GetReachableNeighbors(st, current.tile, v, restriction, goal, allow_runway_crossing);
 			for (const auto &[neighbor, nb_data] : neighbors) {
 				int move_cost = 1;
 				if (nb_data != nullptr) {
@@ -497,7 +544,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
 	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPiece(goal_data->piece_type));
-	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal);
+	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal, restriction);
 	const bool prefer_crossing = !goal_is_runway && HasCrossingCacheKey(crossing_key);
 
 	/* Learned crossing-required pair: go straight to crossing-capable pass.
@@ -598,13 +645,15 @@ static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const st
  * @param start Starting tile.
  * @param goal Goal tile.
  * @param v The aircraft (optional, for stand avoidance).
+ * @param allow_runway_goal_crossing Allow crossing-fallback paths when the goal is a runway.
+ * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing)
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, GroundPathRestriction restriction)
 {
 	TaxiPath result;
 
-	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing);
+	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing, true, restriction);
 	if (!path.found) return result;
 
 	result.tiles = std::move(path.tiles);

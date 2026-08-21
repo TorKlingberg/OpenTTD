@@ -1122,6 +1122,64 @@ TEST_CASE("ModularAirportPathfinding")
 		CHECK_FALSE(path.found);
 	}
 
+	SECTION("Fixed Wing Aircraft Do Not Taxi Across Helipads") {
+		/* A single chain apron -> helipad -> apron, with no way around the pad. */
+		AddModularTile(st, base, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_HELIPAD_2, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
+
+		const TileIndex pad = base + TileDiffXY(1, 0);
+		const TileIndex far_apron = base + TileDiffXY(2, 0);
+
+		SetupAircraftPool();
+		Aircraft *plane = CreateAircraft(VehicleID(5));
+		plane->tile = base;
+		plane->ground_path_goal = far_apron;
+
+		Aircraft *heli = CreateAircraft(VehicleID(6));
+		heli->subtype = AIR_HELICOPTER;
+		heli->tile = base;
+		heli->ground_path_goal = far_apron;
+
+		/* The pad is unreserved and unoccupied, so nothing but the type rule stops the
+		 * plane -- this is exactly the case that used to route straight over it. */
+		CHECK_FALSE(FindAirportGroundPath(st, base, far_apron, plane, false, false).found);
+		CHECK(FindAirportGroundPath(st, base, far_apron, heli, false, false).found);
+
+		/* A plane already standing on a pad must still be able to get off it. */
+		CHECK(FindAirportGroundPath(st, pad, far_apron, plane, false, false).found);
+
+		/* The restriction travels independently of the aircraft, so the reachability
+		 * probes (which pass v = nullptr to ignore stand occupancy) get the same answer. */
+		CHECK_FALSE(FindAirportGroundPath(st, base, far_apron, nullptr, false, false, GroundPathRestriction::FixedWing).found);
+		CHECK(FindAirportGroundPath(st, base, far_apron, nullptr, false, false, GroundPathRestriction::None).found);
+
+		CHECK(GetGroundPathRestriction(plane) == GroundPathRestriction::FixedWing);
+		CHECK(GetGroundPathRestriction(heli) == GroundPathRestriction::None);
+		CHECK(GetGroundPathRestriction(nullptr) == GroundPathRestriction::None);
+	}
+
+	SECTION("Fixed Wing Aircraft Detour Around A Helipad") {
+		/* Same chain, but with a taxiable way around the pad. */
+		AddModularTile(st, base, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 0), APT_HELIPAD_2, 0);
+		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+
+		SetupAircraftPool();
+		Aircraft *plane = CreateAircraft(VehicleID(7));
+		plane->tile = base;
+		plane->ground_path_goal = base + TileDiffXY(2, 0);
+
+		AirportGroundPath path = FindAirportGroundPath(st, base, base + TileDiffXY(2, 0), plane, false, false);
+		REQUIRE(path.found);
+		for (TileIndex t : path.tiles) {
+			CHECK(t != base + TileDiffXY(1, 0));
+		}
+	}
+
 	SECTION("One Way Taxi Direction Is Enforced") {
 		AddModularTile(st, base, APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
