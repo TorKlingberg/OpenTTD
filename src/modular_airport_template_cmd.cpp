@@ -511,6 +511,13 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 	}
 
+	/* An airport rebuilt where one was just demolished takes the demolished station back,
+	 * name and index and all. BuildStationPart would look for that station itself, but it
+	 * measures from the northern corner of the area, and an airport is easily more than
+	 * the eight tiles it allows away from its own sign -- so ask over the whole footprint
+	 * before handing it a station. */
+	if (st == nullptr && reuse) st = GetClosestDeletedStationForArea(union_area);
+
 	/* Test station building/joining. Move execution to after the per-tile validation loop. */
 	ret = BuildStationPart(&st, DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), reuse, union_area, naming);
 	if (ret.Failed()) return ret;
@@ -542,7 +549,10 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		for (size_t i = 0; i < abs_tiles.size(); i++) {
 			if (adjacent_to_join_station(abs_tiles[i])) add_index(i);
 		}
-		if (placement_order.empty() && join_id == StationID::Invalid()) add_index(0);
+		/* A station with no tiles on the map -- a brand new one, or a demolished one being
+		 * taken back over -- has nothing to grow outwards from, so seed the order at the
+		 * first tile of the layout instead. */
+		if (placement_order.empty() && (join_id == StationID::Invalid() || !st->IsInUse())) add_index(0);
 
 		for (size_t pos = 0; pos < placement_order.size(); pos++) {
 			const TileIndex base = abs_tiles[placement_order[pos]];

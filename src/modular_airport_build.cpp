@@ -1338,6 +1338,11 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
+	/* Rebuilding where an airport was just demolished takes its station back. Ask over the
+	 * whole footprint rather than leaving it to BuildStationPart, which measures from the
+	 * northern corner only -- see GetClosestDeletedStationForArea. */
+	if (st == nullptr && reuse) st = GetClosestDeletedStationForArea(airport_area);
+
 	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? StationNaming::Airport : StationNaming::Heliport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;

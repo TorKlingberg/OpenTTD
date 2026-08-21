@@ -453,6 +453,60 @@ static Station *GetClosestDeletedStation(TileIndex tile)
 	return best_station;
 }
 
+/**
+ * Find the closest deleted station of the current company to an area.
+ *
+ * Distance is measured from the whole area rather than from its northern corner, which
+ * is what a station covering more ground than the eight tile threshold needs: rebuilding
+ * on the footprint of a demolished station must pick that station back up, and an airport
+ * is easily wider than eight tiles. The corner is not a usable reference on the other side
+ * either -- a demolished station's sign does not stay where it was built, because it is
+ * clamped into the shrinking rect as the tiles come off and so ends up wherever the last
+ * cleared tile happened to be.
+ * @param area the area to search from.
+ * @return the closest station or nullptr if too far.
+ */
+Station *GetClosestDeletedStationForArea(const TileArea &area)
+{
+	const uint left = TileX(area.tile);
+	const uint top = TileY(area.tile);
+	const uint right = left + area.w - 1;
+	const uint bottom = top + area.h - 1;
+
+	auto distance_from_area = [&](TileIndex tile) {
+		const uint x = TileX(tile);
+		const uint y = TileY(tile);
+		const uint dx = x < left ? left - x : (x > right ? x - right : 0);
+		const uint dy = y < top ? top - y : (y > bottom ? y - bottom : 0);
+		return dx + dy;
+	};
+
+	/* Same eight tiles as GetClosestDeletedStation, measured from the edge of the area. */
+	static const uint MAX_REUSE_DISTANCE = 8;
+	uint threshold = MAX_REUSE_DISTANCE;
+	Station *best_station = nullptr;
+
+	const uint16_t x1 = (uint16_t)std::max<int>(0, (int)left - (int)MAX_REUSE_DISTANCE);
+	const uint16_t x2 = (uint16_t)std::min<int>(right + MAX_REUSE_DISTANCE + 1, Map::SizeX());
+	const uint16_t y1 = (uint16_t)std::max<int>(0, (int)top - (int)MAX_REUSE_DISTANCE);
+	const uint16_t y2 = (uint16_t)std::min<int>(bottom + MAX_REUSE_DISTANCE + 1, Map::SizeY());
+	_station_kdtree.FindContained(x1, y1, x2, y2, [&](StationID id) {
+		Station *st = Station::Get(id);
+		if (st->IsInUse() || st->owner != _current_company) return;
+
+		uint cur_dist = distance_from_area(st->xy);
+		if (cur_dist < threshold) {
+			threshold = cur_dist;
+			best_station = st;
+		} else if (cur_dist == threshold && best_station != nullptr) {
+			/* In case of a tie, lowest station ID wins */
+			if (st->index < best_station->index) best_station = st;
+		}
+	});
+
+	return best_station;
+}
+
 
 TileArea Station::GetTileArea(StationType type) const
 {

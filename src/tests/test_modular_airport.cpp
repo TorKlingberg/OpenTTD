@@ -3537,3 +3537,122 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		CHECK(back.tiles.back().dy == data.tiles.back().dy);
 	}
 }
+
+TEST_CASE("ModularAirportRebuiltInPlaceKeepsItsStation")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+
+	const CompanyID saved_company = _current_company;
+	const bool saved_distant_join = _settings_game.station.distant_join_stations;
+	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const uint8_t saved_station_spread = _settings_game.station.station_spread;
+	const bool saved_noise = _settings_game.economy.station_noise_level;
+	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+
+	_settings_game.station.distant_join_stations = true;
+	_settings_game.station.never_expire_airports = true;
+	_settings_game.station.station_spread = 64;
+	_settings_game.economy.station_noise_level = false;
+	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	/* Demolishing an airport leaves its station behind with a grey sign, and rebuilding on
+	 * the same ground is meant to pick it back up -- keeping the name, the index and every
+	 * order that names it. */
+	auto run = [](uint16_t w, uint16_t h, bool distant_join) {
+		CAPTURE(w, h, distant_join);
+		_settings_game.station.distant_join_stations = distant_join;
+		Map::Allocate(64, 64);
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		_company_pool.CleanPool();
+		RebuildStationKdtree();
+		RebuildViewportKdtree();
+		AirportSpec::ResetAirports();
+
+		Company *company = Company::CreateAtIndex(CompanyID(0));
+		REQUIRE(company != nullptr);
+		company->money = INT64_MAX;
+		company->clear_limit = UINT32_MAX;
+		_current_company = company->index;
+
+		Town *town = Town::CreateAtIndex(TownID(0), TileXY(32, 32));
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+
+		ModularTemplatePlacementData data;
+		data.width = w;
+		data.height = h;
+		data.rotation = 0;
+		for (uint16_t dy = 0; dy < h; dy++) {
+			for (uint16_t dx = 0; dx < w; dx++) {
+				ModularTemplatePlacementTile t{};
+				t.dx = static_cast<uint8_t>(dx);
+				t.dy = static_cast<uint8_t>(dy);
+				t.piece_type = APT_APRON;
+				t.user_taxi_dir_mask = 0x0F;
+				data.tiles.push_back(t);
+			}
+		}
+
+		const TileIndex base = TileXY(4, 4);
+		/* StationID::Invalid() is what a plain (non-ctrl) click passes: join whatever is
+		 * adjacent, and reuse a nearby deleted station. NEW_STATION would mean the
+		 * opposite -- the player explicitly asked for a separate station. */
+		CommandCost built = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data);
+		CAPTURE(built.GetErrorMessage(), built.GetExtraErrorMessage());
+		REQUIRE(built.Succeeded());
+
+		Station *st = Station::GetByTile(base);
+		REQUIRE(st != nullptr);
+		const StationID old_id = st->index;
+		st->name = "Testport";
+
+		/* Demolish the whole thing, tile by tile in map order -- what a dragged clear does. */
+		for (uint16_t dy = 0; dy < h; dy++) {
+			for (uint16_t dx = 0; dx < w; dx++) {
+				REQUIRE(RemoveModularAirportTile(TileAddXY(base, dx, dy), DoCommandFlag::Execute).Succeeded());
+			}
+		}
+		REQUIRE(Station::IsValidID(old_id));
+		REQUIRE(!Station::Get(old_id)->IsInUse());
+
+		CommandCost rebuilt = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data);
+		CAPTURE(rebuilt.GetErrorMessage(), rebuilt.GetExtraErrorMessage());
+		REQUIRE(rebuilt.Succeeded());
+
+		Station *st2 = Station::GetByTile(base);
+		REQUIRE(st2 != nullptr);
+		CHECK(st2->index == old_id);
+		CHECK(st2->name == "Testport");
+	};
+
+	SECTION("small airport") { run(3, 3, true); }
+	SECTION("airport wider than the reuse radius") { run(8, 6, true); }
+	/* Without distant join the placement has to grow outwards from a seed tile, and a
+	 * station being taken back over has no tiles to grow from. */
+	SECTION("small airport, no distant join") { run(3, 3, false); }
+	SECTION("wide airport, no distant join") { run(8, 6, false); }
+
+	_current_company = saved_company;
+	_settings_game.station.distant_join_stations = saved_distant_join;
+	_settings_game.station.never_expire_airports = saved_never_expire;
+	_settings_game.station.station_spread = saved_station_spread;
+	_settings_game.economy.station_noise_level = saved_noise;
+	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	TimerGameCalendar::year = saved_year;
+
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
+}

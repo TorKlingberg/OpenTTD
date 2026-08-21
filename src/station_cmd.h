@@ -35,6 +35,7 @@ CommandCost GetStationAroundModular(TileArea ta, StationID closest_station, Comp
 CommandCost CheckBuildableTile(TileIndex tile, DiagDirections invalid_dirs, int &allowed_z, bool allow_steep, bool check_bridge = true);
 CommandCost FindJoiningStation(StationID existing_station, StationID station_to_join, bool adjacent, TileArea ta, Station **st);
 CommandCost BuildStationPart(Station **st, DoCommandFlags flags, bool reuse, TileArea area, StationNaming name_class);
+Station *GetClosestDeletedStationForArea(const TileArea &area);
 CommandCost CheckFlatLandAirport(AirportTileTableIterator tile_iter, DoCommandFlags flags);
 
 struct ModularTemplatePlacementTile {
