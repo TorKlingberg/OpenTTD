@@ -75,7 +75,7 @@ A modular airport is a real airport type, not a decorated stock one.
 - `AT_MODULAR` carries a generic FTA. What the airport can actually take is layout-derived and overrides the type-level answer:
   - `ModularAirportAcceptsPlanes(st)` / `ModularAirportAcceptsHelicopters(st)` — topological only (no occupancy, no reachability), because `CanVehicleUseStation` calls them.
   - `Airport::HasHangar` reads the layout for modular airports.
-  - `GetModularAirportNewGRFType(st)` reports `ATP_TTDP_LARGE` or `ATP_TTDP_SMALL` to NewGRF.
+  - `GetModularAirportNewGRFType(st)` reports `ATP_TTDP_HELIPORT` for a layout that takes no planes but has a helipad, and otherwise `ATP_TTDP_LARGE` or `ATP_TTDP_SMALL`, to NewGRF.
 
 ### Large-aircraft safety
 
@@ -137,7 +137,9 @@ Everything else is a `mutable` lazily-computed cache with its own dirty bit:
 - `modular_noise_cache`
 - `modular_accepts_planes`, `modular_accepts_helicopters`
 
-**`Airport::MarkLayoutDirty()` invalidates all of them and is the only thing that does.** Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or a cached answer silently stays stale. Retyping a tile is a layout change: mark dirty *after* the retype, or a read in the window before normalization caches the wrong answer.
+**`Airport::MarkLayoutDirty()` invalidates all of them, and every layout mutation is expected to go through it.** Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or a cached answer silently stays stale. Retyping a tile is a layout change: mark dirty *after* the retype, or a read in the window before normalization caches the wrong answer.
+
+One place invalidates without it: the helicopter landing path in `aircraft_cmd.cpp` forces `modular_heli_tiles_dirty` when the cached landing tile turns out to no longer be in the layout. That is a safety net against a mutation that missed `MarkLayoutDirty()`, not a second invalidation route to copy — the build, remove, upgrade and template commands all mark dirty themselves, and a fresh `Airport` starts with every dirty bit set, so nothing else should ever reach it.
 
 ### Per-aircraft modular runtime state
 
@@ -274,7 +276,7 @@ Two arguments matter for correctness:
 | `ONE_WAY` | `IsTaxiwayPiece(piece_type) && one_way_taxi` | Queue tile and forward-horizon boundary. |
 | `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward horizon. |
 
-Segment type describes **routing and safe-stop behaviour**. It does *not* select a per-class reservation algorithm: reservation scope is decided by the aircraft's operation and the forward horizon below, not by which segment it happens to be standing in. (The doc comments on `TaxiSegmentType` itself still describe the older per-class scheme — "requires atomic reservation", "tile-by-tile reservation" — and are stale.)
+Segment type describes **routing and safe-stop behaviour**. It does *not* select a per-class reservation algorithm: reservation scope is decided by the aircraft's operation and the forward horizon below, not by which segment it happens to be standing in.
 
 One-way flags only apply to `IsTaxiwayPiece` types; stands, hangars and runways cannot be one-way.
 
@@ -308,7 +310,9 @@ Runway end fence variants (`APT_RUNWAY_END_FENCE_*`) are decorative and **not** 
 
 ### Runway flags
 
-`RUF_*` (`src/base_station_base.h`): `RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`. `CmdSetRunwayFlags` applies them across the entire contiguous same-axis runway. "Low" means the end with the lower X (horizontal runway) or lower Y (vertical).
+`RUF_*` (`src/base_station_base.h`): `RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`. `CmdSetRunwayFlags` applies them across the entire contiguous same-axis runway.
+
+The "low" end of an X-axis runway is its lower-X end; of a Y-axis runway, its lower-Y end. (Neither axis is screen-horizontal — both run down-screen, one to the left and one to the right; see `coords.md`.) The direction bits name the direction of *travel*, not an end: `RUF_DIR_LOW` means operations run toward the low end, so a runway landed on at its low end and rolled out toward the high end needs `RUF_DIR_HIGH`.
 
 ## Aircraft Crashes
 
@@ -387,7 +391,7 @@ Template storage is JSON in the personal dir under `airport_templates/` (`src/ai
 
 `ScriptAirport` (`src/script/api/script_airport.hpp`) exposes modular airports to NoAI/NoGO.
 
-Enums: `ModularPiece` (26 `MP_*` values), `ModularRunwayFlags`, `ModularSafety` (`MS_OK`, `MS_MISSING_TOWER`, `MS_MISSING_BIG_TERMINAL`, `MS_MISSING_LANDING_RUNWAY`, `MS_MISSING_TAKEOFF_RUNWAY`), `ModularLayoutField`.
+Enums: `ModularPiece` (25 pieces plus `MP_INVALID`), `ModularRunwayFlags`, `ModularSafety` (`MS_OK`, `MS_MISSING_TOWER`, `MS_MISSING_BIG_TERMINAL`, `MS_MISSING_LANDING_RUNWAY`, `MS_MISSING_TAKEOFF_RUNWAY`), `ModularLayoutField`.
 
 A layout is a flat integer array of `MLF_STRIDE` values per tile: `MLF_DX`, `MLF_DY`, `MLF_PIECE`, `MLF_ROTATION`, `MLF_RUNWAY_FLAGS`, `MLF_ONE_WAY_TAXI`, `MLF_TAXI_DIR_MASK`, `MLF_EDGE_FENCE_MASK`.
 
@@ -408,7 +412,7 @@ Note that `MS_OK` means the layout meets the large-aircraft safety requirements 
 - A savegame written here sets `SAVEGAME_VERSION_EXT` (`0x8000`) in the header version word on top of an ordinary upstream version, so upstream rejects it with a plain "savegame too new" rather than misreading map bits. The bit is stripped on load.
 - The `XVER` chunk carries one `{name, uint16 version, flags}` row per `SlxFeature` — currently `UpstreamVersion` and `ModularAirport`. It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved `SlxFeatureFlag` says it may be dropped.
 - Gate on the feature, not on a version: `IsModularAirportSaveFeaturePresent()`. Bump `MODULAR_AIRPORT_SL_VERSION` and pass a `min_version` for a format change within the feature.
-- Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` are plain `SLE_VAR`.
+- Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` carry no version condition: plain `SLE_VAR`, or `SLE_CONDVECTOR` over the full version range for the two reservation vectors, there being no unconditional `SLE_VECTOR` for struct members.
 - `src/saveload/legacy_modular_version_sl.cpp` is **temporary**: it loads savegames stamped 367-375 from before this scheme. Its `static_assert` fails the build once an upstream merge reaches that range, at which point delete the file, its CMakeLists entry, the declaration in `extended_version_sl.h`, and the call in `DetermineSaveLoadFormat()`.
 
 ### What is saved

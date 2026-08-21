@@ -26,11 +26,18 @@ struct AirportGroundPath {
 	AirportGroundPath() : cost(0), found(false) {}
 };
 
-/** Classification of a taxi path tile's segment type. */
+/**
+ * Classification of a taxi path tile's segment type.
+ *
+ * This describes routing and safe-stop behaviour. It does *not* select a per-class
+ * reservation algorithm: reservation scope comes from the aircraft's operation and the
+ * single forward horizon built by BuildForwardReservationPlan, not from the segment the
+ * aircraft happens to be standing in.
+ */
 enum class TaxiSegmentType : uint8_t {
-	FREE_MOVE,  ///< Bidirectional taxiways, aprons, stands, hangars - requires atomic reservation
-	ONE_WAY,    ///< One-way taxiways - safe for queuing (tile-by-tile reservation)
-	RUNWAY,     ///< Runway tiles - atomic reservation via TryReserveContiguousModularRunway
+	FREE_MOVE,  ///< Bidirectional taxiways, aprons, stands, hangars - traveled tiles claimed through the forward horizon
+	ONE_WAY,    ///< One-way taxiways - safe to queue on, and a boundary of the forward horizon
+	RUNWAY,     ///< Runway tiles - whole runway claimed via TryReserveContiguousModularRunway for an explicit landing/takeoff, traveled tiles only when crossing
 };
 
 /** A contiguous segment of same-type tiles within a taxi path. */
