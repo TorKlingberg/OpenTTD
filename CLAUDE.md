@@ -55,6 +55,12 @@ Worktrees live under `.claude/worktrees/<name>` and share the main checkout's `.
 
 **Building and running:**
 - Each worktree has its own `build/`, and it goes stale independently — check `build/openttd`'s mtime before trusting it; if stale, just run the main checkout's binary instead of rebuilding. A worktree that has never been built needs a full `cmake` configure plus a from-scratch compile (~25 min), so prefer the main checkout for anything that does not need the worktree's own edits compiled.
+- A fresh worktree `build/baseset/` has only the bundled files — the **original TTD graphics are missing** (`TRG1.GRF`, `TRGT.GRF`, `TRGC.GRF`, `TRGH.GRF`, `TRGI.GRF`, `TREND.GRF`, `TRHCOM.GRF`, `TRTITLE.GRF`, `GM-TTO.CAT`). Any save using the original base set then blocks at startup on a missing-graphics prompt. It does not look like a failure: the process sits at **0% CPU with no `[AirportStats]` output**, which reads exactly like a slow or paused fixture, and a regression run hangs indefinitely rather than erroring. Copy them in once per worktree:
+
+```bash
+cp -n /Users/tor/ttd/OpenTTD/build/baseset/*.GRF /Users/tor/ttd/OpenTTD/build/baseset/*.CAT <worktree>/build/baseset/
+```
+
 - `build/ai/<Name>` is a symlink into the main checkout's `ai/<Name>`, not worktree-relative. To headless-test a worktree's edited AI script, copy it into a scratch dir under a different registered name (edit `GetName`/`GetShortName`/`CreateInstance` in `info.nut` and the class name in `main.nut`) rather than repointing the shared symlink.
 
 **Committing:** the pre-commit hook resolves its helpers from `git rev-parse --git-dir`, which inside a worktree is `.git/worktrees/<name>` — a directory with no hooks in it, so the commit aborts with `check-diff.py: No such file or directory`. Point it at the real hooks instead of skipping them with `--no-verify`:
