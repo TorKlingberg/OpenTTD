@@ -41,6 +41,19 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 - `build/ai/<Name>` is a symlink into the main checkout's `ai/<Name>`, not worktree-relative. To headless-test a worktree's edited AI script, copy it into a scratch dir under a different registered name (edit `GetName`/`GetShortName`/`CreateInstance` in `info.nut` and the class name in `main.nut`) rather than repointing the shared symlink.
 - A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from that other worktree's directory.
 
+## Before Committing
+
+The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; they check the staged diff and commit-message format automatically. After staging the intended changes, run the remaining checks:
+
+```bash
+python3 .github/file-descriptions.py <(git diff --cached --name-only) &&
+python3 .github/script-missing-mode-enforcement.py &&
+cmake --build build --target openttd_test -j8 &&
+./build/openttd_test
+```
+
+Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code.
+
 ## Debugging
 
 The main runtime log is `/tmp/openttd.log`.
