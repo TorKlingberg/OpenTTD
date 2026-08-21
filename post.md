@@ -29,7 +29,7 @@ The basic rule is that planes will not land or leave a stand or hangar until the
 
 Building costs, maintenance, noise, catchment areas, and similar factors roughly match the stock airports.
 
-There are no new graphics. The system uses the existing airport graphics. That means there are some limitations: the old runway graphic only exists along one axis, and the old hangar graphic has only one facing. Most elements of the stock airports are available to build, except the diagonal taxiways of the City Airport.
+There are no new graphics. The system uses the existing airport graphics. That means there are some limitations: the old runway graphic only exists along one axis, and the old/small hangar graphic has only one facing. Most elements of the stock airports are available to build, except the diagonal taxiways of the City Airport.
 
 There is also a new AI player, [b]ModularAirportAI[/b], that builds modular airports. It has a set of functional templates that it can rotate and tweak. It also expands airports over time with new runways and stands, but isn't very good at placing them efficiently. It doesn't build ground vehicles and is not competitive with AAAHogEx.
 
@@ -40,5 +40,5 @@ I'm happy to take any feedback, bug reports or feature requests right here.
 [url=https://github.com/TorKlingberg/OpenTTD/blob/master/docs/images/modular-airports/README.md]More screenshots[/url]
 
 [url=https://torklingberg.github.io/OpenTTD/]Web demo[/url]
-[url=https://github.com/TorKlingberg/OpenTTD/releases/tag/modular-airports-test-2]Builds[/url] (not signed, so Windows and especially macOS may refuse to run them)
+[url=https://github.com/TorKlingberg/OpenTTD/releases/tag/modular-airports-test-3]Builds[/url] (not signed, so Windows and especially macOS may refuse to run them)
 [url=https://github.com/TorKlingberg/OpenTTD]Source[/url]

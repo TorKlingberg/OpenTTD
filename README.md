@@ -34,7 +34,7 @@ Tips for building efficient airports:
 
 Building costs, maintenance, noise, catchment areas, and similar factors roughly match the stock airports.
 
-There are no new graphics. The system uses the existing airport graphics. That means there are some limitations: the old runway graphic only exists along one axis, and the old hangar graphic has only one facing. Most elements of the stock airports are available to build, except the diagonal taxiways of the City Airport.
+There are no new graphics. The system uses the existing airport graphics. That means there are some limitations: the old runway graphic only exists along one axis, and the old/small hangar graphic has only one facing. Most elements of the stock airports are available to build, except the diagonal taxiways of the City Airport.
 
 There is also a new AI player, ModularAirportAI, that builds modular airports. It has a set of functional templates that it can rotate and tweak. It also expands airports over time with new runways and stands, but isn't very good at placing them efficiently. It doesn't build ground vehicles and is not competitive with AAAHogEx.
 
