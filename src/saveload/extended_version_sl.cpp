@@ -66,8 +66,6 @@ void SlxResetFeatureVersions()
 /** Set all feature versions to what this build writes. */
 void SlxSetCurrentFeatureVersions()
 {
-	extern const SaveLoadVersion SAVEGAME_VERSION;
-
 	SlxResetFeatureVersions();
 	_slx_is_extended_savegame = true;
 

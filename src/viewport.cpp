@@ -39,19 +39,19 @@
  * looking only at the X-coordinate.
  *
  * \verbatim
- *        ╳        *
- *       ╱ ╲       *
- *      ╳ 0 ╳      *
- *     ╱ ╲ ╱ ╲     *
- *    ╳-1 ╳ 1 ╳    *
- *   ╱ ╲ ╱ ╲ ╱ ╲   *
- *  ╳-2 ╳ 0 ╳ 2 ╳  *
- *   ╲ ╱ ╲ ╱ ╲ ╱   *
- *    ╳-1 ╳ 1 ╳    *
- *     ╲ ╱ ╲ ╱     *
- *      ╳ 0 ╳      *
- *       ╲ ╱       *
- *        ╳        *
+ *        X        *
+ *       / \       *
+ *      X 0 X      *
+ *     / \ / \     *
+ *    X-1 X 1 X    *
+ *   / \ / \ / \   *
+ *  X-2 X 0 X 2 X  *
+ *   \ / \ / \ /   *
+ *    X-1 X 1 X    *
+ *     \ / \ /     *
+ *      X 0 X      *
+ *       \ /       *
+ *        X        *
  * \endverbatim
  *
  *
@@ -1136,7 +1136,7 @@ static void DrawTileSelection(const TileInfo *ti)
 	if ((_thd.drawstyle & HT_DRAG_MASK) == HT_NONE) return;
 
 	/* A gap inside the bounding box of an airport template preview: the template
-	 * does not occupy the tile, so it gets no footprint highlight — but it is still
+	 * does not occupy the tile, so it gets no footprint highlight -- but it is still
 	 * inside the coverage area, so fall through to the outer rect below instead of
 	 * leaving a hole in the coverage highlight. */
 	bool template_gap = false;

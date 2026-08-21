@@ -23,7 +23,7 @@ This feature allows players to save custom modular airport designs to disk and r
 
 ### 4. 4-Way Rotation Logic
 Rotation `r` (0-3 clockwise) is applied during placement:
-- **Offsets**: 
+- **Offsets**:
     - `r=0: (x, y)`
     - `r=1: (H-1-y, x)`
     - `r=2: (W-1-x, H-1-y)`

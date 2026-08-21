@@ -7,7 +7,7 @@ LOG_PATH = '/tmp/openttd.log'
 
 def analyze():
     print(f"Analyzing {LOG_PATH}...")
-    
+
     invariants = Counter()
     fallbacks = Counter()
     stuck_by_type = Counter()
@@ -15,15 +15,15 @@ def analyze():
     stuck_reserve = defaultdict(lambda: {'max_wait': 0, 'count': 0, 'reasons': Counter(), 'last_line': ''})
     landing_fails = Counter()
     takeoff_fails = Counter()
-    
+
     # We will also keep track of the most recent lines (last 50k lines)
     recent_lines = []
-    
+
     total_lines = 0
     with open(LOG_PATH, 'r', errors='replace') as f:
         for line in f:
             total_lines += 1
-            
+
             if 'invariant' in line:
                 if 'runway-transit-invariant' in line:
                     invariants['runway-transit-invariant'] += 1
@@ -33,13 +33,13 @@ def analyze():
                     invariants['runway-rest-invariant'] += 1
                 else:
                     invariants['other-invariant'] += 1
-            
+
             if '[FALLBACK]' in line:
                 # extract fallback type
                 m = re.search(r'\[FALLBACK\]\s*([^:\s]+)', line)
                 fb_type = m.group(1) if m else 'unknown'
                 fallbacks[fb_type] += 1
-                
+
             if 'stuck(' in line:
                 if 'stuck(no-path)' in line:
                     stuck_by_type['stuck(no-path)'] += 1
@@ -70,12 +70,12 @@ def analyze():
                         entry['last_line'] = line.strip()
                 elif 'stuck(occupied)' in line:
                     stuck_by_type['stuck(occupied)'] += 1
-            
+
             if 'landing-chain fail' in line:
                 m = re.search(r'reason=([^\s]+)', line)
                 reason = m.group(1) if m else 'unknown'
                 landing_fails[reason] += 1
-                
+
             if 'takeoff' in line and ('FindRunway=INVALID' in line or 'takeoff-path invalid' in line or 'takeoff-skip' in line):
                 if 'FindRunway=INVALID' in line:
                     takeoff_fails['FindRunway=INVALID'] += 1
@@ -85,7 +85,7 @@ def analyze():
                     takeoff_fails['takeoff-skip'] += 1
 
     print(f"Total lines analyzed: {total_lines}\n")
-    
+
     print("=== 1. INVARIANTS ===")
     if invariants:
         for k, v in invariants.items():

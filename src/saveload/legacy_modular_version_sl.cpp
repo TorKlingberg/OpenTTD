@@ -5,10 +5,9 @@
  * See the GNU General Public License for more details. You should have received a copy of the GNU General Public License along with OpenTTD. If not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0>.
  */
 
-/**
- * @file legacy_modular_version_sl.cpp
- *
- * TEMPORARY: loading savegames written before the fork moved its features off #SaveLoadVersion.
+/** @file legacy_modular_version_sl.cpp Loading savegames from before modular airport feature versions. */
+
+/* TEMPORARY: loading savegames written before the fork moved its features off #SaveLoadVersion.
  *
  * Those savegames are stamped 367-375, which were entries appended to #SaveLoadVersion for the
  * modular airport branch. They have no XVER chunk, so their feature versions have to be inferred
@@ -52,8 +51,6 @@ static_assert(to_underlying(SaveLoadVersion::MaxVersion) - 1 < LEGACY_MODULAR_FI
  */
 void SlxHandleLegacyModularSavegameVersion()
 {
-	extern SaveLoadVersion _sl_version;
-
 	const uint16_t version = to_underlying(_sl_version);
 	if (version < LEGACY_MODULAR_FIRST || version > LEGACY_MODULAR_LAST) return;
 

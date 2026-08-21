@@ -251,14 +251,14 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
-	/* Stands are parking endpoints — avoid routing through ones another aircraft has
+	/* Stands are parking endpoints -- avoid routing through ones another aircraft has
 	 * claimed. Unclaimed stands are allowed so small airports without separate
 	 * taxiways still work.
 	 *
 	 * The ownership test matters: a stand this aircraft already holds is not an
 	 * obstacle to itself. Reservations outlive the taxi path that created them, so
 	 * asking only "is this reserved?" let an aircraft whose sole exit was a stand it
-	 * had reserved block its own route — permanently, since it then never moved and
+	 * had reserved block its own route -- permanently, since it then never moved and
 	 * so never released the tile.
 	 *
 	 * A reservation whose owner no longer exists is likewise not an obstacle. Elsewhere
@@ -299,7 +299,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 
 	/* Explicit edge fences block movement in both directions.
 	 * Exception: movement within the same contiguous runway ignores edge
-	 * fences — these are decorative perimeter barriers, not internal runway
+	 * fences -- these are decorative perimeter barriers, not internal runway
 	 * blockers. Without this, rollout paths between runway ends fail.
 	 * Only same-runway is exempt; fences between distinct parallel runways
 	 * remain enforced. */
@@ -324,7 +324,7 @@ static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReac
 	/* One index lookup for the current tile; reused for every edge check below. */
 	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
 
-	/* is_hangar drives only verbose (level 4) tracing — don't pay for it otherwise. */
+	/* is_hangar drives only verbose (level 4) tracing -- don't pay for it otherwise. */
 	const bool is_hangar = (_debug_misc_level >= 4) && tile_data != nullptr &&
 			(tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_DEPOT_SW ||
 			 tile_data->piece_type == APT_DEPOT_NW || tile_data->piece_type == APT_DEPOT_NE ||
@@ -556,11 +556,11 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile)
 static TaxiSegmentType ClassifyTile(const Station *st, TileIndex tile)
 {
 	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	if (data == nullptr) return TaxiSegmentType::FREE_MOVE;
+	if (data == nullptr) return TaxiSegmentType::FreeMove;
 
-	if (IsModularRunwayPiece(data->piece_type)) return TaxiSegmentType::RUNWAY;
-	if (IsTaxiwayPiece(data->piece_type) && data->one_way_taxi) return TaxiSegmentType::ONE_WAY;
-	return TaxiSegmentType::FREE_MOVE;
+	if (IsModularRunwayPiece(data->piece_type)) return TaxiSegmentType::Runway;
+	if (IsTaxiwayPiece(data->piece_type) && data->one_way_taxi) return TaxiSegmentType::OneWay;
+	return TaxiSegmentType::FreeMove;
 }
 
 /**

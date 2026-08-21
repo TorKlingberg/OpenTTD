@@ -20,8 +20,8 @@ void ShowBuildModularAirportWindow();
  * Every airport graphic the modular builder can place, sorted and deduplicated.
  *
  * This is the definition of what a modular airport may be built from. Anything
- * that places modular tiles without going through the builder — the script API
- * above all — must place only graphics from this set.
+ * that places modular tiles without going through the builder -- the script API
+ * above all -- must place only graphics from this set.
  *
  * A compound piece appears here once, under the graphic that names it; see
  * GetModularCompoundPieceTiles for what it actually puts on the ground.

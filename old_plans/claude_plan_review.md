@@ -14,7 +14,7 @@
 ### Tile Memory Collision (`m7`)
 *   **Plan**: "Use tile.m6() bit 0 for reservation flag, tile.m7() for vehicle ID".
 *   **Risk**: `m7` is standardly used for **animation frames** in OpenTTD stations (`SetAnimationFrame`). Using it for Vehicle ID will likely break animations for radars, windsocks, and runway lights.
-*   **Recommendation**: 
+*   **Recommendation**:
     *   Use `m6` bit 0 for the reservation flag (this is safe).
     *   Do *not* store the Vehicle ID on the tile. The pathfinder only needs to know *if* a tile is reserved, not *who* reserved it. If ID is strictly necessary for deadlock resolution, store it in the `ModularAirport` struct (in a map) rather than on the map tile.
 

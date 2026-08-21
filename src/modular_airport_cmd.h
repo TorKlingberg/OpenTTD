@@ -48,14 +48,14 @@ void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc);
  * actually has a hangar to head for.
  *
  * Every modular goal-selection site must answer this the same way. They run at different
- * moments of a single arrival — landing-target choice while still airborne, ground goal at
- * landing commit, and again once rollout finishes — so a disagreement between them surfaces
+ * moments of a single arrival -- landing-target choice while still airborne, ground goal at
+ * landing commit, and again once rollout finishes -- so a disagreement between them surfaces
  * as an aircraft that lands somewhere it then refuses to taxi off.
  *
  * The hangar test is what keeps a serviceable-looking arrival from becoming an infinite
  * loop. Wanting a hangar suppresses helipad and stand selection, so at an airport with no
  * hangar the aircraft lands, finds nothing it is willing to park on, leaves by the
- * departure ladder, and picks the same airport again on the next approach — a helicopter
+ * departure ladder, and picks the same airport again on the next approach -- a helicopter
  * bobbing over a pad forever. An airport that cannot service it is one it should simply
  * park at.
  */
@@ -66,7 +66,7 @@ inline bool ModularAircraftWantsHangar(const Aircraft *v, const Station *st)
 }
 
 /**
- * Whether @p tile is a helipad from which a hangar can be reached by ground — the only
+ * Whether @p tile is a helipad from which a hangar can be reached by ground -- the only
  * kind a depot-bound helicopter may land on. Reads the layout-derived cache, so it is
  * cheap enough for the per-tick landing scan.
  */
@@ -109,7 +109,7 @@ inline uint8_t NormalizeModularRunwayFlags(uint8_t flags)
 	return normalized;
 }
 
-/** Runway end pieces — the only valid landing/takeoff target tiles. */
+/** Runway end pieces -- the only valid landing/takeoff target tiles. */
 inline bool IsModularRunwayEndPiece(uint8_t piece_type)
 {
 	switch (piece_type) {
@@ -329,24 +329,24 @@ bool IsTaxiTileReservedByOther(const Station *st, TileIndex tile, VehicleID vid)
 uint8_t FindTaxiSegmentIndex(const TaxiPath *path, uint16_t tile_index);
 /** Why a segment reservation attempt was refused. */
 enum class TaxiReserveFailure : uint8_t {
-	NONE,                  ///< The attempt succeeded.
-	NO_PATH,               ///< No usable taxi path or segment index.
-	RESERVED_BY_OTHER,     ///< A tile in the claim is reserved by another aircraft.
-	OCCUPIED_BY_OTHER,     ///< A tile in the claim is physically occupied by another aircraft.
-	RUNWAY_BUSY,           ///< A runway resource could not be acquired atomically.
-	RUNWAY_RESOURCE_ERROR, ///< A runway's contiguous extent could not be resolved.
-	NO_SAFE_STOP,          ///< A crossing chain reached no terminator (contract violation).
+	None,                 ///< The attempt succeeded.
+	NoPath,               ///< No usable taxi path or segment index.
+	ReservedByOther,      ///< A tile in the claim is reserved by another aircraft.
+	OccupiedByOther,      ///< A tile in the claim is physically occupied by another aircraft.
+	RunwayBusy,           ///< A runway resource could not be acquired atomically.
+	RunwayResourceError,  ///< A runway's contiguous extent could not be resolved.
+	NoSafeStop,           ///< A crossing chain reached no terminator (contract violation).
 };
 
 /**
  * Detail of a refused reservation, so diagnostics can report the tile that actually
  * blocked rather than re-deriving a guess from the next path tile. The claim a
- * segment makes is frequently wider than one tile — a whole FREE_MOVE segment, or a
- * crossing chain spanning several runways — so "the next tile looks free" and "the
+ * segment makes is frequently wider than one tile -- a whole FREE_MOVE segment, or a
+ * crossing chain spanning several runways -- so "the next tile looks free" and "the
  * reservation failed" are routinely both true at once.
  */
 struct TaxiReserveResult {
-	TaxiReserveFailure reason = TaxiReserveFailure::NONE;
+	TaxiReserveFailure reason = TaxiReserveFailure::None;
 	TileIndex tile = INVALID_TILE;            ///< The tile that could not be claimed.
 	VehicleID blocker = VehicleID::Invalid(); ///< Who holds it, where known.
 };

@@ -1557,9 +1557,9 @@ bool ModularAircraftHasElevatedOverrunRisk(const Aircraft *v, const Station *st)
  * stock MaybeCrashAirplane logic.
  *
  * Modular aircraft never reach MaybeCrashAirplane (it is only called from the
- * classic FTA movement path), so the stock crash mechanics — both the elevated
+ * classic FTA movement path), so the stock crash mechanics -- both the elevated
  * short-strip overrun for fast jets and the general random crash governed by the
- * "Plane crashes" setting — would otherwise never apply on modular airports.
+ * "Plane crashes" setting -- would otherwise never apply on modular airports.
  * This replicates both. The stock ShortStrip airport flag is replaced by the
  * large-aircraft safety requirements check (6-tile landing+takeoff runway,
  * control tower, big terminal), since the generic AT_MODULAR FTA always carries
@@ -1852,8 +1852,8 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 	if (v->modular_ground_target != MGT_NONE) {
 		/* Idle after rollout/taxi with a modular target but no active path: re-poll
 		 * for a now-free stand/hangar/helipad and resume taxiing as soon as one
-		 * opens. No relocation is needed here — a landed aircraft is always parked
-		 * on a safe stop (the landing chain reserves runway → an adjacent one-way
+		 * opens. No relocation is needed here -- a landed aircraft is always parked
+		 * on a safe stop (the landing chain reserves runway -> an adjacent one-way
 		 * buffer or the goal stand, and the rollout-completion handler taxis it
 		 * there), which is a legal place to wait indefinitely. */
 		if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
@@ -2188,7 +2188,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 						runway_tile = st->airport.modular_heli_landing_tile;
 					}
 				} else {
-					/* Airport has helipads — find an available one. */
+					/* Airport has helipads -- find an available one. */
 					runway_tile = FindModularLandingTarget(st, v);
 					if (runway_tile != INVALID_TILE && !IsModularHeliLandingTileAvailable(st, v, runway_tile)) {
 						runway_tile = INVALID_TILE;
@@ -2199,7 +2199,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			} else {
 				const ModularHoldingLoop &loop = GetModularHoldingLoop(st);
 				const uint32_t n_wp = static_cast<uint32_t>(loop.waypoints.size());
-				/* Position-based nearest waypoint — consistent with movement targeting,
+				/* Position-based nearest waypoint -- consistent with movement targeting,
 				 * so the gate fires when the aircraft is physically near the gate waypoint. */
 				const uint32_t aircraft_wp = GetNearestModularHoldingWaypoint(v, loop);
 
@@ -2289,7 +2289,7 @@ void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *)
 
 	/* check if the aircraft needs to be replaced or renewed and send it to a hangar if needed.
 	 *
-	 * Never for a helicopter. In stock this handler is unreachable for one — helicopters land
+	 * Never for a helicopter. In stock this handler is unreachable for one -- helicopters land
 	 * through HELILANDING/AircraftEventHandler_HeliLanding, which has no service check, because
 	 * they are serviced on the helipad instead. Modular landing routes every aircraft through
 	 * here, so without this guard a modular helicopter would be serviced on its pad and then
@@ -2336,7 +2336,7 @@ static void HandleModularEndLanding(Aircraft *v, const Station *st)
 	if (goal == INVALID_TILE) {
 		/* Already on the ground: a helicopter that found neither helipad nor hangar has
 		 * to park somewhere, so the stock "helipads exist, so wait" rule is overridden
-		 * here. It applies where the aircraft still has the option of waiting — airborne
+		 * here. It applies where the aircraft still has the option of waiting -- airborne
 		 * (it keeps circling) or sitting in a hangar. */
 		goal = FindFreeModularTerminal(st, v, INVALID_TILE, true);
 		target = MGT_TERMINAL;

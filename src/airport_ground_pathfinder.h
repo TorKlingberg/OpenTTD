@@ -35,9 +35,9 @@ struct AirportGroundPath {
  * aircraft happens to be standing in.
  */
 enum class TaxiSegmentType : uint8_t {
-	FREE_MOVE,  ///< Bidirectional taxiways, aprons, stands, hangars - traveled tiles claimed through the forward horizon
-	ONE_WAY,    ///< One-way taxiways - safe to queue on, and a boundary of the forward horizon
-	RUNWAY,     ///< Runway tiles - whole runway claimed via TryReserveContiguousModularRunway for an explicit landing/takeoff, traveled tiles only when crossing
+	FreeMove, ///< Bidirectional taxiways, aprons, stands, hangars - traveled tiles claimed through the forward horizon
+	OneWay,   ///< One-way taxiways - safe to queue on, and a boundary of the forward horizon
+	Runway,   ///< Runway tiles - whole runway claimed via TryReserveContiguousModularRunway for an explicit landing/takeoff, traveled tiles only when crossing
 };
 
 /** A contiguous segment of same-type tiles within a taxi path. */

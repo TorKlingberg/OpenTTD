@@ -231,8 +231,8 @@ public:
 	 * This is exactly what the interactive builder offers, and deliberately not
 	 * one graphic more. The game holds many further airport tiles, but they belong
 	 * to stock airports: they reach a modular airport only when one is converted,
-	 * and several of them draw things — a jetway, a fence, half of a compound
-	 * building — that only make sense in the stock layout they were cut from. A
+	 * and several of them draw things -- a jetway, a fence, half of a compound
+	 * building -- that only make sense in the stock layout they were cut from. A
 	 * script builds from the same vocabulary a player has, so the two cannot
 	 * produce airports the other could not.
 	 */
@@ -570,5 +570,11 @@ public:
 	 */
 	static SQInteger GetModularLayoutSafety(Array<SQInteger> &&layout);
 };
+
+/** Convert a script-visible modular piece to its airport tile graphic. */
+uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece);
+
+/** Convert an airport tile graphic to its script-visible modular piece. */
+ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx);
 
 #endif /* SCRIPT_AIRPORT_HPP */

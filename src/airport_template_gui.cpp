@@ -117,7 +117,7 @@ void UpdateSavedTemplatePreviewCache(const AirportTemplate *templ, uint8_t rotat
 	_saved_template_preview_active = !_saved_template_preview_offsets.empty();
 	if (!_saved_template_preview_active || rad <= 0) return;
 
-	/* Union of a (2*rad+1) square around each piece — the same shape the built
+	/* Union of a (2*rad+1) square around each piece -- the same shape the built
 	 * station will end up with. */
 	int max_dx = INT_MIN;
 	int max_dy = INT_MIN;

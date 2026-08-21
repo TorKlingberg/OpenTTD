@@ -247,7 +247,7 @@ static constexpr uint8_t _modular_airport_implicit_gfx[] = {
  * The tables above are the authority on what a modular airport is built from:
  * the toolbar, the cosmetic picker and the helipad picker are between them its
  * whole vocabulary. AirportTiles holds a good deal more, but the rest belongs to
- * stock airports and reaches a modular airport only through conversion — those
+ * stock airports and reaches a modular airport only through conversion -- those
  * graphics must not become buildable by any other route, the script API
  * included. See ModularAirportBuilderVocabulary in the tests, which holds that
  * line.
@@ -285,8 +285,8 @@ std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
  * The three tiles of the small terminal.
  *
  * Each has its own graphic and they only join up left to right, so the piece has
- * no rotations: this is the whole of its geometry. Anything that places it —
- * the picker below, the script API — works from this one definition.
+ * no rotations: this is the whole of its geometry. Anything that places it --
+ * the picker below, the script API -- works from this one definition.
  */
 static constexpr ModularCompoundPieceTile _small_terminal_3_tiles[] = {
 	{0, 0, APT_SMALL_BUILDING_1},
@@ -327,7 +327,7 @@ struct ModularCompoundPiecePreviewBox {
  * A compound piece's tiles sit on the map, so their preview follows the map's projection:
  * a step along +X goes down-left on screen and a step along +Y down-right. Reading the
  * step off a tile sprite's size instead would follow the base set, which is free to draw
- * a tile sprite taller than the tile it covers — aBase's terminal reaches above its tile,
+ * a tile sprite taller than the tile it covers -- aBase's terminal reaches above its tile,
  * and half of that overshoot went into the step and pulled the row apart into a staircase.
  *
  * @param ct Tile of the compound piece.
@@ -570,7 +570,7 @@ public:
 		CloseWindowById(WindowClass::ModularAirportInfoOverlay, 0);
 		CloseWindowByClass(WindowClass::BuildDepot);
 		/* Use Window::Close() instead of PickerWindowBase::Close() to avoid
-		 * an unconditional ResetObjectToPlace() — the guard above already
+		 * an unconditional ResetObjectToPlace() -- the guard above already
 		 * handles our own cursor, and we must not reset another window's cursor
 		 * (e.g. the stock airport builder toolbar). */
 		this->Window::Close();
@@ -646,8 +646,8 @@ public:
 			if (piece.ground_tile) {
 				/* A ground tile sprite is anchored on the tile's northern corner, so place
 				 * that corner instead of centring the sprite's bounding box. A base set may
-				 * extend a tile sprite well above the tile it covers — aBase's runway and
-				 * stand tiles reach 96 and 48 pixels up — and centring the box then slides
+				 * extend a tile sprite well above the tile it covers -- aBase's runway and
+				 * stand tiles reach 96 and 48 pixels up -- and centring the box then slides
 				 * the tile itself off the bottom of the button. */
 				int tile_w = UnScaleByZoom(64 * ZOOM_BASE, icon_zoom);
 				int tile_h = UnScaleByZoom(32 * ZOOM_BASE, icon_zoom);
@@ -898,7 +898,7 @@ public:
 
 		/* Fence tool: determine closest edge from click position and toggle fence.
 		 * Uses _tile_fract_coords (0-15 sub-tile position in world X/Y) set by
-		 * the viewport system on each click — same mechanism as the autoroad tool. */
+		 * the viewport system on each click -- same mechanism as the autoroad tool. */
 		if (this->fence_tool_active) {
 			if (!IsTileType(tile, TileType::Station) || !IsAirport(tile)) return;
 			Station *st = Station::GetByTile(tile);
@@ -1048,7 +1048,7 @@ public:
 					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station, drag_rotation);
 				}
 			} else {
-				/* Small runway: place contiguously front→middles→back so each tile is adjacent
+				/* Small runway: place contiguously front->middles->back so each tile is adjacent
 				 * to the last, allowing GetStationAround to find the growing station. */
 				this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
@@ -1253,7 +1253,7 @@ private:
 	{
 		if (this->updating_cursor) return; // We're re-setting our own cursor; ignore.
 
-		/* External window stole the cursor — deselect and raise all buttons. */
+		/* External window stole the cursor -- deselect and raise all buttons. */
 		this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 		for (WidgetID w = WID_MA_PIECE_FIRST; w <= WID_MA_PIECE_LAST; w++) {
 			this->RaiseWidget(w);
@@ -1373,7 +1373,7 @@ public:
 				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
 			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(4);
 		}
-		/* Skip PickerWindowBase::Close() which calls ResetObjectToPlace() —
+		/* Skip PickerWindowBase::Close() which calls ResetObjectToPlace() --
 		 * we're a child picker and must not steal the parent's cursor. */
 		this->Window::Close();
 	}
@@ -1401,7 +1401,7 @@ public:
 			int x = (ir.Width()  - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
 			int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
 			uint8_t rot = _widget_to_rot[widget - WID_MAHP_DIR_NW];
-			/* Use the modular hangar layout directly — StationPickerDrawSprite can't handle
+			/* Use the modular hangar layout directly -- StationPickerDrawSprite can't handle
 			 * the high gfx indices (APT_DEPOT_NW/NE/SW = 88-90) which are beyond the
 			 * airport tile layout table size and get clamped to index 0 (apron). */
 			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
@@ -1967,7 +1967,7 @@ static Point TileCenterToScreen(const Viewport &vp, TileIndex tile, int z_offset
 	return WorldToScreen(vp, wx, wy, GetSlopePixelZ(wx, wy) + z_offset);
 }
 
-/** Conservative AABB visibility check — GfxDrawLine clips anyway; this skips obviously off-screen segments. */
+/** Conservative AABB visibility check -- GfxDrawLine clips anyway; this skips obviously off-screen segments. */
 static bool HoldingSegVis(Point a, Point b, const DrawPixelInfo *dpi)
 {
 	int l = dpi->left, r = l + dpi->width, t = dpi->top, bot = t + dpi->height;
@@ -2026,7 +2026,7 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		for (const auto &gate : loop.gates) {
 			if (gate.wp_index >= n) continue;
 
-			/* Yellow: gate waypoint → runway threshold. */
+			/* Yellow: gate waypoint -> runway threshold. */
 			const auto &wp = loop.waypoints[gate.wp_index];
 			Point pgw = HoldingWorldToScreen(vp, wp.x, wp.y);
 			Point pth = HoldingWorldToScreen(vp, gate.threshold_x, gate.threshold_y, 0);

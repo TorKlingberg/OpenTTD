@@ -7,4 +7,3 @@ Pathing improvements:
 * Cache for airport path-finding?
 
 Support NewGRF airports in build-as-modular.
-

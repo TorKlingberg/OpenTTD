@@ -427,7 +427,7 @@ const ModularHoldingLoop &GetModularHoldingLoop(const Station *st)
  *
  * One-way tiles can never be used as a helicopter pad.  A one-way tile is a
  * queueing corridor: a helicopter parked on one blocks every aircraft behind
- * it, and cannot leave except along the corridor's flow direction — which
+ * it, and cannot leave except along the corridor's flow direction -- which
  * typically feeds a runway rather than a stand, so a helicopter heading for a
  * terminal has no legal move at all.  That deadlocks the corridor permanently
  * rather than merely slowing it down.
@@ -459,7 +459,7 @@ static bool IsModularHeliParkableApron(const Station *st, const ModularAirportTi
  * takes the crossing pass and reports a different cost for an unchanged layout. Ranking
  * candidates by cost would therefore depend on when the computation happened, and this
  * cache is recomputed lazily per client, so two clients could pick different tiles.
- * Reachability is free of that — a hangar goal always falls through to the crossing pass,
+ * Reachability is free of that -- a hangar goal always falls through to the crossing pass,
  * so "found" is the same either way. Writing is suppressed for the same reason the
  * pathfinder's own probe convention suppresses it (see airport_ground_pathfinder.cpp):
  * a probe must not insert keys into saved state that no aircraft ever asked for.
@@ -504,17 +504,17 @@ bool IsModularPadWithHangarAccess(const Station *st, TileIndex tile)
  * A rooftop heliport (`APT_HELIPORT`) has no taxiable neighbour at all, so a
  * helicopter that lands on one for servicing is stranded: the terminal handler
  * finds no reachable hangar, falls through to the departure ladder, finds no
- * reachable runway either, and lifts off vertically — then picks the very same
+ * reachable runway either, and lifts off vertically -- then picks the very same
  * pad on the next approach, because helicopters only ever consider helipads.
  * The result is a helicopter bobbing up and down over the pad forever.
  *
  * Where that is the case the pads are simply not usable for this trip, so
  * precompute a touchdown tile that *can* reach a hangar: the apron nearest one,
  * or failing that a stand. Layout-derived like the other computed heli tiles,
- * so it rides the same dirty flag — which means every input must be layout-pure,
+ * so it rides the same dirty flag -- which means every input must be layout-pure,
  * see IsModularHangarReachableFrom for the trap there.
  *
- * Stays INVALID_TILE in every ordinary layout — no helipads (the plain computed
+ * Stays INVALID_TILE in every ordinary layout -- no helipads (the plain computed
  * heli tile already puts the helicopter on the taxi network), no hangar
  * (nothing to reach), or at least one pad that reaches a hangar.
  */
@@ -537,7 +537,7 @@ static void ComputeModularHeliServiceTile(const Station *st)
 	 * cannot work this out for itself: it runs once per flying tick per aircraft, and an
 	 * A* per pad there is exactly the cost its cheap euclidean pad scoring exists to
 	 * avoid. Without the filter a depot-bound helicopter can pick a cut-off pad at an
-	 * airport that also has a connected one — it lands, cannot taxi to the hangar, lifts
+	 * airport that also has a connected one -- it lands, cannot taxi to the hangar, lifts
 	 * off, and scores the same pad best again. */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularHelipadPiece(data.piece_type)) continue;
@@ -592,7 +592,7 @@ static void ComputeModularHeliTiles(const Station *st)
 	if (st->airport.modular_tile_data == nullptr || st->airport.modular_tile_data->empty()) return;
 
 	/* If the airport has helipads, helicopters use those directly via
-	 * FindModularLandingTarget — no computed tile needed. */
+	 * FindModularLandingTarget -- no computed tile needed. */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (IsModularHelipadPiece(data.piece_type)) return;
 	}
@@ -633,7 +633,7 @@ static void ComputeModularHeliTiles(const Station *st)
 		return;
 	}
 
-	/* Step 3: Fallback — find runway ends with appropriate flags. */
+	/* Step 3: Fallback -- find runway ends with appropriate flags. */
 	TileIndex best_landing = INVALID_TILE;
 	int best_landing_dist = INT_MAX;
 	TileIndex best_takeoff = INVALID_TILE;

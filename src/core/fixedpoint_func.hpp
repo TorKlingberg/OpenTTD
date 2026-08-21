@@ -72,7 +72,7 @@ inline int64_t FP16Atan2(int64_t y, int64_t x)
 {
 	if (x == 0 && y == 0) return 0;
 
-	const int64_t abs_y = std::abs(y) + 1; /* +1 is sub-epsilon in 16.16 — prevents division by zero */
+	const int64_t abs_y = std::abs(y) + 1; /* +1 is sub-epsilon in 16.16 -- prevents division by zero */
 	int64_t angle;
 	if (x >= 0) {
 		int64_t r = FP16Div(x - abs_y, x + abs_y);

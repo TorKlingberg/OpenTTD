@@ -470,9 +470,9 @@ void ApplyModularAirportNoiseChange(const Station *st, const ModularAirportNoise
  * as one without a hangar. A modular airport instead loses its hangar a tile at a time, so
  * the same cleanup has to hang off the tile mutation paths. Without it an order issued
  * while the hangar still stood keeps sending the aircraft to an airport that can no longer
- * serve it — it lands, finds no hangar, and leaves again on a loop.
+ * serve it -- it lands, finds no hangar, and leaves again on a loop.
  *
- * Call this once per command, on the finished layout — never from inside a per-tile loop.
+ * Call this once per command, on the finished layout -- never from inside a per-tile loop.
  * Building is not monotonic: a template that replaces the old hangar early and lays its own
  * down later passes through a hangarless moment that says nothing about the result, and
  * purging there would drop orders the finished airport can still serve. (Removal alone
@@ -868,7 +868,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 
 	/* Only worth building when we are going to test it. Template placement calls this
 	 * once per tile with check_noise false, and each snapshot walks the whole layout
-	 * looking for the nearest town — computing them anyway makes a placement quadratic
+	 * looking for the nearest town -- computing them anyway makes a placement quadratic
 	 * in its own tile count for an answer that is thrown away. */
 	if (check_noise) {
 		std::vector<ModularAirportNoisePiece> future_pieces;
@@ -908,20 +908,20 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	}
 
 	/* The name is chosen once, when the first tile creates the station, so this path
-	 * has to answer "airport or heliport?" from a single piece — the template and
+	 * has to answer "airport or heliport?" from a single piece -- the template and
 	 * from-stock paths derive it from their finished layout, which does not exist yet
 	 * here.
 	 *
 	 * A helipad is the one piece that says something: nothing but a helicopter uses
 	 * one, and a player laying a pad down first is building a heliport. Every other
-	 * piece — apron, stand, hangar, runway, building — appears in both kinds of
+	 * piece -- apron, stand, hangar, runway, building -- appears in both kinds of
 	 * airport, so it gets the generic name. Asking instead whether this one tile is a
 	 * runway (or whether the one-tile layout accepts planes) names an airport begun
 	 * with an apron "Heliport" for the rest of the game.
 	 *
 	 * Order dependence is not fully removable here: a large airport whose first tile
 	 * happens to be a helipad still comes out "Heliport". What this does buy is the
-	 * case that matters — a hand-built heliport now gets the same name as the stock
+	 * case that matters -- a hand-built heliport now gets the same name as the stock
 	 * heliport built as modular. */
 	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? StationNaming::Heliport : StationNaming::Airport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
@@ -988,7 +988,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	/* Convert canonical SE hangars to directional variants based on rotation.
 	 * Only canonical forms (APT_DEPOT_SE / APT_SMALL_DEPOT_SE) are rotated here;
 	 * template tiles arrive pre-rotated via RotateTemplateTile and pass through unchanged.
-	 * Do NOT use SwapBuildingPieceForRotation here — it would double-rotate template tiles
+	 * Do NOT use SwapBuildingPieceForRotation here -- it would double-rotate template tiles
 	 * (which also apply it) and double-swap APT_BUILDING_1/2 and runway near/far ends. */
 	uint8_t directional_piece = static_cast<uint8_t>(gfx);
 	if (directional_piece == APT_DEPOT_SE) {
@@ -1230,7 +1230,7 @@ std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t a
 	 * check in DrawModularAirportPerimeterFences), and that check keeps working
 	 * correctly as tiles are added or removed later. A perimeter-only bit baked into
 	 * edge_block_mask is therefore both redundant at conversion time and wrong once the
-	 * airport grows past it — it would keep drawing (and taxi-blocking) a fence deep
+	 * airport grows past it -- it would keep drawing (and taxi-blocking) a fence deep
 	 * inside the layout. Keep the bit only where the neighbour is also part of this
 	 * layout, i.e. a genuine internal partition; mirror it onto that neighbour so both
 	 * sides agree, matching how the in-game fence tool stores a partition. Drop it

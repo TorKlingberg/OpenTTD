@@ -429,6 +429,10 @@ enum class SaveLoadVersion : uint16_t {
 	MaxVersion, ///< Highest possible saveload version.
 };
 
+extern const SaveLoadVersion SAVEGAME_VERSION; ///< Current savegame version of OpenTTD.
+extern SaveLoadVersion _sl_version;             ///< Major savegame version being loaded.
+extern uint8_t _sl_minor_version;               ///< Minor savegame version being loaded.
+
 /** Types of save games. */
 enum SavegameType : uint8_t {
 	TTD, ///< TTD savegame (can be detected incorrectly)
@@ -1341,8 +1345,6 @@ inline constexpr bool SlCheckVarSize(SaveLoadType cmd, VarType type, size_t leng
  */
 inline bool IsSavegameVersionBefore(SaveLoadVersion major, uint8_t minor = 0)
 {
-	extern SaveLoadVersion _sl_version;
-	extern uint8_t            _sl_minor_version;
 	return _sl_version < major || (minor > 0 && _sl_version == major && _sl_minor_version < minor);
 }
 
@@ -1355,7 +1357,6 @@ inline bool IsSavegameVersionBefore(SaveLoadVersion major, uint8_t minor = 0)
  */
 inline bool IsSavegameVersionBeforeOrAt(SaveLoadVersion major)
 {
-	extern SaveLoadVersion _sl_version;
 	return _sl_version <= major;
 }
 
@@ -1368,7 +1369,6 @@ inline bool IsSavegameVersionBeforeOrAt(SaveLoadVersion major)
  */
 inline bool SlIsObjectCurrentlyValid(SaveLoadVersion version_from, SaveLoadVersion version_to)
 {
-	extern const SaveLoadVersion SAVEGAME_VERSION;
 	return version_from <= SAVEGAME_VERSION && SAVEGAME_VERSION < version_to;
 }
 

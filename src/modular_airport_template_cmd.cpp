@@ -82,8 +82,8 @@ static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, ui
 
 	tile.rotation = (old_rotation + r) & 3;
 
-	/* A hangar's facing is carried by `rotation` on the way in — the script API and
-	 * the builder both send the canonical APT_DEPOT_SE — and
+	/* A hangar's facing is carried by `rotation` on the way in -- the script API and
+	 * the builder both send the canonical APT_DEPOT_SE -- and
 	 * BuildModularAirportTile_Apply turns that into the directional variant when the
 	 * tile is placed. Rotating the piece type here as well would encode the turn
 	 * twice, and because every reader resolves piece_type ahead of rotation, the
@@ -91,8 +91,8 @@ static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, ui
 	 * a hangar authored facing NW came out facing whatever the template rotation
 	 * alone said. Leave canonical hangars alone and let rotation speak for them.
 	 *
-	 * Pieces that genuinely encode orientation in the type itself — the building
-	 * 1/2 pair, small runway near/far ends — still have to be swapped. */
+	 * Pieces that genuinely encode orientation in the type itself -- the building
+	 * 1/2 pair, small runway near/far ends -- still have to be swapped. */
 	if (!IsCanonicalHangarPiece(tile.piece_type)) {
 		SwapBuildingPieceForRotation(tile.piece_type, r);
 	}
@@ -138,7 +138,7 @@ static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_
 	}
 }
 
-CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st,
+static CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st,
 		std::optional<uint8_t> piece_type = std::nullopt)
 {
 	/* Validate flags: at least one operation and exactly one direction must be set */
@@ -163,7 +163,7 @@ CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *
 	return CommandCost();
 }
 
-void SetRunwayFlags_Apply(TileIndex tile, uint8_t runway_flags, Station *st)
+static void SetRunwayFlags_Apply(TileIndex tile, uint8_t runway_flags, Station *st)
 {
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return;
@@ -220,7 +220,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 	return CommandCost();
 }
 
-CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st,
+static CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st,
 		std::optional<uint8_t> piece_type = std::nullopt, uint8_t rotation = 0)
 {
 	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
@@ -253,7 +253,7 @@ CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool on
 	return CommandCost();
 }
 
-void SetTaxiwayFlags_Apply(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st)
+static void SetTaxiwayFlags_Apply(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st)
 {
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return;
@@ -284,7 +284,7 @@ CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t tax
 	return CommandCost();
 }
 
-CommandCost SetEdgeFence_Check(TileIndex tile [[maybe_unused]], uint8_t edge_bit, Station *st)
+static CommandCost SetEdgeFence_Check(TileIndex tile [[maybe_unused]], uint8_t edge_bit, Station *st)
 {
 	/* Validate: exactly one edge bit. */
 	if (edge_bit != 0x01 && edge_bit != 0x02 && edge_bit != 0x04 && edge_bit != 0x08) return CMD_ERROR;
@@ -301,7 +301,7 @@ CommandCost SetEdgeFence_Check(TileIndex tile [[maybe_unused]], uint8_t edge_bit
 	return CommandCost();
 }
 
-void SetEdgeFence_Apply(TileIndex tile, uint8_t edge_bit, bool set, Station *st)
+static void SetEdgeFence_Apply(TileIndex tile, uint8_t edge_bit, bool set, Station *st)
 {
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 	if (data == nullptr) return;

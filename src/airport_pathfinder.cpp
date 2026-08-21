@@ -163,7 +163,7 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
 			/* Single-direction opening, in the bit order of coords.md:
 			 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0).
 			 * hangar_rot 0=SE 1=NE 2=NW 3=SW means the door faces (0,+1), (-1,0),
-			 * (0,-1), (+1,0) — that is bits 2, 3, 0, 1, or (hangar_rot + 2) % 4.
+			 * (0,-1), (+1,0) -- that is bits 2, 3, 0, 1, or (hangar_rot + 2) % 4.
 			 * The old form negated the rotation instead, which happens to agree for
 			 * SE and NW and is 180 degrees out for NE and SW. */
 			return (1 << ((hangar_rot + 2) % 4));

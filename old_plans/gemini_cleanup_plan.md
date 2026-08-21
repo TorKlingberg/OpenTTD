@@ -4,7 +4,7 @@ This document outlines the planned refinements for the modular airport system ba
 
 ## 1. Memory Safety: `TaxiPath` Refactoring
 - **Goal:** Replace raw pointers with `std::unique_ptr` for better ownership management.
-- **Action:** 
+- **Action:**
     - Change `TaxiPath *taxi_path` and `TaxiPath *landing_chain_path` to `std::unique_ptr<TaxiPath>` in `src/aircraft.h`.
     - **Comprehensive Audit:** Review ALL assignments to these pointers in `src/modular_airport_cmd.cpp`, including:
         - Path rebuilding in `AirportMoveModular`.

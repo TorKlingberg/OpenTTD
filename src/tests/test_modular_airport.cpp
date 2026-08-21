@@ -48,7 +48,6 @@
 static Station *SetupModularAirport(TileIndex base_tile, uint size_x, uint size_y)
 {
 	MockEnvironment::Instance();
-	extern StationPool _station_pool;
 	_station_pool.CleanPool();
 
 	Station *st = Station::CreateAtIndex(StationID(0), base_tile);
@@ -75,7 +74,6 @@ static Station *SetupModularAirport(TileIndex base_tile, uint size_x, uint size_
 
 static void SetupAircraftPool()
 {
-	extern VehiclePool _vehicle_pool;
 	_vehicle_pool.CleanPool();
 	/* Several command-path tests create and destroy real vehicles before these
 	 * bare-shell aircraft tests. Keep the spatial lookup in sync with the pool so
@@ -401,8 +399,6 @@ TEST_CASE("ModularAirportLegacyUpgradeIsAtomic")
 	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
 
 	auto reset_world = []() {
-		extern StationPool _station_pool;
-		extern TownPool _town_pool;
 		_station_pool.CleanPool();
 		_town_pool.CleanPool();
 		SetupAircraftPool();
@@ -487,8 +483,6 @@ TEST_CASE("ModularAirportLegacyUpgradeIsAtomic")
 	SetupAircraftPool();
 	_current_company = saved_company;
 	TimerGameCalendar::year = saved_year;
-	extern StationPool _station_pool;
-	extern TownPool _town_pool;
 	_station_pool.CleanPool();
 	_town_pool.CleanPool();
 	RebuildStationKdtree();
@@ -523,8 +517,6 @@ TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 			AT_INTERNATIONAL, AT_COMMUTER, AT_HELIDEPOT, AT_INTERCON, AT_HELISTATION}) {
 		CAPTURE(airport_type);
 		Map::Allocate(64, 64);
-		extern StationPool _station_pool;
-		extern TownPool _town_pool;
 		_station_pool.CleanPool();
 		_town_pool.CleanPool();
 		_company_pool.CleanPool();
@@ -609,8 +601,6 @@ TEST_CASE("ModularAirportStockAndTileCommandsProduceEquivalentAirports")
 	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
 	TimerGameCalendar::year = saved_year;
 
-	extern StationPool _station_pool;
-	extern TownPool _town_pool;
 	_station_pool.CleanPool();
 	_town_pool.CleanPool();
 	_company_pool.CleanPool();
@@ -735,7 +725,7 @@ TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 	/* A station is named once, when its first tile creates it, so a tile-by-tile build
 	 * has to answer "airport or heliport?" from one piece. A helipad is the only piece
 	 * that answers it: nothing else is helicopter-only. Every other piece takes the
-	 * generic name — asking whether the piece is a runway instead named an airport
+	 * generic name -- asking whether the piece is a runway instead named an airport
 	 * begun with an apron "Heliport" for the rest of the game. */
 	const std::array<std::pair<uint8_t, StringID>, 7> cases = {{
 		{APT_APRON, STR_SV_STNAME_AIRPORT},
@@ -752,8 +742,6 @@ TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 	for (const auto &[first_piece, expected_name] : cases) {
 		CAPTURE(first_piece);
 		Map::Allocate(64, 64);
-		extern StationPool _station_pool;
-		extern TownPool _town_pool;
 		_station_pool.CleanPool();
 		_town_pool.CleanPool();
 		_company_pool.CleanPool();
@@ -786,8 +774,6 @@ TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 	 * same one-tile layout, which is what makes the helipad case above worth having. */
 	{
 		Map::Allocate(64, 64);
-		extern StationPool _station_pool;
-		extern TownPool _town_pool;
 		_station_pool.CleanPool();
 		_town_pool.CleanPool();
 		_company_pool.CleanPool();
@@ -824,8 +810,6 @@ TEST_CASE("ModularAirportTileBuildNamingFollowsTheFirstPiece")
 	_settings_game.station.station_spread = saved_station_spread;
 	TimerGameCalendar::year = saved_year;
 
-	extern StationPool _station_pool;
-	extern TownPool _town_pool;
 	_station_pool.CleanPool();
 	_town_pool.CleanPool();
 	_company_pool.CleanPool();
@@ -838,7 +822,6 @@ TEST_CASE("ModularAirportIncrementalNoiseMatchesFullRecompute")
 {
 	Map::Allocate(64, 64);
 	MockEnvironment::Instance();
-	extern TownPool _town_pool;
 	_town_pool.CleanPool();
 	Town *town = Town::CreateAtIndex(TownID(0), TileXY(4, 4));
 	REQUIRE(town != nullptr);
@@ -885,7 +868,6 @@ TEST_CASE("ModularAirportIncrementalNoiseMovesBetweenNearestTowns")
 {
 	Map::Allocate(64, 64);
 	MockEnvironment::Instance();
-	extern TownPool _town_pool;
 	_town_pool.CleanPool();
 	Town *left_town = Town::CreateAtIndex(TownID(0), TileXY(4, 4));
 	Town *right_town = Town::CreateAtIndex(TownID(1), TileXY(50, 4));
@@ -940,14 +922,14 @@ TEST_CASE("ModularAirportSafety")
 	REQUIRE(st != nullptr);
 
 	SECTION("Safety Requirements") {
-		// Empty airport
+		/* Empty airport. */
 		ModularAirportSafetyRequirement status = GetModularAirportSafetyStatus(st);
 		CHECK((status & MASR_TOWER) != 0);
 		CHECK((status & MASR_BIG_TERMINAL) != 0);
 		CHECK((status & MASR_LANDING_RUNWAY) != 0);
 		CHECK((status & MASR_TAKEOFF_RUNWAY) != 0);
-		
-		// Add tower
+
+		/* Add tower. */
 		AddModularTile(st, base, APT_TOWER, 0);
 		status = GetModularAirportSafetyStatus(st);
 		CHECK((status & MASR_TOWER) == 0);
@@ -987,7 +969,7 @@ TEST_CASE("ModularAirportSafety")
 TEST_CASE("ModularAirportHoldingLoop")
 {
 	SECTION("IsHoldingGateActive") {
-		// 8 waypoints loop
+		/* 8 waypoints loop. */
 		CHECK(IsHoldingGateActive(0, 0, 8)); // AT gate
 		CHECK(IsHoldingGateActive(7, 0, 8)); // Just before gate (wrap)
 		CHECK_FALSE(IsHoldingGateActive(1, 0, 8)); // Just passed gate
@@ -996,7 +978,7 @@ TEST_CASE("ModularAirportHoldingLoop")
 		CHECK(IsHoldingGateActive(4, 4, 8)); // AT gate
 		CHECK_FALSE(IsHoldingGateActive(5, 4, 8)); // Just passed gate
 
-		// Edge cases.
+		/* Edge cases. */
 		CHECK_FALSE(IsHoldingGateActive(0, 0, 0)); // Empty loop is never active.
 		CHECK(IsHoldingGateActive(0, 0, 1)); // Single waypoint: at-gate and "previous" alias.
 	}
@@ -1010,7 +992,7 @@ TEST_CASE("ModularAirportHoldingLoop")
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(0));
-		
+
 		v->x_pos = 110; v->y_pos = 110;
 		CHECK(GetNearestModularHoldingWaypoint(v, loop) == 0);
 
@@ -1018,9 +1000,8 @@ TEST_CASE("ModularAirportHoldingLoop")
 		CHECK(GetNearestModularHoldingWaypoint(v, loop) == 1);
 
 		v->x_pos = 150; v->y_pos = 300;
-		// (150, 300) is closer to (100, 200) [dist^2 = 50^2 + 100^2 = 12500] 
-		// or (200, 200) [dist^2 = 50^2 + 100^2 = 12500]? 
-		// Tie goes to lower index (2).
+		/* (150, 300) is equally close to (100, 200) and (200, 200):
+		 * dist^2 = 50^2 + 100^2 = 12500. The tie goes to lower index (2). */
 		CHECK(GetNearestModularHoldingWaypoint(v, loop) == 2);
 	}
 }
@@ -1041,7 +1022,6 @@ TEST_CASE("ModularAirportLargeAircraftLandingRunwayChoice")
 	AddSmallRunway(st, short_low, 4, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
 	AddLargeRunway(st, long_low, 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
 
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID jet_engine = CreateAircraftEngine(EngineID(0), AIR_FAST);
 	const EngineID prop_engine = CreateAircraftEngine(EngineID(1), 0);
@@ -1080,8 +1060,8 @@ TEST_CASE("ModularAirportPathfinding")
 	REQUIRE(st != nullptr);
 
 	SECTION("Simple Taxi Path") {
-		// Hangar (10,10) -> Taxiway -> Stand (13,10)
-		/* Rotation 3 is SW, which is dx=+1 — the direction this chain runs.
+		/* Hangar (10,10) -> Taxiway -> Stand (13,10). */
+		/* Rotation 3 is SW, which is dx=+1 -- the direction this chain runs.
 		 * This said rotation 1 when the pathfinder had NE and SW swapped; rotation 1
 		 * is NE, draws _station_display_modular_hangar_ne, and opens towards dx=-1. */
 		AddModularTile(st, base, APT_DEPOT_SE, 3);
@@ -1102,19 +1082,19 @@ TEST_CASE("ModularAirportPathfinding")
 		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(2, 1), APT_STAND, 0); // Goal stand
 
-		// Alternative path around (1,0)
+		/* Alternative path around (1,0). */
 		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
-		
+
 		TileIndex start = base;
 
-		// Path with avoidance
+		/* Path with avoidance. */
 		SetupAircraftPool();
 		Aircraft *self = CreateAircraft(VehicleID(1));
 		self->tile = start;
 		self->ground_path_goal = base + TileDiffXY(2, 1);
 		SetModularAirportTileReservationOwner(base + TileDiffXY(1, 0), VehicleID(2));
-		
+
 		AirportGroundPath path = FindAirportGroundPath(st, start, base + TileDiffXY(2, 1), self);
 		CHECK(path.found);
 		for (TileIndex t : path.tiles) {
@@ -1169,22 +1149,22 @@ TEST_CASE("ModularAirportPathfinding")
 		AddModularTile(st, base, APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(2, 0), APT_APRON, 0);
-		
-		// Set one-way flag manually and allow East
+
+		/* Set one-way flag manually and allow east. */
 		ModularAirportTileData *td1 = st->airport.GetModularTileData(base + TileDiffXY(1, 0));
 		td1->one_way_taxi = true;
 		td1->user_taxi_dir_mask = 0x02; // East
-		
+
 		AddModularTile(st, base + TileDiffXY(3, 0), APT_RUNWAY_1, 0); // Runway segment (horizontal)
 
 		TaxiPath path = BuildTaxiPath(st, base, base + TileDiffXY(3, 0));
 		CHECK(path.valid);
-		// Segments: Apron (FREE_MOVE), One-way (ONE_WAY), Apron (FREE_MOVE), Runway (RUNWAY)
+		/* Segments: apron (free move), one-way, apron (free move), runway. */
 		REQUIRE(path.segments.size() >= 4);
-		CHECK(path.segments[0].type == TaxiSegmentType::FREE_MOVE);
-		CHECK(path.segments[1].type == TaxiSegmentType::ONE_WAY);
-		CHECK(path.segments[2].type == TaxiSegmentType::FREE_MOVE);
-		CHECK(path.segments[3].type == TaxiSegmentType::RUNWAY);
+		CHECK(path.segments[0].type == TaxiSegmentType::FreeMove);
+		CHECK(path.segments[1].type == TaxiSegmentType::OneWay);
+		CHECK(path.segments[2].type == TaxiSegmentType::FreeMove);
+		CHECK(path.segments[3].type == TaxiSegmentType::Runway);
 		CHECK(path.segments[0].start_index == 0);
 		CHECK(path.segments[0].end_index == 0);
 		CHECK(path.segments[3].start_index == 3);
@@ -1210,7 +1190,7 @@ TEST_CASE("ModularAirportReservations")
 		CHECK(HasModularAirportTileReservation(base));
 		CHECK(GetModularAirportTileReservationOwner(base) == vid);
 		CHECK(IsModularAirportTileReservedBy(base, vid));
-		
+
 		ClearModularAirportTileReservation(base);
 		CHECK_FALSE(HasModularAirportTileReservation(base));
 	}
@@ -1224,13 +1204,13 @@ TEST_CASE("ModularAirportReservations")
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
 		CHECK(TryReserveContiguousModularRunway(v, st, base));
-		
+
 		CheckReservedBy(runway_tiles, v->index);
-		
-		// Another aircraft trying to reserve
+
+		/* Another aircraft trying to reserve. */
 		Aircraft *v2 = CreateAircraft(VehicleID(11));
 		CHECK_FALSE(TryReserveContiguousModularRunway(v2, st, base));
-		
+
 		ClearModularRunwayReservation(v);
 		CheckUnreserved(runway_tiles);
 	}
@@ -1267,7 +1247,7 @@ TEST_CASE("ModularAirportMapDependentLogic")
 	REQUIRE(st != nullptr);
 
 	SECTION("Runway Discovery") {
-		// Create a 3-tile horizontal runway
+		/* Create a 3-tile horizontal runway. */
 		AddModularTile(st, base, APT_RUNWAY_END, 0); // Rotation 0/2 is horizontal for runways
 		AddModularTile(st, base + TileDiffXY(1, 0), APT_RUNWAY_5, 0);
 		AddModularTile(st, base + TileDiffXY(2, 0), APT_RUNWAY_END, 0);
@@ -1390,15 +1370,11 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 	 *
 	 * The one that matters is the script API: an AI or game script that could
 	 * reach graphics the toolbar does not offer would build airports no player
-	 * could, out of tiles cut from stock layouts — the stock city airport's stands
+	 * could, out of tiles cut from stock layouts -- the stock city airport's stands
 	 * carry a jetway, several tiles carry a baked-in fence, and some are one half
 	 * of a two-tile building. So the two sets are held equal here rather than
 	 * merely overlapping: a piece added to one and not the other fails this test,
 	 * in whichever direction it was forgotten. */
-	/* Both directions of the script API's piece mapping, from script_airport.cpp. */
-	extern uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece);
-	extern ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx);
-
 	SECTION("The script API places exactly the builder's pieces") {
 		const std::vector<uint8_t> from_builder = GetModularAirportBuilderPieceGfx();
 
@@ -1422,7 +1398,7 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 	SECTION("A compound piece is named by one of its own tiles") {
 		/* Otherwise building it and reading it back disagree: the script asks for
 		 * the naming graphic, and every tile that lands on the map reports some
-		 * other piece — or none. */
+		 * other piece -- or none. */
 		for (uint8_t gfx : GetModularAirportBuilderPieceGfx()) {
 			CAPTURE(gfx);
 			const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
@@ -1459,8 +1435,8 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 	}
 
 	SECTION("The stock city airport's jetway stands are not placeable") {
-		/* The case that put this test here. They stay readable — a converted stock
-		 * airport is full of them — but as plain stands, under a name a script
+		/* The case that put this test here. They stay readable -- a converted stock
+		 * airport is full of them -- but as plain stands, under a name a script
 		 * cannot pass back to the build command. */
 		CHECK(GetModularPieceForGfx(APT_STAND_1) == ScriptAirport::MP_STAND);
 		CHECK(GetModularPieceForGfx(APT_STAND_PIER_NE) == ScriptAirport::MP_STAND);
@@ -1557,10 +1533,10 @@ TEST_CASE("ModularAirportRotationLogic")
 		uint8_t piece = APT_DEPOT_SE;
 		SwapBuildingPieceForRotation(piece, 1); // 90 deg clockwise
 		CHECK(piece == APT_DEPOT_NE);
-		
+
 		SwapBuildingPieceForRotation(piece, 1); // another 90 deg
 		CHECK(piece == APT_DEPOT_NW);
-		
+
 		SwapBuildingPieceForRotation(piece, 2); // 180 deg
 		CHECK(piece == APT_DEPOT_SE);
 	}
@@ -1575,7 +1551,7 @@ TEST_CASE("ModularAirportRotationLogic")
 		uint8_t piece = APT_BUILDING_1;
 		SwapBuildingPieceForRotation(piece, 1);
 		CHECK(piece == APT_BUILDING_2);
-		
+
 		piece = APT_BUILDING_1;
 		SwapBuildingPieceForRotation(piece, 2); // 180 deg shouldn't swap 1/2
 		CHECK(piece == APT_BUILDING_1);
@@ -1585,11 +1561,11 @@ TEST_CASE("ModularAirportRotationLogic")
 		uint8_t piece = APT_RUNWAY_SMALL_NEAR_END;
 		SwapBuildingPieceForRotation(piece, 1);
 		CHECK(piece == APT_RUNWAY_SMALL_FAR_END);
-		
+
 		piece = APT_RUNWAY_SMALL_NEAR_END;
 		SwapBuildingPieceForRotation(piece, 3);
 		CHECK(piece == APT_RUNWAY_SMALL_FAR_END);
-		
+
 		piece = APT_RUNWAY_SMALL_NEAR_END;
 		SwapBuildingPieceForRotation(piece, 2);
 		CHECK(piece == APT_RUNWAY_SMALL_NEAR_END);
@@ -1605,13 +1581,13 @@ TEST_CASE("ModularAirportMetadata")
 	}
 
 	SECTION("Canonical Runway Pieces") {
-		// Large family
+		/* Large family. */
 		CHECK(GetCanonicalRunwaySegmentPiece(true, 5, 0) == APT_RUNWAY_END);
 		CHECK(GetCanonicalRunwaySegmentPiece(true, 5, 2) == APT_RUNWAY_5);
 		CHECK(GetCanonicalRunwaySegmentPiece(true, 5, 4) == APT_RUNWAY_END);
 		CHECK(GetCanonicalRunwaySegmentPiece(true, 1, 0) == APT_RUNWAY_END);
 
-		// Small family
+		/* Small family. */
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 3, 0) == APT_RUNWAY_SMALL_FAR_END);
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 3, 1) == APT_RUNWAY_SMALL_MIDDLE);
 		CHECK(GetCanonicalRunwaySegmentPiece(false, 3, 2) == APT_RUNWAY_SMALL_NEAR_END);
@@ -1636,7 +1612,7 @@ TEST_CASE("ModularAirportMovementHelpers")
 		CHECK_FALSE(DirectionsWithin45(Direction::N, Direction::E));
 		CHECK_FALSE(DirectionsWithin45(Direction::N, Direction::S));
 
-		// Wrap around
+		/* Wrap around. */
 		CHECK(DirectionsWithin45(Direction::NW, Direction::N));
 		CHECK(DirectionsWithin45(Direction::NW, Direction::W));
 	}
@@ -1709,7 +1685,6 @@ TEST_CASE("ModularAirportLandingChain")
 	/* The landing helpers read the engine's subtype to tell a fast jet from
 	 * everything else, so these aircraft need a real engine. A plain non-fast one
 	 * keeps the runway-class rule out of the way of what is under test here. */
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
 
@@ -1719,7 +1694,7 @@ TEST_CASE("ModularAirportLandingChain")
 		 *   Row 1:                   STAND_BLK   (sole exit from runway end)
 		 *   Row 2:                   STAND_GOAL  (only reachable via STAND_BLK)
 		 * Touchdown at (0,0), rollout at (2,0). Goal at (2,2).
-		 * Planner returns path (2,0) → (2,1) → (2,2); the walk's blocked_by_other
+		 * Planner returns path (2,0) -> (2,1) -> (2,2); the walk's blocked_by_other
 		 * on (2,1) must reject the chain. */
 		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
 		AddModularTile(st, base + TileDiffXY(2, 1), APT_STAND, 0);   // blocker sits here
@@ -1750,7 +1725,7 @@ TEST_CASE("ModularAirportLandingChain")
 		 *   Row 2 (transit runway):  RWY_END RWY_5 RWY_END
 		 *   Row 3:                   APRON   APRON STAND_GOAL
 		 * Touchdown at (0,0), rollout (2,0). Goal at (2,3).
-		 * Path: rollout → apron(2,1) → transit_runway(2,2) → STAND_GOAL(2,3). */
+		 * Path: rollout -> apron(2,1) -> transit_runway(2,2) -> STAND_GOAL(2,3). */
 		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
 		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(1, 1), APT_APRON, 0);
@@ -1838,7 +1813,7 @@ TEST_CASE("ModularAirportLandingChain")
 		 *   Row 1: APRON   APRON APRON           (FREE_MOVE)
 		 *   Row 2: APRON   APRON APRON_ONEWAY    (ONE_WAY tile at (2,2))
 		 *   Row 3: APRON   APRON STAND_GOAL
-		 * Path: rollout(2,0) → (2,1) → (2,2)[ONE_WAY] → (2,3)[goal].
+		 * Path: rollout(2,0) -> (2,1) -> (2,2)[ONE_WAY] -> (2,3)[goal].
 		 * Walk reserves up to and including (2,2), then stops. (2,3) is NOT reserved. */
 		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
 		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
@@ -1866,9 +1841,9 @@ TEST_CASE("ModularAirportLandingChain")
 		}
 		/* (2,1) FREE_MOVE reserved (segment before ONE_WAY). */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 1), v->index));
-		/* (2,2) ONE_WAY entry reserved — the safe stop. */
+		/* (2,2) ONE_WAY entry reserved -- the safe stop. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
-		/* (2,3) goal NOT reserved — walk stopped at ONE_WAY. */
+		/* (2,3) goal NOT reserved -- walk stopped at ONE_WAY. */
 		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 	}
 }
@@ -1910,7 +1885,7 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 
 	auto runway_segment = [&](Aircraft *v) -> uint8_t {
 		for (uint8_t s = 0; s < v->taxi_path->segments.size(); s++) {
-			if (v->taxi_path->segments[s].type == TaxiSegmentType::RUNWAY) return s;
+			if (v->taxi_path->segments[s].type == TaxiSegmentType::Runway) return s;
 		}
 		FAIL("no runway segment on path");
 		return 0;
@@ -1927,7 +1902,7 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
 		/* Far-side transit grass reserved (would have been a strand point before). */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
-		/* Goal stand reserved — chain reached the safe stop. */
+		/* Goal stand reserved -- chain reached the safe stop. */
 		CHECK(IsModularAirportTileReservedBy(goal, v->index));
 	}
 
@@ -1976,7 +1951,7 @@ TEST_CASE("ModularAirportTransitRunwayContract")
 
 		TaxiReserveResult result;
 		CHECK_FALSE(TryReserveTaxiSegment(operation, st, operation->taxi_current_segment, &result));
-		CHECK(result.reason == TaxiReserveFailure::RUNWAY_BUSY);
+		CHECK(result.reason == TaxiReserveFailure::RunwayBusy);
 		CHECK(result.tile == crossing_tile);
 		CHECK(operation->modular_runway_reservation.empty());
 		for (int i = 0; i < 3; i++) {
@@ -1996,7 +1971,6 @@ TEST_CASE("ModularAirportAdjacentRunwayLandingCrossing")
 	/* The landing helpers read the engine's subtype to tell a fast jet from
 	 * everything else, so these aircraft need a real engine. A plain non-fast one
 	 * keeps the runway-class rule out of the way of what is under test here. */
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
 
@@ -2093,7 +2067,6 @@ TEST_CASE("ModularAirportCrash")
 	Map::Allocate(64, 64);
 	const TileIndex base = TileXY(10, 10);
 
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	/* Engine 0 = fast jet (AIR_FAST); engine 1 = small/non-fast plane. */
 	const EngineID jet = CreateAircraftEngine(EngineID(0), AIR_FAST);
@@ -2421,7 +2394,7 @@ TEST_CASE("ModularAirportRunwayGoalCrossing")
 	/* First runway segment on the path = runway A, the one being crossed. */
 	auto transit_runway_segment = [&](Aircraft *v) -> uint8_t {
 		for (uint8_t s = 0; s < v->taxi_path->segments.size(); s++) {
-			if (v->taxi_path->segments[s].type == TaxiSegmentType::RUNWAY) return s;
+			if (v->taxi_path->segments[s].type == TaxiSegmentType::Runway) return s;
 		}
 		FAIL("no runway segment on path");
 		return 0;
@@ -2616,7 +2589,7 @@ TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
 	Station *st = SetupModularAirport(base, 10, 10);
 	REQUIRE(st != nullptr);
 
-	/* A runway with a one-way queueing tile beyond it — the shape a no-ground-goal
+	/* A runway with a one-way queueing tile beyond it -- the shape a no-ground-goal
 	 * landing commits against: reserve the runway, reserve the buffer to queue on. */
 	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
 	ModularAirportTileData *oneway = AddModularTileWithData(st, base + TileDiffXY(2, 3), APT_APRON, 0);
@@ -2634,7 +2607,7 @@ TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
 		v->targetairport = st->index;
 		v->tile = rollout;
 
-		/* No taxi_path and no landing_chain_path — exactly what the no-ground-goal
+		/* No taxi_path and no landing_chain_path -- exactly what the no-ground-goal
 		 * landing branch leaves behind. Nothing else justifies keeping the buffer. */
 		SetTaxiReservation(v, buffer);
 		REQUIRE(v->taxi_path == nullptr);
@@ -2710,7 +2683,7 @@ TEST_CASE("ModularAirportUnstackParking")
 
 		/* Regression: MGT_TERMINAL took the plain lookup, which refuses a stand to a
 		 * helicopter wherever helipads exist. Nothing was then free, so the caller fell
-		 * through and stacked two aircraft on one tile — while HandleModularEndLanding
+		 * through and stacked two aircraft on one tile -- while HandleModularEndLanding
 		 * and the helipad fallback both legitimately produce this exact state. */
 		uint8_t target = MGT_NONE;
 		CHECK(FindModularUnstackParkingTile(st, arriving(AIR_HELICOPTER), &target) == free_stand);
@@ -2800,7 +2773,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 
 		/* The probe must not write to the crossing cache. That cache is saved, synced
 		 * state, and this computation runs lazily at a moment each client picks for
-		 * itself — so a probe that inserted keys would mutate shared state off a
+		 * itself -- so a probe that inserted keys would mutate shared state off a
 		 * client-local schedule. FindAirportGroundPath writes by default; the fix is
 		 * that this caller opts out. */
 		ClearModularAirportCrossingPathCache();
@@ -2810,7 +2783,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 
 		/* And the answer must not depend on what the cache already learned. A key here
 		 * sends that pair down the crossing pass, which reports a different cost for an
-		 * unchanged layout — ranking on cost would let the winner move. */
+		 * unchanged layout -- ranking on cost would let the winner move. */
 		const auto crossing_key = [](TileIndex start, TileIndex goal) {
 			return (static_cast<uint64_t>(start.base()) << 32) | static_cast<uint64_t>(goal.base());
 		};
@@ -2850,7 +2823,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 	SECTION("A mixed layout keeps depot-bound helicopters off the cut-off pad") {
 		/* One connected pad and one rooftop heliport. The heliport is the trap: a
 		 * depot-bound helicopter that lands there can reach neither the hangar nor a
-		 * runway, so it lifts off and picks it again — forever. */
+		 * runway, so it lifts off and picks it again -- forever. */
 		Station *st = build(true, true, false);
 		const TileIndex good_pad = base + TileDiffXY(5, 5);
 		AddModularTile(st, good_pad, APT_HELIPAD_2, 0);
@@ -2859,7 +2832,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		REQUIRE(FindAirportGroundPath(st, good_pad, hangar, nullptr).found);
 		REQUIRE_FALSE(FindAirportGroundPath(st, heliport, hangar, nullptr).found);
 
-		/* Some pad works, so no service tile is needed — the filter carries this case. */
+		/* Some pad works, so no service tile is needed -- the filter carries this case. */
 		CHECK(st->airport.modular_heli_service_tile == INVALID_TILE);
 		CHECK(IsModularPadWithHangarAccess(st, good_pad));
 		CHECK_FALSE(IsModularPadWithHangarAccess(st, heliport));
@@ -2873,7 +2846,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 		heli->x_pos = TileX(heliport) * TILE_SIZE;
 		heli->y_pos = TileY(heliport) * TILE_SIZE;
 
-		/* An ordinary flight still uses the nearest pad, cut off or not — it only has to
+		/* An ordinary flight still uses the nearest pad, cut off or not -- it only has to
 		 * park there, and the heliport is a legal parking spot. */
 		CHECK(FindModularLandingTarget(st, heli) == heliport);
 
@@ -2884,7 +2857,7 @@ TEST_CASE("ModularAirportHeliServiceTile")
 
 	SECTION("Nothing reaches the hangar at all: still land, do not circle for good") {
 		/* An isolated hangar, so neither a pad nor any parkable apron or stand can reach
-		 * it — both the reachable-pad set and the service tile come up empty. There is
+		 * it -- both the reachable-pad set and the service tile come up empty. There is
 		 * then nothing to filter down to, and filtering anyway would reject every pad and
 		 * strand the helicopter in the air permanently. Landing is strictly better:
 		 * arriving on a pad services it, which clears the condition that sent it looking
@@ -3045,7 +3018,6 @@ TEST_CASE("ModularAirportHelipadServicing")
 	AddModularTile(st, pad, APT_HELIPAD_2, 0);
 	AddModularTile(st, stand, APT_STAND, 0);
 
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID eid = CreateAircraftEngine(EngineID(0), 0);
 	Engine::Get(eid)->reliability = 0x7000;
@@ -3213,7 +3185,7 @@ TEST_CASE("ModularAirportHangarAccessors")
 		/* Deliberately not asserting that APT_DEPOT_SW exits Direction::SW: the suffixes are
 		 * graphic-orientation labels and arguing from them is what got this wrong in
 		 * the first place. This asserts only self-consistency, which holds whatever
-		 * the labels mean — turning the piece a quarter-turn must turn the door a
+		 * the labels mean -- turning the piece a quarter-turn must turn the door a
 		 * quarter-turn, in the same direction, every time.
 		 *
 		 * A template placed with rotation != 0 runs its pieces through
@@ -3251,7 +3223,7 @@ TEST_CASE("ModularAirportHangarAccessors")
 		 * tells the ground pathfinder which neighbour the hangar connects to. If
 		 * they disagree the pathfinder cannot find a route from the hangar to any
 		 * stand, FindFreeModularTerminal returns nothing, and the aircraft waits in
-		 * the hangar forever — silently, since waiting for a free stand is normal.
+		 * the hangar forever -- silently, since waiting for a free stand is normal.
 		 *
 		 * Direction bit order is the pathfinder's own (see coords.md):
 		 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0). */
@@ -3335,7 +3307,7 @@ TEST_CASE("ModularAirportAircraftCapability")
 		CHECK(ModularAirportAcceptsPlanes(st));
 	}
 
-	SECTION("A short runway still counts — length is a separate question") {
+	SECTION("A short runway still counts -- length is a separate question") {
 		AddLargeRunway(st, base + TileDiffXY(1, 1), 3, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
 
 		CHECK(ModularAirportAcceptsPlanes(st));
@@ -3363,7 +3335,6 @@ TEST_CASE("ModularAirportNearestHangarRespectsHelicopterCapability")
 	REQUIRE(st->airport.HasHangar());
 	REQUIRE_FALSE(ModularAirportAcceptsHelicopters(st));
 
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID helicopter_engine = CreateAircraftEngine(EngineID(0), 0);
 	SetupAircraftPool();
@@ -3418,7 +3389,6 @@ TEST_CASE("ModularAirportTakeoffRetargetsUnreachableRunway")
 	};
 
 	/* A prop keeps the runway-class rule out of the way of what is under test here. */
-	extern EnginePool _engine_pool;
 	_engine_pool.CleanPool();
 	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
 

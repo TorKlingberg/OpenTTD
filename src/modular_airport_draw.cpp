@@ -30,7 +30,7 @@
 #include "table/airporttile_ids.h"
 #include "table/station_land.h"
 
-/* Modular hangar sprite layouts — apron ground with hangar child sprites. */
+/* Modular hangar sprite layouts -- apron ground with hangar child sprites. */
 static const DrawTileSpriteSpan _station_display_modular_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_hangar_se);
 
@@ -98,8 +98,8 @@ static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalS
  *
  * The foot is the half to pin, not the top: base sets do not agree on how tall a hangar
  * is (aBase draws 51 rows where openttd.grf draws 55), and pinning the top of a shorter
- * building leaves it hanging in the air. Width they do agree on — all three of the base
- * sets checked draw a full tile width — so the left edge is safe to pin as it is.
+ * building leaves it hanging in the air. Width they do agree on -- all three of the base
+ * sets checked draw a full tile width -- so the left edge is safe to pin as it is.
  */
 static constexpr int HANGAR_BUILDING_SCREEN_X = -30;
 static constexpr int HANGAR_BUILDING_SCREEN_BOTTOM = 31;
@@ -183,8 +183,8 @@ static void SetHangarBuildingSprite(DrawTileSeqStruct &dtss, uint8_t extent_y, S
  * Rebuild the rotated hangar layouts from the sprites the base set actually provides.
  *
  * The three rotated hangars are drawn from the six-sprite hangar run in the base set's
- * AIRPORTX block (SPR_NEWHANGAR_*). Nothing in vanilla OpenTTD draws any of them — the
- * upstream _station_display_hangar_{sw,nw,ne} tables are unreferenced — so base sets have
+ * AIRPORTX block (SPR_NEWHANGAR_*). Nothing in vanilla OpenTTD draws any of them -- the
+ * upstream _station_display_hangar_{sw,nw,ne} tables are unreferenced -- so base sets have
  * been free to fill that run however they liked, and there are two conventions in the wild:
  *
  *   openttd.grf, OpenGFX  {S, S_WALL} {W, W_WALL} {N, E}: building first in each pair,
@@ -358,9 +358,9 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 
 	/* APT_STAND_1 and APT_STAND_PIER_NE carry a jetway in their stock layouts,
 	 * because in the stock city airport they are only ever the stands beside the
-	 * round terminal. A modular airport can put them anywhere — the script API
+	 * round terminal. A modular airport can put them anywhere -- the script API
 	 * offers them as "a stand that also counts as a large terminal", and templates
-	 * and stock-airport conversion can persist them too — so the jetway has to
+	 * and stock-airport conversion can persist them too -- so the jetway has to
 	 * follow the terminal rather than the piece, or a stand next to a hangar ends
 	 * up with a jetway bridging to nothing. Plain stand is the default here;
 	 * ApplyModularAirportTileLayoutOverrides puts the jetway back when a round

@@ -241,7 +241,7 @@ uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
  *
  * Beyond the exact graphics this API places, a modular airport can hold decorative
  * variants (fenced aprons, the other hangar rotations) and the graphics a converted
- * stock airport brings with it — including stands that are not placeable, such as
+ * stock airport brings with it -- including stands that are not placeable, such as
  * the jetway-bearing pair from the stock city airport. Those are reported as the
  * family they belong to, so a script inspecting an airport it did not build still
  * gets a useful answer, and so a script can never learn a piece name it is not
@@ -349,8 +349,8 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		tile.edge_block_mask = static_cast<uint8_t>(edge_fence_mask);
 
 		/* A compound piece is one entry to the script and several tiles on the
-		 * ground. Expanding here means every caller — placement, and all the
-		 * layout-derived queries that go through this parser — sees the tiles the
+		 * ground. Expanding here means every caller -- placement, and all the
+		 * layout-derived queries that go through this parser -- sees the tiles the
 		 * layout will really occupy, so a script can cost and size a layout
 		 * containing one without knowing its footprint. */
 		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
@@ -479,7 +479,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	const uint8_t gfx = GetGfxForModularPiece(piece);
 
 	/* A compound piece covers several tiles, so it goes through the template
-	 * command the same way the builder's own click does — one atomic placement,
+	 * command the same way the builder's own click does -- one atomic placement,
 	 * never a half-built building. */
 	if (const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx); !compound.empty()) {
 		EnforcePrecondition(false, rotation == 0);

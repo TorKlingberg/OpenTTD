@@ -2873,7 +2873,7 @@ static CommandCost RemoveAirport(TileIndex tile, DoCommandFlags flags)
 		 * its layout, so removing it at the type's rate would leave noise_reached
 		 * permanently wrong. ClearTile_Station routes modular tiles to
 		 * RemoveModularAirportTile before this function, so this is unreachable for
-		 * modular today — but the two must not be allowed to disagree. */
+		 * modular today -- but the two must not be allowed to disagree. */
 		nearest->noise_reached -= GetAirportNoiseLevelForDistance(st, dist);
 
 		if (_settings_game.economy.station_noise_level) {

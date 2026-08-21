@@ -70,4 +70,3 @@ Runway crossings have a FIFO queue (`CanGrantRunwayCrossingNow`) to prevent star
 ### Expensive rollout fallback
 
 `FindNearestModularRunwayExitTile` (called from `HandleModularGroundArrival` MGT_ROLLOUT) iterates all runway tiles, checks 4 neighbors each, calls `FindAirportGroundPath` to every service tile. O(runway_length * 4 * service_tiles) pathfinder calls. Only fires in edge cases but could be expensive on large airports.
-
