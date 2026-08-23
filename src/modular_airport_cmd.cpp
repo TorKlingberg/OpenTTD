@@ -1444,10 +1444,12 @@ struct ReservableRoute {
  * that rejoins the blocked tile beyond the first safe stop is still allowed: nothing claims
  * that far, so nothing there can block entry.
  *
- * Retrying only helps against a tile somebody else holds. A runway refused as a whole
- * operation, a plan that reaches no safe stop, and a blocked goal are all properties of the
- * goal rather than of the route, so they end the search for the caller to answer by picking
- * a different goal.
+ * Retrying helps against a tile somebody else holds, and against a transit runway held for
+ * somebody else's operation -- the latter is excluded as one contiguous strip, because
+ * crossing the same busy runway two tiles further along is refused for the same reason.
+ * The aircraft's own operation runway, a plan that reaches no safe stop, and a blocked goal
+ * are all properties of the goal rather than of the route, so they end the search for the
+ * caller to answer by picking a different goal.
  *
  * @param v            Aircraft the reservation is for.
  * @param st           Station.
@@ -1543,6 +1545,7 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 			break;
 		}
 		if (std::find(denied_resource.begin(), denied_resource.end(), origin) != denied_resource.end()) break;
+		if (std::find(denied_resource.begin(), denied_resource.end(), goal) != denied_resource.end()) break;
 
 		bool added = false;
 		for (TileIndex tile : denied_resource) {
