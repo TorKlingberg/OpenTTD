@@ -1676,6 +1676,103 @@ TEST_CASE("ModularAirportMovementHelpers")
 	}
 }
 
+TEST_CASE("ModularAirportParkedDirection")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 5, 5);
+	REQUIRE(st != nullptr);
+	const TileIndex stand = base + TileDiffXY(2, 2);
+
+	SECTION("One-way masks map from tile axes to viewport directions") {
+		ModularAirportTileData *one_way = AddModularTileWithData(st, stand, APT_APRON);
+		one_way->one_way_taxi = true;
+
+		static constexpr std::array<std::pair<uint8_t, Direction>, 4> cases = {{
+			{0x01, Direction::NW},
+			{0x02, Direction::SW},
+			{0x04, Direction::SE},
+			{0x08, Direction::NE},
+		}};
+		for (const auto &[mask, direction] : cases) {
+			one_way->user_taxi_dir_mask = mask;
+			CHECK(GetModularAircraftParkedDirection(st, stand) == direction);
+		}
+	}
+
+	SECTION("A stand faces a terminal on each edge") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_BUILDING_1);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::SE);
+	}
+
+	SECTION("A stand faces a terminal on its -X edge") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(-1, 0), APT_BUILDING_1);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::NE);
+	}
+
+	SECTION("A stand faces a terminal on its -Y edge") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, -1), APT_BUILDING_1);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::NW);
+	}
+
+	SECTION("A stand faces a terminal on its +X edge") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(1, 0), APT_BUILDING_1);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::SW);
+	}
+
+	SECTION("Every terminal-building family qualifies") {
+		AddModularTile(st, stand, APT_STAND);
+		ModularAirportTileData *terminal = AddModularTileWithData(st, stand + TileDiffXY(0, 1), APT_BUILDING_1);
+		static constexpr std::array<uint8_t, 10> terminal_pieces = {{
+			APT_BUILDING_1, APT_BUILDING_2, APT_BUILDING_3, APT_ROUND_TERMINAL,
+			APT_LOW_BUILDING, APT_LOW_BUILDING_FENCE_N, APT_LOW_BUILDING_FENCE_NW,
+			APT_SMALL_BUILDING_1, APT_SMALL_BUILDING_2, APT_SMALL_BUILDING_3,
+		}};
+		for (uint8_t piece_type : terminal_pieces) {
+			terminal->piece_type = piece_type;
+			CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::SE);
+		}
+	}
+
+	SECTION("Unrelated buildings do not set a stand direction") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_TOWER);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::Invalid);
+	}
+
+	SECTION("A jetway-compatible round terminal wins a deterministic tie") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_BUILDING_1);
+		AddModularTile(st, stand + TileDiffXY(-1, 0), APT_ROUND_TERMINAL);
+		CHECK(GetModularAircraftParkedDirection(st, stand) == Direction::NE);
+	}
+
+	SECTION("Parking waits for the smooth turn to finish") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_BUILDING_1);
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->tile = stand;
+		v->x_pos = TileX(stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->z_pos = GetTileMaxPixelZ(stand);
+		v->direction = Direction::NW;
+
+		static constexpr std::array<Direction, 4> expected = {
+			Direction::N, Direction::NE, Direction::E, Direction::SE,
+		};
+		for (Direction direction : expected) {
+			const bool finished = UpdateModularAircraftParkedDirection(v, st);
+			CHECK(v->direction == direction);
+			CHECK(finished == (direction == Direction::SE));
+		}
+	}
+}
+
 /* The candidate cache is process-global, so an aborted REQUIRE between Begin and End
  * would leave it armed and silently switch every later test case onto the cached path. */
 struct ScopedModularRunwayStateCache {
@@ -1737,6 +1834,46 @@ static Aircraft *CreateBlockerOnTile(Station *st, VehicleID blocker_id, TileInde
 	SetModularAirportTileReservationOwner(tile, blocker->index);
 	blocker->taxi_reserved_tiles.push_back(tile);
 	return blocker;
+}
+
+TEST_CASE("ModularAirportOneWayWaitingDirection")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 8, 5);
+	REQUIRE(st != nullptr);
+
+	const TileIndex queue = base + TileDiffXY(2, 2);
+	const TileIndex blocked = base + TileDiffXY(3, 2);
+	const TileIndex goal = base + TileDiffXY(4, 2);
+	ModularAirportTileData *one_way = AddModularTileWithData(st, queue, APT_APRON);
+	one_way->one_way_taxi = true;
+	one_way->user_taxi_dir_mask = 0x02; // +X, Direction::SW on screen.
+	AddModularTile(st, blocked, APT_APRON);
+	AddModularTile(st, goal, APT_STAND);
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->targetairport = st->index;
+	v->tile = queue;
+	v->x_pos = TileX(queue) * TILE_SIZE + TILE_SIZE / 2;
+	v->y_pos = TileY(queue) * TILE_SIZE + TILE_SIZE / 2;
+	v->z_pos = GetTileMaxPixelZ(queue);
+	v->direction = Direction::NE;
+	v->ground_path_goal = goal;
+	v->modular_ground_target = MGT_TERMINAL;
+	CreateBlockerOnTile(st, VehicleID(11), blocked);
+
+	/* Reservation failure leaves the aircraft at the queue centre, but each tick now
+	 * turns it 45 degrees toward the one-way arrow instead of retaining its entry heading. */
+	static constexpr std::array<Direction, 4> expected = {
+		Direction::E, Direction::SE, Direction::S, Direction::SW,
+	};
+	for (Direction direction : expected) {
+		CHECK_FALSE(AirportMoveModular(v, st));
+		CHECK(v->tile == queue);
+		CHECK(v->direction == direction);
+	}
 }
 
 TEST_CASE("ModularAirportLandingChain")

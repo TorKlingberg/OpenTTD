@@ -68,6 +68,108 @@ static constexpr uint16_t SPEED_LIMIT_NONE = UINT16_MAX; ///< No environmental s
 
 static std::string_view GetModularAirportDebugName(const Station *st);
 
+static bool IsModularTerminalBuildingPiece(uint8_t piece_type)
+{
+	switch (piece_type) {
+		case APT_BUILDING_1:
+		case APT_BUILDING_2:
+		case APT_BUILDING_3:
+		case APT_ROUND_TERMINAL:
+		case APT_LOW_BUILDING:
+		case APT_LOW_BUILDING_FENCE_N:
+		case APT_LOW_BUILDING_FENCE_NW:
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Direction an aircraft should face while parked on a modular airport tile.
+ *
+ * A one-way taxiway points along one map axis. Vehicle directions are viewport-aligned,
+ * so the four mask bits map to the diagonal Direction values used while taxiing between
+ * tile centres. A stand instead faces an edge-adjacent terminal building, when present.
+ *
+ * Round terminals on the two sides supported by the auto-jetway sprites take priority.
+ * The remaining scan order is fixed as +Y, -X, -Y, +X so layouts with more than one
+ * adjacent terminal remain deterministic.
+ */
+Direction GetModularAircraftParkedDirection(const Station *st, TileIndex tile)
+{
+	if (st == nullptr || !IsValidTile(tile)) return Direction::Invalid;
+
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr) return Direction::Invalid;
+
+	if (IsTaxiwayPiece(data->piece_type) && data->one_way_taxi && HasExactlyOneBit(data->user_taxi_dir_mask)) {
+		switch (data->user_taxi_dir_mask & 0x0F) {
+			case 0x01: return Direction::NW; // -Y
+			case 0x02: return Direction::SW; // +X
+			case 0x04: return Direction::SE; // +Y
+			case 0x08: return Direction::NE; // -X
+			default: break;
+		}
+	}
+
+	if (!IsModularStandPiece(data->piece_type)) return Direction::Invalid;
+
+	struct NeighborDirection {
+		int dx;
+		int dy;
+		Direction direction;
+	};
+	static constexpr std::array<NeighborDirection, 4> neighbors = {{
+		{ 0,  1, Direction::SE},
+		{-1,  0, Direction::NE},
+		{ 0, -1, Direction::NW},
+		{ 1,  0, Direction::SW},
+	}};
+
+	const auto NeighborPiece = [&](const NeighborDirection &neighbor) -> uint8_t {
+		const TileIndex adjacent = TileAddXY(tile, neighbor.dx, neighbor.dy);
+		if (!IsValidTile(adjacent)) return 0xFF;
+		const ModularAirportTileData *neighbor_data = st->airport.GetModularTileData(adjacent);
+		return neighbor_data != nullptr ? neighbor_data->piece_type : 0xFF;
+	};
+
+	/* These are the two round-terminal sides for which the drawing code can add a jetway. */
+	for (size_t i = 0; i < 2; ++i) {
+		if (NeighborPiece(neighbors[i]) == APT_ROUND_TERMINAL) return neighbors[i].direction;
+	}
+
+	for (const NeighborDirection &neighbor : neighbors) {
+		if (IsModularTerminalBuildingPiece(NeighborPiece(neighbor))) return neighbor.direction;
+	}
+
+	return Direction::Invalid;
+}
+
+/** Turn one 45-degree step toward the parked heading, without moving the aircraft. */
+bool UpdateModularAircraftParkedDirection(Aircraft *v, const Station *st)
+{
+	if (v == nullptr) return false;
+
+	const Direction desired = GetModularAircraftParkedDirection(st, v->tile);
+	if (desired == Direction::Invalid) return true;
+	if (desired == v->direction) return true;
+
+	v->last_direction = v->direction;
+	v->direction = ChangeDir(v->direction, LimitDirDiff(DirDifference(desired, v->direction)));
+	v->turn_counter = 0;
+	v->number_consecutive_turns = 0;
+	/* Normal aircraft always have a shadow vehicle. Bare-shell unit-test aircraft do not. */
+	if (v->Next() != nullptr) {
+		SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
+	} else {
+		v->UpdatePositionAndViewport();
+	}
+	return v->direction == desired;
+}
+
 static ModularAirportTileData *GetModularAirportReservationData(TileIndex tile)
 {
 	if (!IsValidTile(tile)) return nullptr;
@@ -3922,6 +4024,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 
 	if (v->tile == v->ground_path_goal) {
+		UpdateModularAircraftParkedDirection(v, st);
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
 		HandleModularGroundArrival(v);
@@ -3969,6 +4072,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 					v->taxi_wait_counter = 0;
 				}
 			}
+			UpdateModularAircraftParkedDirection(v, st);
 			return false;
 		}
 
@@ -3980,6 +4084,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 
 	if (v->taxi_path == nullptr || static_cast<size_t>(v->taxi_path_index) + 1 >= v->taxi_path->tiles.size()) {
+		UpdateModularAircraftParkedDirection(v, st);
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
 		HandleModularGroundArrival(v);
@@ -4042,6 +4147,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				v->taxi_wait_counter = 0;
 			}
 		}
+		UpdateModularAircraftParkedDirection(v, st);
 		return false;
 	}
 	v->taxi_wait_counter = 0;
@@ -4065,6 +4171,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 				v->taxi_wait_counter = 0;
 			}
 		}
+		UpdateModularAircraftParkedDirection(v, st);
 		return false;
 	}
 
@@ -4106,6 +4213,9 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	v->taxi_path_index = next_index;
 	v->taxi_current_segment = next_segment;
 	v->number_consecutive_turns = 0;
+	if (v->tile != v->ground_path_goal && IsOneWayTaxiTile(st, v->tile)) {
+		UpdateModularAircraftParkedDirection(v, st);
+	}
 
 	const TaxiSegmentType old_type = (old_segment < v->taxi_path->segments.size()) ? v->taxi_path->segments[old_segment].type : TaxiSegmentType::FreeMove;
 	const bool runway_exit_transition = (old_type == TaxiSegmentType::Runway && next_type != TaxiSegmentType::Runway);
@@ -4124,6 +4234,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	ReconcileAircraftReservations(v, st, keep_set, "post-step");
 
 	if (v->tile == v->ground_path_goal || static_cast<size_t>(v->taxi_path_index) + 1 >= v->taxi_path->tiles.size()) {
+		UpdateModularAircraftParkedDirection(v, st);
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
 		HandleModularGroundArrival(v);

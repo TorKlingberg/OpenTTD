@@ -2035,11 +2035,21 @@ static void AircraftEventHandler_AtTerminal(Aircraft *v, const AirportFTAClass *
 		return;
 	}
 
+	const Station *st = Station::Get(v->targetairport);
+	bool parked_direction_ready = true;
+	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		/* Modular movement has no fixed MovingData entry to supply a final direction.
+		 * Keep turning while parked, including aircraft with no current order. */
+		parked_direction_ready = UpdateModularAircraftParkedDirection(v, st);
+	}
+
 	if (v->current_order.IsType(OT_NOTHING)) return;
 
 	/* Modular airport logic */
-	const Station *st = Station::Get(v->targetairport);
 	if (st->airport.blocks.Test(AirportBlock::Modular)) {
+		/* Loading begins as soon as the aircraft reaches the stand, so the normal dwell
+		 * absorbs this turn. Only a departure ready unusually quickly waits for it. */
+		if (!parked_direction_ready) return;
 		HandleModularTerminal(v, st);
 		return;
 	}

@@ -39,6 +39,9 @@ void AircraftEntersTerminal(Aircraft *v);
 void MaybeServiceAircraftAtHelipad(Aircraft *v, bool at_helipad);
 void PlayAircraftSound(const Vehicle *v);
 Direction GetModularHangarExitDirection(const Station *st, TileIndex tile);
+Direction GetModularAircraftParkedDirection(const Station *st, TileIndex tile);
+/** Turn one step toward the parked direction; return true when no further turn is needed. */
+bool UpdateModularAircraftParkedDirection(Aircraft *v, const Station *st);
 void AircraftEventHandler_Landing(Aircraft *v, const AirportFTAClass *apc);
 void AircraftEventHandler_EndLanding(Aircraft *v, const AirportFTAClass *apc);
 
