@@ -12,6 +12,7 @@
 
 #include "tile_type.h"
 #include <cstdint>
+#include <span>
 #include <vector>
 
 struct Station;
@@ -87,9 +88,15 @@ struct TaxiPath {
  *                     Diagnostic/debug probes must pass false so that unsaved rate-limit
  *                     gating cannot diverge the saved cache across multiplayer clients.
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
+ * @param avoid_tiles Tiles the route may not pass through, used to generate an alternative
+ *                    to a route that could not be reserved. Hard exclusion, not a penalty:
+ *                    each run stays a plain topology question, which is what the stored
+ *                    paths assume. The goal is *not* exempt -- banning it is how a caller
+ *                    says "this goal instance is unusable, try another". A non-empty set
+ *                    suppresses the crossing cache entirely (see the .cpp).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft);
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
 
 /**
  * Check if a tile is a one-way taxiway tile.
@@ -107,9 +114,10 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile);
  * @param goal Goal tile.
  * @param v The aircraft (optional, for stand avoidance).
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
+ * @param avoid_tiles Tiles the route may not pass through; see FindAirportGroundPath.
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft);
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
 
 extern std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
 void NormalizeModularAirportCrossingPathCache();

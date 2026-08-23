@@ -351,6 +351,23 @@ struct TaxiReserveResult {
 	VehicleID blocker = VehicleID::Invalid(); ///< Who holds it, where known.
 };
 
+/**
+ * Routes tried per goal when looking for one that can be reserved, counting the shortest.
+ *
+ * An aircraft whose preferred route is held by somebody else takes a different one instead
+ * of waiting. **1 disables the search.**
+ *
+ * This first measured as an 18% loss on T7d, which looked like proof that diverting is
+ * inherently expensive. It was not: the horizon-scoped ban split the A* state on
+ * "has the route reached a safe stop", and because one-way tiles are safe stops the search
+ * could leave one, turn round and re-enter it -- producing routes that visited a tile
+ * twice. Aircraft drove out, doubled back against the arrow and drove out again, filling
+ * small one-way rings until they deadlocked. Forbidding revisits (see FindAirportGroundPath)
+ * turned the same policy into a 2.2% gain and removed every permanently-stuck aircraft,
+ * including 19 that predate this feature. plans/route-selection-plan.md has the table.
+ */
+inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 3;
+
 std::string_view TaxiReserveFailureName(TaxiReserveFailure reason);
 bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out = nullptr);
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr, TileIndex rollout_tile = INVALID_TILE);
@@ -373,7 +390,7 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, TileIndex runway_end);
 bool IsModularHangarPiece(uint8_t piece_type);
 bool IsModularHangarTile(const Station *st, TileIndex tile);
-bool IsModularSafeStopTile(const Station *st, TileIndex tile);
+bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal = INVALID_TILE);
 TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE, bool allow_helicopter = false);
 bool ModularAirportHasHelipad(const Station *st);
 TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);

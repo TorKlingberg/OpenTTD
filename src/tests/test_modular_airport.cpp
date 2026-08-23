@@ -1912,6 +1912,279 @@ TEST_CASE("ModularAirportLandingChain")
 	}
 }
 
+/**
+ * Alternate-route selection: where the shortest route off a runway is held by another
+ * aircraft, a second exit is used instead of refusing the movement.
+ * @see plans/route-selection-plan.md
+ *
+ * Every tile here sits at a non-negative offset from @c base, because the airport
+ * rectangle starts there -- a tile outside it is not part of the layout and the
+ * pathfinder will not route through it.
+ */
+TEST_CASE("ModularAirportAlternateRoutes")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 16, 16);
+	REQUIRE(st != nullptr);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	const auto one_way = [&](TileIndex tile, uint8_t dir_mask) {
+		ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
+		data->one_way_taxi = true;
+		data->user_taxi_dir_mask = dir_mask;
+	};
+
+	/* Two exits off one runway, both reaching the same stand.
+	 *
+	 *          x=0    x=1    x=2        x=3     x=4
+	 *   y=1                  A_oneway   apron   apron
+	 *   y=2    RWY    RWY    RWY_END            STAND
+	 *   y=3                  B_oneway           apron
+	 *   y=4                  apron      apron   apron
+	 * Touchdown (0,2) rolls out to (2,2). Exit A reaches the stand in four steps and
+	 * exit B in six, so A is what the unconstrained pathfinder returns. */
+	const TileIndex runway_start = base + TileDiffXY(0, 2);
+	const TileIndex rollout = base + TileDiffXY(2, 2);
+	const TileIndex exit_a = base + TileDiffXY(2, 1);
+	const TileIndex exit_b = base + TileDiffXY(2, 3);
+	const TileIndex stand = base + TileDiffXY(4, 2);
+
+	const auto build_two_exits = [&]() {
+		AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
+		one_way(exit_a, 0x02); // East
+		AddModularTile(st, base + TileDiffXY(3, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 1), APT_APRON, 0);
+		AddModularTile(st, stand, APT_STAND, 0);
+		one_way(exit_b, 0x04); // South, into the longer corridor
+		AddModularTile(st, base + TileDiffXY(2, 4), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(3, 4), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 4), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 3), APT_APRON, 0);
+		st->airport.MarkLayoutDirty();
+	};
+
+	SECTION("Shortest exit is used when it is free") {
+		build_two_exits();
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		REQUIRE(TryReserveLandingChain(v, st, runway_start, stand));
+		CHECK(IsModularAirportTileReservedBy(exit_a, v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(exit_b, v->index));
+	}
+
+	SECTION("Second exit is taken when the first is reserved") {
+		/* Guarded so the suite still builds and passes if MODULAR_MAX_ROUTE_ATTEMPTS is set
+		 * back to 1; the pathfinder half is covered unconditionally further down. */
+		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
+		build_two_exits();
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		/* A live owner: a reservation whose holder no longer exists is cleared rather
+		 * than respected, so a dangling one would block nothing. */
+		CreateBlockerOnTile(st, VehicleID(11), exit_a);
+
+		REQUIRE(TryReserveLandingChain(v, st, runway_start, stand));
+		CHECK(IsModularAirportTileReservedBy(exit_b, v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(exit_a, v->index));
+		/* The runway is still claimed whole, as one landing operation. */
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(runway_start + TileDiffXY(i, 0), v->index));
+		}
+	}
+
+	SECTION("Sole exit blocked is still refused") {
+		/* The B corridor omitted: with no alternative the landing must be denied rather
+		 * than admitted onto a route the aircraft cannot hold. */
+		AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
+		one_way(exit_a, 0x02);
+		AddModularTile(st, base + TileDiffXY(3, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 1), APT_APRON, 0);
+		AddModularTile(st, stand, APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		CreateBlockerOnTile(st, VehicleID(11), exit_a);
+
+		CHECK_FALSE(TryReserveLandingChain(v, st, runway_start, stand));
+		CHECK(v->modular_runway_reservation.empty());
+	}
+
+	SECTION("Ban applies only inside the reservation horizon") {
+		/* The blocked tile is the *only* way to the stand, but an alternative route
+		 * reaches a one-way queue tile first and meets the blocked tile beyond the
+		 * horizon, where nothing is claimed. Admitting this is the point of scoping the
+		 * ban to the horizon: a ban applied to the whole route finds nothing and refuses
+		 * a landing that is perfectly safe.
+		 *
+		 *          x=0    x=1    x=2        x=3
+		 *   y=0                  STAND
+		 *   y=1                  blocked    apron
+		 *   y=2    RWY    RWY    RWY_END    queue_oneway(N)
+		 * Shortest:  (2,2) -> (2,1) -> STAND                      -- 3 tiles.
+		 * Alternate: (2,2) -> queue -> (3,1) -> (2,1) -> STAND    -- 5 tiles.
+		 *
+		 * The detour is deliberately +2, the whole of MAX_ROUTE_DETOUR_TILES: an earlier
+		 * version of this layout looped the long way round for +6 and is now correctly
+		 * refused, which is the cap doing its job rather than a regression. */
+		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
+		AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
+		const TileIndex loop_goal = base + TileDiffXY(2, 0);
+		const TileIndex blocked = base + TileDiffXY(2, 1);
+		const TileIndex queue = base + TileDiffXY(3, 2);
+		AddModularTile(st, loop_goal, APT_STAND, 0);
+		AddModularTile(st, blocked, APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(3, 1), APT_APRON, 0);
+		one_way(queue, 0x01); // North: entered from the runway, left towards (3,1)
+		st->airport.MarkLayoutDirty();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		CreateBlockerOnTile(st, VehicleID(11), blocked);
+
+		REQUIRE(TryReserveLandingChain(v, st, runway_start, loop_goal));
+		/* Queued on the one-way tile; the blocked tile lies beyond the horizon and stays
+		 * with its owner. */
+		CHECK(IsModularAirportTileReservedBy(queue, v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(blocked, v->index));
+	}
+
+	SECTION("A stand that is not the goal is not somewhere to wait") {
+		/* Routes may cross a stand when that is the only way through, but crossing is not
+		 * stopping. If a foreign stand could end a reservation horizon, an aircraft would
+		 * park on it and take it out of service for whoever it was meant for. */
+		build_two_exits();
+		st->airport.MarkLayoutDirty();
+
+		/* The stand is a safe stop for the aircraft going there, and for nobody else. */
+		CHECK(IsModularSafeStopTile(st, stand, stand));
+		CHECK_FALSE(IsModularSafeStopTile(st, stand, exit_a));
+
+		/* One-way queue tiles are unconditional: they are shared queue positions, not
+		 * anybody's destination. */
+		CHECK(IsModularSafeStopTile(st, exit_a, stand));
+
+		/* No goal supplied means "anywhere will do"; route planning always has a goal
+		 * and passes it, so this is only for callers with nothing to offer. */
+		CHECK(IsModularSafeStopTile(st, stand));
+
+		/* Helipads are parking too: a helicopter waiting on a pad it is not going to
+		 * takes that pad out of service exactly as a stand would. */
+		const TileIndex pad = base + TileDiffXY(0, 4);
+		AddModularTile(st, pad, APT_HELIPAD_1, 0);
+		st->airport.MarkLayoutDirty();
+		CHECK(IsModularSafeStopTile(st, pad, pad));
+		CHECK_FALSE(IsModularSafeStopTile(st, pad, stand));
+	}
+
+	SECTION("Avoid set diverts the raw pathfinder route") {
+		build_two_exits();
+		SetupAircraftPool();
+
+		AirportGroundPath plain = FindAirportGroundPath(st, rollout, stand, nullptr, false, false);
+		REQUIRE(plain.found);
+		CHECK(std::find(plain.tiles.begin(), plain.tiles.end(), exit_a) != plain.tiles.end());
+
+		const std::vector<TileIndex> avoid{exit_a};
+		AirportGroundPath diverted = FindAirportGroundPath(st, rollout, stand, nullptr, false, false,
+				GroundPathRestriction::None, avoid);
+		REQUIRE(diverted.found);
+		CHECK(std::find(diverted.tiles.begin(), diverted.tiles.end(), exit_a) == diverted.tiles.end());
+		CHECK(std::find(diverted.tiles.begin(), diverted.tiles.end(), exit_b) != diverted.tiles.end());
+	}
+
+	SECTION("Avoid set stops applying past the first safe stop") {
+		/* exit_b is one-way, so a route through it has reached a safe stop by its second
+		 * tile. Banning a tile beyond that point must not remove the route: nothing claims
+		 * that far ahead, so nothing there can deny entry. */
+		build_two_exits();
+		SetupAircraftPool();
+
+		const TileIndex past_the_queue = base + TileDiffXY(3, 4);
+		const std::vector<TileIndex> avoid{past_the_queue};
+		AirportGroundPath via_b = FindAirportGroundPath(st, rollout, stand, nullptr, false, false,
+				GroundPathRestriction::None, avoid);
+		REQUIRE(via_b.found);
+
+		/* The escape hatch this used to document is closed. Routing from (2,4), the search
+		 * could step onto the adjacent one-way tile -- which counts as reaching a safe stop
+		 * and lifts the ban -- then turn around and use the banned tile after all. The route
+		 * it produced visited a tile twice, so the aircraft drove out, doubled back against
+		 * the one-way arrow and drove out again, holding both tiles throughout. In the T7d
+		 * fixture that filled small one-way rings until they deadlocked, and it accounted
+		 * for 46% of permanently-stuck aircraft. A tile reached in either horizon state now
+		 * closes the tile, so no route can revisit one and the U-turn is unreachable.
+		 * Refusing here is the intended answer: the caller waits on the direct route. */
+		AirportGroundPath inside = FindAirportGroundPath(st, base + TileDiffXY(2, 4), stand, nullptr,
+				false, false, GroundPathRestriction::None, avoid);
+		CHECK_FALSE(inside.found);
+	}
+}
+
+/**
+ * A large aircraft waits for a large-safe takeoff runway rather than downgrading to a
+ * short strip that happens to be free. Route retry must not turn "the good runway is
+ * busy" into "take the bad one" -- the preference is deliberate, and the tier that
+ * returns a reachable-but-blocked end is what implements it.
+ */
+TEST_CASE("ModularAirportTakeoffPrefersLargeRunwayWhenBusy")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 16, 16);
+	REQUIRE(st != nullptr);
+
+	/*          x=0     x=1 .. x=6
+	 *   y=0    STAND
+	 *   y=1    apron
+	 *   y=2    apron   large runway (1,2)..(6,2)
+	 *   y=3    apron
+	 *   y=4    apron   short runway (1,4)..(4,4)
+	 * Both runways take off from their low end, and both are reachable from the stand. */
+	const TileIndex stand = base;
+	const TileIndex large_low = base + TileDiffXY(1, 2);
+	const TileIndex short_low = base + TileDiffXY(1, 4);
+	AddModularTile(st, stand, APT_STAND, 0);
+	for (int y = 1; y <= 4; y++) AddModularTile(st, base + TileDiffXY(0, y), APT_APRON, 0);
+	AddLargeRunway(st, large_low, 6, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+	AddSmallRunway(st, short_low, 4, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+	st->airport.MarkLayoutDirty();
+
+	_engine_pool.CleanPool();
+	const EngineID jet_engine = CreateAircraftEngine(EngineID(0), AIR_FAST);
+	SetupAircraftPool();
+	Aircraft *jet = CreateAircraft(VehicleID(10));
+	jet->engine_type = jet_engine;
+	jet->targetairport = st->index;
+	jet->tile = stand;
+
+	SECTION("Free large runway is chosen") {
+		CHECK(FindModularRunwayTileForTakeoff(st, jet) == large_low);
+	}
+
+	SECTION("Busy large runway is still chosen over a free short one") {
+		/* Somebody else holds the large runway. The jet must wait for it. */
+		CreateBlockerOnTile(st, VehicleID(11), large_low + TileDiffXY(2, 0));
+
+		const TileIndex chosen = FindModularRunwayTileForTakeoff(st, jet);
+		CHECK(chosen != short_low);
+		CHECK(chosen == large_low);
+	}
+}
+
 TEST_CASE("ModularAirportTransitRunwayContract")
 {
 	Map::Allocate(64, 64);

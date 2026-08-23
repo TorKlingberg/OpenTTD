@@ -108,21 +108,58 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs three saves under headless 5-year simulations (take ~3 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
+`scripts/regression_test.sh` runs four saves under headless 5-year simulations (take ~7 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
 
 - `scripts/testdata/mass7-inair.sav` — mixed fixed-wing throughput; every airport is large-safe
 - `scripts/testdata/helis2.sav` — helicopter-heavy stress; every airport is large-safe
 - `scripts/testdata/T5j2.sav` — real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
+- `scripts/testdata/T7d.sav` — route-diversity fixture: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year) and roughly doubles suite wall time
 
-The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires (only the basic crash rate remains) and throughput is flat year-to-year — a drop is therefore attributable to routing rather than attrition. **`T5j2.sav` is not flat**: throughput declines a few percent across the window from fleet ageing (it has zero crashes, so this is not attrition). It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
+The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires and only the basic crash rate remains. That basic rate is **not** negligible: `helis2` loses 9-10 aircraft per 5-year run and `mass7-inair` 3-7, and which aircraft die changes with any timing shift (see Comparing two runs). **`T5j2.sav` is not flat**: throughput declines a few percent across the window from fleet ageing (it has zero crashes, so this is not attrition). It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
+
+**`T7d.sav` is flat** (7376 / 7409 / 7380 / 7425 across its four counted years, spread 0.3%) because it logs zero crashes, so it gives contention coverage *and* year-to-year comparability. It is the only fixture with genuine route diversity — two or more routes between the same endpoints — so it is the one that can detect alternate-exit routing work at all. It also mixes large and small runways without crashing, because the strict large-runway preference keeps fast jets off the short strips, which makes it the only probe of the wait-don't-downgrade tier (`mass7-inair` and `helis2` are entirely large-safe).
 
 The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the saves count different calendar windows — that's expected.
 
 **Test saves must be saved unpaused.** A paused save still consumes the tick budget while the game loop does nothing, so the run finishes in seconds having simulated nothing. `airport_stats_history.sh` now fails loudly when a run reports no countable years, because the raw result of a paused save is `movements=0`, which parses fine and would otherwise read as a total throughput collapse (or pass silently against a low floor). Check with `_pause_mode` in a debugger if a new fixture behaves oddly; the committed saves all read 0.
 
+`n_years_plus2.sh` runs `scripts/build_and_sign.sh` before **every** fixture, so a suite run
+rebuilds four times from whatever is in the working tree at that moment. Editing `src/`
+while a run is in flight silently splits the result across two builds — the early fixtures
+measure the old code and the later ones the new. Nothing warns about it and the totals look
+perfectly ordinary. Let a run finish, or kill it, before touching sources.
+
 Batch runs log to `/tmp/openttd_regression_<save>.log`, one per fixture, overwritten each run (override with `OPENTTD_REGRESSION_LOG`). They deliberately do **not** use `/tmp/openttd.log`: that path belongs to the interactive runners, and a game started by `build_and_run*.sh` holds it open as its stdout for as long as it runs. Truncating it from a batch run does not move the live game's file offset, so the two interleave and the `[AirportStats]` lines get overwritten — which shows up as "no countable years" and reads exactly like a paused fixture. So a regression run is safe to start while a game is open, but read the `log:` path the runner prints rather than `/tmp/openttd.log`.
 
-Run after any change to reservation, pathfinder, or movement code. A small drop (1–2) is usually noise; sustained drops mean something is denying entry that previously succeeded. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
+Run after any change to reservation, pathfinder, or movement code. Bump the committed minimum (in `*.expected`) only when the drop is intentional and justified.
+
+### Comparing two runs
+
+The sim is deterministic for a fixed save + tick count, so a single run is exactly
+reproducible — but that does **not** make two runs of *different code* cleanly comparable.
+Any change that shifts timing consumes the synced `Random()` differently, which changes:
+
+- **which aircraft crash.** An airport served by three aircraft loses ~22% of its movements
+  when one of them dies. `[AircraftLost]` logs every crash at `misc=1`; compare the counts
+  and the victim lists before believing a per-airport drop.
+- **which airports the AI companies build.** T7d has zero crashes yet eight small airports
+  present in one run were never built in another, worth 238 movements. Watch for an airport
+  going to 0 while a similarly-sized one with a different name appears — that is one airport
+  rebuilt elsewhere, not a loss.
+
+Together these move fixture totals by **1-2% with no routing cause**, which is why the
+floors carry that much headroom. Treat a total delta inside 2% as unresolved, not as a
+result. To attribute one:
+
+- `[AirportStats] Year N station S "Name"` (at `misc=1`) gives per-airport movements.
+- Landing-chain fail/reject diagnostics are emitted at `misc=2`, so they are **absent** from a
+  normal regression log. Their absence is not evidence that arrivals are never refused — do a
+  one-off `-d misc=2` run to measure that.
+- `stuck(reserve) st=S` groups stuck reports by airport.
+- Discount airports served by few aircraft first; large airports are far more trustworthy.
+- Average **ground time per leg** is robust to how many aircraft exist — but it conflates
+  "taxied further" with "landed instead of holding", so rising ground time alongside rising
+  movements is the feature working, not a cost.
 
 A sim is deterministic for a fixed save + tick-count, so the floors are exact and reproducible. With the safe-airport saves a movement drop is almost always a real routing/throughput change rather than crash attrition — but see Aircraft Crashes before assuming, since the basic-rate roll still consumes synced RNG.
 

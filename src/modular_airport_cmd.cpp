@@ -1280,15 +1280,25 @@ static bool IsServiceStyleGroundPiece(uint8_t piece_type)
  * shared transit resource: a stand/hangar/helipad or a one-way taxiway queue tile.
  * Free-move apron/grass and runways are transit-only and are never safe stops.
  *
- * This test is deliberately goal-independent. The aircraft's own goal is also a
- * legal place to stop, but that is a property of the aircraft, not of the tile --
- * folding it in here once hid it behind a piece-type check that could skip it.
- * Callers test the goal explicitly, and first. */
-bool IsModularSafeStopTile(const Station *st, TileIndex tile)
+ * Parking -- stands and helipads -- is the exception, and it is why @p goal exists. Routes
+ * may cross a stand when that is the only way through, but crossing is not the same as
+ * stopping: an aircraft that ends its reservation horizon on somebody else's parking tile
+ * sits there and takes it out of service for whoever it was meant for. Passing @p goal
+ * makes parking count only for the aircraft actually going to it. Hangars are
+ * multi-capacity, so they never have this problem and stay unconditional.
+ *
+ * @param goal The aircraft's destination. INVALID_TILE accepts any parking tile and exists
+ *             only for callers that have no goal to offer; route planning always has one
+ *             and must pass it. */
+bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal)
 {
 	const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
 	if (td == nullptr) return false;
-	if (IsServiceStyleGroundPiece(td->piece_type)) return true;
+	if (IsServiceStyleGroundPiece(td->piece_type)) {
+		const bool is_parking = td->piece_type == APT_STAND || td->piece_type == APT_STAND_1 ||
+				IsModularHelipadPiece(td->piece_type);
+		return !is_parking || !IsValidTile(goal) || tile == goal;
+	}
 	if (IsTaxiwayPiece(td->piece_type) && td->one_way_taxi) return true;
 	return false;
 }
@@ -1388,7 +1398,7 @@ static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const St
 
 		/* Do not let the aircraft's present queue/stand tile terminate a departure
 		 * plan without advancing. Every later safe stop is a valid horizon. */
-		if (i > start_index && IsModularSafeStopTile(st, tile)) {
+		if (i > start_index && IsModularSafeStopTile(st, tile, goal)) {
 			out.safe_stop = tile;
 			SortAndUniqueTiles(out.taxi_tiles);
 			return ForwardPlanStatus::Ok;
@@ -1398,8 +1408,139 @@ static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const St
 	return ForwardPlanStatus::NoSafeStop;
 }
 
+static bool ValidateForwardReservationPlan(const Aircraft *v, const Station *st,
+		const ForwardReservationPlan &plan, TaxiReserveResult *out);
 static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
 		const ForwardReservationPlan &plan, TaxiReserveResult *out, bool log_success);
+
+/**
+ * How much longer an alternative route may be than the shortest one, in tiles. Only
+ * consulted when MODULAR_MAX_ROUTE_ATTEMPTS allows a second route at all.
+ *
+ * This caps the *whole* route, not just the reservation horizon. The horizon ends at the
+ * first safe stop, so capping it only bounds the distance to the next queue tile and lets
+ * everything past it grow without limit -- which is not what "go a couple of tiles out of
+ * your way" means. Rerouting costs the aircraft the extra taxi distance and costs everyone
+ * else the shared tiles it holds while covering it, so the budget is deliberately small:
+ * take a genuinely parallel route, never a scenic one.
+ */
+static constexpr int MAX_ROUTE_DETOUR_TILES = 2;
+
+/** One route plus the horizon it would claim. @see FindReservableRoute */
+struct ReservableRoute {
+	TaxiPath path;                ///< Last route considered; usable even when !found.
+	ForwardReservationPlan plan;  ///< Horizon for @c path; meaningful only when found.
+	bool found = false;           ///< Whether @c plan validated against live state.
+	TaxiReserveResult deny;       ///< Why the last attempt failed, when !found.
+};
+
+/**
+ * Find a route whose reservation horizon can be claimed right now, trying alternatives.
+ *
+ * The shortest route is tried first. When it is refused by a tile another aircraft holds,
+ * that tile is banned and the search runs again -- which is what lets an aircraft take a
+ * second exit off a runway instead of waiting for the first. The ban is scoped to the
+ * reservation horizon inside the pathfinder (see FindAirportGroundPath), so an alternative
+ * that rejoins the blocked tile beyond the first safe stop is still allowed: nothing claims
+ * that far, so nothing there can block entry.
+ *
+ * Retrying only helps against a tile somebody else holds. A runway refused as a whole
+ * operation, a plan that reaches no safe stop, and a blocked goal are all properties of the
+ * goal rather than of the route, so they end the search for the caller to answer by picking
+ * a different goal.
+ *
+ * @param v            Aircraft the reservation is for.
+ * @param st           Station.
+ * @param origin       Where the route starts (aircraft tile, or a landing rollout point).
+ * @param goal         Goal tile.
+ * @param operation_runway Runway claimed whole for an explicit landing/takeoff, else INVALID_TILE.
+ * @param allow_runway_goal_crossing Passed through to the pathfinder.
+ * @param restriction  Aircraft-type routing restriction.
+ * @param path_v       Aircraft passed to the pathfinder for stand avoidance; deliberately
+ *                     nullptr where occupancy must be ignored (pre-touchdown planning).
+ * @return The route; check @c found.
+ */
+static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
+		TileIndex origin, TileIndex goal, TileIndex operation_runway,
+		bool allow_runway_goal_crossing, GroundPathRestriction restriction,
+		const Aircraft *path_v, uint8_t max_attempts = MODULAR_MAX_ROUTE_ATTEMPTS)
+{
+	ReservableRoute out;
+	if (v == nullptr || st == nullptr || !IsValidTile(origin) || !IsValidTile(goal)) {
+		out.deny = TaxiReserveResult{TaxiReserveFailure::NoPath, goal};
+		return out;
+	}
+
+	std::vector<TileIndex> avoid;
+	TaxiPath shortest;
+	int shortest_length = INT_MAX;
+	for (uint8_t attempt = 0; attempt < max_attempts; ++attempt) {
+		TaxiPath candidate = BuildTaxiPath(st, origin, goal, path_v, allow_runway_goal_crossing, restriction, avoid);
+		if (!candidate.valid || candidate.tiles.empty()) {
+			if (attempt == 0) {
+				out.deny = TaxiReserveResult{TaxiReserveFailure::NoPath, goal};
+				return out;
+			}
+			break;
+		}
+		if (attempt == 0) shortest = candidate;
+		out.path = std::move(candidate);
+
+		ForwardReservationPlan plan;
+		switch (BuildForwardReservationPlan(v, st, &out.path, 0, goal, operation_runway, plan)) {
+			case ForwardPlanStatus::Ok:
+				break;
+			case ForwardPlanStatus::ResourceError:
+				out.deny = TaxiReserveResult{TaxiReserveFailure::RunwayResourceError,
+						IsValidTile(operation_runway) ? operation_runway : goal};
+				return out;
+			case ForwardPlanStatus::NoSafeStop:
+				out.deny = TaxiReserveResult{TaxiReserveFailure::NoSafeStop, goal};
+				return out;
+		}
+
+		const int this_length = static_cast<int>(out.path.tiles.size());
+		if (attempt == 0) {
+			shortest_length = this_length;
+		} else if (this_length > shortest_length + MAX_ROUTE_DETOUR_TILES) {
+			/* Every further ban only makes the route longer, so stop rather than keep looking. */
+			break;
+		}
+
+		TaxiReserveResult deny;
+		if (ValidateForwardReservationPlan(v, st, plan, &deny)) {
+			if (attempt > 0) {
+				Debug(misc, 2, "[ModAp] V{} diverted: attempt={} origin={} goal={} len={} shortest_len={} banned={}",
+						v->index, static_cast<int>(attempt), origin.base(), goal.base(),
+						this_length, shortest_length, avoid.size());
+			}
+			out.plan = std::move(plan);
+			out.found = true;
+			return out;
+		}
+		out.deny = deny;
+
+		if (attempt + 1 >= max_attempts) break;
+		if (deny.reason != TaxiReserveFailure::ReservedByOther &&
+				deny.reason != TaxiReserveFailure::OccupiedByOther) {
+			break;
+		}
+		/* Banning the goal, the tile we are standing on, or a tile of the operation runway
+		 * cannot produce a usable route -- those are answered by choosing another goal. */
+		if (!IsValidTile(deny.tile) || deny.tile == goal || deny.tile == origin) break;
+		if (ContainsSortedTile(plan.operation_runway_tiles, deny.tile)) break;
+		/* The same tile twice means the ban did not move the route; stop rather than spin. */
+		if (std::find(avoid.begin(), avoid.end(), deny.tile) != avoid.end()) break;
+		avoid.push_back(deny.tile);
+	}
+
+	/* Nothing validated. Hand back the shortest route, not whichever detour was tried
+	 * last: the caller waits on it, and waiting on the direct route is what the aircraft
+	 * did before any of this existed. Leaving it committed to a long way round would be
+	 * strictly worse than never having looked. */
+	if (!out.found && shortest.valid) out.path = std::move(shortest);
+	return out;
+}
 
 void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<TileIndex> &keep_set)
 {
@@ -1423,7 +1564,7 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 	 * it reaches a safe stop. */
 	if (IsValidTile(v->tile) && st->TileBelongsToAirport(v->tile) && IsPathTileRunwayPiece(st, v->tile)) {
 		for (TileIndex tile : v->taxi_reserved_tiles) {
-			if (IsValidTile(tile) && IsModularSafeStopTile(st, tile)) keep_set.push_back(tile);
+			if (IsValidTile(tile) && IsModularSafeStopTile(st, tile, v->ground_path_goal)) keep_set.push_back(tile);
 		}
 	}
 
@@ -1715,27 +1856,26 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		if (!IsValidTile(path_goal)) return log_chain_fail("no_goal_no_stand");
 	}
 
-	TaxiPath path = BuildTaxiPath(st, chain_origin, path_goal, nullptr, false, GetGroundPathRestriction(v));
-	if (!path.valid || path.tiles.empty()) return log_chain_fail("path_invalid");
-
-	ForwardReservationPlan plan;
+	/* Where the first exit off the runway is held by somebody else, take another one
+	 * rather than refuse the landing and fly a whole extra lap. */
 	const TileIndex operation_runway = touchdown_on_runway ? runway_tile : INVALID_TILE;
-	const ForwardPlanStatus plan_status = BuildForwardReservationPlan(v, st, &path, 0,
-			path_goal, operation_runway, plan);
-	if (plan_status == ForwardPlanStatus::ResourceError) return log_chain_fail("resource_error", operation_runway);
-	if (plan_status == ForwardPlanStatus::NoSafeStop) return log_chain_fail("no_safe_stop", path_goal);
+	ReservableRoute route = FindReservableRoute(v, st, chain_origin, path_goal, operation_runway,
+			false, GetGroundPathRestriction(v), nullptr);
+	if (!route.found) {
+		return log_chain_fail(TaxiReserveFailureName(route.deny.reason), route.deny.tile);
+	}
 
-	if (!IsValidTile(ground_goal) && !IsOneWayTaxiTile(st, plan.safe_stop)) {
-		return log_chain_fail("no_goal_no_one_way_buffer", plan.safe_stop);
+	if (!IsValidTile(ground_goal) && !IsOneWayTaxiTile(st, route.plan.safe_stop)) {
+		return log_chain_fail("no_goal_no_one_way_buffer", route.plan.safe_stop);
 	}
 
 	TaxiReserveResult reserve_result;
-	if (!TryCommitForwardReservationPlan(v, st, plan, &reserve_result, false)) {
+	if (!TryCommitForwardReservationPlan(v, st, route.plan, &reserve_result, false)) {
 		return log_chain_fail(TaxiReserveFailureName(reserve_result.reason), reserve_result.tile);
 	}
 
 	if (IsValidTile(ground_goal)) {
-		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(path));
+		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(route.path));
 	} else {
 		v->landing_chain_path.reset();
 	}
@@ -2382,10 +2522,14 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 	/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
 	 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
 	 * stop on a free-move apron/grass tile: that pins a shared transit section. If
-	 * no safe stop is reachable and clear, return INVALID and let the caller hold. */
+	 * no safe stop is reachable and clear, return INVALID and let the caller hold.
+	 *
+	 * Parking that is not this aircraft's target does not qualify, with no fallback: an
+	 * aircraft cannot be stranded on a runway needing somebody else's stand, because
+	 * landing is not initiated unless a way off the runway already exists. */
 	for (TileIndex tile : path.tiles) {
 		if (tile == start_tile) continue;
-		if (!IsModularSafeStopTile(st, tile)) continue;
+		if (!IsModularSafeStopTile(st, tile, best_target)) continue;
 		Tile t(tile);
 		if (!IsAirportTile(t)) continue;
 		if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
@@ -2770,47 +2914,6 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 	 * cheat on: on modular airports the size preference governs routing, not crash risk. */
 	const bool large_takeoff_required = (v != nullptr) &&
 			((AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0);
-	const auto tile_blocked = [&](TileIndex tile) -> bool {
-		Tile t(tile);
-		if (IsAirportTile(t) && HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) return true;
-		if (tile != v->tile && IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) return true;
-		return false;
-	};
-	const auto path_enterable = [&](const TaxiPath &taxi_path, TileIndex takeoff_runway) -> bool {
-		if (!taxi_path.valid || taxi_path.tiles.size() < 2 || taxi_path.segments.empty()) return false;
-
-		ForwardReservationPlan plan;
-		if (BuildForwardReservationPlan(v, st, &taxi_path, 0, takeoff_runway,
-				takeoff_runway, plan) != ForwardPlanStatus::Ok) {
-			return false;
-		}
-
-		if (!plan.operation_runway_tiles.empty()) {
-			VehicleID state_blocker = VehicleID::Invalid();
-			if (IsContiguousModularRunwayReservedInStateByOther(v, st,
-					plan.operation_runway_tiles, &state_blocker)) {
-				return false;
-			}
-			for (TileIndex tile : plan.operation_runway_tiles) {
-				if (tile_blocked(tile)) return false;
-			}
-		}
-
-		for (TileIndex tile : plan.taxi_tiles) {
-			if (IsModularHangarTile(st, tile)) continue;
-			if (IsPathTileRunwayPiece(st, tile)) {
-				std::vector<TileIndex> runway;
-				VehicleID state_blocker = VehicleID::Invalid();
-				if (!GetContiguousModularRunwayTiles(st, tile, runway) || runway.empty() ||
-						IsContiguousModularRunwayReservedInStateByOther(v, st, runway, &state_blocker)) {
-					return false;
-				}
-			}
-			if (tile_blocked(tile)) return false;
-		}
-		return true;
-	};
-
 	/* Strict large-runway preference: a large aircraft only uses a short runway when NO
 	 * large-safe runway end serves its takeoff direction. Determine this up front,
 	 * ignoring transient occupancy -- if a good runway is merely busy, the aircraft waits
@@ -2857,31 +2960,24 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 
 			/* Prefer reachable takeoff ends. */
 			if (!can_ground_route) continue;
-			TaxiPath taxi_path = BuildTaxiPath(st, v->tile, data.tile, v, allow_crossing);
+			/* Judge the end by the best route to it, not only by the shortest one: an end
+			 * whose direct taxiway is occupied is still usable when a second one is free. */
+			ReservableRoute route = FindReservableRoute(v, st, v->tile, data.tile, data.tile,
+					allow_crossing, GroundPathRestriction::FromAircraft, v);
+			const TaxiPath &taxi_path = route.path;
 			if (!taxi_path.valid) {
 				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 35, 128)) {
 					Debug(misc, 2, "[ModAp] V{} takeoff-path invalid: from={} to={}", v->index, v->tile.base(), data.tile.base());
 				}
 				continue;
 			}
-			if (!path_enterable(taxi_path, data.tile)) {
+			if (!route.found) {
 				if (v != nullptr && pass == 0 && ShouldLogModularRateLimited(v->index, 36, 128)) {
-					/* Determine why path is not enterable for easier debugging. */
-					const uint8_t pe_seg_idx = FindTaxiSegmentIndex(&taxi_path, 1);
-					const char *pe_reason = "unknown";
-					if (pe_seg_idx >= taxi_path.segments.size()) {
-						pe_reason = "seg_idx_oob";
-					} else {
-						const TaxiSegment &pe_seg = taxi_path.segments[pe_seg_idx];
-						if (pe_seg.type == TaxiSegmentType::Runway) {
-							pe_reason = "runway_busy";
-						} else if (pe_seg.type == TaxiSegmentType::OneWay) {
-							pe_reason = "oneway_blocked";
-						} else {
-							pe_reason = "freemove_blocked";
-						}
-					}
-					Debug(misc, 2, "[ModAp] V{} takeoff-path not enterable: from={} to={} reason={}", v->index, v->tile.base(), data.tile.base(), pe_reason);
+					Debug(misc, 2, "[ModAp] V{} takeoff-path not enterable: from={} to={} reason={} deny_tile={} deny_by=V{}",
+						v->index, v->tile.base(), data.tile.base(),
+						TaxiReserveFailureName(route.deny.reason),
+						IsValidTile(route.deny.tile) ? route.deny.tile.base() : 0,
+						route.deny.blocker == VehicleID::Invalid() ? 0 : route.deny.blocker.base());
 				}
 				/* Track as "reachable but blocked" -- prefer over unreachable Manhattan fallback. */
 				const int blocked_cost = static_cast<int>(taxi_path.tiles.size() - 1);
@@ -3115,9 +3211,22 @@ static void SetTaxiReservationUnlessOperationRunway(Aircraft *v, TileIndex tile)
 	SetTaxiReservation(v, tile);
 }
 
-/** Validate and commit one forward plan without partial acquisition. */
-static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
-		const ForwardReservationPlan &plan, TaxiReserveResult *out, bool log_success)
+/**
+ * Test whether one forward plan can be claimed right now, without acquiring anything.
+ *
+ * This is the single authority on "what must I own before advancing". Candidate
+ * selection dry-runs it and the commit path below runs it for real; keeping one
+ * implementation is what stops the two from drifting -- see Pitfall 2 in
+ * skills/reservations-design.md, where two such functions disagreeing let a stuck
+ * aircraft's log confidently print the wrong answer.
+ *
+ * Not pure: IsTaxiTileReservedByOther clears a reservation whose owner no longer
+ * exists. That is deliberate and belongs here rather than at the call sites -- a
+ * dead vehicle's claim is not an obstacle to anybody, and a selection pass that
+ * treats it as one rejects a route nothing is actually using.
+ */
+static bool ValidateForwardReservationPlan(const Aircraft *v, const Station *st,
+		const ForwardReservationPlan &plan, TaxiReserveResult *out)
 {
 	const auto fail = [&](TaxiReserveFailure reason, TileIndex tile, VehicleID blocker = VehicleID::Invalid()) {
 		if (out != nullptr) *out = TaxiReserveResult{reason, tile, blocker};
@@ -3170,6 +3279,15 @@ static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
 			return fail(TaxiReserveFailure::OccupiedByOther, tile);
 		}
 	}
+
+	return true;
+}
+
+/** Validate and commit one forward plan without partial acquisition. */
+static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
+		const ForwardReservationPlan &plan, TaxiReserveResult *out, bool log_success)
+{
+	if (!ValidateForwardReservationPlan(v, st, plan, out)) return false;
 
 	const std::vector<TileIndex> old_runway_tracking = v->modular_runway_reservation;
 	/* Validation is complete, so replace the operation claim as one transaction.
@@ -3399,7 +3517,7 @@ void HandleModularGroundArrival(Aircraft *v)
 						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 						v->taxi_wait_counter = 0;
 						SetTaxiReservationUnlessOperationRunway(v, v->tile);
-					} else if (!IsModularSafeStopTile(st, v->tile)) {
+					} else if (!IsModularSafeStopTile(st, v->tile, goal)) {
 						/* The precomputed path could not be installed and the aircraft is
 						 * standing where it may not wait -- in practice the rollout end, on the
 						 * runway. That is only a contract violation if it also no longer owns
@@ -3408,7 +3526,7 @@ void HandleModularGroundArrival(Aircraft *v)
 						 * a runway plus a one-way buffer and resets the path deliberately, and
 						 * that aircraft is perfectly safe -- it owns its queueing tile. */
 						const bool owns_safe_stop = std::any_of(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(),
-							[&](TileIndex t) { return IsValidTile(t) && (t == goal || IsModularSafeStopTile(st, t)); });
+							[&](TileIndex t) { return IsValidTile(t) && (t == goal || IsModularSafeStopTile(st, t, goal)); });
 						if (!owns_safe_stop) {
 							Debug(misc, 1,
 								"[ModAp] V{} unit#{} landing-chain-invariant: off a safe stop with no reserved route to one tile={} goal={} owned={}",
@@ -3418,7 +3536,7 @@ void HandleModularGroundArrival(Aircraft *v)
 								v->taxi_reserved_tiles.size());
 						}
 					}
-				} else if (!IsModularSafeStopTile(st, v->tile)) {
+				} else if (!IsModularSafeStopTile(st, v->tile, goal)) {
 					/* No service tile free yet and we are not on a safe stop (still on
 					 * the runway): vacate to the nearest reachable safe stop. The landing
 					 * chain guaranteed one exists by reserving an adjacent one-way buffer
@@ -3792,7 +3910,13 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		/* Allow runway crossing when already committed to a goal -- the two-pass
 		 * selection in FindModularRunwayTileForTakeoff ensures crossing goals
 		 * are only assigned when no strict path exists. */
-		TaxiPath new_path = BuildTaxiPath(st, v->tile, v->ground_path_goal, v, true);
+		/* Departures pick their runway in FindModularRunwayTileForTakeoff but their *route*
+		 * here, so this is where an alternative exit actually gets taken. Falling back to
+		 * the last attempt preserves the old behaviour when no reservable route exists:
+		 * the aircraft still has a path to walk and waits on the reservation instead. */
+		ReservableRoute rebuild = FindReservableRoute(v, st, v->tile, v->ground_path_goal,
+				GetGroundOperationRunwayTile(v, st), true, GroundPathRestriction::FromAircraft, v);
+		TaxiPath new_path = std::move(rebuild.path);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
 			if (_debug_misc_level >= 1 && v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
@@ -3853,8 +3977,8 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			 * both true, and re-deriving blockers from `next` used
 			 * to print all-clear for a genuinely blocked aircraft. */
 			Debug(misc, 1,
-				"[ModAp] V{} unit#{} stuck(reserve) wait={} state={} tile={} next={} seg={} goal={} tgt={} deny={} deny_tile={} deny_by=V{}",
-				v->index, v->unitnumber, v->taxi_wait_counter, v->state,
+				"[ModAp] V{} unit#{} stuck(reserve) st={} wait={} state={} tile={} next={} seg={} goal={} tgt={} deny={} deny_tile={} deny_by=V{}",
+				v->index, v->unitnumber, st->index.base(), v->taxi_wait_counter, v->state,
 				IsValidTile(v->tile) ? v->tile.base() : 0,
 				IsValidTile(next_tile) ? next_tile.base() : 0,
 				static_cast<uint8_t>(next_type),
@@ -3868,7 +3992,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			 * this cannot be reached by taxiing into it -- only by already being there when
 			 * the route was lost, i.e. after a landing rollout. Distinct from ordinary
 			 * contention: the aircraft is pinning a shared resource while it waits. */
-			if (!IsModularSafeStopTile(st, v->tile) && IsPathTileRunwayPiece(st, v->tile)) {
+			if (!IsModularSafeStopTile(st, v->tile, v->ground_path_goal) && IsPathTileRunwayPiece(st, v->tile)) {
 				Debug(misc, 1,
 					"[ModAp] V{} unit#{} runway-rest-invariant: waiting on runway tile={} wait={} goal={} tgt={} deny={} deny_tile={}",
 					v->index, v->unitnumber,

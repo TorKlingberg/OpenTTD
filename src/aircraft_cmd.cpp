@@ -62,17 +62,31 @@
 static uint64_t _airport_landings_this_year = 0;
 static uint64_t _airport_takeoffs_this_year = 0;
 
+/**
+ * Per-airport yearly movement tally, for attributing a throughput change to specific
+ * airports rather than to the whole map. Diagnostic only -- emitted at Debug level 1 and
+ * never read back, so it takes no part in game state.
+ *
+ * Read alongside [AircraftLost]: a small airport's movement count is dominated by how many
+ * aircraft serve it, so losing one to a crash looks identical to a routing regression.
+ * @see plans/route-selection-plan.md
+ */
+static std::map<StationID, std::pair<uint32_t, uint32_t>> _airport_movements_by_station;
+
 void RecordAirportMovement(StationID station_id, bool landing)
 {
 	Station *st = Station::GetIfValid(station_id);
 	if (st == nullptr) return;
 
+	auto &tally = _airport_movements_by_station[station_id];
 	if (landing) {
 		st->airport_arrivals_this_month++;
 		_airport_landings_this_year++;
+		tally.first++;
 	} else {
 		st->airport_departures_this_month++;
 		_airport_takeoffs_this_year++;
+		tally.second++;
 	}
 }
 
@@ -83,6 +97,15 @@ static const IntervalTimer<TimerGameEconomy> _economy_airport_movement_yearly({T
 	const auto finished_year = current_year > 0 ? current_year - 1 : 0;
 	Debug(misc, 1, "[AirportStats] Year {} totals: landings={} takeoffs={}", finished_year, _airport_landings_this_year, _airport_takeoffs_this_year);
 
+	for (const auto &[station_id, tally] : _airport_movements_by_station) {
+		const Station *st = Station::GetIfValid(station_id);
+		Debug(misc, 1, "[AirportStats] Year {} station {} \"{}\": landings={} takeoffs={}",
+				finished_year, station_id.base(),
+				st != nullptr ? GetString(STR_STATION_NAME, st->index, st->facilities) : "<gone>",
+				tally.first, tally.second);
+	}
+
+	_airport_movements_by_station.clear();
 	_airport_landings_this_year = 0;
 	_airport_takeoffs_this_year = 0;
 });
@@ -1456,6 +1479,14 @@ uint Aircraft::Crash(bool flooded)
  */
 static void CrashAirplane(Aircraft *v)
 {
+	/* An aircraft that stops flying mid-run silently removes its share of throughput from
+	 * every airport it served, which reads exactly like a routing regression at a small
+	 * airport. The crash roll consumes the synced Random(), so any change that shifts
+	 * timing reshuffles which aircraft die -- comparing two runs without this line means
+	 * attributing crash luck to whatever was being tested. */
+	Debug(misc, 1, "[AircraftLost] t={} V{} crash st={} subtype={}", TimerGameTick::counter,
+			v->index.base(), v->targetairport.base(), static_cast<int>(v->subtype));
+
 	CreateEffectVehicleRel(v, 4, 4, 8, EV_EXPLOSION_LARGE);
 
 	uint victims = v->Crash();

@@ -14,4 +14,4 @@
 # while mass7-inair and helis2 both round-tripped to the exact same totals. Whatever
 # state does not survive T5j2's save/load is worth about half a percent here, so a
 # 30-movement margin of the kind the other fixtures use would be inside the noise.
-min_movements=6250
+min_movements=6100

@@ -90,8 +90,9 @@ struct PathNode {
 	int f_cost;          ///< Estimated total cost (g_cost + heuristic)
 	TileIndex parent;    ///< Parent tile in the path
 	uint32_t sequence;    ///< Deterministic insertion order for equal-cost ties
+	bool passed_safe_stop = false; ///< Route so far has reached a safe stop; see the avoid-set note in FindAirportGroundPath
 
-	PathNode(TileIndex t, int g, int f, TileIndex p, uint32_t seq) : tile(t), g_cost(g), f_cost(f), parent(p), sequence(seq) {}
+	PathNode(TileIndex t, int g, int f, TileIndex p, uint32_t seq, bool passed = false) : tile(t), g_cost(g), f_cost(f), parent(p), sequence(seq), passed_safe_stop(passed) {}
 
 	/** Comparison for priority queue (lower f_cost = higher priority) */
 	bool operator>(const PathNode &other) const
@@ -242,6 +243,29 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	bool from_ok = (from_dirs & dir_bit) != 0;
 
 	if (to_data == nullptr) return false;
+
+	/* A one-way tile may not be entered head-on against its arrow. One-way has until now
+	 * constrained only the exit direction of the tile being left, so nothing stopped an
+	 * aircraft driving into a one-way apron from the tile that apron points at -- it just
+	 * had to turn round and come back out the way it came. That is wrong on its face and
+	 * it looks wrong on screen.
+	 *
+	 * Only head-on entry is refused, not entry from the side: a one-way tile flagged east
+	 * is still enterable from its north and south neighbours, so taxiways that merge into
+	 * a one-way corridor keep working. Requiring entry to be *along* the arrow instead
+	 * would strand any stand reachable only through such a merge. */
+	if (IsTaxiwayPiece(to_data->piece_type) && to_data->one_way_taxi) {
+		const uint8_t to_dirs = GetEffectiveTaxiDirections(
+				CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation),
+				to_data->user_taxi_dir_mask);
+		uint8_t reverse_bit = 0;
+		if (dir_bit == 0x01) reverse_bit = 0x04; // travelling north, arrow pointing south
+		if (dir_bit == 0x02) reverse_bit = 0x08; // travelling east,  arrow pointing west
+		if (dir_bit == 0x04) reverse_bit = 0x01; // travelling south, arrow pointing north
+		if (dir_bit == 0x08) reverse_bit = 0x02; // travelling west,  arrow pointing east
+		if ((to_dirs & reverse_bit) != 0) return false;
+	}
+
 	const bool from_is_runway = IsModularRunwayPiece(from_data->piece_type);
 	const bool to_is_runway = IsModularRunwayPiece(to_data->piece_type);
 
@@ -421,18 +445,18 @@ static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReac
  * @param goal Goal tile.
  * @return Path from start to goal.
  */
-static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex, TileIndex> &parents, TileIndex start, TileIndex goal)
+static std::vector<TileIndex> ReconstructPath(const std::unordered_map<uint64_t, uint64_t> &parents, uint64_t start_state, uint64_t goal_state)
 {
 	std::vector<TileIndex> path;
-	TileIndex current = goal;
+	uint64_t current = goal_state;
 
-	while (current != start) {
-		path.push_back(current);
+	while (current != start_state) {
+		path.push_back(TileIndex(static_cast<uint32_t>(current & 0xFFFFFFFFULL)));
 		auto it = parents.find(current);
 		if (it == parents.end()) break; // Should not happen if path exists
 		current = it->second;
 	}
-	path.push_back(start);
+	path.push_back(TileIndex(static_cast<uint32_t>(start_state & 0xFFFFFFFFULL)));
 
 	/* Reverse to get path from start to goal */
 	std::reverse(path.begin(), path.end());
@@ -450,9 +474,35 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<TileIndex
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache, GroundPathRestriction restriction)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles)
 {
 	if (restriction == GroundPathRestriction::FromAircraft) restriction = GetGroundPathRestriction(v);
+
+	/* A restricted run answers a different question than the cache stores. The cache is
+	 * keyed on (start, goal, restriction) only and is *saved*, so letting an avoid-set
+	 * failure write it would teach "this pair needs a runway crossing" permanently, on
+	 * the strength of a ban that applied for one tick. Neither read nor write here. */
+	const bool cacheable = avoid_tiles.empty();
+	update_cache = update_cache && cacheable;
+
+	const auto is_avoided = [&avoid_tiles](TileIndex tile) {
+		return std::find(avoid_tiles.begin(), avoid_tiles.end(), tile) != avoid_tiles.end();
+	};
+
+	/* The avoid-set is scoped to the reservation horizon, not the whole route.
+	 * BuildForwardReservationPlan stops claiming at the first safe stop after the start,
+	 * so a tile the route only touches beyond that point is never claimed and is not an
+	 * obstacle. Banning it for the whole route would discard exactly the alternative the
+	 * ban exists to find: where the shortest route is blocked at A, a route that queues
+	 * on a one-way tile first and only reaches A later is reservable right now.
+	 *
+	 * Search state is therefore (tile, has the route reached a safe stop yet). With an
+	 * empty avoid-set the flag is never set, so the state space, tie-break order and
+	 * results are bit-identical to a plain tile-keyed search. */
+	const bool track_horizon = !avoid_tiles.empty();
+	const auto state_key = [](TileIndex tile, bool passed) -> uint64_t {
+		return static_cast<uint64_t>(tile.base()) | (passed ? (1ULL << 32) : 0ULL);
+	};
 
 	/* Validate inputs */
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) {
@@ -481,13 +531,13 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		AirportGroundPath result;
 
 		std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> open_set;
-		std::unordered_map<TileIndex, int> g_costs;
-		std::unordered_map<TileIndex, TileIndex> parents;
+		std::unordered_map<uint64_t, int> g_costs;
+		std::unordered_map<uint64_t, uint64_t> parents;
 		uint32_t sequence = 0;
 
 		int h_start = CalculateHeuristic(start, goal);
-		open_set.emplace(start, 0, h_start, INVALID_TILE, sequence++);
-		g_costs[start] = 0;
+		open_set.emplace(start, 0, h_start, INVALID_TILE, sequence++, false);
+		g_costs[state_key(start, false)] = 0;
 
 		int iterations = 0;
 		while (!open_set.empty() && iterations < MAX_PATHFINDER_ITERATIONS) {
@@ -497,7 +547,18 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 			open_set.pop();
 
 			if (current.tile == goal) {
-				result.tiles = ReconstructPath(parents, start, goal);
+				result.tiles = ReconstructPath(parents, state_key(start, false),
+						state_key(goal, current.passed_safe_stop));
+				/* Guard the invariant rather than trust it: a revisiting route is never
+				 * correct, and callers treat "not found" as "wait on the direct route",
+				 * which is the safe answer. */
+				if (track_horizon) {
+					std::vector<TileIndex> sorted = result.tiles;
+					std::sort(sorted.begin(), sorted.end());
+					if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
+						return AirportGroundPath{};
+					}
+				}
 				result.cost = current.g_cost;
 				result.found = true;
 				return result;
@@ -505,6 +566,10 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 
 			auto neighbors = GetReachableNeighbors(st, current.tile, v, restriction, goal, allow_runway_crossing);
 			for (const auto &[neighbor, nb_data] : neighbors) {
+				/* Inside the horizon the ban applies; past the first safe stop it lifts. */
+				if (track_horizon && !current.passed_safe_stop && is_avoided(neighbor)) continue;
+				const bool neighbor_passed = track_horizon &&
+						(current.passed_safe_stop || IsModularSafeStopTile(st, neighbor, goal));
 				int move_cost = 1;
 				if (nb_data != nullptr) {
 					switch (nb_data->piece_type) {
@@ -527,14 +592,28 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 					}
 				}
 
+				/* A route must never visit a tile twice. Splitting the state on
+				 * passed_safe_stop makes (tile, false) and (tile, true) distinct nodes, and
+				 * one-way tiles are safe stops -- so without this the search can leave a
+				 * one-way tile, turn around, re-enter it (which flips the flag and lifts the
+				 * ban) and carry on. That yields a "shortest path" containing the same tile
+				 * twice: the aircraft drives out, doubles back against the arrow and drives
+				 * out again, holding both tiles the whole time. It is what filled the small
+				 * one-way rings at Gruntfield and friends until they deadlocked.
+				 *
+				 * Reaching a tile in either state is therefore enough to close it. Only
+				 * reachable when track_horizon is set, so a plain search is unaffected. */
+				if (track_horizon && g_costs.count(state_key(neighbor, !neighbor_passed)) != 0) continue;
+
 				int tentative_g = current.g_cost + move_cost;
-				auto it = g_costs.find(neighbor);
+				const uint64_t neighbor_state = state_key(neighbor, neighbor_passed);
+				auto it = g_costs.find(neighbor_state);
 				if (it == g_costs.end() || tentative_g < it->second) {
-					g_costs[neighbor] = tentative_g;
-					parents[neighbor] = current.tile;
+					g_costs[neighbor_state] = tentative_g;
+					parents[neighbor_state] = state_key(current.tile, current.passed_safe_stop);
 
 					int h = CalculateHeuristic(neighbor, goal);
-					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile, sequence++);
+					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile, sequence++, neighbor_passed);
 				}
 			}
 		}
@@ -545,7 +624,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
 	const bool goal_is_runway = (goal_data != nullptr && IsModularRunwayPiece(goal_data->piece_type));
 	const uint64_t crossing_key = BuildCrossingCacheKey(start, goal, restriction);
-	const bool prefer_crossing = !goal_is_runway && HasCrossingCacheKey(crossing_key);
+	const bool prefer_crossing = cacheable && !goal_is_runway && HasCrossingCacheKey(crossing_key);
 
 	/* Learned crossing-required pair: go straight to crossing-capable pass.
 	 * This cache is saved because it changes live path choices. Diagnostic
@@ -649,11 +728,11 @@ static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const st
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, GroundPathRestriction restriction)
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles)
 {
 	TaxiPath result;
 
-	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing, true, restriction);
+	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing, true, restriction, avoid_tiles);
 	if (!path.found) return result;
 
 	result.tiles = std::move(path.tiles);
