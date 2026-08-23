@@ -16,6 +16,7 @@ add_test_files(
     string_func.cpp
     test_main.cpp
     test_modular_airport.cpp
+    test_modular_airport_tile_name.cpp
     test_network_crypto.cpp
     test_script_admin.cpp
     test_window_desc.cpp

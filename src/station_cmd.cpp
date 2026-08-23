@@ -75,6 +75,7 @@
 #include "modular_airport_cmd.h"
 #include "modular_airport_build.h"
 #include "modular_airport_draw.h"
+#include "modular_airport_tile_name.h"
 
 #include "widgets/station_widget.h"
 #include "widgets/misc_widget.h"
@@ -3815,9 +3816,18 @@ static void GetTileDesc_Station(TileIndex tile, TileDesc &td)
 	switch (GetStationType(tile)) {
 		default: NOT_REACHED();
 		case StationType::Rail:     str = STR_LAI_STATION_DESCRIPTION_RAILROAD_STATION; break;
-		case StationType::Airport:
-			str = (IsHangar(tile) ? STR_LAI_STATION_DESCRIPTION_AIRCRAFT_HANGAR : STR_LAI_STATION_DESCRIPTION_AIRPORT);
+		case StationType::Airport: {
+			str = IsHangar(tile) ? STR_LAI_STATION_DESCRIPTION_AIRCRAFT_HANGAR : STR_LAI_STATION_DESCRIPTION_AIRPORT;
+			const Station *st = Station::GetByTile(tile);
+			if (st->airport.blocks.Test(AirportBlock::Modular)) {
+				const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+				if (data != nullptr) {
+					const StringID piece_name = GetModularAirportTileName(data->piece_type);
+					if (piece_name != STR_NULL) str = piece_name;
+				}
+			}
 			break;
+		}
 		case StationType::Truck:    str = STR_LAI_STATION_DESCRIPTION_TRUCK_LOADING_AREA; break;
 		case StationType::Bus:      str = STR_LAI_STATION_DESCRIPTION_BUS_STATION; break;
 		case StationType::Oilrig: {

@@ -66,6 +66,8 @@ add_files(
     modular_airport_build.h
     modular_airport_draw.cpp
     modular_airport_draw.h
+    modular_airport_tile_name.cpp
+    modular_airport_tile_name.h
     modular_airport_template_cmd.cpp
     aircraft_gui.cpp
     airport.cpp
