@@ -1521,17 +1521,37 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		out.deny = deny;
 
 		if (attempt + 1 >= max_attempts) break;
-		if (deny.reason != TaxiReserveFailure::ReservedByOther &&
-				deny.reason != TaxiReserveFailure::OccupiedByOther) {
+		const bool tile_contention = deny.reason == TaxiReserveFailure::ReservedByOther ||
+				deny.reason == TaxiReserveFailure::OccupiedByOther;
+		const bool busy_transit_runway = deny.reason == TaxiReserveFailure::RunwayBusy &&
+				IsValidTile(deny.tile) && !ContainsSortedTile(plan.operation_runway_tiles, deny.tile);
+		if (!tile_contention && !busy_transit_runway) {
 			break;
 		}
 		/* Banning the goal, the tile we are standing on, or a tile of the operation runway
 		 * cannot produce a usable route -- those are answered by choosing another goal. */
 		if (!IsValidTile(deny.tile) || deny.tile == goal || deny.tile == origin) break;
 		if (ContainsSortedTile(plan.operation_runway_tiles, deny.tile)) break;
-		/* The same tile twice means the ban did not move the route; stop rather than spin. */
-		if (std::find(avoid.begin(), avoid.end(), deny.tile) != avoid.end()) break;
-		avoid.push_back(deny.tile);
+
+		/* A runway held for an operation is busy as one contiguous resource. Ban all
+		 * of it when it is only a transit crossing; banning the reported tile alone
+		 * can spend every attempt rediscovering another crossing point on the same
+		 * unusable runway instead of trying a genuinely independent route. */
+		std::vector<TileIndex> denied_resource{deny.tile};
+		if (busy_transit_runway &&
+				(!GetContiguousModularRunwayTiles(st, deny.tile, denied_resource) || denied_resource.empty())) {
+			break;
+		}
+		if (std::find(denied_resource.begin(), denied_resource.end(), origin) != denied_resource.end()) break;
+
+		bool added = false;
+		for (TileIndex tile : denied_resource) {
+			if (std::find(avoid.begin(), avoid.end(), tile) != avoid.end()) continue;
+			avoid.push_back(tile);
+			added = true;
+		}
+		/* Nothing new means the ban did not move the route; stop rather than spin. */
+		if (!added) break;
 	}
 
 	/* Nothing validated. Hand back the shortest route, not whichever detour was tried

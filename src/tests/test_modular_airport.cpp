@@ -2125,12 +2125,49 @@ TEST_CASE("ModularAirportAlternateRoutes")
 		 * it produced visited a tile twice, so the aircraft drove out, doubled back against
 		 * the one-way arrow and drove out again, holding both tiles throughout. In the T7d
 		 * fixture that filled small one-way rings until they deadlocked, and it accounted
-		 * for 46% of permanently-stuck aircraft. A tile reached in either horizon state now
-		 * closes the tile, so no route can revisit one and the U-turn is unreachable.
+		 * for 46% of permanently-stuck aircraft. Route-local ancestry now prevents the
+		 * repeated tile, so the U-turn is unreachable without globally closing a merge tile.
 		 * Refusing here is the intended answer: the caller waits on the direct route. */
 		AirportGroundPath inside = FindAirportGroundPath(st, base + TileDiffXY(2, 4), stand, nullptr,
 				false, false, GroundPathRestriction::None, avoid);
 		CHECK_FALSE(inside.found);
+	}
+
+	SECTION("Routes may merge after reaching a safe stop") {
+		/* The direct route reaches merge before a safe stop and is blocked at the next
+		 * tile. The detour reaches a one-way queue first, then rejoins at merge and may
+		 * use blocked beyond the reservation horizon. Neither route revisits a tile.
+		 *
+		 *   start -- junction -- merge -- blocked -- goal
+		 *              |          |
+		 *            queue ---- detour
+		 */
+		const TileIndex merge_start = base + TileDiffXY(0, 8);
+		const TileIndex junction = base + TileDiffXY(1, 8);
+		const TileIndex merge = base + TileDiffXY(2, 8);
+		const TileIndex blocked = base + TileDiffXY(3, 8);
+		const TileIndex merge_goal = base + TileDiffXY(4, 8);
+		const TileIndex queue = base + TileDiffXY(1, 9);
+		const TileIndex detour = base + TileDiffXY(2, 9);
+
+		AddModularTile(st, merge_start, APT_APRON, 0);
+		AddModularTile(st, junction, APT_APRON, 0);
+		AddModularTile(st, merge, APT_APRON, 0);
+		AddModularTile(st, blocked, APT_APRON, 0);
+		AddModularTile(st, merge_goal, APT_STAND, 0);
+		one_way(queue, 0x02); // East, from the queue into the detour.
+		AddModularTile(st, detour, APT_APRON, 0);
+
+		const std::vector<TileIndex> avoid{blocked};
+		AirportGroundPath path = FindAirportGroundPath(st, merge_start, merge_goal, nullptr,
+				false, false, GroundPathRestriction::None, avoid);
+		REQUIRE(path.found);
+		CHECK(std::find(path.tiles.begin(), path.tiles.end(), queue) != path.tiles.end());
+		CHECK(std::find(path.tiles.begin(), path.tiles.end(), merge) != path.tiles.end());
+		CHECK(std::find(path.tiles.begin(), path.tiles.end(), blocked) != path.tiles.end());
+		std::vector<TileIndex> unique = path.tiles;
+		std::sort(unique.begin(), unique.end());
+		CHECK(std::adjacent_find(unique.begin(), unique.end()) == unique.end());
 	}
 }
 
@@ -2183,6 +2220,66 @@ TEST_CASE("ModularAirportTakeoffPrefersLargeRunwayWhenBusy")
 		CHECK(chosen != short_low);
 		CHECK(chosen == large_low);
 	}
+}
+
+TEST_CASE("ModularAirportAlternateTransitRunway")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 12, 12);
+	REQUIRE(st != nullptr);
+	if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
+
+	/* A landing rollout can reach its stand across either of two independent three-tile
+	 * transit runways. The right crossing is two steps shorter. Holding it must divert
+	 * the chain through the left crossing; it must not be mistaken for the busy operation
+	 * runway. */
+	const TileIndex touchdown = base + TileDiffXY(2, 0);
+	const TileIndex rollout = base + TileDiffXY(4, 0);
+	const TileIndex crossing_a = base + TileDiffXY(1, 3);
+	const TileIndex crossing_b = base + TileDiffXY(5, 3);
+	const TileIndex goal = base + TileDiffXY(3, 6);
+	AddLargeRunway(st, touchdown, 3, 0, RUF_DEFAULT);
+	AddLargeRunway(st, base + TileDiffXY(0, 3), 3, 0, RUF_DEFAULT);
+	AddLargeRunway(st, base + TileDiffXY(4, 3), 3, 0, RUF_DEFAULT);
+	AddModularTile(st, base + TileDiffXY(1, 0), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(5, 0), APT_APRON, 0);
+	for (int y = 1; y <= 2; ++y) {
+		AddModularTile(st, base + TileDiffXY(1, y), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(5, y), APT_APRON, 0);
+	}
+	for (int y = 4; y <= 5; ++y) {
+		AddModularTile(st, base + TileDiffXY(1, y), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(5, y), APT_APRON, 0);
+	}
+	AddModularTile(st, base + TileDiffXY(2, 5), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(3, 5), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(4, 5), APT_APRON, 0);
+	AddModularTile(st, goal, APT_STAND, 0);
+
+	AirportGroundPath preferred = FindAirportGroundPath(st, rollout, goal, nullptr,
+			false, false, GroundPathRestriction::FixedWing);
+	REQUIRE(preferred.found);
+	const bool uses_a = std::find(preferred.tiles.begin(), preferred.tiles.end(), crossing_a) != preferred.tiles.end();
+	const TileIndex busy = uses_a ? crossing_a : crossing_b;
+	const TileIndex free = uses_a ? crossing_b : crossing_a;
+	CHECK(std::find(preferred.tiles.begin(), preferred.tiles.end(), free) == preferred.tiles.end());
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+	SetupAircraftPool();
+	Aircraft *requester = CreateAircraft(VehicleID(10));
+	requester->engine_type = prop_engine;
+	requester->targetairport = st->index;
+	Aircraft *blocker = CreateAircraft(VehicleID(11));
+	blocker->engine_type = prop_engine;
+	blocker->targetairport = st->index;
+	blocker->state = LANDING;
+	blocker->modular_landing_tile = busy;
+
+	REQUIRE(TryReserveLandingChain(requester, st, touchdown, goal));
+	CHECK(IsModularAirportTileReservedBy(free, requester->index));
+	CHECK_FALSE(IsModularAirportTileReservedBy(busy, requester->index));
 }
 
 TEST_CASE("ModularAirportTransitRunwayContract")

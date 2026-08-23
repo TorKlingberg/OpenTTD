@@ -533,10 +533,26 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		std::unordered_map<uint64_t, int> g_costs;
 		std::unordered_map<uint64_t, uint64_t> parents;
 		uint32_t sequence = 0;
+		const uint64_t start_state = state_key(start, false);
+
+		/* Prevent revisits on the candidate route itself. The horizon flag makes two
+		 * states for one physical tile, so the ordinary g-cost check cannot detect a
+		 * route that reaches a tile before a safe stop and returns to it afterwards.
+		 * Do not close the opposite state globally: a distinct, non-revisiting route
+		 * may legitimately merge there after reaching a safe stop. */
+		const auto current_path_contains = [&](uint64_t current_state, TileIndex tile) {
+			while (true) {
+				if (TileIndex(static_cast<uint32_t>(current_state & 0xFFFFFFFFULL)) == tile) return true;
+				if (current_state == start_state) return false;
+				auto it = parents.find(current_state);
+				if (it == parents.end()) return false;
+				current_state = it->second;
+			}
+		};
 
 		int h_start = CalculateHeuristic(start, goal);
 		open_set.emplace(start, 0, h_start, sequence++, false);
-		g_costs[state_key(start, false)] = 0;
+		g_costs[start_state] = 0;
 
 		int iterations = 0;
 		while (!open_set.empty() && iterations < MAX_PATHFINDER_ITERATIONS) {
@@ -544,9 +560,14 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 
 			PathNode current = open_set.top();
 			open_set.pop();
+			const uint64_t current_state = state_key(current.tile, current.passed_safe_stop);
+			if (track_horizon) {
+				auto best = g_costs.find(current_state);
+				if (best == g_costs.end() || current.g_cost != best->second) continue;
+			}
 
 			if (current.tile == goal) {
-				result.tiles = ReconstructPath(parents, state_key(start, false),
+				result.tiles = ReconstructPath(parents, start_state,
 						state_key(goal, current.passed_safe_stop));
 				/* Guard the invariant rather than trust it: a revisiting route is never
 				 * correct, and callers treat "not found" as "wait on the direct route",
@@ -567,6 +588,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 			for (const auto &[neighbor, nb_data] : neighbors) {
 				/* Inside the horizon the ban applies; past the first safe stop it lifts. */
 				if (track_horizon && !current.passed_safe_stop && is_avoided(neighbor)) continue;
+				if (track_horizon && current_path_contains(current_state, neighbor)) continue;
 				const bool neighbor_passed = track_horizon &&
 						(current.passed_safe_stop || IsModularSafeStopTile(st, neighbor, goal));
 				int move_cost = 1;
@@ -590,19 +612,6 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 						move_cost += 8;
 					}
 				}
-
-				/* A route must never visit a tile twice. Splitting the state on
-				 * passed_safe_stop makes (tile, false) and (tile, true) distinct nodes, and
-				 * one-way tiles are safe stops -- so without this the search can leave a
-				 * one-way tile, turn around, re-enter it (which flips the flag and lifts the
-				 * ban) and carry on. That yields a "shortest path" containing the same tile
-				 * twice: the aircraft drives out, doubles back against the arrow and drives
-				 * out again, holding both tiles the whole time. It is what filled the small
-				 * one-way rings at Gruntfield and friends until they deadlocked.
-				 *
-				 * Reaching a tile in either state is therefore enough to close it. Only
-				 * reachable when track_horizon is set, so a plain search is unaffected. */
-				if (track_horizon && g_costs.count(state_key(neighbor, !neighbor_passed)) != 0) continue;
 
 				int tentative_g = current.g_cost + move_cost;
 				const uint64_t neighbor_state = state_key(neighbor, neighbor_passed);
