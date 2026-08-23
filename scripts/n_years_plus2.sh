@@ -24,7 +24,13 @@ TOTAL_TICKS=$((TOTAL_DAYS * DAY_TICKS))
 # accumulate multi-megabyte files in /tmp.
 LOG_FILE="${OPENTTD_REGRESSION_LOG:-/tmp/openttd_regression_$(basename "${SAVE_FILE}" .sav).log}"
 
-scripts/build_and_sign.sh
+# Callers that drive several fixtures at once (scripts/regression_test.sh) build
+# once themselves and set this. Concurrent `make` invocations against the same
+# build directory would race over the same object files, and rebuilding per
+# fixture also lets a mid-run source edit split a suite across two builds.
+if [[ "${OPENTTD_SKIP_BUILD:-0}" != "1" ]]; then
+	scripts/build_and_sign.sh
+fi
 ./build/openttd -d misc=1 -x -g "${SAVE_FILE}" -s null -m null -v null:ticks="${TOTAL_TICKS}" > "${LOG_FILE}" 2>&1
 echo "log: ${LOG_FILE}"
 rg "\[AirportStats\] Year [0-9]+ totals" "${LOG_FILE}" || true

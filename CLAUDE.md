@@ -47,7 +47,7 @@ cmake --build build --target openttd_test -j8 &&
 ./build/openttd_test
 ```
 
-Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code.
+Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate.
 
 ## Git Worktrees
 
@@ -108,12 +108,53 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs four saves under headless 5-year simulations (take ~7 minutes) and compares total airport movements against committed minimums (the `min_movements=` floors in `scripts/testdata/*.expected`):
+`scripts/regression_test.sh` runs headless 5-year simulations and compares total airport
+movements against committed minimums (the `min_movements=` floors in
+`scripts/testdata/*.expected`).
 
+| Invocation | Fixtures |
+|---|---|
+| `scripts/regression_test.sh` | `T5j2` only, ~2 min — the normal check, including before a commit |
+| `scripts/regression_test.sh --full` | all four, ~13 min — only when a change could break taxi pathfinding |
+
+Other flags: `--no-build` reuses whatever `./build/openttd` already is, `--sequential` runs the
+fixtures one at a time, and `--log-dir DIR` moves the per-fixture logs off their default `/tmp`
+paths.
+
+**`T5j2` is the default because it is the cheapest**, at ~108s against `T7d`'s 784s. It is a
+real player layout under sustained contention, so it exercises reservation and queuing hard,
+but it is explicitly *not* the broadest fixture. What the default run cannot see:
+
+- **Alternate routing.** `T7d` is the only fixture with genuine route diversity — two or more
+  routes between the same endpoints — so route-selection work is invisible here.
+- **The wait-don't-downgrade tier.** Also `T7d` only.
+- **Helicopters.** `helis2` only.
+
+So reach for `--full` when a change has a real chance of breaking ground/taxi pathfinding, and
+always for routing work. It is not a per-commit gate; for ordinary changes the bare run is the
+check.
+
+Note also that `T5j2` has the loosest floor of the four on purpose (see the save/load note
+below), so it is the least sensitive fixture to a small regression as well as the fastest.
+
+**Fixtures run concurrently.** The sim is single-threaded and the fixtures share no writable
+state, so `--full` costs roughly one fixture's wall time on a multi-core machine rather than
+four — and since `T7d` is ~7x the others (784s vs 108/110/129s, measured 2026-08-23), `--full`
+is essentially the cost of `T7d` alone. Each fixture's output is buffered and replayed in
+fixture order after everything finishes, so the report never interleaves.
+
+**Two concurrent *suite* runs still collide**, because the log path is derived from the fixture
+name: the second run truncates the first one's log out from under it and both sets of
+`[AirportStats]` lines are lost. That surfaces as "no countable years" and reads exactly like a
+paused fixture. Pass `--log-dir` to whichever run is the guest. (This is real — it happened on
+2026-08-23 with two agents driving the suite in the same tree at once.)
+
+The fixtures:
+
+- `scripts/testdata/T7d.sav` — route diversity: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year), so with the fixtures running concurrently it is the one that sets the suite's wall time
+- `scripts/testdata/T5j2.sav` — **the default fixture.** Real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
 - `scripts/testdata/mass7-inair.sav` — mixed fixed-wing throughput; every airport is large-safe
 - `scripts/testdata/helis2.sav` — helicopter-heavy stress; every airport is large-safe
-- `scripts/testdata/T5j2.sav` — real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
-- `scripts/testdata/T7d.sav` — route-diversity fixture: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year) and roughly doubles suite wall time
 
 **Aircraft crashes are off in all four fixtures** (`vehicle.plane_crashes = 0`, set by
 `scripts/disable_crashes.sh`), so which aircraft happen to die no longer perturbs a total. That
@@ -163,11 +204,14 @@ The runner excludes the **first reported year** as a warmup (its length depends 
 
 **Test saves must be saved unpaused.** A paused save still consumes the tick budget while the game loop does nothing, so the run finishes in seconds having simulated nothing. `airport_stats_history.sh` now fails loudly when a run reports no countable years, because the raw result of a paused save is `movements=0`, which parses fine and would otherwise read as a total throughput collapse (or pass silently against a low floor). Check with `_pause_mode` in a debugger if a new fixture behaves oddly; the committed saves all read 0.
 
-`n_years_plus2.sh` runs `scripts/build_and_sign.sh` before **every** fixture, so a suite run
-rebuilds four times from whatever is in the working tree at that moment. Editing `src/`
-while a run is in flight silently splits the result across two builds — the early fixtures
-measure the old code and the later ones the new. Nothing warns about it and the totals look
-perfectly ordinary. Let a run finish, or kill it, before touching sources.
+`n_years_plus2.sh` runs `scripts/build_and_sign.sh` before **every** fixture unless
+`OPENTTD_SKIP_BUILD=1` is set. `regression_test.sh` builds once up front and sets that, both
+because concurrent fixtures would otherwise run concurrent `make` invocations against the same
+build directory, and because a per-fixture rebuild lets a mid-run source edit silently split
+the result across two builds. That hazard is still live for anything that drives
+`n_years_plus2.sh` or `airport_stats_history.sh` in a loop: the early fixtures measure the old
+code and the later ones the new, nothing warns, and the totals look perfectly ordinary. Let
+such a run finish, or kill it, before touching sources.
 
 Batch runs log to `/tmp/openttd_regression_<save>.log`, one per fixture, overwritten each run (override with `OPENTTD_REGRESSION_LOG`). They deliberately do **not** use `/tmp/openttd.log`: that path belongs to the interactive runners, and a game started by `build_and_run*.sh` holds it open as its stdout for as long as it runs. Truncating it from a batch run does not move the live game's file offset, so the two interleave and the `[AirportStats]` lines get overwritten — which shows up as "no countable years" and reads exactly like a paused fixture. So a regression run is safe to start while a game is open, but read the `log:` path the runner prints rather than `/tmp/openttd.log`.
 

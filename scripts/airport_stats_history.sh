@@ -45,7 +45,8 @@ if [[ "${1:-}" == "--current" ]]; then
 		echo "          fixtures must be unpaused." >&2
 		echo "       2. Something else truncated or overwrote the log mid-run. If the log" >&2
 		echo "          holds lines from another savegame or another -d level, that is this." >&2
-		echo "          Set OPENTTD_REGRESSION_LOG to an unused path and re-run." >&2
+		echo "          Re-run with an unused log path: OPENTTD_REGRESSION_LOG here, or" >&2
+	echo "          --log-dir if you are driving scripts/regression_test.sh." >&2
 		exit 1
 	fi
 
