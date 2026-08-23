@@ -69,13 +69,13 @@ cp -n /Users/tor/ttd/OpenTTD/build/baseset/*.GRF /Users/tor/ttd/OpenTTD/build/ba
 HOOKS_DIR=/Users/tor/ttd/OpenTTD/.git/hooks git commit -F <message-file>
 ```
 
-**Merging back to master:** a branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from the main checkout. Fast-forward, no merge commit:
+**Merging back to master:** always fast-forward (`--ff-only`), never a merge commit — this is a standing preference, not just a worktree workaround. A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from the main checkout:
 
 ```bash
 cd /Users/tor/ttd/OpenTTD && git merge --ff-only claude/<branch>
 ```
 
-This works from a worktree branch like any other, and is preferred over `--no-ff`. A fast-forward creates no commit, so no commit-message hook runs; a merge commit would instead be rejected by the `commit-msg` hook, whose `<keyword>: <Details>` rule a "Merge branch ..." subject cannot satisfy. `--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master from the worktree first, then fast-forward.
+A fast-forward creates no commit, so no commit-message hook runs; a merge commit would instead be rejected by the `commit-msg` hook, whose `<keyword>: <Details>` rule a "Merge branch ..." subject cannot satisfy. `--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master first, then fast-forward.
 
 ## Debugging
 
