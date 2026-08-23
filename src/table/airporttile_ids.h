@@ -91,6 +91,7 @@ enum AirportTiles : uint8_t {
 	APT_SMALL_DEPOT_SW,
 	APT_SMALL_DEPOT_NW,
 	APT_SMALL_DEPOT_NE,
+	APT_END, ///< One past the last built-in airport tile; not a valid tile type.
 };
 
 #endif /* AIRPORTTILE_IDS_H */

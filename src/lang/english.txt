@@ -3381,6 +3381,7 @@ STR_LAI_TREE_NAME_CACTUS_PLANTS                                 :Cactus plants
 STR_LAI_STATION_DESCRIPTION_RAILROAD_STATION                    :Railway station
 STR_LAI_STATION_DESCRIPTION_AIRCRAFT_HANGAR                     :Aircraft hangar
 STR_LAI_STATION_DESCRIPTION_AIRPORT                             :Airport
+STR_LAI_STATION_DESCRIPTION_AIRPORT_APRON_EDGE                  :Apron edge
 STR_LAI_STATION_DESCRIPTION_TRUCK_LOADING_AREA                  :Lorry station
 STR_LAI_STATION_DESCRIPTION_BUS_STATION                         :Bus station
 STR_LAI_STATION_DESCRIPTION_SHIP_DOCK                           :Ship dock
