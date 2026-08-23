@@ -65,7 +65,6 @@
 
 #include <cctype>
 #include <map>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "safeguards.h"
@@ -2041,15 +2040,73 @@ void DrawModularHoldingOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 	}
 }
 
-static void DrawReservationChain(const Viewport &vp, DrawPixelInfo *dpi, const Point &origin, const std::vector<TileIndex> &chain, PixelColour colour)
+static void AppendRouteTile(std::vector<TileIndex> &route, TileIndex tile)
 {
-	Point prev = origin;
-	for (TileIndex tile : chain) {
-		Point curr = TileCenterToScreen(vp, tile);
+	if (!IsValidTile(tile)) return;
+	if (route.empty() || route.back() != tile) route.push_back(tile);
+}
+
+/** Append a path only when it joins the route already assembled. */
+static bool AppendTaxiPathContinuation(std::vector<TileIndex> &route, const TaxiPath *path, size_t start_index = 0)
+{
+	if (path == nullptr || !path->valid || start_index >= path->tiles.size()) return false;
+	if (!route.empty() && route.back() != path->tiles[start_index]) return false;
+
+	for (size_t i = start_index; i < path->tiles.size(); ++i) AppendRouteTile(route, path->tiles[i]);
+	return true;
+}
+
+/** Build the runway traversal from the operation end toward the opposite end. */
+static bool BuildForwardRunwayRoute(const Station *st, TileIndex operation_end, std::vector<TileIndex> &runway_route)
+{
+	runway_route.clear();
+	if (st == nullptr || !IsValidTile(operation_end)) return false;
+
+	std::vector<TileIndex> runway_tiles;
+	if (!GetContiguousModularRunwayTiles(st, operation_end, runway_tiles) || runway_tiles.empty()) return false;
+
+	const auto start = std::find(runway_tiles.begin(), runway_tiles.end(), operation_end);
+	const auto finish = std::find(runway_tiles.begin(), runway_tiles.end(), GetRunwayOtherEnd(st, operation_end));
+	if (start == runway_tiles.end() || finish == runway_tiles.end()) return false;
+
+	if (start <= finish) {
+		for (auto it = start; it <= finish; ++it) runway_route.push_back(*it);
+	} else {
+		for (auto it = start;; --it) {
+			runway_route.push_back(*it);
+			if (it == finish) break;
+		}
+	}
+	return true;
+}
+
+/** Draw the known forward route through its last reserved tile. */
+static void DrawReservationRoute(const Viewport &vp, DrawPixelInfo *dpi, const Aircraft *v,
+		const std::vector<TileIndex> &route, PixelColour colour, std::unordered_set<uint32_t> &drawn)
+{
+	size_t last_reserved = route.size();
+	for (size_t i = 0; i < route.size(); ++i) {
+		if (IsTileReservedBy(route[i], v->index)) last_reserved = i;
+	}
+	if (last_reserved == route.size()) return;
+
+	Point prev = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
+	for (size_t i = 0; i <= last_reserved; ++i) {
+		const TileIndex tile = route[i];
+		const Point curr = TileCenterToScreen(vp, tile);
 		if (HoldingSegVis(prev, curr, dpi)) GfxDrawLine(prev.x, prev.y, curr.x, curr.y, colour, 1);
-		GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, colour);
+		if (IsTileReservedBy(tile, v->index)) {
+			GfxFillRect(curr.x - 2, curr.y - 2, curr.x + 2, curr.y + 2, colour);
+			drawn.insert(tile.base());
+		}
 		prev = curr;
 	}
+}
+
+static void DrawReservationMarker(const Viewport &vp, TileIndex tile, PixelColour colour)
+{
+	const Point point = TileCenterToScreen(vp, tile);
+	GfxFillRect(point.x - 2, point.y - 2, point.x + 2, point.y + 2, colour);
 }
 
 static PixelColour GetReservationOverlayColour(VehicleID vid)
@@ -2080,86 +2137,61 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 {
 	for (const Aircraft *v : Aircraft::Iterate()) {
 		if (!v->IsNormalAircraft()) continue;
-		if (v->taxi_path == nullptr && v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty()) continue;
+		if (v->taxi_path == nullptr && v->landing_chain_path == nullptr &&
+				v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty()) continue;
 
-		std::unordered_map<uint32_t, uint16_t> path_index_by_tile;
-		if (v->taxi_path != nullptr) {
-			const auto &path = v->taxi_path->tiles;
-			for (uint16_t i = 0; i < path.size(); ++i) {
-				path_index_by_tile.emplace(path[i].base(), i);
-			}
-		}
-
-		std::unordered_set<uint32_t> seen;
-		std::vector<std::pair<uint16_t, TileIndex>> behind_path_tiles;
-		std::vector<std::pair<uint16_t, TileIndex>> ahead_path_tiles;
-		std::vector<TileIndex> off_path_tiles;
-		const uint16_t current_index = std::min<uint16_t>(v->taxi_path_index, v->taxi_path != nullptr ? v->taxi_path->tiles.size() : 0);
+		const Station *st = Station::GetIfValid(v->targetairport);
 		const bool landing_phase = v->state == LANDING || v->state == ENDLANDING || v->state == HELILANDING || v->state == HELIENDLANDING;
-
-		auto append_classified = [&](TileIndex tile) {
-			if (!IsTileReservedBy(tile, v->index)) return;
-			if (!seen.insert(tile.base()).second) return;
-
-			auto path_it = path_index_by_tile.find(tile.base());
-			if (path_it == path_index_by_tile.end()) {
-				off_path_tiles.push_back(tile);
-				return;
-			}
-
-			if (path_it->second < current_index) {
-				behind_path_tiles.emplace_back(path_it->second, tile);
-			} else {
-				ahead_path_tiles.emplace_back(path_it->second, tile);
-			}
-		};
-
-		if (landing_phase) {
-			for (TileIndex tile : v->modular_runway_reservation) append_classified(tile);
-		}
-
-		if (v->taxi_path != nullptr) {
-			for (TileIndex tile : v->taxi_path->tiles) append_classified(tile);
-		}
-		for (TileIndex tile : v->taxi_reserved_tiles) append_classified(tile);
-
-		if (!landing_phase) {
-			for (TileIndex tile : v->modular_runway_reservation) append_classified(tile);
-		}
-
-		if (seen.empty()) continue;
 		const PixelColour colour = GetReservationOverlayColour(v->index);
-		const Point origin = WorldToScreen(vp, v->x_pos, v->y_pos, v->z_pos + 4);
+		std::vector<TileIndex> route;
 
-		std::sort(ahead_path_tiles.begin(), ahead_path_tiles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
-		std::sort(behind_path_tiles.begin(), behind_path_tiles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+		if (landing_phase && IsValidTile(v->modular_landing_tile)) {
+			/* The landing route is approach -> touchdown -> rollout -> reserved ground path. */
+			AppendRouteTile(route, v->modular_landing_tile);
+			std::vector<TileIndex> runway_route;
+			if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route)) {
+				for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
+			}
+			AppendTaxiPathContinuation(route, v->landing_chain_path.get());
+		} else if (v->taxi_path != nullptr) {
+			/* The aircraft has already traversed its current path tile. Begin with the
+			 * next tile so even an aircraft between tile centres is never drawn backward. */
+			const size_t start_index = std::min<size_t>(static_cast<size_t>(v->taxi_path_index) + 1, v->taxi_path->tiles.size());
+			AppendTaxiPathContinuation(route, v->taxi_path.get(), start_index);
+			/* During rollout, this is the exact continuation already reserved before landing. */
+			const size_t landing_start = route.empty() && v->landing_chain_path != nullptr &&
+					!v->landing_chain_path->tiles.empty() && v->landing_chain_path->tiles.front() == v->tile ? 1 : 0;
+			AppendTaxiPathContinuation(route, v->landing_chain_path.get(), landing_start);
+		}
 
-		std::vector<TileIndex> forward_chain;
-		std::unordered_set<uint32_t> forward_seen;
-		auto append_forward_unique = [&](TileIndex tile) {
-			if (forward_seen.insert(tile.base()).second) forward_chain.push_back(tile);
+		const bool takeoff_roll = v->state == TAKEOFF || v->state == STARTTAKEOFF || v->state == ENDTAKEOFF;
+		if ((takeoff_roll || v->modular_ground_target == MGT_RUNWAY_TAKEOFF) &&
+				IsValidTile(v->modular_takeoff_tile) && !v->modular_runway_reservation.empty()) {
+			std::vector<TileIndex> runway_route;
+			if (BuildForwardRunwayRoute(st, v->modular_takeoff_tile, runway_route)) {
+				if (takeoff_roll && route.empty()) {
+					/* Once rolling, start at the aircraft rather than drawing back to runway entry. */
+					const auto current = std::find(runway_route.begin(), runway_route.end(), v->tile);
+					if (current != runway_route.end()) {
+						for (auto it = std::next(current); it != runway_route.end(); ++it) AppendRouteTile(route, *it);
+					}
+				} else if (!route.empty() && route.back() == runway_route.front()) {
+					for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
+				}
+			}
+		}
+
+		std::unordered_set<uint32_t> drawn;
+		DrawReservationRoute(vp, dpi, v, route, colour, drawn);
+
+		/* Keep unusual or stale ownership visible without inventing edges between tiles. */
+		const auto draw_unmatched = [&](TileIndex tile) {
+			if (!IsTileReservedBy(tile, v->index)) return;
+			if (!drawn.insert(tile.base()).second) return;
+			DrawReservationMarker(vp, tile, colour);
 		};
-
-		/* For active landings, anchor the first segment at the touchdown tile. */
-		if (landing_phase && IsValidTile(v->modular_landing_tile) && IsTileReservedBy(v->modular_landing_tile, v->index)) {
-			append_forward_unique(v->modular_landing_tile);
-		}
-
-		for (const auto &[idx, tile] : ahead_path_tiles) {
-			(void)idx;
-			append_forward_unique(tile);
-		}
-		for (TileIndex tile : off_path_tiles) append_forward_unique(tile);
-
-		std::vector<TileIndex> backward_chain;
-		backward_chain.reserve(behind_path_tiles.size());
-		for (const auto &[idx, tile] : behind_path_tiles) {
-			(void)idx;
-			backward_chain.push_back(tile);
-		}
-
-		DrawReservationChain(vp, dpi, origin, forward_chain, colour);
-		DrawReservationChain(vp, dpi, origin, backward_chain, colour);
+		for (TileIndex tile : v->taxi_reserved_tiles) draw_unmatched(tile);
+		for (TileIndex tile : v->modular_runway_reservation) draw_unmatched(tile);
 	}
 }
 
