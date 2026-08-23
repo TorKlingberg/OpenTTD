@@ -3823,7 +3823,10 @@ static void GetTileDesc_Station(TileIndex tile, TileDesc &td)
 				const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
 				if (data != nullptr) {
 					const StringID piece_name = GetModularAirportTileName(data->piece_type);
-					if (piece_name != STR_NULL) str = piece_name;
+					if (piece_name != STR_NULL) {
+						str = STR_LAI_STATION_DESCRIPTION_AIRPORT_TILE;
+						td.dparam = piece_name.base();
+					}
 				}
 			}
 			break;

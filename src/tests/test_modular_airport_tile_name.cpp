@@ -155,13 +155,15 @@ TEST_CASE("ModularAirportLandInfoUsesTileName")
 
 	TileDesc description;
 	GetTileDesc(tile, description);
-	CHECK(description.str == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND);
+	CHECK(description.str == STR_LAI_STATION_DESCRIPTION_AIRPORT_TILE);
+	CHECK(description.dparam == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_STAND.base());
 
 	SECTION("Hangar variants are distinguished") {
 		st->airport.GetModularTileData(tile)->piece_type = APT_SMALL_DEPOT_SE;
 		description = {};
 		GetTileDesc(tile, description);
-		CHECK(description.str == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR);
+		CHECK(description.str == STR_LAI_STATION_DESCRIPTION_AIRPORT_TILE);
+		CHECK(description.dparam == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_HANGAR.base());
 	}
 
 	SECTION("Unknown metadata retains the generic airport description") {
