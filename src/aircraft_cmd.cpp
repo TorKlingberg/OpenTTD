@@ -2905,12 +2905,23 @@ static bool AircraftEventHandler(Aircraft *v, int loop)
 {
 	using clock = std::chrono::steady_clock;
 	const auto t_begin = clock::now();
+	const auto update_parked_direction = [v, loop]() {
+		if (loop != 0 || !IsValidTile(v->tile) || !IsAirportTile(v->tile)) return;
+
+		const Station *st = Station::GetByTile(v->tile);
+		if (st != nullptr && st->airport.blocks.Test(AirportBlock::Modular)) {
+			UpdateModularAircraftParkedDirection(v, st);
+		}
+	};
 
 	if (v->vehstatus.Test(VehState::Crashed)) {
 		return HandleCrashedAircraft(v);
 	}
 
-	if (v->vehstatus.Test(VehState::Stopped)) return true;
+	if (v->vehstatus.Test(VehState::Stopped)) {
+		update_parked_direction();
+		return true;
+	}
 
 	v->HandleBreakdown();
 
@@ -2918,7 +2929,10 @@ static bool AircraftEventHandler(Aircraft *v, int loop)
 	ProcessOrders(v);
 	v->HandleLoading(loop != 0);
 
-	if (v->current_order.IsType(OT_LOADING) || v->current_order.IsType(OT_LEAVESTATION)) return true;
+	if (v->current_order.IsType(OT_LOADING) || v->current_order.IsType(OT_LEAVESTATION)) {
+		update_parked_direction();
+		return true;
+	}
 
 	if (v->state >= ENDTAKEOFF && v->state <= HELIENDLANDING) {
 		/* If we are flying, unconditionally clear the 'dest too far' state. */

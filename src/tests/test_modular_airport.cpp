@@ -1771,6 +1771,30 @@ TEST_CASE("ModularAirportParkedDirection")
 			CHECK(finished == (direction == Direction::SE));
 		}
 	}
+
+	SECTION("Loading event ticks continue the smooth parked turn") {
+		AddModularTile(st, stand, APT_STAND);
+		AddModularTile(st, stand + TileDiffXY(0, 1), APT_BUILDING_1);
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->tile = stand;
+		v->x_pos = TileX(stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->z_pos = GetTileMaxPixelZ(stand);
+		v->targetairport = st->index;
+		v->state = TERM1;
+		v->direction = Direction::NW;
+		v->current_order.MakeLoading(false);
+
+		static constexpr std::array<Direction, 4> expected = {
+			Direction::N, Direction::NE, Direction::E, Direction::SE,
+		};
+		for (Direction direction : expected) {
+			REQUIRE(v->Tick());
+			CHECK(v->current_order.IsType(OT_LOADING));
+			CHECK(v->direction == direction);
+		}
+	}
 }
 
 /* The candidate cache is process-global, so an aborted REQUIRE between Begin and End
