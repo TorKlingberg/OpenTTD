@@ -1421,10 +1421,19 @@ static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
  * first safe stop, so capping it only bounds the distance to the next queue tile and lets
  * everything past it grow without limit -- which is not what "go a couple of tiles out of
  * your way" means. Rerouting costs the aircraft the extra taxi distance and costs everyone
- * else the shared tiles it holds while covering it, so the budget is deliberately small:
- * take a genuinely parallel route, never a scenic one.
+ * else the shared tiles it holds while covering it, so the budget stays small: take a
+ * genuinely parallel route, never a scenic one.
+ *
+ * Detours change length in even steps, so this is a budget of two steps rather than four.
+ * One step is not enough. Excluding a busy transit runway takes the whole contiguous strip
+ * out of the search -- crossing the same runway two tiles along is refused for the same
+ * reason -- so the alternative has to reach the far side by another runway entirely, which
+ * is rarely within one step. At a budget of one step those routes were found and then
+ * discarded unvalidated, and the aircraft waited as though nothing had been tried: T7d
+ * measured 0 detours longer than one step, over 3656 in two years. Two steps admits them
+ * and they stay rare (103 of 3803, 2.7%), which is what the second step is buying.
  */
-static constexpr int MAX_ROUTE_DETOUR_TILES = 2;
+static constexpr int MAX_ROUTE_DETOUR_TILES = 4;
 
 /** One route plus the horizon it would claim. @see FindReservableRoute */
 struct ReservableRoute {
