@@ -115,9 +115,33 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 - `scripts/testdata/T5j2.sav` — real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
 - `scripts/testdata/T7d.sav` — route-diversity fixture: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year) and roughly doubles suite wall time
 
-The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires and only the basic crash rate remains. That basic rate is **not** negligible: `helis2` loses 9-10 aircraft per 5-year run and `mass7-inair` 3-7, and which aircraft die changes with any timing shift (see Comparing two runs). **`T5j2.sav` is not flat**: throughput declines a few percent across the window, from fleet ageing and from the 5 aircraft it loses per 5-year run. It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
+**Aircraft crashes are off in all four fixtures** (`vehicle.plane_crashes = 0`, set by
+`scripts/disable_crashes.sh`), so which aircraft happen to die no longer perturbs a total. That
+setting gates only the general per-brake-tick roll in `RollAirplaneCrashCheck`. The elevated
+short-strip overrun for fast jets (fixed prob 3276) **ignores it** and is gated by the
+`no_jetcrash` *cheat* instead, which no console command reaches and which would also change
+which airports jets may be sent to — so it is left alone. `mass7-inair` and `helis2` are
+entirely large-safe, so that path cannot fire there at all; `T5j2` and `T7d` mix runway sizes
+and could in principle, but neither logs a crash today. `[AircraftLost]` at `misc=1` stays the
+check: a fixture that starts logging one has reached the overrun path, not the general roll.
 
-**`T7d.sav` is the clean fixture**: it has no AI companies and logs zero crashes, so nothing outside the code under test has been seen to move its total, and two runs of different code are comparable on it in a way they are not on the other three. Zero crashes is an observation, not a guarantee — a timing shift can produce one — so still check `[AircraftLost]` before trusting a delta. Its four counted years are 6699 / 6796 / 6793 / 6745 — a 1.4% spread, with the dip in the first counted year, so compare totals rather than reading one year against another. It is the only fixture with genuine route diversity — two or more routes between the same endpoints — so it is the one that can detect alternate-exit routing work at all. It also mixes large and small runways without crashing, because the strict large-runway preference keeps fast jets off the short strips, which makes it the only probe of the wait-don't-downgrade tier (`mass7-inair` and `helis2` are entirely large-safe).
+**`T5j2.sav` is still not flat** with crashes off: throughput declines ~3% across the window
+from fleet ageing alone (1306 / 1297 / 1239 / 1235 / 1263 movements per counted year). It is
+exact and reproducible, because the sim is deterministic for a fixed save plus tick count and
+the window is always the same — but read a `T5j2` drop as "compared with the committed
+baseline", not "compared with last year". Its value is contention coverage the other two do not
+provide.
+
+**`T7d.sav` is the route-diversity fixture**, and the reference for what a quiet fixture looks
+like: it already had `plane_crashes = 0` when it was captured, so it was crash-free before the
+other three were, and turning off crashes left its total bit-for-bit unchanged (27033 both
+ways). Its four counted years are 6699 / 6796 / 6793 / 6745 — a 1.4% spread, with the dip in
+the first counted year, so compare totals rather than reading one year against another. It is
+the only fixture with genuine route diversity — two or more routes between the same endpoints —
+so it is the one that can detect alternate-exit routing work at all. It also mixes large and
+small runways without ever reaching the overrun path, because the strict large-runway
+preference keeps fast jets off the short strips, which makes it the only probe of the
+wait-don't-downgrade tier (`mass7-inair` and `helis2` are entirely large-safe).
 
 **The fixtures have no AI companies.** `T5j2` and `T7d` carried three each, and which
 airports an AI decides to build shifts with any change that consumes the synced `Random()`
@@ -127,13 +151,13 @@ sets `difficulty.max_no_competitors = 0` so no replacements spawn during the run
 through the same `game_start.scr` hook as `resave.sh`, with zero ticks simulated.
 `mass7-inair` and `helis2` never had any.
 
-**Never re-save `helis2.sav`** — not with `strip_ai.sh`, not with `resave.sh`. It was written
-by a build predating the modular touchdown clearing `VehicleAirFlag::HelicopterDirectDescent`,
-so ~52 of its 90 helicopters carry a stale descent flag. That is deliberate coverage of the
-touchdown clear against real pre-fix data, and re-saving deletes it and re-baselines the floor.
-(Note what it does *not* cover: most of those flags sit on helicopters in `FLYING`, inside the
-in-flight state band the load-time repair deliberately skips. Covering the repair itself needs
-a save with a *grounded* flagged helicopter.)
+`helis2.sav` was written by a build predating the modular touchdown clearing
+`VehicleAirFlag::HelicopterDirectDescent`, so ~52 of its 90 helicopters carry a stale descent
+flag — real pre-fix data for the touchdown clear to chew on. An earlier version of this file
+warned never to re-save it because that would destroy the coverage. **That was wrong.**
+`Aircraft::flags` is ordinary saved vehicle state (`SLE_CONDVAR(Aircraft, flags, ...)` in
+`saveload/vehicle_sl.cpp`) and no afterload step clears the bit, so the flags round-trip. The
+fixture was re-saved on 2026-08-23 to turn crashes off, which is also what re-baselined it.
 
 The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the saves count different calendar windows — that's expected.
 
@@ -155,9 +179,11 @@ The sim is deterministic for a fixed save + tick count, so a single run is exact
 reproducible — but that does **not** make two runs of *different code* cleanly comparable.
 Any change that shifts timing consumes the synced `Random()` differently, which changes:
 
-- **which aircraft crash.** An airport served by three aircraft loses ~22% of its movements
-  when one of them dies. `[AircraftLost]` logs every crash at `misc=1`; compare the counts
-  and the victim lists before believing a per-airport drop.
+- **which aircraft crash** — removed by setting `vehicle.plane_crashes = 0` in every fixture.
+  While crashes were on, an airport served by three aircraft lost ~22% of its movements when
+  one of them died, which is indistinguishable from a routing regression. `[AircraftLost]`
+  logs every crash at `misc=1`; all four fixtures log zero, and one appearing means the
+  elevated short-strip overrun fired, which that setting does not gate.
 - **which airports the AI companies build** — removed as a noise source by stripping the AIs
   from the fixtures, but this is what it looked like while it was there: T7d had zero crashes
   yet eight small airports present in one run were never built in another, worth 238
@@ -165,10 +191,11 @@ Any change that shifts timing consumes the synced `Random()` differently, which 
   similarly-sized one with a different name appears — that is one airport rebuilt elsewhere,
   not a loss.
 
-Crash divergence alone still moves `mass7-inair`, `helis2` and `T5j2` by around **1% with no
-routing cause**, which is why their floors carry headroom; treat a total delta inside that as
-unresolved rather than as a result. `T7d` has neither crashes nor AIs, so its total is
-attributable. To attribute a delta:
+With both gone, no fixture has a known noise source left, so read a total delta as a result of
+the code under test. The one direct measurement of the re-save itself is `T7d`, which already
+had crashes off: rewriting the file changed its total by 0 movements. Keep the floors'
+headroom regardless — it costs nothing and covers whatever has not been found yet. To attribute
+a delta:
 
 - `[AirportStats] Year N station S "Name"` (at `misc=1`) gives per-airport movements.
 - Landing-chain fail/reject diagnostics are emitted at `misc=2`, so they are **absent** from a
@@ -180,7 +207,7 @@ attributable. To attribute a delta:
   "taxied further" with "landed instead of holding", so rising ground time alongside rising
   movements is the feature working, not a cost.
 
-A sim is deterministic for a fixed save + tick count, so the floors are exact and reproducible: the same code on the same fixture gives the same total every time. That is not the same as two *different* builds being comparable — on every fixture except `T7d`, check the `[AircraftLost]` counts before reading a drop as a routing change.
+A sim is deterministic for a fixed save + tick count, so the floors are exact and reproducible: the same code on the same fixture gives the same total every time. Two *different* builds are now comparable too, as long as `[AircraftLost]` is still absent from both runs.
 
 `T5j2`'s floor has more headroom than the others on purpose. Migrating that save to version
 375 shifted it by 26 movements (6283 before the re-save, 6309 after) while `mass7-inair` and

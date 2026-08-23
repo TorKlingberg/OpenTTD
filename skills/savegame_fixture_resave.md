@@ -33,10 +33,11 @@ writes the loaded state converted to `SAVEGAME_VERSION` with zero ticks elapsed,
 - **`game_start.scr` is found on the search path**, which includes the current working directory *and* the repo root. The script runs from a private `mktemp -d` so its hook shadows nothing in the repo, the build dir, or `~/Documents/OpenTTD`.
 - **Pass `-x`** or the run rewrites `openttd.cfg` from whatever the fixture's settings were.
 - **Check the pause state.** Fixtures must stay unpaused (see the Regression Testing notes in `CLAUDE.md`). `_pause_mode` is saved (`misc_sl.cpp`) and is restored from the fixture, so an unpaused save re-saves unpaused — but the `PauseMode::SaveLoad` handling around `SM_LOAD_GAME` is close enough to this path to be worth re-checking if a fixture starts simulating nothing.
-- **Never re-save `helis2.sav`.** ~52 of its 90 helicopters carry a stale
-  `VehicleAirFlag::HelicopterDirectDescent` from a build predating the modular touchdown
-  clear. That is the coverage the fixture exists for; a re-save deletes it and re-baselines
-  the floor.
+- **A re-save keeps `Aircraft::flags`.** ~52 of `helis2.sav`'s 90 helicopters carry a stale
+  `VehicleAirFlag::HelicopterDirectDescent` from a build predating the modular touchdown clear,
+  and an earlier note here claimed re-saving would destroy that coverage. It does not: the
+  field is saved (`SLE_CONDVAR(Aircraft, flags, ...)`, `saveload/vehicle_sl.cpp`) and no
+  afterload step clears the bit. A re-save does re-baseline the fixture's floor, like any other.
 - **The diff is the whole file.** Savegames are compressed, so a re-save touches every byte. Commit it separately from behavioural work.
 
 ## Verifying a re-save changed nothing
