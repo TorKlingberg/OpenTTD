@@ -2146,11 +2146,14 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 		std::vector<TileIndex> route;
 
 		if (landing_phase && IsValidTile(v->modular_landing_tile)) {
-			/* The landing route is approach -> touchdown -> rollout -> reserved ground path. */
+			/* Fixed-wing landing continues through runway rollout. Helicopters hand off
+			 * directly from touchdown, even when a no-helipad airport uses a runway tile. */
 			AppendRouteTile(route, v->modular_landing_tile);
-			std::vector<TileIndex> runway_route;
-			if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route)) {
-				for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
+			if (v->subtype != AIR_HELICOPTER) {
+				std::vector<TileIndex> runway_route;
+				if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route)) {
+					for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
+				}
 			}
 			AppendTaxiPathContinuation(route, v->landing_chain_path.get());
 		} else if (v->taxi_path != nullptr) {
