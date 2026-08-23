@@ -11,14 +11,20 @@
 #include "../3rdparty/catch2/catch.hpp"
 
 #include "../modular_airport_tile_name.h"
+#include "../core/string_builder.hpp"
+#include "../core/utf8.hpp"
 #include "../landscape.h"
+#include "../language.h"
 #include "../map_func.h"
 #include "../newgrf_airport.h"
 #include "../newgrf_airporttiles.h"
 #include "../station_base.h"
 #include "../station_map.h"
+#include "../strings_func.h"
 #include "../table/airporttile_ids.h"
+#include "../table/control_codes.h"
 #include "../table/strings.h"
+#include "mock_environment.h"
 
 #include "../safeguards.h"
 
@@ -117,6 +123,43 @@ TEST_CASE("ModularAirportTileNames")
 	}
 
 	CHECK(GetModularAirportTileName(UINT8_MAX) == STR_NULL);
+}
+
+TEST_CASE("ModularAirportTileNamesCarryNoColourCode")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+
+	const auto HasColourCode = [](std::string_view text) {
+		for (char32_t c : Utf8View(text)) {
+			if (c >= SCC_BLUE && c <= SCC_BLACK) return true;
+		}
+		return false;
+	};
+
+	/* Verify the detector against a code it must catch, so a broken check cannot make
+	 * the loop below pass vacuously. Built here rather than borrowed from a string that
+	 * still carries {BLACK}, which would tie this test to that string keeping it. */
+	std::string sentinel;
+	StringBuilder(sentinel).PutUtf8(SCC_BLACK);
+	REQUIRE(HasColourCode(sentinel));
+	REQUIRE_FALSE(HasColourCode("Runway"));
+
+	/* Land Area Information draws the tile description line in light blue, and an
+	 * embedded colour overrides that for the remainder of the line -- only a caller
+	 * colour flagged Forced wins, and this one is not. Tooltips pass TextColour::Black
+	 * explicitly, so dropping the code costs them nothing. */
+	for (uint16_t piece_type = 0; piece_type < APT_END; piece_type++) {
+		const StringID name = GetModularAirportTileName(static_cast<uint8_t>(piece_type));
+		if (name == STR_NULL) continue;
+		CAPTURE(piece_type);
+		CHECK_FALSE(HasColourCode(GetString(name)));
+		CHECK_FALSE(HasColourCode(GetString(STR_LAI_STATION_DESCRIPTION_AIRPORT_TILE, name)));
+	}
 }
 
 TEST_CASE("ModularAirportLandInfoUsesTileName")
