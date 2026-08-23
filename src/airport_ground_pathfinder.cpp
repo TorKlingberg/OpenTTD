@@ -88,11 +88,10 @@ struct PathNode {
 	TileIndex tile;      ///< Tile position
 	int g_cost;          ///< Cost from start to this node
 	int f_cost;          ///< Estimated total cost (g_cost + heuristic)
-	TileIndex parent;    ///< Parent tile in the path
 	uint32_t sequence;    ///< Deterministic insertion order for equal-cost ties
 	bool passed_safe_stop = false; ///< Route so far has reached a safe stop; see the avoid-set note in FindAirportGroundPath
 
-	PathNode(TileIndex t, int g, int f, TileIndex p, uint32_t seq, bool passed = false) : tile(t), g_cost(g), f_cost(f), parent(p), sequence(seq), passed_safe_stop(passed) {}
+	PathNode(TileIndex t, int g, int f, uint32_t seq, bool passed = false) : tile(t), g_cost(g), f_cost(f), sequence(seq), passed_safe_stop(passed) {}
 
 	/** Comparison for priority queue (lower f_cost = higher priority) */
 	bool operator>(const PathNode &other) const
@@ -536,7 +535,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		uint32_t sequence = 0;
 
 		int h_start = CalculateHeuristic(start, goal);
-		open_set.emplace(start, 0, h_start, INVALID_TILE, sequence++, false);
+		open_set.emplace(start, 0, h_start, sequence++, false);
 		g_costs[state_key(start, false)] = 0;
 
 		int iterations = 0;
@@ -613,7 +612,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 					parents[neighbor_state] = state_key(current.tile, current.passed_safe_stop);
 
 					int h = CalculateHeuristic(neighbor, goal);
-					open_set.emplace(neighbor, tentative_g, tentative_g + h, current.tile, sequence++, neighbor_passed);
+					open_set.emplace(neighbor, tentative_g, tentative_g + h, sequence++, neighbor_passed);
 				}
 			}
 		}
