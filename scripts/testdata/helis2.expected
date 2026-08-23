@@ -1,12 +1,1 @@
 min_movements=13400
-
-# This save was written by a build that predates the modular touchdown clearing
-# VehicleAirFlag::HelicopterDirectDescent, so ~52 of its 90 helicopters carry a stale
-# descent flag. That is deliberate, not rot: the flag decays to none as each helicopter
-# lands, which exercises the touchdown clear against real pre-fix data. Do not "clean" the
-# fixture by re-saving it — that deletes the coverage and re-baselines the floor, since
-# throughput is exact only for a fixed save plus tick count.
-#
-# Note what it does *not* cover: most of those flags sit on helicopters in FLYING, which
-# is inside the in-flight state band the load-time repair deliberately skips. Coverage of
-# the repair itself needs a save with a *grounded* flagged helicopter.

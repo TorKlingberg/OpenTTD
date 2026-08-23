@@ -115,9 +115,25 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 - `scripts/testdata/T5j2.sav` — real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
 - `scripts/testdata/T7d.sav` — route-diversity fixture: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year) and roughly doubles suite wall time
 
-The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires and only the basic crash rate remains. That basic rate is **not** negligible: `helis2` loses 9-10 aircraft per 5-year run and `mass7-inair` 3-7, and which aircraft die changes with any timing shift (see Comparing two runs). **`T5j2.sav` is not flat**: throughput declines a few percent across the window from fleet ageing (it has zero crashes, so this is not attrition). It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
+The first two have all airports made large-safe, so the elevated short-strip jet-crash path never fires and only the basic crash rate remains. That basic rate is **not** negligible: `helis2` loses 9-10 aircraft per 5-year run and `mass7-inair` 3-7, and which aircraft die changes with any timing shift (see Comparing two runs). **`T5j2.sav` is not flat**: throughput declines a few percent across the window, from fleet ageing and from the 5 aircraft it loses per 5-year run. It is still exact and reproducible, because the sim is deterministic for a fixed save plus tick count and the window is always the same — but read a `T5j2` drop as "compared with the committed baseline", not "compared with last year". Its value is contention coverage the other two do not provide.
 
-**`T7d.sav` is flat** (7376 / 7409 / 7380 / 7425 across its four counted years, spread 0.3%) because it logs zero crashes, so it gives contention coverage *and* year-to-year comparability. It is the only fixture with genuine route diversity — two or more routes between the same endpoints — so it is the one that can detect alternate-exit routing work at all. It also mixes large and small runways without crashing, because the strict large-runway preference keeps fast jets off the short strips, which makes it the only probe of the wait-don't-downgrade tier (`mass7-inair` and `helis2` are entirely large-safe).
+**`T7d.sav` is the clean fixture**: it has no AI companies and logs zero crashes, so nothing outside the code under test has been seen to move its total, and two runs of different code are comparable on it in a way they are not on the other three. Zero crashes is an observation, not a guarantee — a timing shift can produce one — so still check `[AircraftLost]` before trusting a delta. Its four counted years are 6699 / 6796 / 6793 / 6745 — a 1.4% spread, with the dip in the first counted year, so compare totals rather than reading one year against another. It is the only fixture with genuine route diversity — two or more routes between the same endpoints — so it is the one that can detect alternate-exit routing work at all. It also mixes large and small runways without crashing, because the strict large-runway preference keeps fast jets off the short strips, which makes it the only probe of the wait-don't-downgrade tier (`mass7-inair` and `helis2` are entirely large-safe).
+
+**The fixtures have no AI companies.** `T5j2` and `T7d` carried three each, and which
+airports an AI decides to build shifts with any change that consumes the synced `Random()`
+differently — worth a couple of hundred movements with no routing cause. `scripts/strip_ai.sh
+<save>` deletes every AI company from a save (taking its stations and vehicles with it) and
+sets `difficulty.max_no_competitors = 0` so no replacements spawn during the run. It re-saves
+through the same `game_start.scr` hook as `resave.sh`, with zero ticks simulated.
+`mass7-inair` and `helis2` never had any.
+
+**Never re-save `helis2.sav`** — not with `strip_ai.sh`, not with `resave.sh`. It was written
+by a build predating the modular touchdown clearing `VehicleAirFlag::HelicopterDirectDescent`,
+so ~52 of its 90 helicopters carry a stale descent flag. That is deliberate coverage of the
+touchdown clear against real pre-fix data, and re-saving deletes it and re-baselines the floor.
+(Note what it does *not* cover: most of those flags sit on helicopters in `FLYING`, inside the
+in-flight state band the load-time repair deliberately skips. Covering the repair itself needs
+a save with a *grounded* flagged helicopter.)
 
 The runner excludes the **first reported year** as a warmup (its length depends on the save's start date), so the saves count different calendar windows — that's expected.
 
@@ -142,14 +158,17 @@ Any change that shifts timing consumes the synced `Random()` differently, which 
 - **which aircraft crash.** An airport served by three aircraft loses ~22% of its movements
   when one of them dies. `[AircraftLost]` logs every crash at `misc=1`; compare the counts
   and the victim lists before believing a per-airport drop.
-- **which airports the AI companies build.** T7d has zero crashes yet eight small airports
-  present in one run were never built in another, worth 238 movements. Watch for an airport
-  going to 0 while a similarly-sized one with a different name appears — that is one airport
-  rebuilt elsewhere, not a loss.
+- **which airports the AI companies build** — removed as a noise source by stripping the AIs
+  from the fixtures, but this is what it looked like while it was there: T7d had zero crashes
+  yet eight small airports present in one run were never built in another, worth 238
+  movements. If a fixture ever regains an AI, watch for an airport going to 0 while a
+  similarly-sized one with a different name appears — that is one airport rebuilt elsewhere,
+  not a loss.
 
-Together these move fixture totals by **1-2% with no routing cause**, which is why the
-floors carry that much headroom. Treat a total delta inside 2% as unresolved, not as a
-result. To attribute one:
+Crash divergence alone still moves `mass7-inair`, `helis2` and `T5j2` by around **1% with no
+routing cause**, which is why their floors carry headroom; treat a total delta inside that as
+unresolved rather than as a result. `T7d` has neither crashes nor AIs, so its total is
+attributable. To attribute a delta:
 
 - `[AirportStats] Year N station S "Name"` (at `misc=1`) gives per-airport movements.
 - Landing-chain fail/reject diagnostics are emitted at `misc=2`, so they are **absent** from a
@@ -161,7 +180,13 @@ result. To attribute one:
   "taxied further" with "landed instead of holding", so rising ground time alongside rising
   movements is the feature working, not a cost.
 
-A sim is deterministic for a fixed save + tick-count, so the floors are exact and reproducible. With the safe-airport saves a movement drop is almost always a real routing/throughput change rather than crash attrition — but see Aircraft Crashes before assuming, since the basic-rate roll still consumes synced RNG.
+A sim is deterministic for a fixed save + tick count, so the floors are exact and reproducible: the same code on the same fixture gives the same total every time. That is not the same as two *different* builds being comparable — on every fixture except `T7d`, check the `[AircraftLost]` counts before reading a drop as a routing change.
+
+`T5j2`'s floor has more headroom than the others on purpose. Migrating that save to version
+375 shifted it by 26 movements (6283 before the re-save, 6309 after) while `mass7-inair` and
+`helis2` both round-tripped to identical totals. Whatever state does not survive `T5j2`'s
+save/load is worth about half a percent there, so a 30-movement margin of the kind the other
+fixtures use would sit inside the noise.
 
 Per-commit attribution: `scripts/airport_stats_history.sh <start_commit> <out_dir> <years>` checks out + rebuilds each commit in `<start>^..HEAD` and records movements to CSV (history mode runs **only** the default save). `--current <years> [save]` runs just the working tree. Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mass7-inair.sav).
 
