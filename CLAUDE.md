@@ -350,7 +350,7 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 - The `XVER` chunk holds one `{name, uint16 version, flags}` row per fork feature (`upstream_version`, `modular_airport`). It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved flags say it may be dropped.
 - Gate on the feature, not the version: `IsModularAirportSaveFeaturePresent()` (→ `SlXvIsFeaturePresent(XSLFI_MODULAR_AIRPORT, n)` in a JGRPP port). Bump `MODULAR_AIRPORT_SL_VERSION` and test `min_version` for a format change within the feature.
 - Per-field conditions are usually unnecessary: `VEHS` and `STNN` are table chunks, so the savegame lists the fields it holds and a savegame written without ours simply does not load them.
-- `legacy_modular_version_sl.cpp` is **temporary** — it loads savegames stamped 367-375 from before this scheme. Its `static_assert` fails the build once an upstream merge reaches that range; delete the file, its CMakeLists entry, the declaration in `extended_version_sl.h`, and the call in `DetermineSaveLoadFormat()`.
+- Savegames stamped 367-375, from before this scheme, are no longer loadable — the temporary shim for them has been removed, so they now hit the ordinary "savegame too new" error.
 
 ## Modular Airport Invariants
 

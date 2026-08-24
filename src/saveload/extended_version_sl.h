@@ -75,8 +75,4 @@ inline bool IsModularAirportSaveFeaturePresent(uint16_t min_version = 1)
 	return SlxIsFeaturePresent(SlxFeature::ModularAirport, min_version);
 }
 
-/* TEMPORARY: loading savegames written before this fork moved to feature versions.
- * Defined in legacy_modular_version_sl.cpp; see that file for how to remove it. */
-void SlxHandleLegacyModularSavegameVersion();
-
 #endif /* SAVELOAD_EXTENDED_VERSION_SL_H */

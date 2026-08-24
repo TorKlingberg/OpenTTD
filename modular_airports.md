@@ -413,7 +413,7 @@ Note that `MS_OK` means the layout meets the large-aircraft safety requirements 
 - The `XVER` chunk carries one `{name, uint16 version, flags}` row per `SlxFeature` — currently `UpstreamVersion` and `ModularAirport`. It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved `SlxFeatureFlag` says it may be dropped.
 - Gate on the feature, not on a version: `IsModularAirportSaveFeaturePresent()`. Bump `MODULAR_AIRPORT_SL_VERSION` and pass a `min_version` for a format change within the feature.
 - Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` carry no version condition: plain `SLE_VAR`, or `SLE_CONDVECTOR` over the full version range for the two reservation vectors, there being no unconditional `SLE_VECTOR` for struct members.
-- `src/saveload/legacy_modular_version_sl.cpp` is **temporary**: it loads savegames stamped 367-375 from before this scheme. Its `static_assert` fails the build once an upstream merge reaches that range, at which point delete the file, its CMakeLists entry, the declaration in `extended_version_sl.h`, and the call in `DetermineSaveLoadFormat()`.
+- Savegames stamped 367-375 — written by the fork before this scheme, when it still appended to `SaveLoadVersion` — are no longer loadable. The temporary shim that translated them was removed; they now fail with the ordinary "savegame too new" error, since those numbers are ahead of the upstream version this build knows.
 
 ### What is saved
 

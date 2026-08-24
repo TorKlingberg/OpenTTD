@@ -3185,9 +3185,6 @@ static const SaveLoadFormat *DetermineSaveLoadFormat(SaveLoadFormatTag tag, uint
 		_sl_minor_version = (TO_BE32(raw_version) >> 8) & 0xFF;
 
 		SlxSetSavegameIsExtended(is_extended);
-		/* TEMPORARY: fork savegames from before the switch to feature versions have no marker
-		 * bit and no XVER chunk; recognise them by their version. See legacy_modular_version_sl.cpp. */
-		if (!is_extended) SlxHandleLegacyModularSavegameVersion();
 
 		Debug(sl, 1, "Loading savegame version {}{}", _sl_version, SlxIsExtendedSavegame() ? " (extended)" : "");
 
