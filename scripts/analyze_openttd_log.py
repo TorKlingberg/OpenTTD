@@ -24,16 +24,18 @@ def analyze():
         for line in f:
             total_lines += 1
 
+            # Both surviving invariant reports are Debug(misc, 1), so they show up
+            # in an ordinary run's log.
             if 'invariant' in line:
-                if 'runway-transit-invariant' in line:
-                    invariants['runway-transit-invariant'] += 1
-                elif 'landing-chain-invariant' in line:
+                if 'landing-chain-invariant' in line:
                     invariants['landing-chain-invariant'] += 1
                 elif 'runway-rest-invariant' in line:
                     invariants['runway-rest-invariant'] += 1
                 else:
                     invariants['other-invariant'] += 1
 
+            # Only stale-clear and force-clear-all remain, and both are
+            # Debug(misc, 2) -- absent unless the log was made with -d misc=2.
             if '[FALLBACK]' in line:
                 # extract fallback type
                 m = re.search(r'\[FALLBACK\]\s*([^:\s]+)', line)
@@ -71,16 +73,19 @@ def analyze():
                 elif 'stuck(occupied)' in line:
                     stuck_by_type['stuck(occupied)'] += 1
 
+            # Sections 6 and 7 below read Debug(misc, 2) lines too.
             if 'landing-chain fail' in line:
                 m = re.search(r'reason=([^\s]+)', line)
                 reason = m.group(1) if m else 'unknown'
                 landing_fails[reason] += 1
 
-            if 'takeoff' in line and ('FindRunway=INVALID' in line or 'takeoff-path invalid' in line or 'takeoff-skip' in line):
+            if 'takeoff' in line:
                 if 'FindRunway=INVALID' in line:
                     takeoff_fails['FindRunway=INVALID'] += 1
                 elif 'takeoff-path invalid' in line:
                     takeoff_fails['takeoff-path invalid'] += 1
+                elif 'takeoff-path not enterable' in line:
+                    takeoff_fails['takeoff-path not enterable'] += 1
                 elif 'takeoff-skip' in line:
                     takeoff_fails['takeoff-skip'] += 1
 
