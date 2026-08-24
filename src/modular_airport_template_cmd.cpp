@@ -371,8 +371,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	 * must be placed without rotation. */
 	if (data.rotation != 0) {
 		for (const auto &t : data.tiles) {
-			if (t.piece_type == APT_SMALL_BUILDING_1 || t.piece_type == APT_SMALL_BUILDING_2 || t.piece_type == APT_SMALL_BUILDING_3 ||
-					IsLegacySmallHangarPiece(t.piece_type)) {
+			if (IsNonRotatableModularPiece(t.piece_type)) {
 				return CommandCost(STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
 			}
 		}
@@ -534,11 +533,6 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			added[idx] = true;
 			placement_order.push_back(idx);
 		};
-		auto adjacent_tiles = [&](TileIndex a, TileIndex b) {
-			const int dx = abs(static_cast<int>(TileX(a)) - static_cast<int>(TileX(b)));
-			const int dy = abs(static_cast<int>(TileY(a)) - static_cast<int>(TileY(b)));
-			return dx + dy == 1;
-		};
 		auto adjacent_to_join_station = [&](TileIndex t) {
 			if (join_id == StationID::Invalid()) return false;
 			Station *around = nullptr;
@@ -557,7 +551,7 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		for (size_t pos = 0; pos < placement_order.size(); pos++) {
 			const TileIndex base = abs_tiles[placement_order[pos]];
 			for (size_t i = 0; i < abs_tiles.size(); i++) {
-				if (!added[i] && adjacent_tiles(base, abs_tiles[i])) add_index(i);
+				if (!added[i] && DistanceManhattan(base, abs_tiles[i]) == 1) add_index(i);
 			}
 		}
 
@@ -568,19 +562,17 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	/* Step 3.B: Per-tile validation loop. Noise was checked once above against
 	 * the finished layout; intermediate per-tile layouts are not meaningful. */
-	struct TileValidationResult {
-		bool is_replace;
-	};
-	std::vector<TileValidationResult> validation_results(rotated_tiles.size());
+	std::vector<bool> is_replace(rotated_tiles.size(), false);
 	for (size_t i : placement_order) {
 		const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 		TileIndex t = abs_tiles[i];
 
 		Station *tile_st = st;
-		TileValidationResult &res = validation_results[i];
+		bool tile_replace = false;
 
-		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, res.is_replace, total, false);
+		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_replace, total, false);
 		if (ret.Failed()) return ret;
+		is_replace[i] = tile_replace;
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
 			uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
@@ -611,17 +603,12 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		for (size_t i : placement_order) {
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 			TileIndex t = abs_tiles[i];
-			const TileValidationResult &res = validation_results[i];
 
-			BuildModularAirportTile_Apply(t, rt.piece_type, st, res.is_replace, rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
+			BuildModularAirportTile_Apply(t, rt.piece_type, st, is_replace[i], rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
 				SetRunwayFlags_Apply(t, runway_flags, st);
-			}
-
-			if (IsTaxiwayPiece(rt.piece_type)) {
-				SetTaxiwayFlags_Apply(t, rt.user_taxi_dir_mask, rt.one_way_taxi, st);
 			}
 
 			for (uint8_t edge_bit : kFenceEdgeBits) {

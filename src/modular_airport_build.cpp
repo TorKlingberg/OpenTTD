@@ -41,18 +41,6 @@
 #include "table/airporttile_ids.h"
 #include "table/strings.h"
 
-static bool IsSmallRunwayFamily(uint8_t piece_type)
-{
-	switch (piece_type) {
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default:
-			return false;
-	}
-}
-
 static void InitializeNewModularAirport(Airport &airport)
 {
 	airport.type = AT_MODULAR;
@@ -69,7 +57,7 @@ static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDi
 		ModularAirportTileData *data = st->airport.GetModularTileData(cur);
 		if (!IsRunwayPieceOnAxis(data, horizontal)) break;
 		bool is_large = IsLargeRunwayFamily(data->piece_type);
-		bool is_small = IsSmallRunwayFamily(data->piece_type);
+		bool is_small = IsLegacySmallRunwayPiece(data->piece_type);
 		if (family_large && !is_large) break;
 		if (!family_large && !is_small) break;
 		tiles.push_back(cur);
@@ -77,7 +65,7 @@ static void CollectRunwayFamilySegment(Station *st, TileIndex start, TileIndexDi
 	}
 }
 
-void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal)
+static void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal)
 {
 	TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
 
@@ -274,29 +262,11 @@ uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx)
 	}
 }
 
-struct StockTileOverride {
-	int x;
-	int y;
-	uint8_t piece_type;
-};
-
-static constexpr StockTileOverride _country_stock_to_modular_overrides[] = {
-	{0, 1, APT_APRON}, {1, 1, APT_STAND}, {2, 1, APT_STAND}, {3, 1, APT_APRON},
-};
-
 uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type)
 {
-	std::span<const StockTileOverride> tile_overrides;
-	switch (airport_type) {
-		case AT_SMALL:
-			tile_overrides = _country_stock_to_modular_overrides;
-			break;
-		default:
-			break;
-	}
-
-	for (const auto &ovr : tile_overrides) {
-		if (ovr.x == dx && ovr.y == dy) return ovr.piece_type;
+	if (airport_type == AT_SMALL && dy == 1) {
+		if (dx == 0 || dx == 3) return APT_APRON;
+		if (dx == 1 || dx == 2) return APT_STAND;
 	}
 	return piece_type;
 }
@@ -306,7 +276,7 @@ static Money ScaleModularAirportCost(Money base, uint16_t percent)
 	return static_cast<Money>((static_cast<int64_t>(base) * percent + 50) / 100);
 }
 
-Money GetModularAirportPieceBuildCost(uint8_t piece_type)
+static Money GetModularAirportPieceBuildCost(uint8_t piece_type)
 {
 	const Money base = _price[Price::BuildStationAirport];
 
@@ -554,33 +524,26 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 	}
 
 	CommandCost cost(ExpensesType::Construction);
-	for (size_t i = 0; i < tiles_to_remove.size(); ++i) {
-		cost.AddCost(_price[Price::ClearStationAirport]);
-	}
+	cost.AddCost(_price[Price::ClearStationAirport] * static_cast<uint>(tiles_to_remove.size()));
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		const ModularAirportNoiseSnapshot noise_before = GetModularAirportNoiseSnapshot(st);
 		std::vector<std::pair<TileIndex, uint8_t>> removed_runway_tiles;
-		if (st->airport.modular_tile_data != nullptr) {
-			for (TileIndex t : tiles_to_remove) {
-				const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-				if (md != nullptr && IsModularRunwayPiece(md->piece_type)) {
+
+		for (TileIndex t : tiles_to_remove) {
+			const ModularAirportTileData *md = (st->airport.modular_tile_data != nullptr) ? st->airport.GetModularTileData(t) : nullptr;
+			if (md != nullptr) {
+				if (IsModularRunwayPiece(md->piece_type)) {
 					removed_runway_tiles.push_back({t, md->rotation});
 				}
+				if (IsModularHangarPiece(md->piece_type)) {
+					OrderBackup::Reset(t, false);
+					CloseWindowById(WindowClass::VehicleDepot, t);
+				}
 			}
-		}
-
-		for (TileIndex t : tiles_to_remove) {
-			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-			if (md != nullptr && IsModularHangarPiece(md->piece_type)) {
-				OrderBackup::Reset(t, false);
-				CloseWindowById(WindowClass::VehicleDepot, t);
-			}
-		}
-
-		for (TileIndex t : tiles_to_remove) {
 			DoClearSquare(t);
 			DeleteNewGRFInspectWindow(GrfSpecFeature::AirportTiles, t.base());
+			st->rect.AfterRemoveTile(st, t);
 		}
 
 		if (st->airport.modular_tile_data != nullptr) {
@@ -595,10 +558,10 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 
 			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
-				bool horizontal = (removed_rotation % 2) == 0;
-				TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
-				TileIndex neighbor_lo = removed_tile - diff;
-				TileIndex neighbor_hi = removed_tile + diff;
+				const bool horizontal = (removed_rotation % 2) == 0;
+				const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
+				const TileIndex neighbor_lo = removed_tile - diff;
+				const TileIndex neighbor_hi = removed_tile + diff;
 				if (st->airport.GetModularTileData(neighbor_lo) != nullptr) {
 					NormalizeRunwaySegmentVisuals(st, neighbor_lo, horizontal);
 				}
@@ -606,10 +569,6 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 					NormalizeRunwaySegmentVisuals(st, neighbor_hi, horizontal);
 				}
 			}
-		}
-
-		for (TileIndex t : tiles_to_remove) {
-			st->rect.AfterRemoveTile(st, t);
 		}
 
 		bool any_tiles = false;
@@ -1011,27 +970,10 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 		tile_data.one_way_taxi = false;
 		tile_data.user_taxi_dir_mask = 0x0F;
 	}
-	auto is_runway_piece = [](uint8_t piece_type) {
-		switch (piece_type) {
-			case APT_RUNWAY_1:
-			case APT_RUNWAY_2:
-			case APT_RUNWAY_3:
-			case APT_RUNWAY_4:
-			case APT_RUNWAY_5:
-			case APT_RUNWAY_END:
-			case APT_RUNWAY_SMALL_NEAR_END:
-			case APT_RUNWAY_SMALL_MIDDLE:
-			case APT_RUNWAY_SMALL_FAR_END:
-				return true;
-			default:
-				return false;
-		}
-	};
-
 	/* Auto-detect axis: if the current rotation doesn't match any adjacent
 	 * runway but the perpendicular axis does, flip to extend that runway.
 	 * Only when auto_rotate_runway is set (single-click placement). */
-	if (auto_rotate_runway && is_runway_piece(tile_data.piece_type)) {
+	if (auto_rotate_runway && IsModularRunwayPiece(tile_data.piece_type)) {
 		const bool horizontal = (rotation % 2) == 0;
 		const TileIndexDiff same_diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
 		bool has_same_axis = IsRunwayPieceOnAxis(st->airport.GetModularTileData(tile - same_diff), horizontal)
@@ -1049,7 +991,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	}
 
 	/* If this extends an existing runway, inherit its direction/usage flags. */
-	if (is_runway_piece(tile_data.piece_type)) {
+	if (IsModularRunwayPiece(tile_data.piece_type)) {
 		const bool horizontal = (rotation % 2) == 0;
 		const TileIndexDiff diff = horizontal ? TileDiffXY(1, 0) : TileDiffXY(0, 1);
 		bool inherited_runway_flags = false;

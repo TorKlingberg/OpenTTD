@@ -79,7 +79,9 @@ void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t templa
 	/* Tile rotation. */
 	this->rotation = (old_rotation + r) & 3;
 
-	SwapBuildingPieceForRotation(this->piece_type, r);
+	if (!IsCanonicalHangarPiece(this->piece_type)) {
+		SwapBuildingPieceForRotation(this->piece_type, r);
+	}
 
 	/* Taxi mask rotation (NESW bitmask). */
 	uint8_t old_mask = this->user_taxi_dir_mask;
@@ -134,12 +136,7 @@ uint AirportTemplate::GetCatchmentRadius() const
 bool AirportTemplate::HasNonRotatablePieces() const
 {
 	for (const auto &tile : this->tiles) {
-		if (tile.piece_type == APT_SMALL_BUILDING_1 ||
-				tile.piece_type == APT_SMALL_BUILDING_2 ||
-				tile.piece_type == APT_SMALL_BUILDING_3 ||
-				IsLegacySmallHangarPiece(tile.piece_type)) {
-			return true;
-		}
+		if (IsNonRotatableModularPiece(tile.piece_type)) return true;
 	}
 	return false;
 }

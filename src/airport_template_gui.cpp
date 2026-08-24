@@ -1053,11 +1053,11 @@ public:
 	void OnQueryTextFinished(std::optional<std::string> str) override
 	{
 		if (!this->has_save_pick_tile) return;
-		if (!str.has_value()) {
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
-			return;
-		}
+		this->has_save_pick_tile = false;
+		const TileIndex pick_tile = this->save_pick_tile;
+		this->save_pick_tile = INVALID_TILE;
+
+		if (!str.has_value()) return;
 
 		std::string name = *str;
 		bool all_ws = std::all_of(name.begin(), name.end(), [](char c) {
@@ -1065,32 +1065,24 @@ public:
 		});
 		if (name.empty() || all_ws) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_NAME_EMPTY), {}, WarningLevel::Info);
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
-		if (!IsValidTile(this->save_pick_tile) || !IsTileType(this->save_pick_tile, TileType::Station) || !IsAirport(this->save_pick_tile)) {
+		if (!IsValidTile(pick_tile) || !IsTileType(pick_tile, TileType::Station) || !IsAirport(pick_tile)) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_INVALID_SELECTION), {}, WarningLevel::Info);
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
-		Station *st = Station::GetByTile(this->save_pick_tile);
+		Station *st = Station::GetByTile(pick_tile);
 		/* Report an oversized airport as such: it is the one failure here the player can act on. */
 		if (st != nullptr && st->airport.modular_tile_data != nullptr && st->airport.modular_tile_data->size() > MAX_TEMPLATE_TILES) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_TOO_MANY_TILES, st->airport.modular_tile_data->size(), MAX_TEMPLATE_TILES), {}, WarningLevel::Info);
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
 		AirportTemplate templ;
 		if (st == nullptr || st->owner != _local_company || !BuildTemplateFromStation(st, templ)) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WarningLevel::Info);
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
@@ -1098,13 +1090,9 @@ public:
 		std::string saved_stem;
 		if (!AirportTemplateManager::SaveTemplate(templ, &saved_stem)) {
 			ShowErrorMessage(GetEncodedString(STR_ERROR_AIRPORT_TEMPLATE_IO), {}, WarningLevel::Info);
-			this->has_save_pick_tile = false;
-			this->save_pick_tile = INVALID_TILE;
 			return;
 		}
 
-		this->has_save_pick_tile = false;
-		this->save_pick_tile = INVALID_TILE;
 		this->ExitPlacementMode();
 		this->RefreshTemplateList(saved_stem);
 	}

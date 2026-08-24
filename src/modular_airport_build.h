@@ -26,11 +26,9 @@ struct ModularAirportNoiseSnapshot {
 	uint8_t level = 0;
 };
 
-void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, bool horizontal);
 uint8_t GetStockFenceEdgeMask(uint8_t stock_gfx);
 uint8_t MapStockGfxToModularPiece(uint8_t stock_gfx);
 uint8_t ApplyStockTileOverride(uint8_t airport_type, int dx, int dy, uint8_t piece_type);
-Money GetModularAirportPieceBuildCost(uint8_t piece_type);
 std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t airport_type, uint8_t layout, TileIndex base_tile);
 ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(const Station *st);
 ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(std::span<const ModularAirportNoisePiece> pieces);
