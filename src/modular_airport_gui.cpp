@@ -671,6 +671,8 @@ public:
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
 			bool already_selected = (new_piece == this->selected_piece);
+			/* Piece 5, the small hangar, is absent on purpose: its graphics exist in a single
+			 * orientation, so there is no direction for a picker to offer. */
 			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 6);
 
 			/* Deactivate fence/upgrade tools when selecting a piece. */
@@ -1365,9 +1367,11 @@ private:
 	}
 };
 
-/** Hangar direction picker window (opened when clicking a hangar piece button). */
+/** Hangar direction picker window (opened when clicking the large hangar piece button). */
 class BuildModularHangarPickerWindow : public PickerWindowBase {
-	bool large_hangar; ///< true = large hangar (piece 5), false = small (piece 6)
+	/** true = large hangar (piece 4). Always true today: the small hangar (piece 5) is drawn
+	 * in one orientation only, so it has no direction to pick and opens no picker. */
+	bool large_hangar;
 
 	/** Widget-to-rotation mapping: NW=2, NE=1, SW=3, SE=0 */
 	static constexpr uint8_t _widget_to_rot[4] = {2, 1, 3, 0}; // indexed by (widget - WID_MAHP_DIR_NW)
