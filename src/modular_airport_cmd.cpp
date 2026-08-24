@@ -2276,10 +2276,10 @@ Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
 	const int dx = threshold_x - approach_x;
 	const int dy = threshold_y - approach_y;
 
-	if (dx > 0) return Direction::SE;
-	if (dx < 0) return Direction::NW;
-	if (dy > 0) return Direction::SW;
-	if (dy < 0) return Direction::NE;
+	if (dx > 0) return Direction::SW;
+	if (dx < 0) return Direction::NE;
+	if (dy > 0) return Direction::SE;
+	if (dy < 0) return Direction::NW;
 	return Direction::N;
 }
 

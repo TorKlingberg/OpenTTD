@@ -1916,6 +1916,20 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 	TileIndex goal = INVALID_TILE;
 	uint8_t target = MGT_NONE;
 
+	if (go_to_hangar) {
+		goal = FindFreeModularHangar(st, v);
+		if (goal != INVALID_TILE) {
+			target = MGT_HANGAR;
+		} else {
+			LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
+			/* Match stock airports: if depot order targets this airport but no hangar
+			 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
+			go_to_hangar = false;
+			if (ShouldLogModularRateLimited(v->index, 24, 128)) {
+				Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
+			}
+		}
+	}
 	if (v->subtype == AIR_HELICOPTER && !go_to_hangar) {
 		const ModularAirportTileData *data = st->airport.GetModularTileData(v->tile);
 		if (data != nullptr && IsModularHelipadPiece(data->piece_type)) {
@@ -1930,21 +1944,6 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 			}
 			goal = st->airport.modular_heli_takeoff_tile;
 			target = MGT_HELI_TAKEOFF_TILE;
-		}
-	}
-
-	if (go_to_hangar) {
-		goal = FindFreeModularHangar(st, v);
-		if (goal != INVALID_TILE) {
-			target = MGT_HANGAR;
-		} else {
-			LogModularHangarDiagnostics(st, v, "terminal_depot_no_hangar");
-			/* Match stock airports: if depot order targets this airport but no hangar
-			 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
-			go_to_hangar = false;
-			if (ShouldLogModularRateLimited(v->index, 24, 128)) {
-				Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
-			}
 		}
 	}
 	if (!go_to_hangar && goal == INVALID_TILE) {

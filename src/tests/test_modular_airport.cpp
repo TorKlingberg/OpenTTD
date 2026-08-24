@@ -968,6 +968,23 @@ TEST_CASE("ModularAirportSafety")
 
 TEST_CASE("ModularAirportHoldingLoop")
 {
+	SECTION("Runway approach direction follows world axes") {
+		Map::Allocate(64, 64);
+		const TileIndex base = TileXY(10, 10);
+		Station *st = SetupModularAirport(base, 10, 10);
+		REQUIRE(st != nullptr);
+
+		const TileIndex horizontal_low = base + TileDiffXY(1, 1);
+		const TileIndex vertical_low = base + TileDiffXY(5, 1);
+		AddLargeRunway(st, horizontal_low, 3, 0);
+		AddLargeRunway(st, vertical_low, 3, 1);
+
+		CHECK(GetRunwayApproachDirection(st, horizontal_low) == Direction::SW);
+		CHECK(GetRunwayApproachDirection(st, horizontal_low + TileDiffXY(2, 0)) == Direction::NE);
+		CHECK(GetRunwayApproachDirection(st, vertical_low) == Direction::SE);
+		CHECK(GetRunwayApproachDirection(st, vertical_low + TileDiffXY(0, 2)) == Direction::NW);
+	}
+
 	SECTION("IsHoldingGateActive") {
 		/* 8 waypoints loop. */
 		CHECK(IsHoldingGateActive(0, 0, 8)); // AT gate
