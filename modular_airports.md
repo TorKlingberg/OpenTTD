@@ -145,7 +145,8 @@ One place invalidates without it: the helicopter landing path in `aircraft_cmd.c
 
 In `Aircraft` (`src/aircraft.h`), under the `Modular airport ground pathfinding` comment block:
 
-- `taxi_path` (heap, not saved), `landing_chain_path` (heap, not saved)
+- `taxi_path`, `landing_chain_path` — heap-owned paths whose structured contents are saved in
+  `VEHS` by `SlVehicleAircraftPath` and reconstructed as `unique_ptr`s on load
 - `taxi_path_index`, `taxi_current_segment`, `taxi_wait_counter`
 - `taxi_reserved_tiles` — non-runway reservations
 - `modular_runway_reservation` — whole-runway claim for a landing or takeoff operation
@@ -412,7 +413,7 @@ Note that `MS_OK` means the layout meets the large-aircraft safety requirements 
 - A savegame written here sets `SAVEGAME_VERSION_EXT` (`0x8000`) in the header version word on top of an ordinary upstream version, so upstream rejects it with a plain "savegame too new" rather than misreading map bits. The bit is stripped on load.
 - The `XVER` chunk carries one `{name, uint16 version, flags}` row per `SlxFeature` — currently `UpstreamVersion` and `ModularAirport`. It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved `SlxFeatureFlag` says it may be dropped.
 - Gate on the feature, not on a version: `IsModularAirportSaveFeaturePresent()`. Bump `MODULAR_AIRPORT_SL_VERSION` and pass a `min_version` for a format change within the feature.
-- Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` carry no version condition: plain `SLE_VAR`, or `SLE_CONDVECTOR` over the full version range for the two reservation vectors, there being no unconditional `SLE_VECTOR` for struct members.
+- Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` carry no version condition: plain `SLE_VAR`, `SLEG_STRUCT` for the classified paths, or `SLE_CONDVECTOR` over the full version range for the two reservation vectors, there being no unconditional `SLE_VECTOR` for struct members.
 - Savegames stamped 367-375 — written by the fork before this scheme, when it still appended to `SaveLoadVersion` — are no longer loadable. The temporary shim that translated them was removed; they now fail with the ordinary "savegame too new" error, since those numbers are ahead of the upstream version this build knows.
 
 ### What is saved
@@ -423,9 +424,9 @@ Note that `MS_OK` means the layout meets the large-aircraft safety requirements 
 | Crossing-required ground-path cache | `MACP` chunk, `src/saveload/airport_sl.cpp` |
 | Aircraft modular state | `src/saveload/vehicle_sl.cpp` |
 
-Aircraft modular state **is** persisted: `taxi_path_index`, `taxi_current_segment`, `taxi_wait_counter`, `ground_path_goal`, `modular_landing_tile`, `modular_landing_goal`, `modular_ground_target`, `modular_takeoff_tile`, `modular_takeoff_progress`, `taxi_reserved_tiles`, `modular_runway_reservation`, `modular_holding_wp_index`.
+Aircraft modular state **is** persisted: `taxi_path_index`, `taxi_current_segment`, `taxi_wait_counter`, `ground_path_goal`, `modular_landing_tile`, `modular_landing_goal`, `modular_ground_target`, `modular_takeoff_tile`, `modular_takeoff_progress`, `taxi_reserved_tiles`, `modular_runway_reservation`, `modular_holding_wp_index`, plus the structured contents of `taxi_path` and `landing_chain_path`.
 
-`taxi_path` and `landing_chain_path` are **not** saved — they are heap pointers and are recomputed on load.
+`SlVehicleAircraftPath` saves each path's presence, validity, tiles, and classified segment type/start/end data in `VEHS`, then reconstructs present paths as `unique_ptr`s on load. The pointer values themselves are never serialized. Older table saves simply omit these structured fields.
 
 The governing invariant: any state that affects aircraft movement, reservations, or path choices must be saved or deterministically rebuilt on load. Map-level reservation bits and the crossing cache both affect multiplayer game state, which is why they are persisted rather than recomputed.
 

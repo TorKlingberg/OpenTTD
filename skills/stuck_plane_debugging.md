@@ -33,10 +33,17 @@ Check the head of the jam before anything else. In game: open the vehicle and lo
 stopped indicator. From a running process, dump `vehstatus` (see
 `skills/lldb_game_state_inspection.md`); bit 1 = `Stopped`, so `0xa` = `Stopped+DefaultPalette`.
 
-Tell-tale field combination on a stopped plane that has survived a save/load:
-`taxi_path == nullptr` together with a **non-zero** `taxi_path_index`/`taxi_wait_counter`.
-`ClearTaxiPathState` always zeroes those two, and `taxi_path` is not saved while they are — so
-that combination means the aircraft has not been ticked since load, not that pathfinding failed.
+Do not treat a null `taxi_path` plus non-zero path state as a single post-load signature.
+Current saves persist `taxi_path` through `SlVehicleAircraftPath`, and the fields have distinct
+diagnostic meanings:
+
+- `taxi_path == nullptr`, `taxi_path_index == 0`, and a non-zero `taxi_wait_counter` is the
+  normal shape of a genuine no-path retry: rebuilding clears the path state, restores the wait
+  counter, and increments it.
+- `taxi_path == nullptr` with a non-zero `taxi_path_index` is suspicious. It can come from an
+  older save whose `VEHS` table omitted the path fields, invalid loaded path data, or stale or
+  corrupt state. With `-d sl=1`, invalid path data reports
+  `Found Aircraft ... with invalid modular-airport path, ignoring.`
 
 The blocked planes behind it show the normal `stuck(reserve)` chain, and their
 `taxi_wait_counter` values are all *identical* — one simultaneous stall, not independent
@@ -255,15 +262,14 @@ grep -c 'runway-rest-invariant'   /tmp/openttd.log   # small and self-clearing
   means the route was thrown away after commit. **Expect zero**, and
   `scripts/regression_test.sh` fails a fixture that emits any.
 
-  One case is *not* a violation and is suppressed: `landing_chain_path` is a
-  `unique_ptr` and deliberately not saved, so an aircraft that was already
-  committed to a landing when the game was saved arrives at its rollout end with
-  no chain to install. `AfterLoadGame` marks those aircraft
-  (`Aircraft::rollout_restored_from_save`, transient, consumed by the first
-  rollout arrival) and the check skips them once. Without that, every fixture
-  reported a handful of these in the first seconds after load — from whichever
-  aircraft happened to be mid-landing at save time — and re-saving the fixture
-  only reshuffled which ones.
+  One compatibility case is *not* a violation and is suppressed. Current saves
+  persist `landing_chain_path` through `SlVehicleAircraftPath` in the `VEHS`
+  table, serializing its data and reconstructing the `unique_ptr` on load. Older
+  saves lack those fields, so an aircraft that was already committed to a landing
+  can still arrive at its rollout end with no chain to install. `AfterLoadGame`
+  uses the transient `Aircraft::modular_paths_loaded_from_save` marker to identify
+  that legacy case, sets `Aircraft::rollout_restored_from_save`, and the check
+  skips it once. A new save containing the path fields receives no exemption.
 - `runway-rest-invariant: waiting on runway` — the aircraft is waiting on a runway
   tile. Unlike the above it still holds a route to a safe stop; it is losing the
   race for the next runway resource (`deny=runway_busy`). Ordinary contention at
@@ -421,7 +427,10 @@ Check each tile along the expected path for:
 - **Query tool (?)**: Click on a tile to see its tile index, properties, and reservation owner
 - **Reservation overlay**: Toggle in the modular airport builder toolbar to see per-aircraft reservation chains drawn as blue lines
 - **Console `scrollto TILE`**: Center the viewport on a tile index
-- **Save/reload**: Clears all in-memory reservation state (taxi_reserved_tiles, taxi_path, etc. are not saved). If save/reload fixes the problem, it's a reservation state bug.
+- **Save/reload**: Current saves preserve the reservation vectors plus `taxi_path` and
+  `landing_chain_path`; save/reload is no longer a way to clear modular-airport movement state.
+  If it changes the problem, investigate a missing or mismatched saveload field, invalid loaded
+  path data, or the compatibility reconstruction used for an older save.
 
 ## Common Root Causes
 

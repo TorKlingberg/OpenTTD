@@ -2325,10 +2325,10 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			v->index, v->modular_landing_tile.base(), v->x_pos, v->y_pos, v->z_pos);
 	}
 
-	/* landing_chain_path is not saved. If an aircraft already committed to modular
-	 * landing has no active saved reservations, reclaim the landing chain before
-	 * continuing descent; otherwise a second aircraft can choose the same
-	 * helipad/touchdown tile. */
+	/* Older saves omit landing_chain_path, and invalid saved path data is discarded.
+	 * If an aircraft already committed to modular landing has neither a path nor
+	 * active reservations, reclaim the landing chain before continuing descent;
+	 * otherwise a second aircraft can choose the same helipad/touchdown tile. */
 	if (v->taxi_reserved_tiles.empty() && v->modular_runway_reservation.empty() && v->landing_chain_path == nullptr) {
 		/* Helicopters require a concrete ground goal to land (they'd otherwise circle
 		 * forever -- see aircraft_cmd.cpp commit path that rejects helicopter landing

@@ -347,7 +347,7 @@ Notes:
 
 ## Saveload
 
-Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved because map-level reservation bits affect multiplayer game state; the crossing-required ground-path cache is saved via the `MACP` chunk because it changes path choices; `modular_holding_wp_index` is saved because it affects aircraft movement. `taxi_path` and `landing_chain_path` are **not** saved — paths are recomputed on load. `taxi_path` is a heap pointer and must never be saved.
+Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved because map-level reservation bits affect multiplayer game state; the crossing-required ground-path cache is saved via the `MACP` chunk because it changes path choices; `modular_holding_wp_index` is saved because it affects aircraft movement. `taxi_path` and `landing_chain_path` are saved as structured fields in the `VEHS` table chunk by `SlVehicleAircraftPath` in `src/saveload/vehicle_sl.cpp`. The handler serializes the path validity, tiles, and classified segments and reconstructs each `unique_ptr` on load; it does not serialize the pointer value itself. Preserving the exact selected routes is required for multiplayer joins because recomputing them against newer reservation state can choose a different route from the server. Saves predating these fields omit them; the transient `modular_paths_loaded_from_save` and `rollout_restored_from_save` flags identify that legacy case and provide its one-shot mid-landing invariant exemption.
 
 ### Fork savegame versioning
 
