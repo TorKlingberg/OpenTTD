@@ -751,7 +751,11 @@ public:
 		this->UpdateCursor();
 		CloseWindowById(WindowClass::JoinStation, 0);
 		Window *parent = this->parent;
-		this->PickerWindowBase::Close();
+		/* Window::Close() rather than PickerWindowBase::Close(): the latter resets the
+		 * placement cursor unconditionally, which would cancel whatever tool owns it now
+		 * (the builder's piece, or the main toolbar's query tool). UpdateCursor() above
+		 * already released the cursor if it was ours. */
+		this->Window::Close();
 		if (parent != nullptr) parent->InvalidateData();
 	}
 

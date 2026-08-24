@@ -537,6 +537,8 @@ public:
 		if (this->selected_piece < PIECE_COUNT && this->IsWidgetDisabled(WID_MA_PIECE_0 + this->selected_piece)) {
 			this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
 			this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
+			/* The selection is gone, so its picker must go too, or it stands for no tool. */
+			CloseWindowByClass(WindowClass::BuildDepot);
 			this->UpdatePlacementCursor();
 		}
 	}
@@ -1254,6 +1256,13 @@ private:
 
 	void OnPlaceObjectAbort() override
 	{
+		/* Before the guard: a pending join prompt belongs to the placement we are leaving,
+		 * whoever takes the cursor next -- including ourselves on a tool switch, which is
+		 * where the stock toolbars close it too (their HandlePlacePushButton reset is
+		 * unguarded, so their abort handler runs). It holds _thd.freeze while open, so
+		 * leaving it behind freezes the tile highlight for the next tool. */
+		CloseWindowById(WindowClass::JoinStation, 0);
+
 		if (this->updating_cursor) return; // We're re-setting our own cursor; ignore.
 
 		/* External window stole the cursor -- deselect and raise all buttons. */
@@ -1266,13 +1275,12 @@ private:
 		this->upgrade_tool_active = false;
 		this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
 
-		/* Dismiss the placement sub-windows, like the rail/road/dock toolbars do: they belong
-		 * to a tool that is no longer active. selected_piece is already cleared above, so the
+		/* Dismiss the piece pickers, like the rail/road/dock toolbars do: they belong to a
+		 * tool that is no longer active. selected_piece is already cleared above, so the
 		 * pickers' StopPlacementFromClosedPicker() is a no-op and cannot re-enter the cursor
 		 * code. The template manager and info overlay are toggles rather than placement
 		 * pickers, so they stay open and only their button state is re-synced. */
 		CloseWindowByClass(WindowClass::BuildDepot);
-		CloseWindowById(WindowClass::JoinStation, 0);
 
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WindowClass::AirportTemplateManager, 0) != nullptr);
 		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WindowClass::ModularAirportInfoOverlay, 0) != nullptr);
