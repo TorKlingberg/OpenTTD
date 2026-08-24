@@ -963,6 +963,127 @@ public:
 	}
 };
 
+/**
+ * Save/load one of the classified modular-airport paths owned by an aircraft.
+ *
+ * These paths affect future reservation and movement decisions, so a network
+ * client joining from a save snapshot must receive the exact path the server
+ * keeps in memory. Rebuilding from current traffic is not equivalent: it can
+ * select an alternate route that was unavailable when the server chose its
+ * path.
+ */
+template <std::unique_ptr<TaxiPath> Aircraft::*TPath>
+class SlVehicleAircraftPath : public DefaultSaveLoadHandler<SlVehicleAircraftPath<TPath>, Aircraft> {
+private:
+	static inline bool path_present;
+	static inline bool path_valid;
+	static inline std::vector<TileIndex> path_tiles;
+	static inline std::vector<uint8_t> segment_types;
+	static inline std::vector<uint16_t> segment_starts;
+	static inline std::vector<uint16_t> segment_ends;
+
+	static void ClearTemporaryState()
+	{
+		path_present = false;
+		path_valid = false;
+		path_tiles.clear();
+		segment_types.clear();
+		segment_starts.clear();
+		segment_ends.clear();
+	}
+
+	static bool ValidatePathData()
+	{
+		if (!path_present) return true;
+		if (!path_valid) {
+			return path_tiles.empty() && segment_types.empty() && segment_starts.empty() && segment_ends.empty();
+		}
+		if (path_tiles.empty() || segment_types.empty()) return false;
+		if (segment_types.size() != segment_starts.size() || segment_types.size() != segment_ends.size()) return false;
+		if (std::any_of(path_tiles.begin(), path_tiles.end(), [](TileIndex tile) { return !IsValidTile(tile); })) return false;
+
+		size_t expected_start = 0;
+		for (size_t i = 0; i < segment_types.size(); ++i) {
+			if (segment_types[i] > static_cast<uint8_t>(TaxiSegmentType::Runway)) return false;
+			if (segment_starts[i] != expected_start || segment_starts[i] > segment_ends[i]) return false;
+			if (segment_ends[i] >= path_tiles.size()) return false;
+			expected_start = static_cast<size_t>(segment_ends[i]) + 1;
+		}
+		return expected_start == path_tiles.size();
+	}
+
+public:
+	static inline const std::array<SaveLoad, 6> description = {{
+		SLEG_VAR("present", path_present, VarTypes::BOOL),
+		SLEG_VAR("valid", path_valid, VarTypes::BOOL),
+		SLEG_VECTOR("tiles", path_tiles, VarTypes::U32),
+		SLEG_VECTOR("segment_types", segment_types, VarTypes::U8),
+		SLEG_VECTOR("segment_starts", segment_starts, VarTypes::U16),
+		SLEG_VECTOR("segment_ends", segment_ends, VarTypes::U16),
+	}};
+	static inline const SaveLoadCompatTable compat_description = {};
+
+	void Save(Aircraft *v) const override
+	{
+		ClearTemporaryState();
+		const std::unique_ptr<TaxiPath> &path = v->*TPath;
+		path_present = path != nullptr;
+		if (path != nullptr) {
+			path_valid = path->valid;
+			path_tiles = path->tiles;
+			segment_types.reserve(path->segments.size());
+			segment_starts.reserve(path->segments.size());
+			segment_ends.reserve(path->segments.size());
+			for (const TaxiSegment &segment : path->segments) {
+				segment_types.push_back(static_cast<uint8_t>(segment.type));
+				segment_starts.push_back(segment.start_index);
+				segment_ends.push_back(segment.end_index);
+			}
+		}
+
+		SlObject(nullptr, this->GetDescription());
+		ClearTemporaryState();
+	}
+
+	void Load(Aircraft *v) const override
+	{
+		ClearTemporaryState();
+		SlObject(nullptr, this->GetLoadDescription());
+		v->modular_paths_loaded_from_save = true;
+
+		std::unique_ptr<TaxiPath> &path = v->*TPath;
+		path.reset();
+		if (!ValidatePathData()) {
+			Debug(sl, 1, "Found Aircraft {} with invalid modular-airport path, ignoring.", v->index);
+			ClearTemporaryState();
+			return;
+		}
+		if (!path_present) {
+			ClearTemporaryState();
+			return;
+		}
+
+		path = std::make_unique<TaxiPath>();
+		path->valid = path_valid;
+		path->tiles = std::move(path_tiles);
+		path->segments.reserve(segment_types.size());
+		for (size_t i = 0; i < segment_types.size(); ++i) {
+			path->segments.push_back({static_cast<TaxiSegmentType>(segment_types[i]), segment_starts[i], segment_ends[i]});
+		}
+		ClearTemporaryState();
+	}
+
+	void LoadCheck(Aircraft *) const override
+	{
+		ClearTemporaryState();
+		SlObject(nullptr, this->GetLoadDescription());
+		ClearTemporaryState();
+	}
+};
+
+using SlVehicleAircraftTaxiPath = SlVehicleAircraftPath<&Aircraft::taxi_path>;
+using SlVehicleAircraftLandingChainPath = SlVehicleAircraftPath<&Aircraft::landing_chain_path>;
+
 class SlVehicleAircraft : public DefaultSaveLoadHandler<SlVehicleAircraft, Vehicle> {
 public:
 	static inline const SaveLoad description[] = {
@@ -982,9 +1103,10 @@ public:
 		 SLE_CONDVAR(Aircraft, turn_counter, VarTypes::U8, SaveLoadVersion::SplitLoadWaitCounters, SaveLoadVersion::MaxVersion),
 		 SLE_CONDVAR(Aircraft, flags, VarTypes::U8, SaveLoadVersion::NewGRFAircraftRange, SaveLoadVersion::MaxVersion),
 
-		 /* Modular airport ground pathfinding - Note: taxi_path is not saved, will be recalculated.
-		  * These need no version condition: VEHS is a table chunk, so the savegame lists the fields
-		  * it holds and a savegame written without these simply does not load them. */
+		 /* Modular airport ground pathfinding. These need no version condition: VEHS is a table
+		  * chunk, so the savegame lists the fields it holds and older savegames simply omit them. */
+		 SLEG_STRUCT("taxi_path", SlVehicleAircraftTaxiPath),
+		 SLEG_STRUCT("landing_chain_path", SlVehicleAircraftLandingChainPath),
 		 SLE_VAR(Aircraft, taxi_path_index, VarTypes::U16),
 		 SLE_VAR(Aircraft, ground_path_goal, VarTypes::U32),
 

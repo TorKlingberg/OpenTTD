@@ -91,7 +91,8 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VehicleType::Aircraf
 	/* Modular airport ground pathfinding */
 	std::unique_ptr<TaxiPath> taxi_path; ///< Classified taxi path for modular airports
 	std::unique_ptr<TaxiPath> landing_chain_path; ///< Pre-computed path from rollout to ground goal (set by landing chain)
-	bool rollout_restored_from_save = false; ///< Landing was already committed when the game was saved, so the unsaved landing chain is legitimately absent. Not saved; cleared on the first rollout arrival.
+	bool modular_paths_loaded_from_save = false; ///< Transient compatibility marker: the save contained the classified path fields. Not saved.
+	bool rollout_restored_from_save = false; ///< An older save had a committed landing but no saved chain. Not saved; cleared on the first rollout arrival.
 	uint16_t taxi_path_index = 0; ///< Current position in taxi_path->tiles
 	uint8_t taxi_current_segment = 0; ///< Current segment index in taxi_path->segments
 	std::vector<TileIndex> taxi_reserved_tiles{}; ///< Non-runway reservations held by segment logic

@@ -3625,10 +3625,8 @@ void HandleModularGroundArrival(Aircraft *v)
 			/* Completed rollout along runway, now find a terminal */
 			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
 			{
-				/* One-shot: this rollout was already in progress when the game was saved,
-				 * so landing_chain_path is absent by the save/load contract rather than
-				 * because a committed route was lost. Consume the flag here -- every later
-				 * arrival for this aircraft is judged normally. */
+				/* One-shot compatibility for saves written before modular paths were
+				 * persisted. Every later landing by this aircraft is judged normally. */
 				const bool restored_from_save = v->rollout_restored_from_save;
 				v->rollout_restored_from_save = false;
 
@@ -4090,7 +4088,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 			v->taxi_wait_counter++;
 			if (_debug_misc_level >= 1 && v->taxi_wait_counter >= 128 && (v->taxi_wait_counter % 128) == 0) {
 				/* Diagnostic A* only when someone is listening -- gate on debug level. */
-				AirportGroundPath dbg_path = FindAirportGroundPath(st, v->tile, v->ground_path_goal, v);
+				AirportGroundPath dbg_path = FindAirportGroundPath(st, v->tile, v->ground_path_goal, v, false, false);
 				Debug(misc, 1,
 					"[ModAp] V{} unit#{} stuck(no-path) wait={} state={} tile={} goal={} tgt={} path_found={} cost={}",
 					v->index, v->unitnumber, v->taxi_wait_counter, v->state,

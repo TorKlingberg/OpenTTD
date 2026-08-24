@@ -3467,19 +3467,13 @@ bool AfterLoadGame()
 
 	CheckGroundVehiclesAtCorrectZ();
 
-	/* taxi_path and landing_chain_path are deliberately not saved -- paths are
-	 * recomputed on load. An aircraft that was already committed to a modular
-	 * landing when the game was saved therefore reaches its rollout end with no
-	 * chain to install: either it was rolling out at the time, or it was still on
-	 * approach and AirportMoveModularLanding's restore path was skipped because
-	 * its reservations *did* survive the save. Both are the save/load contract
-	 * rather than a route thrown away after landing commit, so mark them and let
-	 * HandleModularGroundArrival skip its invariant check once. The flag is
-	 * transient, and one rollout arrival consumes it -- every later landing by the
-	 * same aircraft is judged normally. */
+	/* Saves predating the classified modular path fields cannot restore a
+	 * landing_chain_path. Mark an already committed landing so its first rollout
+	 * does not report that expected compatibility loss as a live invariant
+	 * failure. New saves carry the path and must not receive this exemption. */
 	for (Aircraft *v : Aircraft::Iterate()) {
-		v->rollout_restored_from_save = (v->modular_ground_target == MGT_ROLLOUT ||
-				v->modular_landing_tile != INVALID_TILE);
+		v->rollout_restored_from_save = !v->modular_paths_loaded_from_save &&
+				(v->modular_ground_target == MGT_ROLLOUT || v->modular_landing_tile != INVALID_TILE);
 	}
 
 	/* Start the scripts. This MUST happen after everything else except
