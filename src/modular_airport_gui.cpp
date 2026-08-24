@@ -568,6 +568,7 @@ public:
 		CloseWindowById(WindowClass::AirportTemplateManager, 0);
 		CloseWindowById(WindowClass::ModularAirportInfoOverlay, 0);
 		CloseWindowByClass(WindowClass::BuildDepot);
+		CloseWindowById(WindowClass::JoinStation, 0);
 		/* Use Window::Close() instead of PickerWindowBase::Close() to avoid
 		 * an unconditional ResetObjectToPlace() -- the guard above already
 		 * handles our own cursor, and we must not reset another window's cursor
@@ -776,6 +777,9 @@ public:
 						this->RaiseWidget(WID_MA_PIECE_0 + this->selected_piece);
 						this->selected_piece = static_cast<uint8_t>(PIECE_COUNT);
 					}
+					/* The piece pickers belong to the selection we just dropped; leaving one
+					 * open next to the template manager would show a picker for no tool. */
+					CloseWindowByClass(WindowClass::BuildDepot);
 					this->UpdatePlacementCursor();
 					ShowBuildAirportTemplateManagerWindow(this);
 				}
@@ -1261,6 +1265,15 @@ private:
 		this->SetWidgetLoweredState(WID_MA_FENCE_TOOL, false);
 		this->upgrade_tool_active = false;
 		this->SetWidgetLoweredState(WID_MA_UPGRADE_TOOL, false);
+
+		/* Dismiss the placement sub-windows, like the rail/road/dock toolbars do: they belong
+		 * to a tool that is no longer active. selected_piece is already cleared above, so the
+		 * pickers' StopPlacementFromClosedPicker() is a no-op and cannot re-enter the cursor
+		 * code. The template manager and info overlay are toggles rather than placement
+		 * pickers, so they stay open and only their button state is re-synced. */
+		CloseWindowByClass(WindowClass::BuildDepot);
+		CloseWindowById(WindowClass::JoinStation, 0);
+
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WindowClass::AirportTemplateManager, 0) != nullptr);
 		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WindowClass::ModularAirportInfoOverlay, 0) != nullptr);
 		this->SetDirty();

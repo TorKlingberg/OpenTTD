@@ -1039,6 +1039,9 @@ public:
 		this->SetWidgetLoweredState(WID_TM_LOAD, false);
 		ResetSavedTemplateGuiState();
 		SetViewportCatchmentStation(nullptr, true);
+		/* The join-station prompt belongs to the placement we just lost, and it holds
+		 * _thd.freeze while open, which would leave the new tool's highlight stuck. */
+		CloseWindowById(WindowClass::JoinStation, 0);
 		this->UpdateCoverageSection();
 		this->SetDirty();
 	}
