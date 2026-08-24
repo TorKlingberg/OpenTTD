@@ -151,10 +151,16 @@ inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
 }
 
 /**
- * Swap piece variants when rotating by an odd number of quarter-turns.
- * - APT_BUILDING_1 and APT_BUILDING_2 are quarter-turn variants.
- * - Legacy small-runway near/far end sprites swap when axis flips.
+ * Check if a piece is non-rotatable (e.g. 3-tile small terminal buildings or small hangars).
  */
+inline bool IsNonRotatableModularPiece(uint8_t piece_type)
+{
+	return piece_type == APT_SMALL_BUILDING_1 ||
+	       piece_type == APT_SMALL_BUILDING_2 ||
+	       piece_type == APT_SMALL_BUILDING_3 ||
+	       IsLegacySmallHangarPiece(piece_type);
+}
+
 /**
  * Whether a piece is a hangar in its canonical, un-oriented form.
  *
@@ -168,6 +174,11 @@ inline bool IsCanonicalHangarPiece(uint8_t piece_type)
 	return piece_type == APT_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SE;
 }
 
+/**
+ * Swap piece variants when rotating by an odd number of quarter-turns.
+ * - APT_BUILDING_1 and APT_BUILDING_2 are quarter-turn variants.
+ * - Legacy small-runway near/far end sprites swap when axis flips.
+ */
 inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 {
 	rotation &= 3;
@@ -356,18 +367,8 @@ struct TaxiReserveResult {
 
 /**
  * Routes tried per goal when looking for one that can be reserved, counting the shortest.
- *
- * An aircraft whose preferred route is held by somebody else takes a different one instead
- * of waiting. **1 disables the search.**
- *
- * This first measured as an 18% loss on T7d, which looked like proof that diverting is
- * inherently expensive. It was not: the horizon-scoped ban split the A* state on
- * "has the route reached a safe stop", and because one-way tiles are safe stops the search
- * could leave one, turn round and re-enter it -- producing routes that visited a tile
- * twice. Aircraft drove out, doubled back against the arrow and drove out again, filling
- * small one-way rings until they deadlocked. Forbidding revisits (see FindAirportGroundPath)
- * turned the same policy into a 2.2% gain and removed every permanently-stuck aircraft,
- * including 19 that predate this feature. plans/route-selection-plan.md has the table.
+ * An aircraft whose preferred route is held by somebody else takes an alternative route instead of waiting.
+ * 1 disables alternative route searching.
  */
 inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 3;
 

@@ -199,7 +199,7 @@ VehicleID GetModularAirportTileReservationOwner(TileIndex tile)
 
 bool IsModularAirportTileReservedBy(TileIndex tile, VehicleID vid)
 {
-	return HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) == vid;
+	return GetModularAirportTileReservationOwner(tile) == vid;
 }
 
 void SetModularAirportTileReservationOwner(TileIndex tile, VehicleID vid)
@@ -543,10 +543,7 @@ bool GetContiguousModularRunwayTiles(const Station *st, TileIndex start_tile, st
 
 	TileIndex current = first;
 	while (true) {
-		const ModularAirportTileData *current_data = st->airport.GetModularTileData(current);
-		if (!IsRunwayPieceOnAxis(current_data, horizontal)) break;
 		tiles.push_back(current);
-
 		TileIndex next = current + diff;
 		const ModularAirportTileData *next_data = st->airport.GetModularTileData(next);
 		if (!IsRunwayPieceOnAxis(next_data, horizontal)) break;
@@ -2278,29 +2275,12 @@ Direction GetRunwayApproachDirection(const Station *st, TileIndex runway_tile)
 
 	const int dx = threshold_x - approach_x;
 	const int dy = threshold_y - approach_y;
-	if (dx == 0 && dy == 0) return Direction::N;
 
-	/* Match the vehicle movement vectors (see GetNewVehiclePos delta table). */
-	static constexpr int8_t dir_dx[to_underlying(Direction::End)] = {-1, -1, -1, 0, 1, 1, 1, 0};
-	static constexpr int8_t dir_dy[to_underlying(Direction::End)] = {-1, 0, 1, 1, 1, 0, -1, -1};
-
-	Direction best_dir = Direction::N;
-	int64_t best_dot = INT64_MIN;
-	int64_t best_cross_abs = INT64_MAX;
-
-	for (int d = to_underlying(Direction::Begin); d < to_underlying(Direction::End); ++d) {
-		const int64_t vx = dir_dx[d];
-		const int64_t vy = dir_dy[d];
-		const int64_t dot = vx * dx + vy * dy;
-		const int64_t cross_abs = std::abs(vx * dy - vy * dx);
-		if (dot > best_dot || (dot == best_dot && cross_abs < best_cross_abs)) {
-			best_dot = dot;
-			best_cross_abs = cross_abs;
-			best_dir = static_cast<Direction>(d);
-		}
-	}
-
-	return best_dir;
+	if (dx > 0) return Direction::SE;
+	if (dx < 0) return Direction::NW;
+	if (dy > 0) return Direction::SW;
+	if (dy < 0) return Direction::NE;
+	return Direction::N;
 }
 
 bool AirportMoveModularLanding(Aircraft *v, const Station *st)
@@ -3377,9 +3357,7 @@ static void SetTaxiReservationUnlessOperationRunway(Aircraft *v, TileIndex tile)
  *
  * This is the single authority on "what must I own before advancing". Candidate
  * selection dry-runs it and the commit path below runs it for real; keeping one
- * implementation is what stops the two from drifting -- see Pitfall 2 in
- * skills/reservations-design.md, where two such functions disagreeing let a stuck
- * aircraft's log confidently print the wrong answer.
+ * implementation ensures both paths stay consistent.
  *
  * Not pure: IsTaxiTileReservedByOther clears a reservation whose owner no longer
  * exists. That is deliberate and belongs here rather than at the call sites -- a
@@ -4280,7 +4258,6 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 {
 	int target_x = 0;
 	int target_y = 0;
-	TileIndex runway = INVALID_TILE;
 
 	if (v->subtype == AIR_AIRCRAFT) {
 		uint32_t nearest_wp = 0;
@@ -4305,8 +4282,8 @@ void AirportMoveModularFlying(Aircraft *v, const Station *st)
 	const int dist = abs(v->x_pos - target_x) + abs(v->y_pos - target_y);
 
 	if (v->subtype == AIR_HELICOPTER) {
-		Debug(misc, 3, "[ModAp] Fly: v=({},{},{}), target=({},{},?), dist={}, runway={}",
-			v->x_pos, v->y_pos, v->z_pos, target_x, target_y, dist, runway.base());
+		Debug(misc, 3, "[ModAp] Fly: v=({},{},{}), target=({},{},?), dist={}",
+			v->x_pos, v->y_pos, v->z_pos, target_x, target_y, dist);
 	}
 
 	/* Rate-limited turning: only apply a new heading once turn_counter reaches 0 and there
