@@ -3467,6 +3467,10 @@ bool AfterLoadGame()
 
 	CheckGroundVehiclesAtCorrectZ();
 
+	/* Only the route of a modular path is saved; its segment classification is derived from
+	 * the layout that has just finished loading, so this needs the map and the stations. */
+	RestoreModularAircraftPathSegments();
+
 	/* Saves predating the classified modular path fields cannot restore a
 	 * landing_chain_path. Mark an already committed landing so its first rollout
 	 * does not report that expected compatibility loss as a live invariant

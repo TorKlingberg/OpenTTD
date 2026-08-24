@@ -1673,6 +1673,117 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 	return out;
 }
 
+/** The stored paths of one aircraft, in the order the reservation code treats them. */
+static constexpr std::array<std::unique_ptr<TaxiPath> Aircraft::*, 2> _modular_stored_paths = {
+	&Aircraft::taxi_path,
+	&Aircraft::landing_chain_path,
+};
+
+/** Index of the first tile of @p member that @p v has not already traversed. */
+static size_t ModularPathStartIndex(const Aircraft *v, std::unique_ptr<TaxiPath> Aircraft::*member)
+{
+	/* Only taxi_path is walked in place. A landing chain is not traversed at all until it
+	 * is handed to taxi_path whole at rollout, so all of it is still ahead. */
+	return member == &Aircraft::taxi_path ? v->taxi_path_index : 0;
+}
+
+/**
+ * The modular airport a stored path is currently running through.
+ *
+ * Deliberately neither v->targetairport nor simply tiles.front():
+ *
+ * - Not targetairport, because a landing aborted while airborne -- a zeppeliner wreck over
+ *   the airport, say -- leaves landing_chain_path in place and clears only
+ *   modular_landing_tile, and order processing then moves targetairport on to the next
+ *   destination while the aircraft is still FLYING.
+ * - Not tiles.front(), because a path keeps the tiles already behind the aircraft, while
+ *   demolition refuses only tiles an aircraft is standing on. A player may therefore remove
+ *   the start of a route that is still being taxied.
+ *
+ * So scan for the first tile that is still part of a modular airport, preferring the part of
+ * the route the aircraft has yet to travel.
+ * @param path The path, which may be null or invalid.
+ * @param from Index of the first tile not yet traversed.
+ * @return The airport, or nullptr when no tile of the route is part of one any more.
+ */
+static const Station *GetModularPathStation(const TaxiPath *path, size_t from)
+{
+	if (path == nullptr || !path->valid) return nullptr;
+
+	const Station *behind = nullptr;
+	for (size_t i = 0; i < path->tiles.size(); ++i) {
+		const TileIndex tile = path->tiles[i];
+		if (!IsValidTile(tile) || !IsTileType(tile, TileType::Station) || !IsAirport(tile)) continue;
+
+		const Station *st = Station::GetByTile(tile);
+		if (st == nullptr || !st->airport.blocks.Test(AirportBlock::Modular)) continue;
+		if (st->airport.modular_tile_data == nullptr) continue;
+
+		if (i >= from) return st;
+		if (behind == nullptr) behind = st;
+	}
+	return behind;
+}
+
+/**
+ * Re-derive the segment classification of every path that runs through @p st.
+ *
+ * Segment types are a layout-derived cache that happens to live on the aircraft rather
+ * than on the Airport, so a layout change that alters what a tile classifies as leaves
+ * them stale exactly the way MarkLayoutDirty exists to prevent for the caches on Airport.
+ * A stale type reaches real decisions -- notably whether the aircraft is still on a runway
+ * it must clear -- so it has to be refreshed at the moment of the edit.
+ *
+ * The routes themselves are deliberately left alone. Rerouting an aircraft mid-taxi is a
+ * reservation decision with its own contract; these tiles are the ones it currently holds.
+ * @param st The station whose layout just changed.
+ */
+void RefreshModularAircraftPathSegments(const Station *st)
+{
+	if (st == nullptr || st->airport.modular_tile_data == nullptr) return;
+
+	for (Aircraft *v : Aircraft::Iterate()) {
+		if (!v->IsNormalAircraft()) continue;
+		for (auto member : _modular_stored_paths) {
+			const std::unique_ptr<TaxiPath> &path = v->*member;
+			if (GetModularPathStation(path.get(), ModularPathStartIndex(v, member)) != st) continue;
+			path->segments = ClassifyTaxiSegments(st, path->tiles);
+		}
+	}
+}
+
+/**
+ * Rebuild the segment classification of every path restored from a savegame.
+ *
+ * Only the route is saved (see SlVehicleAircraftPath), so this is what completes the load.
+ * Deriving instead of trusting also means a path is classified against the layout as it is
+ * now, not as it was when the path was computed, and that every client loading the same
+ * save derives the same segments from the same saved layout.
+ */
+void RestoreModularAircraftPathSegments()
+{
+	for (Aircraft *v : Aircraft::Iterate()) {
+		if (!v->IsNormalAircraft()) continue;
+
+		for (auto member : _modular_stored_paths) {
+			std::unique_ptr<TaxiPath> &path = v->*member;
+			if (path == nullptr || !path->valid) continue;
+
+			const Station *st = GetModularPathStation(path.get(), ModularPathStartIndex(v, member));
+			if (st == nullptr) {
+				/* No tile of the route is part of a modular airport any more, so there is
+				 * nothing to classify against -- and a valid path must have segments to be
+				 * walked at all. Individual tiles that have left the layout need no such
+				 * treatment: they classify as FreeMove, here and on the server alike. */
+				Debug(sl, 1, "Aircraft {} has a modular path with no airport under it, ignoring.", v->index);
+				path.reset();
+				continue;
+			}
+			path->segments = ClassifyTaxiSegments(st, path->tiles);
+		}
+	}
+}
+
 void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<TileIndex> &keep_set)
 {
 	keep_set.clear();
@@ -2641,8 +2752,14 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 		return INVALID_TILE;
 	};
 
+	/* Keep the route that won, rather than asking for it again once the winner is known.
+	 * A second query is not guaranteed to hand back the same tiles: FindAirportGroundPath
+	 * both reads and writes the crossing-required cache, so the intervening probes can
+	 * change which pass answers, and the aircraft would then walk a route other than the
+	 * one whose cost selected this target. */
 	TileIndex best_target = INVALID_TILE;
 	int best_cost = INT_MAX;
+	std::vector<TileIndex> best_route;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		/* A helipad is a service tile only for something that may stand on one. */
 		const bool is_service = (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1 ||
@@ -2654,30 +2771,28 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 		if (best_target == INVALID_TILE || p.cost < best_cost) {
 			best_target = data.tile;
 			best_cost = p.cost;
+			best_route = std::move(p.tiles);
 		}
 	}
 
+	/* Return the nearest safe-stop tile along the route (one-way taxiway queue tile or a
+	 * stand/hangar/helipad) that is currently clear. An aircraft must never stop on a
+	 * free-move apron/grass tile: that pins a shared transit section.
+	 *
+	 * Parking that is not this aircraft's target does not qualify: an aircraft cannot be
+	 * stranded on a runway needing somebody else's stand, because landing is not initiated
+	 * unless a way off the runway already exists. When every safe stop on this route is
+	 * held by someone else, that reserved way off the runway is what reserved_queue_tile()
+	 * returns. */
 	if (best_target != INVALID_TILE) {
-		TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr, false, restriction);
-		if (path.valid && path.tiles.size() >= 2 && !path.segments.empty()) {
-			/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
-			 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
-			 * stop on a free-move apron/grass tile: that pins a shared transit section.
-			 *
-			 * Parking that is not this aircraft's target does not qualify: an aircraft
-			 * cannot be stranded on a runway needing somebody else's stand, because landing
-			 * is not initiated unless a way off the runway already exists. When every safe
-			 * stop on this route is held by someone else, that reserved way off the runway
-			 * is what reserved_queue_tile() returns. */
-			for (TileIndex tile : path.tiles) {
-				if (tile == start_tile) continue;
-				if (!IsModularSafeStopTile(st, tile, best_target)) continue;
-				Tile t(tile);
-				if (!IsAirportTile(t)) continue;
-				if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
-				if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
-				return tile;
-			}
+		for (TileIndex tile : best_route) {
+			if (tile == start_tile) continue;
+			if (!IsModularSafeStopTile(st, tile, best_target)) continue;
+			Tile t(tile);
+			if (!IsAirportTile(t)) continue;
+			if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
+			if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
+			return tile;
 		}
 	}
 

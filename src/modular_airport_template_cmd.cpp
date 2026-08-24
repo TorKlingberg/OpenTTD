@@ -265,6 +265,9 @@ static void SetTaxiwayFlags_Apply(TileIndex tile, uint8_t taxi_dir_mask, bool on
 	 * put a helicopter pad on a one-way tile, so a tile turned one-way after the pad was
 	 * computed leaves the cache pointing at a tile that is now illegal. */
 	st->airport.MarkLayoutDirty();
+	/* one_way_taxi is half of what decides a tile's taxi segment type, and this command
+	 * has no occupancy check, so the retyped tile may sit on a path already computed. */
+	RefreshModularAircraftPathSegments(st);
 }
 
 CommandCost CmdSetTaxiwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi)
@@ -622,6 +625,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		 * replace its hangar early and lay its own down later in placement_order, so the
 		 * intermediate states say nothing about the result. */
 		CancelModularHangarOrdersIfNoneLeft(st);
+		/* Likewise once: a template overbuilding a live airport can retype any number of
+		 * tiles that aircraft already hold paths across. */
+		RefreshModularAircraftPathSegments(st);
 		ApplyModularAirportNoiseChange(st, execute_noise_before);
 	}
 

@@ -555,6 +555,8 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			st->airport.modular_tile_index_dirty = true;
 			st->airport.MarkLayoutDirty();
 			CancelModularHangarOrdersIfNoneLeft(st);
+			/* Tiles that left the layout classify differently from the pieces they were. */
+			RefreshModularAircraftPathSegments(st);
 			if (_show_holding_overlay) MarkWholeScreenDirty();
 
 			for (const auto &[removed_tile, removed_rotation] : removed_runway_tiles) {
@@ -722,6 +724,10 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 			if (st == nullptr) continue;
 			/* An upgrade can have retyped the last hangar into something else. */
 			CancelModularHangarOrdersIfNoneLeft(st);
+			/* EnsureNoVehicleOnGround only clears the upgraded tiles themselves, so an
+			 * aircraft elsewhere on the airport can hold a path across one of them whose
+			 * cached segment types the retype has just invalidated. */
+			RefreshModularAircraftPathSegments(st);
 			ApplyModularAirportNoiseChange(st, noise_before.at(sid));
 			st->AfterStationTileSetChange(true, StationType::Airport);
 			InvalidateWindowData(WindowClass::StationView, st->index, -1);
@@ -1050,6 +1056,8 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 		ApplyModularAirportNoiseChange(st, noise_before);
 		/* A replace can have overwritten the last hangar. */
 		CancelModularHangarOrdersIfNoneLeft(st);
+		/* ...and can have retyped a tile some other aircraft's path runs across. */
+		RefreshModularAircraftPathSegments(st);
 	}
 
 	return cost;

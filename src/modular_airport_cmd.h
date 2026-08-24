@@ -333,6 +333,8 @@ bool IsContiguousModularRunwayQueuedForTakeoffByOther(const Aircraft *v, const S
 void BeginModularAirportRunwayStateCache();
 void UpdateModularAirportRunwayStateCache(const Aircraft *v);
 void EndModularAirportRunwayStateCache();
+void RefreshModularAircraftPathSegments(const Station *st);
+void RestoreModularAircraftPathSegments();
 void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<TileIndex> &keep_set);
 void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<const TileIndex> keep_set, const char *reason);
 bool ShouldRetainRunwayReservation(const Aircraft *v, const Station *st);

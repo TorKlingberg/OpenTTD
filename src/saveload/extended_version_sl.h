@@ -44,8 +44,15 @@ enum class SlxFeatureFlag : uint8_t {
 };
 using SlxFeatureFlags = EnumBitSet<SlxFeatureFlag, uint8_t>;
 
-/** Version of #SlxFeature::ModularAirport written by this build. */
-static constexpr uint16_t MODULAR_AIRPORT_SL_VERSION = 1;
+/**
+ * Version of #SlxFeature::ModularAirport written by this build.
+ *
+ * 2: aircraft paths save only their route; the segment classification over it is derived
+ *    from the layout on load. A version-1 loader reads such a savegame as a path with no
+ *    segments and silently discards every aircraft's route, so it must be turned away --
+ *    which, the feature being non-ignorable, is what this bump does.
+ */
+static constexpr uint16_t MODULAR_AIRPORT_SL_VERSION = 2;
 
 void SlxResetFeatureVersions();
 void SlxSetCurrentFeatureVersions();

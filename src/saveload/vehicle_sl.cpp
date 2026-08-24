@@ -971,6 +971,13 @@ public:
  * keeps in memory. Rebuilding from current traffic is not equivalent: it can
  * select an alternate route that was unavailable when the server chose its
  * path.
+ *
+ * Only the route is saved. The segment classification over it is a pure function of the
+ * tiles' current layout metadata, which is saved with the station, so
+ * RestoreModularAircraftPathSegments derives it again once the map is loaded. That keeps
+ * every client deriving the same segments while costing nothing to store, and it means a
+ * layout edit made after the path was computed cannot survive the save as a stale
+ * classification.
  */
 template <std::unique_ptr<TaxiPath> Aircraft::*TPath>
 class SlVehicleAircraftPath : public DefaultSaveLoadHandler<SlVehicleAircraftPath<TPath>, Aircraft> {
@@ -978,51 +985,31 @@ private:
 	static inline bool path_present;
 	static inline bool path_valid;
 	static inline std::vector<TileIndex> path_tiles;
-	static inline std::vector<uint8_t> segment_types;
-	static inline std::vector<uint16_t> segment_starts;
-	static inline std::vector<uint16_t> segment_ends;
 
 	static void ClearTemporaryState()
 	{
 		path_present = false;
 		path_valid = false;
 		path_tiles.clear();
-		segment_types.clear();
-		segment_starts.clear();
-		segment_ends.clear();
 	}
 
 	static bool ValidatePathData()
 	{
 		if (!path_present) return true;
-		if (!path_valid) {
-			return path_tiles.empty() && segment_types.empty() && segment_starts.empty() && segment_ends.empty();
-		}
-		if (path_tiles.empty() || segment_types.empty()) return false;
-		if (segment_types.size() != segment_starts.size() || segment_types.size() != segment_ends.size()) return false;
+		if (!path_valid) return path_tiles.empty();
+		if (path_tiles.empty()) return false;
 		if (std::any_of(path_tiles.begin(), path_tiles.end(), [](TileIndex tile) { return !IsValidTile(tile); })) return false;
 		for (size_t i = 1; i < path_tiles.size(); ++i) {
 			if (DistanceManhattan(path_tiles[i - 1], path_tiles[i]) != 1) return false;
 		}
-
-		size_t expected_start = 0;
-		for (size_t i = 0; i < segment_types.size(); ++i) {
-			if (segment_types[i] > static_cast<uint8_t>(TaxiSegmentType::Runway)) return false;
-			if (segment_starts[i] != expected_start || segment_starts[i] > segment_ends[i]) return false;
-			if (segment_ends[i] >= path_tiles.size()) return false;
-			expected_start = static_cast<size_t>(segment_ends[i]) + 1;
-		}
-		return expected_start == path_tiles.size();
+		return true;
 	}
 
 public:
-	static inline const std::array<SaveLoad, 6> description = {{
+	static inline const std::array<SaveLoad, 3> description = {{
 		SLEG_VAR("present", path_present, VarTypes::BOOL),
 		SLEG_VAR("valid", path_valid, VarTypes::BOOL),
 		SLEG_VECTOR("tiles", path_tiles, VarTypes::U32),
-		SLEG_VECTOR("segment_types", segment_types, VarTypes::U8),
-		SLEG_VECTOR("segment_starts", segment_starts, VarTypes::U16),
-		SLEG_VECTOR("segment_ends", segment_ends, VarTypes::U16),
 	}};
 	static inline const SaveLoadCompatTable compat_description = {};
 
@@ -1033,17 +1020,7 @@ public:
 		path_present = path != nullptr;
 		if (path != nullptr) {
 			path_valid = path->valid;
-			if (path->valid) {
-				path_tiles = path->tiles;
-				segment_types.reserve(path->segments.size());
-				segment_starts.reserve(path->segments.size());
-				segment_ends.reserve(path->segments.size());
-				for (const TaxiSegment &segment : path->segments) {
-					segment_types.push_back(static_cast<uint8_t>(segment.type));
-					segment_starts.push_back(segment.start_index);
-					segment_ends.push_back(segment.end_index);
-				}
-			}
+			if (path->valid) path_tiles = path->tiles;
 		}
 
 		SlObject(nullptr, this->GetDescription());
@@ -1072,10 +1049,8 @@ public:
 		path = std::make_unique<TaxiPath>();
 		path->valid = path_valid;
 		path->tiles = std::move(path_tiles);
-		path->segments.reserve(segment_types.size());
-		for (size_t i = 0; i < segment_types.size(); ++i) {
-			path->segments.push_back({static_cast<TaxiSegmentType>(segment_types[i]), segment_starts[i], segment_ends[i]});
-		}
+		/* segments stays empty until RestoreModularAircraftPathSegments runs: classifying a
+		 * tile needs its station's layout, which this chunk cannot assume is loaded yet. */
 		ClearTemporaryState();
 	}
 

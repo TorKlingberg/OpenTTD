@@ -578,7 +578,7 @@ static TaxiSegmentType ClassifyTile(const Station *st, TileIndex tile)
  * @param tiles The path tiles.
  * @return Vector of classified segments.
  */
-static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const std::vector<TileIndex> &tiles)
+std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const std::vector<TileIndex> &tiles)
 {
 	std::vector<TaxiSegment> segments;
 	if (tiles.empty()) return segments;

@@ -27,6 +27,7 @@
 #include "../misc/endian_buffer.hpp"
 #include "../network/core/config.h"
 #include "../station_map.h"
+#include "../clear_map.h"
 #include "../language.h"
 #include "../town.h"
 #include "../airport_ground_pathfinder.h"
@@ -3249,6 +3250,231 @@ TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
 		/* Standing somewhere it may wait indefinitely, normal reconciliation applies
 		 * and an unjustified claim is released rather than pinned. */
 		CHECK(std::find(keep_set.begin(), keep_set.end(), other) == keep_set.end());
+	}
+}
+
+TEST_CASE("ModularAirportPathSegmentsFollowLayoutEdits")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	/* One tile wide, so the only route between the two stands is through the middle. */
+	Station *st = SetupModularAirport(base, 1, 5);
+	REQUIRE(st != nullptr);
+
+	const TileIndex stand_a = base + TileDiffXY(0, 1);
+	const TileIndex middle = base + TileDiffXY(0, 2);
+	const TileIndex stand_b = base + TileDiffXY(0, 3);
+	AddModularTile(st, stand_a, APT_STAND, 0);
+	AddModularTile(st, middle, APT_APRON, 0);
+	AddModularTile(st, stand_b, APT_STAND, 0);
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->targetairport = st->index;
+	v->tile = stand_a;
+	v->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, stand_a, stand_b, nullptr, false, GroundPathRestriction::None));
+	REQUIRE(v->taxi_path->valid);
+
+	const auto type_of_middle = [&]() {
+		const TaxiPath &path = *v->taxi_path;
+		const auto it = std::find(path.tiles.begin(), path.tiles.end(), middle);
+		REQUIRE(it != path.tiles.end());
+		const size_t index = static_cast<size_t>(it - path.tiles.begin());
+		for (const TaxiSegment &segment : path.segments) {
+			if (index >= segment.start_index && index <= segment.end_index) return segment.type;
+		}
+		FAIL("no segment covers the tile");
+		return TaxiSegmentType::FreeMove;
+	};
+
+	REQUIRE(type_of_middle() == TaxiSegmentType::FreeMove);
+
+	/* Segment types are a layout-derived cache that happens to live on the aircraft, so a
+	 * tile turned one-way underneath an existing path has to update it too. Without the
+	 * refresh the aircraft keeps taxiing on the classification the tile used to have. */
+	ModularAirportTileData *middle_data = st->airport.GetModularTileData(middle);
+	REQUIRE(middle_data != nullptr);
+	middle_data->one_way_taxi = true;
+	middle_data->user_taxi_dir_mask = 0x04;
+	st->airport.MarkLayoutDirty();
+	RefreshModularAircraftPathSegments(st);
+
+	CHECK(type_of_middle() == TaxiSegmentType::OneWay);
+	/* The route itself is untouched: refreshing is a reclassification, not a reroute. */
+	CHECK(v->taxi_path->tiles.front() == stand_a);
+	CHECK(v->taxi_path->tiles.back() == stand_b);
+}
+
+TEST_CASE("ModularAirportRestoresPathSegmentsAfterLoad")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 1, 5);
+	REQUIRE(st != nullptr);
+
+	const TileIndex stand_a = base + TileDiffXY(0, 1);
+	const TileIndex middle = base + TileDiffXY(0, 2);
+	const TileIndex stand_b = base + TileDiffXY(0, 3);
+	AddModularTile(st, stand_a, APT_STAND, 0);
+	AddModularTile(st, middle, APT_APRON, 0);
+	AddModularTile(st, stand_b, APT_STAND, 0);
+
+	ModularAirportTileData *middle_data = st->airport.GetModularTileData(middle);
+	REQUIRE(middle_data != nullptr);
+	middle_data->one_way_taxi = true;
+	middle_data->user_taxi_dir_mask = 0x04;
+	st->airport.MarkLayoutDirty();
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->targetairport = st->index;
+	v->tile = stand_a;
+
+	SECTION("A route loaded without segments is classified against the current layout") {
+		/* What the save/load handler leaves behind: tiles and validity, no segments. */
+		v->taxi_path = std::make_unique<TaxiPath>();
+		v->taxi_path->valid = true;
+		v->taxi_path->tiles = {stand_a, middle, stand_b};
+
+		RestoreModularAircraftPathSegments();
+
+		REQUIRE(v->taxi_path != nullptr);
+		REQUIRE(v->taxi_path->segments.size() == 3);
+		CHECK(v->taxi_path->segments[0].type == TaxiSegmentType::FreeMove);
+		CHECK(v->taxi_path->segments[1].type == TaxiSegmentType::OneWay);
+		CHECK(v->taxi_path->segments[2].type == TaxiSegmentType::FreeMove);
+	}
+
+	SECTION("A route whose traversed prefix was demolished is kept") {
+		/* Demolition only refuses tiles an aircraft is standing on, so a player can remove
+		 * the start of a route the aircraft has already taxied past. Rejecting the whole
+		 * route for that would drop it on a joining client while the server taxis on --
+		 * an immediate desync. */
+		v->tile = middle;
+		v->taxi_path = std::make_unique<TaxiPath>();
+		v->taxi_path->valid = true;
+		v->taxi_path->tiles = {stand_a, middle, stand_b};
+		v->taxi_path_index = 1;
+
+		auto &tile_data = *st->airport.modular_tile_data;
+		tile_data.erase(std::remove_if(tile_data.begin(), tile_data.end(),
+				[&](const ModularAirportTileData &d) { return d.tile == stand_a; }), tile_data.end());
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.MarkLayoutDirty();
+		MakeClear(stand_a, ClearGround::Grass, 0); // What DoClearSquare leaves behind.
+		REQUIRE_FALSE(IsTileType(stand_a, TileType::Station));
+
+		RestoreModularAircraftPathSegments();
+
+		REQUIRE(v->taxi_path != nullptr);
+		REQUIRE(v->taxi_path->tiles.size() == 3);
+		/* The demolished tile classifies as FreeMove, exactly as it does on the server. */
+		REQUIRE(v->taxi_path->segments.size() == 3);
+		CHECK(v->taxi_path->segments[0].type == TaxiSegmentType::FreeMove);
+		CHECK(v->taxi_path->segments[1].type == TaxiSegmentType::OneWay);
+
+		/* ...and the live refresh still reaches it. */
+		v->taxi_path->segments.clear();
+		RefreshModularAircraftPathSegments(st);
+		CHECK(v->taxi_path->segments.size() == 3);
+	}
+
+	SECTION("A route with no airport under it is discarded") {
+		/* Tiles far outside any station -- there is nothing to classify against. */
+		v->taxi_path = std::make_unique<TaxiPath>();
+		v->taxi_path->valid = true;
+		v->taxi_path->tiles = {TileXY(40, 40), TileXY(40, 41)};
+
+		RestoreModularAircraftPathSegments();
+
+		CHECK(v->taxi_path == nullptr);
+	}
+
+	SECTION("The owning airport is read from the route, not from targetairport") {
+		/* An aborted landing leaves a chain behind while order processing moves
+		 * targetairport on, so the two disagree. The route is still this airport's. */
+		v->targetairport = StationID::Invalid();
+		v->landing_chain_path = std::make_unique<TaxiPath>();
+		v->landing_chain_path->valid = true;
+		v->landing_chain_path->tiles = {stand_a, middle, stand_b};
+
+		RestoreModularAircraftPathSegments();
+
+		REQUIRE(v->landing_chain_path != nullptr);
+		REQUIRE(v->landing_chain_path->segments.size() == 3);
+		CHECK(v->landing_chain_path->segments[1].type == TaxiSegmentType::OneWay);
+	}
+}
+
+TEST_CASE("ModularAirportKeepSetHoldsHelicopterLandingChain")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* A helicopter descends straight onto its pad, so its landing chain starts at the
+	 * touchdown tile instead of at a runway rollout point. That makes it the one landing
+	 * route which never reaches MGT_ROLLOUT while still airborne, and therefore the case
+	 * the keep-set's landing-chain condition has to be right about on its own. */
+	const TileIndex pad = base + TileDiffXY(2, 2);
+	const TileIndex apron = base + TileDiffXY(2, 3);
+	const TileIndex stand = base + TileDiffXY(2, 4);
+	AddModularTile(st, pad, APT_HELIPAD_2, 0);
+	AddModularTile(st, apron, APT_APRON, 0);
+	AddModularTile(st, stand, APT_STAND, 0);
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->subtype = AIR_HELICOPTER;
+	v->targetairport = st->index;
+
+	TaxiPath chain = BuildTaxiPath(st, pad, stand, nullptr, false, GetGroundPathRestriction(v));
+	REQUIRE(chain.valid);
+	REQUIRE(chain.tiles.front() == pad);
+
+	const auto keep_set_for = [&]() {
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+		return keep_set;
+	};
+
+	SECTION("Kept while the helicopter is still descending onto the pad") {
+		v->tile = TileIndex{}; // In air, as the modular movement code leaves it.
+		v->modular_landing_tile = pad;
+		v->landing_chain_path = std::make_unique<TaxiPath>(chain);
+
+		const std::vector<TileIndex> keep_set = keep_set_for();
+		for (TileIndex tile : chain.tiles) {
+			CHECK(std::find(keep_set.begin(), keep_set.end(), tile) != keep_set.end());
+		}
+	}
+
+	SECTION("Kept from touchdown until ground movement takes the chain over") {
+		/* Touchdown clears modular_landing_tile and sets MGT_ROLLOUT in the same call,
+		 * so this is the whole of the rest of the chain's life. */
+		v->tile = pad;
+		v->modular_landing_tile = INVALID_TILE;
+		v->modular_ground_target = MGT_ROLLOUT;
+		v->landing_chain_path = std::make_unique<TaxiPath>(chain);
+
+		const std::vector<TileIndex> keep_set = keep_set_for();
+		for (TileIndex tile : chain.tiles) {
+			CHECK(std::find(keep_set.begin(), keep_set.end(), tile) != keep_set.end());
+		}
+	}
+
+	SECTION("Not kept once the landing is over and the chain is only a leftover") {
+		/* Parked, landing long finished. Retaining the route here pinned tiles the
+		 * aircraft has no claim on, which is what the condition was added to stop. */
+		v->tile = stand;
+		v->modular_landing_tile = INVALID_TILE;
+		v->modular_ground_target = MGT_TERMINAL;
+		v->landing_chain_path = std::make_unique<TaxiPath>(chain);
+
+		const std::vector<TileIndex> keep_set = keep_set_for();
+		CHECK(std::find(keep_set.begin(), keep_set.end(), pad) == keep_set.end());
+		CHECK(std::find(keep_set.begin(), keep_set.end(), apron) == keep_set.end());
 	}
 }
 

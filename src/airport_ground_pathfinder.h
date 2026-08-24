@@ -117,6 +117,19 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile);
  */
 TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
 
+/**
+ * Walk a path and group consecutive same-type tiles into segments.
+ *
+ * A segment type is a pure function of the tile's current layout metadata, so this is also
+ * how a path that outlived the layout it was classified against -- one restored from a
+ * savegame, or one whose tiles were retyped underneath it -- gets brought back in step
+ * without rerouting it.
+ * @param st The station.
+ * @param tiles The path tiles.
+ * @return Vector of classified segments.
+ */
+std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const std::vector<TileIndex> &tiles);
+
 extern std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
 void NormalizeModularAirportCrossingPathCache();
 void ClearModularAirportCrossingPathCache();
