@@ -38,7 +38,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 ## Before Committing
 
-The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; they check the staged diff and commit-message format automatically. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
+The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; the `pre-commit` hook checks the staged diff automatically. The `commit-msg` hook that enforced the `<keyword>: <Details>` subject format is disabled (renamed to `.git/hooks/commit-msg.disabled`); rename it back to re-enable. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
 
 ```bash
 python3 .github/file-descriptions.py <(git diff --cached --name-only) &&
@@ -75,7 +75,7 @@ HOOKS_DIR=/Users/tor/ttd/OpenTTD/.git/hooks git commit -F <message-file>
 cd /Users/tor/ttd/OpenTTD && git merge --ff-only claude/<branch>
 ```
 
-A fast-forward creates no commit, so no commit-message hook runs; a merge commit would instead be rejected by the `commit-msg` hook, whose `<keyword>: <Details>` rule a "Merge branch ..." subject cannot satisfy. `--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master first, then fast-forward.
+`--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master first, then fast-forward.
 
 ## Debugging
 
