@@ -45,8 +45,6 @@ struct DubinsArc {
 struct DubinsSeg {
 	bool is_arc;
 	DubinsArc arc;
-	int64_t x0;
-	int64_t y0;
 	int64_t x1;
 	int64_t y1;
 };
@@ -210,8 +208,6 @@ static DubinsPath ComputeDubins(int64_t x1, int64_t y1, int64_t hdx1, int64_t hd
 			DubinsSeg seg = {};
 			seg.is_arc = true;
 			seg.arc = {cx, cy, radius, a0, sweep};
-			seg.x0 = px;
-			seg.y0 = py;
 			seg.x1 = nx;
 			seg.y1 = ny;
 			segs.push_back(seg);
@@ -227,8 +223,6 @@ static DubinsPath ComputeDubins(int64_t x1, int64_t y1, int64_t hdx1, int64_t hd
 			const int64_t ny = py + FP16Mul(dist, FP16Sin(th));
 			DubinsSeg seg = {};
 			seg.is_arc = false;
-			seg.x0 = px;
-			seg.y0 = py;
 			seg.x1 = nx;
 			seg.y1 = ny;
 			segs.push_back(seg);
@@ -483,8 +477,7 @@ static int ModularNearestHangarDistance(const Station *st, TileIndex from)
 	int best = INT_MAX;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (!IsModularHangarPiece(data.piece_type)) continue;
-		const int dist = abs(static_cast<int>(TileX(data.tile)) - static_cast<int>(TileX(from))) +
-		                 abs(static_cast<int>(TileY(data.tile)) - static_cast<int>(TileY(from)));
+		const int dist = DistanceManhattan(data.tile, from);
 		if (dist < best) best = dist;
 	}
 	return best;
@@ -742,31 +735,23 @@ TileIndex ModularAirportGetHangarTile(const Airport &ap, uint hangar_num)
  */
 uint ModularAirportGetHangarNum(const Airport &ap, TileIndex tile)
 {
-	const std::vector<TileIndex> tiles = CollectModularHangarTiles(ap);
-	const auto it = std::lower_bound(tiles.begin(), tiles.end(), tile);
-	assert(it != tiles.end() && *it == tile);
-	return static_cast<uint>(it - tiles.begin());
+	if (ap.modular_tile_data == nullptr) return 0;
+	uint count = 0;
+	for (const ModularAirportTileData &data : *ap.modular_tile_data) {
+		if (IsModularHangarPiece(data.piece_type) && data.tile < tile) count++;
+	}
+	return count;
 }
 
 /**
  * Exit direction of the hangar at \a tile, from the piece's own rotation rather
  * than the preset spec's layout rotation.
- *
- * The four directional depot variants (large and small alike) each fix a
- * direction, so the stored rotation only speaks for the generic SE piece that
- * has no variant of its own. Keep the 0=SE, 1=NE,
- * 2=NW, 3=SW convention in step with the hangar taxi-direction mapping.
  */
 Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile)
 {
 	const ModularAirportTileData *data = ap.GetModularTileData(tile);
 	if (data == nullptr) return Direction::SE; // Fallback
 
-	/* Convention: 0=SE, 1=NE, 2=NW, 3=SW, as built by kLargeByRot in
-	 * BuildModularAirportTile_Apply and rotated by SwapBuildingPieceForRotation.
-	 * NE is 1 and SW is 3; having them the other way round points a hangar's door
-	 * 180 degrees away from where it really is, and an aircraft that leaves a
-	 * hangar into a tile it cannot taxi on never leaves at all. */
 	uint8_t hangar_rot = data->rotation % 4;
 	switch (data->piece_type) {
 		case APT_DEPOT_NE:
@@ -778,7 +763,8 @@ Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile
 		default: break;
 	}
 
-	return static_cast<Direction>((to_underlying(Direction::SE) + ((4 - hangar_rot) % 4) * 2) % 8);
+	static constexpr Direction kHangarExitDirs[4] = {Direction::SE, Direction::NE, Direction::NW, Direction::SW};
+	return kHangarExitDirs[hangar_rot];
 }
 
 void EnsureModularHeliTilesValid(const Station *st)
@@ -992,20 +978,9 @@ void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, 
 	static constexpr int ADVANCE_DIST = TILE_SIZE;
 	static constexpr int ADVANCE_DIST_SQ = ADVANCE_DIST * ADVANCE_DIST;
 
-	struct HoldPoint {
-		int x;
-		int y;
-	};
-
-	const HoldPoint points[8] = {
-		{center_x - offset, center_y - offset},
-		{center_x,          center_y - offset},
-		{center_x + offset, center_y - offset},
-		{center_x + offset, center_y},
-		{center_x + offset, center_y + offset},
-		{center_x,          center_y + offset},
-		{center_x - offset, center_y + offset},
-		{center_x - offset, center_y},
+	static constexpr struct { int dx, dy; } kOffsets[8] = {
+		{-1, -1}, {0, -1}, {1, -1}, {1, 0},
+		{1, 1},   {0, 1},  {-1, 1}, {-1, 0},
 	};
 
 	if (v->modular_holding_wp_index == UINT32_MAX || v->modular_holding_wp_index >= 8) {
@@ -1013,13 +988,15 @@ void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, 
 	}
 
 	uint32_t idx = v->modular_holding_wp_index;
-	const int dx = v->x_pos - points[idx].x;
-	const int dy = v->y_pos - points[idx].y;
+	const int cur_tx = center_x + kOffsets[idx].dx * offset;
+	const int cur_ty = center_y + kOffsets[idx].dy * offset;
+	const int dx = v->x_pos - cur_tx;
+	const int dy = v->y_pos - cur_ty;
 	if (dx * dx + dy * dy <= ADVANCE_DIST_SQ) {
 		idx = (idx + 1) % 8;
 		v->modular_holding_wp_index = idx;
 	}
 
-	*target_x = points[idx].x;
-	*target_y = points[idx].y;
+	*target_x = center_x + kOffsets[idx].dx * offset;
+	*target_y = center_y + kOffsets[idx].dy * offset;
 }

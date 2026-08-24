@@ -11,6 +11,7 @@
 #include "debug.h"
 #include "airport_ground_pathfinder.h"
 #include "airport_pathfinder.h"
+#include "map_func.h"
 #include "modular_airport_cmd.h"
 #include "station_base.h"
 #include "aircraft.h"
@@ -27,7 +28,6 @@
 static const int MAX_PATHFINDER_ITERATIONS = 1000;
 static const size_t MAX_CROSSING_CACHE_SIZE = 4096;
 static const int PASS_THROUGH_STAND_PENALTY = 5;
-static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b);
 std::vector<uint64_t> _modular_airport_crossing_required_path_cache;
 
 /** Bit in a crossing-cache key marking a route planned under the fixed-wing restriction. */
@@ -102,19 +102,6 @@ struct PathNode {
 };
 
 /**
- * Calculate Manhattan distance heuristic.
- * @param from Starting tile.
- * @param to Goal tile.
- * @return Estimated distance.
- */
-static int CalculateHeuristic(TileIndex from, TileIndex to)
-{
-	int dx = abs(TileX(from) - TileX(to));
-	int dy = abs(TileY(from) - TileY(to));
-	return dx + dy;
-}
-
-/**
  * Check if a piece type is a non-taxiable building (aircraft cannot taxi through it).
  * @param piece_type The airport piece type.
  * @return True if it's a building that blocks taxiing.
@@ -151,15 +138,7 @@ GroundPathRestriction GetGroundPathRestriction(const Aircraft *v)
  */
 static bool IsParkingOnlyTile(uint8_t piece_type)
 {
-	if (IsModularHelipadPiece(piece_type)) return true;
-	switch (piece_type) {
-		case APT_STAND:
-		case APT_STAND_1:
-		case APT_STAND_PIER_NE:
-			return true;
-		default:
-			return false;
-	}
+	return IsModularHelipadPiece(piece_type) || IsModularStandPiece(piece_type);
 }
 
 /**
@@ -179,24 +158,20 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
 	if (horizontal_a) {
 		if (TileY(a) != TileY(b)) return false;
 		const int y = TileY(a);
-		int x0 = std::min(TileX(a), TileX(b));
-		int x1 = std::max(TileX(a), TileX(b));
+		const int x0 = std::min(TileX(a), TileX(b));
+		const int x1 = std::max(TileX(a), TileX(b));
 		for (int x = x0; x <= x1; ++x) {
-			TileIndex t = TileXY(x, y);
-			const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-			if (td == nullptr || !IsModularRunwayPiece(td->piece_type) || (td->rotation % 2) != 0) return false;
+			if (!IsRunwayPieceOnAxis(st->airport.GetModularTileData(TileXY(x, y)), true)) return false;
 		}
 		return true;
 	}
 
 	if (TileX(a) != TileX(b)) return false;
 	const int x = TileX(a);
-	int y0 = std::min(TileY(a), TileY(b));
-	int y1 = std::max(TileY(a), TileY(b));
+	const int y0 = std::min(TileY(a), TileY(b));
+	const int y1 = std::max(TileY(a), TileY(b));
 	for (int y = y0; y <= y1; ++y) {
-		TileIndex t = TileXY(x, y);
-		const ModularAirportTileData *td = st->airport.GetModularTileData(t);
-		if (td == nullptr || !IsModularRunwayPiece(td->piece_type) || (td->rotation % 2) == 0) return false;
+		if (!IsRunwayPieceOnAxis(st->airport.GetModularTileData(TileXY(x, y)), false)) return false;
 	}
 	return true;
 }
@@ -216,61 +191,41 @@ static bool IsSameContiguousRunway(const Station *st, TileIndex a, TileIndex b)
  */
 static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, const ModularAirportTileData *from_data, const ModularAirportTileData *to_data, const Aircraft *v, GroundPathRestriction restriction, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
-	/* Must be orthogonally adjacent */
-	int dx = TileX(to) - TileX(from);
-	int dy = TileY(to) - TileY(from);
+	if (from_data == nullptr || to_data == nullptr) return false;
+
+	const int dx = TileX(to) - TileX(from);
+	const int dy = TileY(to) - TileY(from);
 	if (abs(dx) + abs(dy) != 1) return false;
 
-	/* Determine direction from 'from' to 'to' */
+	/* Determine direction from 'from' to 'to' and reverse */
 	uint8_t dir_bit = 0;
-	if (dy == -1) dir_bit = 0x01; // North
-	if (dx == +1) dir_bit = 0x02; // East
-	if (dy == +1) dir_bit = 0x04; // South
-	if (dx == -1) dir_bit = 0x08; // West
+	uint8_t reverse_dir_bit = 0;
+	if (dy == -1) { dir_bit = 0x01; reverse_dir_bit = 0x04; } // North <-> South
+	else if (dx == +1) { dir_bit = 0x02; reverse_dir_bit = 0x08; } // East <-> West
+	else if (dy == +1) { dir_bit = 0x04; reverse_dir_bit = 0x01; } // South <-> North
+	else if (dx == -1) { dir_bit = 0x08; reverse_dir_bit = 0x02; } // West <-> East
 
-	/* Tile data for 'from' / 'to' is supplied by the caller (the A* node
-	 * expansion already has it), avoiding redundant per-edge index lookups. */
-	if (from_data == nullptr) return false;
-
-	/* Get effective taxi directions */
-	uint8_t from_auto = CalculateAutoTaxiDirectionsForGfx(from_data->piece_type, from_data->rotation);
-	uint8_t from_dirs = from_auto;
+	/* Check outbound directions from 'from' */
+	uint8_t from_dirs = CalculateAutoTaxiDirectionsForGfx(from_data->piece_type, from_data->rotation);
 	if (IsTaxiwayPiece(from_data->piece_type) && from_data->one_way_taxi) {
-		from_dirs = GetEffectiveTaxiDirections(from_auto, from_data->user_taxi_dir_mask);
+		from_dirs = GetEffectiveTaxiDirections(from_dirs, from_data->user_taxi_dir_mask);
 	}
+	if ((from_dirs & dir_bit) == 0) return false;
 
-	bool from_ok = (from_dirs & dir_bit) != 0;
+	/* Check inbound directions into 'to' */
+	const uint8_t to_auto = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
+	if ((to_auto & reverse_dir_bit) == 0) return false;
 
-	if (to_data == nullptr) return false;
-
-	/* A one-way tile may not be entered head-on against its arrow. One-way has until now
-	 * constrained only the exit direction of the tile being left, so nothing stopped an
-	 * aircraft driving into a one-way apron from the tile that apron points at -- it just
-	 * had to turn round and come back out the way it came. That is wrong on its face and
-	 * it looks wrong on screen.
-	 *
-	 * Only head-on entry is refused, not entry from the side: a one-way tile flagged east
-	 * is still enterable from its north and south neighbours, so taxiways that merge into
-	 * a one-way corridor keep working. Requiring entry to be *along* the arrow instead
-	 * would strand any stand reachable only through such a merge. */
+	/* A one-way tile may not be entered head-on against its arrow */
 	if (IsTaxiwayPiece(to_data->piece_type) && to_data->one_way_taxi) {
-		const uint8_t to_dirs = GetEffectiveTaxiDirections(
-				CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation),
-				to_data->user_taxi_dir_mask);
-		uint8_t reverse_bit = 0;
-		if (dir_bit == 0x01) reverse_bit = 0x04; // travelling north, arrow pointing south
-		if (dir_bit == 0x02) reverse_bit = 0x08; // travelling east,  arrow pointing west
-		if (dir_bit == 0x04) reverse_bit = 0x01; // travelling south, arrow pointing north
-		if (dir_bit == 0x08) reverse_bit = 0x02; // travelling west,  arrow pointing east
-		if ((to_dirs & reverse_bit) != 0) return false;
+		const uint8_t to_dirs = GetEffectiveTaxiDirections(to_auto, to_data->user_taxi_dir_mask);
+		if ((to_dirs & reverse_dir_bit) != 0) return false;
 	}
 
 	const bool from_is_runway = IsModularRunwayPiece(from_data->piece_type);
 	const bool to_is_runway = IsModularRunwayPiece(to_data->piece_type);
 
-	/* Runway tiles may only connect along the same runway axis.
-	 * In crossing fallback mode, allow perpendicular hops between adjacent
-	 * parallel runways so layouts like Metropolitan can cross two runways. */
+	/* Runway tiles may only connect along the same runway axis */
 	if (from_is_runway && to_is_runway) {
 		const bool from_horizontal = (from_data->rotation % 2) == 0;
 		const bool to_horizontal = (to_data->rotation % 2) == 0;
@@ -281,18 +236,13 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	}
 
 	/* Prefer to avoid entering runways from apron/taxiway tiles unless the runway
-	 * tile is the explicit pathfinder goal (e.g. routing to a takeoff runway end).
-	 * A fallback pass may enable constrained crossing when no strict route exists. */
+	 * tile is the explicit pathfinder goal (e.g. routing to a takeoff runway end). */
 	if (!from_is_runway && to_is_runway && to != goal) {
-		/* If routing to a runway goal, allow stepping onto any tile of that same
-		 * contiguous runway strip so aircraft can back-taxi to the correct end. */
 		if (goal != INVALID_TILE && IsSameContiguousRunway(st, to, goal)) {
 			/* allowed */
 		} else {
 			if (!allow_runway_crossing) return false;
 
-			/* Crossing fallback: only allow perpendicular entry so aircraft do not
-			 * route along active runways as a shortcut under heavy traffic. */
 			const bool to_horizontal = (to_data->rotation % 2) == 0;
 			const bool entering_along_runway_axis = (to_horizontal && dy == 0) || (!to_horizontal && dx == 0);
 			if (entering_along_runway_axis) return false;
@@ -302,31 +252,12 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 	/* Don't allow taxiing through buildings */
 	if (IsNonTaxiableBuilding(to_data->piece_type)) return false;
 
-	/* A helipad is helicopter parking, not pavement a fixed-wing aircraft may roll over.
-	 * Leaving one is still allowed -- only 'to' is tested -- because a plane can end up
-	 * standing on a pad (unstacking, or a pad built under it) and must be able to get off.
-	 * The goal exemption is the same escape valve the stand rule below uses: a goal that
-	 * cannot be routed to is a permanent stall, and no code path hands a fixed-wing
-	 * aircraft a helipad goal in the first place. */
+	/* Helipads are not valid pavement for fixed-wing aircraft */
 	if (restriction == GroundPathRestriction::FixedWing && to != goal && IsModularHelipadPiece(to_data->piece_type)) {
 		return false;
 	}
 
-	/* Stands are parking endpoints -- avoid routing through ones another aircraft has
-	 * claimed. Unclaimed stands are allowed so small airports without separate
-	 * taxiways still work.
-	 *
-	 * The ownership test matters: a stand this aircraft already holds is not an
-	 * obstacle to itself. Reservations outlive the taxi path that created them, so
-	 * asking only "is this reserved?" let an aircraft whose sole exit was a stand it
-	 * had reserved block its own route -- permanently, since it then never moved and
-	 * so never released the tile.
-	 *
-	 * A reservation whose owner no longer exists is likewise not an obstacle. Elsewhere
-	 * that case is handled by IsTaxiTileReservedByOther, which clears it; the pathfinder
-	 * may not mutate map state, so it reads the same condition and routes past. Without
-	 * this a stand reserved by a since-removed aircraft would block every route through
-	 * it for good, with nothing left to release it. */
+	/* Avoid claimed stands */
 	if (v != nullptr && IsParkingOnlyTile(to_data->piece_type) && to != v->tile && to != v->ground_path_goal) {
 		Tile t(to);
 		if (IsAirportTile(t) && HasAirportTileReservation(t) &&
@@ -336,34 +267,7 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 		}
 	}
 
-	/* Determine reverse direction (from 'to' back to 'from') */
-	uint8_t reverse_dir_bit = 0;
-	if (dir_bit == 0x01) reverse_dir_bit = 0x04; // North -> South
-	else if (dir_bit == 0x02) reverse_dir_bit = 0x08; // East -> West
-	else if (dir_bit == 0x04) reverse_dir_bit = 0x01; // South -> North
-	else if (dir_bit == 0x08) reverse_dir_bit = 0x02; // West -> East
-
-	uint8_t to_dirs = CalculateAutoTaxiDirectionsForGfx(to_data->piece_type, to_data->rotation);
-
-	bool to_ok = (to_dirs & reverse_dir_bit) != 0;
-
-	if (from_data->piece_type == APT_DEPOT_SE || from_data->piece_type == APT_DEPOT_SW ||
-			from_data->piece_type == APT_DEPOT_NW || from_data->piece_type == APT_DEPOT_NE ||
-			from_data->piece_type == APT_SMALL_DEPOT_SE || from_data->piece_type == APT_SMALL_DEPOT_SW ||
-			from_data->piece_type == APT_SMALL_DEPOT_NW || from_data->piece_type == APT_SMALL_DEPOT_NE) {
-		Debug(misc, 5, "[ModAp] Hangar connect check V2: from={}, to={}, dir={}, from_dirs={:x} (auto={:x}, user={:x}), to_dirs={:x}, from_ok={}, to_ok={}",
-			from.base(), to.base(), dir_bit, from_dirs, from_auto, from_data->user_taxi_dir_mask, to_dirs, from_ok, to_ok);
-	}
-
-	if (!from_ok) return false; // Direction not allowed from 'from'
-	if (!to_ok) return false; // Reverse direction not allowed
-
-	/* Explicit edge fences block movement in both directions.
-	 * Exception: movement within the same contiguous runway ignores edge
-	 * fences -- these are decorative perimeter barriers, not internal runway
-	 * blockers. Without this, rollout paths between runway ends fail.
-	 * Only same-runway is exempt; fences between distinct parallel runways
-	 * remain enforced. */
+	/* Explicit edge fences block movement in both directions */
 	if (!(from_is_runway && to_is_runway && IsSameContiguousRunway(st, from, to))) {
 		if (from_data->edge_block_mask & dir_bit) return false;
 		if (to_data->edge_block_mask & reverse_dir_bit) return false;
@@ -385,52 +289,23 @@ static bool CanTilesConnect(const Station *st, TileIndex from, TileIndex to, con
 static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReachableNeighbors(const Station *st, TileIndex tile, const Aircraft *v, GroundPathRestriction restriction, TileIndex goal = INVALID_TILE, bool allow_runway_crossing = false)
 {
 	std::vector<std::pair<TileIndex, const ModularAirportTileData *>> neighbors;
+	neighbors.reserve(4);
 
-	/* One index lookup for the current tile; reused for every edge check below. */
 	const ModularAirportTileData *tile_data = st->airport.GetModularTileData(tile);
 
-	/* is_hangar drives only verbose (level 4) tracing -- don't pay for it otherwise. */
-	const bool is_hangar = (_debug_misc_level >= 4) && tile_data != nullptr &&
-			(tile_data->piece_type == APT_DEPOT_SE || tile_data->piece_type == APT_DEPOT_SW ||
-			 tile_data->piece_type == APT_DEPOT_NW || tile_data->piece_type == APT_DEPOT_NE ||
-			 tile_data->piece_type == APT_SMALL_DEPOT_SE || tile_data->piece_type == APT_SMALL_DEPOT_SW ||
-			 tile_data->piece_type == APT_SMALL_DEPOT_NW || tile_data->piece_type == APT_SMALL_DEPOT_NE);
-
-	/* Check all 4 orthogonal directions */
-	static const int dx[] = {0, 1, 0, -1};  // N, E, S, W
-	static const int dy[] = {-1, 0, 1, 0};
+	static constexpr int dx[] = {0, 1, 0, -1};  // N, E, S, W
+	static constexpr int dy[] = {-1, 0, 1, 0};
 
 	for (int i = 0; i < 4; i++) {
 		TileIndex neighbor = tile + TileDiffXY(dx[i], dy[i]);
+		if (!IsValidTile(neighbor) || !st->TileBelongsToAirport(neighbor)) continue;
 
-		if (is_hangar) {
-			Debug(misc, 4, "[ModAp] Hangar {} checking neighbor dir={} (dx={},dy={}), tile={}",
-				tile.base(), i, dx[i], dy[i], neighbor.base());
-		}
-
-		if (!IsValidTile(neighbor)) {
-			if (is_hangar) Debug(misc, 4, "[ModAp]   -> invalid tile");
-			continue;
-		}
-
-		if (!st->TileBelongsToAirport(neighbor)) {
-			if (is_hangar) Debug(misc, 4, "[ModAp]   -> not belong to airport");
-			continue;
-		}
-
-		/* Must be an actual airport station tile, not just grass within airport bounds */
 		Tile t(neighbor);
-		if (!IsAirport(t)) {
-			if (is_hangar) Debug(misc, 4, "[ModAp]   -> not airport tile (grass)");
-			continue;
-		}
+		if (!IsAirport(t)) continue;
 
 		const ModularAirportTileData *nb_data = st->airport.GetModularTileData(neighbor);
 		if (CanTilesConnect(st, tile, neighbor, tile_data, nb_data, v, restriction, goal, allow_runway_crossing)) {
 			neighbors.emplace_back(neighbor, nb_data);
-			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CONNECTED!");
-		} else {
-			if (is_hangar) Debug(misc, 4, "[ModAp]   -> CanTilesConnect failed");
 		}
 	}
 
@@ -450,12 +325,12 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<uint64_t,
 	uint64_t current = goal_state;
 
 	while (current != start_state) {
-		path.push_back(TileIndex(static_cast<uint32_t>(current & 0xFFFFFFFFULL)));
+		path.push_back(TileIndex(static_cast<uint32_t>(current)));
 		auto it = parents.find(current);
-		if (it == parents.end()) break; // Should not happen if path exists
+		if (it == parents.end()) break;
 		current = it->second;
 	}
-	path.push_back(TileIndex(static_cast<uint32_t>(start_state & 0xFFFFFFFFULL)));
+	path.push_back(TileIndex(static_cast<uint32_t>(start_state)));
 
 	/* Reverse to get path from start to goal */
 	std::reverse(path.begin(), path.end());
@@ -550,7 +425,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 			}
 		};
 
-		int h_start = CalculateHeuristic(start, goal);
+		int h_start = DistanceManhattan(start, goal);
 		open_set.emplace(start, 0, h_start, sequence++, false);
 		g_costs[start_state] = 0;
 
@@ -620,7 +495,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 					g_costs[neighbor_state] = tentative_g;
 					parents[neighbor_state] = state_key(current.tile, current.passed_safe_stop);
 
-					int h = CalculateHeuristic(neighbor, goal);
+					int h = DistanceManhattan(neighbor, goal);
 					open_set.emplace(neighbor, tentative_g, tentative_g + h, sequence++, neighbor_passed);
 				}
 			}
@@ -709,18 +584,18 @@ static std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const st
 	if (tiles.empty()) return segments;
 
 	TaxiSegmentType current_type = ClassifyTile(st, tiles[0]);
-	uint16_t seg_start = 0;
+	size_t seg_start = 0;
 
-	for (uint16_t i = 1; i < static_cast<uint16_t>(tiles.size()); i++) {
+	for (size_t i = 1; i < tiles.size(); ++i) {
 		TaxiSegmentType tile_type = ClassifyTile(st, tiles[i]);
 		if (tile_type != current_type) {
-			segments.push_back({current_type, seg_start, static_cast<uint16_t>(i - 1)});
+			segments.push_back({current_type, static_cast<uint16_t>(seg_start), static_cast<uint16_t>(i - 1)});
 			current_type = tile_type;
 			seg_start = i;
 		}
 	}
 	/* Close the last segment */
-	segments.push_back({current_type, seg_start, static_cast<uint16_t>(tiles.size() - 1)});
+	segments.push_back({current_type, static_cast<uint16_t>(seg_start), static_cast<uint16_t>(tiles.size() - 1)});
 
 	return segments;
 }

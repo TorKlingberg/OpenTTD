@@ -20,11 +20,9 @@ struct Aircraft;
 
 /** Result of ground pathfinding */
 struct AirportGroundPath {
-	std::vector<TileIndex> tiles; ///< Tiles in the path (from start to goal)
-	int cost;                      ///< Cost of the path
-	bool found;                    ///< Whether a path was found
-
-	AirportGroundPath() : cost(0), found(false) {}
+	std::vector<TileIndex> tiles{}; ///< Tiles in the path (from start to goal)
+	int cost = 0;                   ///< Cost of the path
+	bool found = false;             ///< Whether a path was found
 };
 
 /**
