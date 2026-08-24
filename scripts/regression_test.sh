@@ -146,6 +146,16 @@ scan_log_for_failures() {
 		return 1
 	fi
 
+	local combined_pattern=""
+	for entry in "${FAILURE_PATTERNS[@]}"; do
+		pattern="${entry%%|*}"
+		combined_pattern="${combined_pattern:+$combined_pattern|}(${pattern})"
+	done
+
+	if ! grep -qE "${combined_pattern}" "${log_path}"; then
+		return 0
+	fi
+
 	for entry in "${FAILURE_PATTERNS[@]}"; do
 		pattern="${entry%%|*}"
 		description="${entry#*|}"

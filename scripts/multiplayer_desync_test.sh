@@ -17,7 +17,7 @@ OPENTTD="${OPENTTD_BIN:-${ROOT_DIR}/build/openttd}"
 SAVE_FILE="${ROOT_DIR}/scripts/testdata/T5j2.sav"
 WARMUP_DAYS=60
 SOAK_DAYS=30
-PORT=$((20000 + $$ % 30000))
+PORT=$((20000 + ((RANDOM << 15 | RANDOM) ^ $$) % 40000))
 RUN_BUILD=1
 KEEP_ARTIFACTS=0
 ARTIFACT_DIR=""
@@ -124,8 +124,15 @@ fi
 if [[ -n "${ARTIFACT_DIR}" ]]; then
 	mkdir -p "${ARTIFACT_DIR}"
 	RUN_DIR="$(cd "${ARTIFACT_DIR}" && pwd)"
-	if [[ -n "$(find "${RUN_DIR}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-		echo "error: artifact directory must be empty: ${RUN_DIR}" >&2
+	if ! mkdir "${RUN_DIR}/.lock" 2>/dev/null; then
+		echo "error: artifact directory must be empty and not in use: ${RUN_DIR}" >&2
+		exit 2
+	fi
+	if [[ -n "$(find "${RUN_DIR}" -mindepth 1 -maxdepth 1 ! -name .lock -print -quit)" ]]; then
+		# We just created .lock ourselves, so it's ours to remove here -- trap
+		# cleanup isn't registered yet to do it for us on this early exit.
+		rmdir "${RUN_DIR}/.lock" 2>/dev/null || true
+		echo "error: artifact directory must be empty and not in use: ${RUN_DIR}" >&2
 		exit 2
 	fi
 else
@@ -186,6 +193,13 @@ stop_process() {
 	[[ -n "${pid}" ]] || return 0
 	if kill -0 "${pid}" 2>/dev/null; then
 		kill -TERM "${pid}" 2>/dev/null || true
+		for _ in {1..50}; do
+			if ! kill -0 "${pid}" 2>/dev/null; then
+				return 0
+			fi
+			sleep 0.1
+		done
+		kill -KILL "${pid}" 2>/dev/null || true
 	fi
 }
 
@@ -201,6 +215,8 @@ cleanup() {
 	wait "${early_pid}" 2>/dev/null || true
 	wait "${late_pid}" 2>/dev/null || true
 	wait "${server_pid}" 2>/dev/null || true
+
+	rmdir "${RUN_DIR}/.lock" 2>/dev/null || true
 
 	if [[ "${test_passed}" -eq 1 && "${KEEP_ARTIFACTS}" -eq 0 ]]; then
 		rm -rf "${RUN_DIR}"

@@ -3318,6 +3318,24 @@ TEST_CASE("ModularAirportRolloutHoldingUsesReservedBuffer")
 		 * progress towards parking instead of retreating onto its own buffer. */
 		CHECK(FindModularRolloutHoldingTile(st, v, rollout) == near_stop);
 	}
+
+	SECTION("Falls back to the reserved buffer when no service tile is reachable") {
+		/* An isolated runway + buffer with no reachable stand or hangar. */
+		TileIndex iso_base = TileXY(25, 25);
+		Station *iso_st = SetupModularAirport(iso_base, 10, 10);
+		REQUIRE(iso_st != nullptr);
+		AddLargeRunway(iso_st, iso_base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		ModularAirportTileData *iso_queue = AddModularTileWithData(iso_st, iso_base + TileDiffXY(3, 2), APT_APRON, 0);
+		iso_queue->one_way_taxi = true;
+		iso_queue->user_taxi_dir_mask = 0x02; // +X
+
+		Aircraft *iso_v = CreateAircraft(VehicleID(12));
+		iso_v->targetairport = iso_st->index;
+		iso_v->tile = iso_base + TileDiffXY(2, 2);
+		SetTaxiReservation(iso_v, iso_base + TileDiffXY(3, 2));
+
+		CHECK(FindModularRolloutHoldingTile(iso_st, iso_v, iso_base + TileDiffXY(2, 2)) == iso_base + TileDiffXY(3, 2));
+	}
 }
 
 TEST_CASE("ModularAirportUnstackParking")

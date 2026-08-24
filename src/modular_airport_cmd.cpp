@@ -1717,7 +1717,9 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 		for (TileIndex tile : v->modular_runway_reservation) keep_set.push_back(tile);
 	}
 
-	if (v->landing_chain_path != nullptr && v->landing_chain_path->valid) {
+	if (v->landing_chain_path != nullptr && v->landing_chain_path->valid &&
+			(v->modular_landing_tile != INVALID_TILE || v->modular_ground_target == MGT_ROLLOUT ||
+			(IsValidTile(v->tile) && !v->landing_chain_path->tiles.empty() && v->landing_chain_path->tiles.front() == v->tile))) {
 		/* Keep landing-chain continuity until taxi_path transitions are complete. */
 		for (TileIndex tile : v->landing_chain_path->tiles) keep_set.push_back(tile);
 		for (TileIndex tile : v->modular_runway_reservation) keep_set.push_back(tile);
@@ -2654,28 +2656,29 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 			best_cost = p.cost;
 		}
 	}
-	if (best_target == INVALID_TILE) return reserved_queue_tile();
 
-	TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr, false, restriction);
-	if (!path.valid || path.tiles.size() < 2 || path.segments.empty()) return reserved_queue_tile();
-
-	/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
-	 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
-	 * stop on a free-move apron/grass tile: that pins a shared transit section.
-	 *
-	 * Parking that is not this aircraft's target does not qualify: an aircraft
-	 * cannot be stranded on a runway needing somebody else's stand, because landing
-	 * is not initiated unless a way off the runway already exists. When every safe
-	 * stop on this route is held by someone else, that reserved way off the runway
-	 * is what reserved_queue_tile() returns. */
-	for (TileIndex tile : path.tiles) {
-		if (tile == start_tile) continue;
-		if (!IsModularSafeStopTile(st, tile, best_target)) continue;
-		Tile t(tile);
-		if (!IsAirportTile(t)) continue;
-		if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
-		if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
-		return tile;
+	if (best_target != INVALID_TILE) {
+		TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr, false, restriction);
+		if (path.valid && path.tiles.size() >= 2 && !path.segments.empty()) {
+			/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
+			 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
+			 * stop on a free-move apron/grass tile: that pins a shared transit section.
+			 *
+			 * Parking that is not this aircraft's target does not qualify: an aircraft
+			 * cannot be stranded on a runway needing somebody else's stand, because landing
+			 * is not initiated unless a way off the runway already exists. When every safe
+			 * stop on this route is held by someone else, that reserved way off the runway
+			 * is what reserved_queue_tile() returns. */
+			for (TileIndex tile : path.tiles) {
+				if (tile == start_tile) continue;
+				if (!IsModularSafeStopTile(st, tile, best_target)) continue;
+				Tile t(tile);
+				if (!IsAirportTile(t)) continue;
+				if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) continue;
+				if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
+				return tile;
+			}
+		}
 	}
 
 	return reserved_queue_tile();
@@ -3603,11 +3606,6 @@ void HandleModularGroundArrival(Aircraft *v)
 			/* Completed rollout along runway, now find a terminal */
 			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
 			{
-				/* One-shot compatibility for saves written before modular paths were
-				 * persisted. Every later landing by this aircraft is judged normally. */
-				const bool restored_from_save = v->rollout_restored_from_save;
-				v->rollout_restored_from_save = false;
-
 				const bool wants_depot = ModularAircraftWantsHangar(v, st);
 				TileIndex goal = INVALID_TILE;
 				uint8_t target = MGT_NONE;
@@ -3646,6 +3644,11 @@ void HandleModularGroundArrival(Aircraft *v)
 
 				v->modular_landing_goal = INVALID_TILE;
 				if (goal != INVALID_TILE) {
+					/* One-shot compatibility for saves written before modular paths were
+					 * persisted. Every later landing by this aircraft is judged normally. */
+					const bool restored_from_save = v->rollout_restored_from_save;
+					v->rollout_restored_from_save = false;
+
 					v->ground_path_goal = goal;
 					v->modular_ground_target = target;
 					v->state = (target == MGT_HANGAR) ? HANGAR : TERM1;

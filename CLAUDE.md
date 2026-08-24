@@ -47,7 +47,7 @@ cmake --build build --target openttd_test -j8 &&
 ./build/openttd_test
 ```
 
-Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate.
+Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
 
 Also ask a subagent to review your change before comitting. This can run in parallel with the regression test.
 

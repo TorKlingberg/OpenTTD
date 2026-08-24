@@ -1001,6 +1001,9 @@ private:
 		if (path_tiles.empty() || segment_types.empty()) return false;
 		if (segment_types.size() != segment_starts.size() || segment_types.size() != segment_ends.size()) return false;
 		if (std::any_of(path_tiles.begin(), path_tiles.end(), [](TileIndex tile) { return !IsValidTile(tile); })) return false;
+		for (size_t i = 1; i < path_tiles.size(); ++i) {
+			if (DistanceManhattan(path_tiles[i - 1], path_tiles[i]) != 1) return false;
+		}
 
 		size_t expected_start = 0;
 		for (size_t i = 0; i < segment_types.size(); ++i) {
@@ -1030,14 +1033,16 @@ public:
 		path_present = path != nullptr;
 		if (path != nullptr) {
 			path_valid = path->valid;
-			path_tiles = path->tiles;
-			segment_types.reserve(path->segments.size());
-			segment_starts.reserve(path->segments.size());
-			segment_ends.reserve(path->segments.size());
-			for (const TaxiSegment &segment : path->segments) {
-				segment_types.push_back(static_cast<uint8_t>(segment.type));
-				segment_starts.push_back(segment.start_index);
-				segment_ends.push_back(segment.end_index);
+			if (path->valid) {
+				path_tiles = path->tiles;
+				segment_types.reserve(path->segments.size());
+				segment_starts.reserve(path->segments.size());
+				segment_ends.reserve(path->segments.size());
+				for (const TaxiSegment &segment : path->segments) {
+					segment_types.push_back(static_cast<uint8_t>(segment.type));
+					segment_starts.push_back(segment.start_index);
+					segment_ends.push_back(segment.end_index);
+				}
 			}
 		}
 
@@ -1049,15 +1054,16 @@ public:
 	{
 		ClearTemporaryState();
 		SlObject(nullptr, this->GetLoadDescription());
-		v->modular_paths_loaded_from_save = true;
 
 		std::unique_ptr<TaxiPath> &path = v->*TPath;
 		path.reset();
 		if (!ValidatePathData()) {
 			Debug(sl, 1, "Found Aircraft {} with invalid modular-airport path, ignoring.", v->index);
+			v->modular_paths_loaded_from_save = false;
 			ClearTemporaryState();
 			return;
 		}
+		v->modular_paths_loaded_from_save = true;
 		if (!path_present) {
 			ClearTemporaryState();
 			return;
