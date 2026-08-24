@@ -229,6 +229,95 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 }
 
 /**
+ * Rotate one template tile's metadata clockwise by r quarter-turns, in place.
+ *
+ * Templates are rotated twice on their way into the world: once client-side, on
+ * AirportTemplateTile, to draw the placement preview, and once server-side, on
+ * the ModularTemplatePlacementTile the command carries. Both have to agree
+ * exactly -- if they ever drift, the preview shows one airport and placement
+ * builds another -- so both go through this one routine. The two structs share
+ * the field names it touches and differ only in the width of dx/dy, which is
+ * why this is a template rather than a plain function.
+ *
+ * @tparam TTile AirportTemplateTile or ModularTemplatePlacementTile.
+ * @param tile The tile to rotate.
+ * @param r Number of 90-degree clockwise steps.
+ * @param template_w Unrotated bounding-box width, at most MAX_TEMPLATE_DIM.
+ * @param template_h Unrotated bounding-box height, at most MAX_TEMPLATE_DIM.
+ */
+template <typename TTile>
+inline void RotateModularTemplateTile(TTile &tile, uint8_t r, uint16_t template_w, uint16_t template_h)
+{
+	using OffsetType = decltype(tile.dx);
+
+	r &= 3;
+	if (r == 0) return;
+
+	const uint16_t ox = tile.dx;
+	const uint16_t oy = tile.dy;
+	const uint8_t old_rotation = tile.rotation;
+
+	/* Offset transform. */
+	switch (r) {
+		case 1: // 90 CW
+			tile.dx = static_cast<OffsetType>(template_h - 1 - oy);
+			tile.dy = static_cast<OffsetType>(ox);
+			break;
+		case 2: // 180
+			tile.dx = static_cast<OffsetType>(template_w - 1 - ox);
+			tile.dy = static_cast<OffsetType>(template_h - 1 - oy);
+			break;
+		case 3: // 270 CW
+			tile.dx = static_cast<OffsetType>(oy);
+			tile.dy = static_cast<OffsetType>(template_w - 1 - ox);
+			break;
+		default: NOT_REACHED();
+	}
+
+	tile.rotation = (old_rotation + r) & 3;
+
+	/* A hangar's facing is carried by `rotation` on the way in -- the script API and
+	 * the builder both send the canonical APT_DEPOT_SE -- and
+	 * BuildModularAirportTile_Apply turns that into the directional variant when the
+	 * tile is placed. Rotating the piece type here as well would encode the turn
+	 * twice, and because every reader resolves piece_type ahead of rotation, the
+	 * piece would win and the caller's original facing would be silently discarded:
+	 * a hangar authored facing NW came out facing whatever the template rotation
+	 * alone said. Leave canonical hangars alone and let rotation speak for them.
+	 *
+	 * Pieces that genuinely encode orientation in the type itself -- the building
+	 * 1/2 pair, small runway near/far ends -- still have to be swapped. */
+	if (!IsCanonicalHangarPiece(tile.piece_type)) {
+		SwapBuildingPieceForRotation(tile.piece_type, r);
+	}
+
+	/* Taxi and edge-block masks are both NESW bitmasks. */
+	const auto rotate_mask = [r](uint8_t mask) -> uint8_t {
+		uint8_t out = 0;
+		for (uint8_t i = 0; i < 4; i++) {
+			if ((mask & (1 << i)) != 0) out |= (1 << ((i + r) & 3));
+		}
+		return out;
+	};
+
+	tile.user_taxi_dir_mask = rotate_mask(tile.user_taxi_dir_mask);
+	tile.edge_block_mask = rotate_mask(tile.edge_block_mask);
+
+	/* Swap low/high when coordinate order along the original axis reverses. */
+	const bool original_x_axis = (old_rotation % 2) == 0;
+	const bool reverse = original_x_axis ? (r == 2 || r == 3) : (r == 1 || r == 2);
+	if (reverse) {
+		uint8_t flags = tile.runway_flags;
+		const uint8_t low = flags & RUF_DIR_LOW;
+		const uint8_t high = flags & RUF_DIR_HIGH;
+		flags &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
+		if (low != 0) flags |= RUF_DIR_HIGH;
+		if (high != 0) flags |= RUF_DIR_LOW;
+		tile.runway_flags = flags;
+	}
+}
+
+/**
  * Is this an aircraft stand?
  *
  * Only APT_STAND is placeable. The other two arrive with a converted stock
@@ -454,6 +543,7 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 }
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
+bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
 
 /* What a modular airport's layout can take instead of the generic AT_MODULAR FTA

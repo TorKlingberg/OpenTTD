@@ -50,6 +50,9 @@ static_assert(TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE + MAX_TEMPLATE_TILES * TEMPLAT
 
 /**
  * Rotate one template tile in place.
+ *
+ * Thin wrapper over the shared routine so the command path and the preview path
+ * cannot drift apart; see RotateModularTemplateTile in modular_airport_cmd.h.
  * @param tile The tile to rotate.
  * @param r Number of 90-degree clockwise steps.
  * @param width Unrotated bounding-box width, at most MAX_TEMPLATE_DIM.
@@ -57,74 +60,7 @@ static_assert(TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE + MAX_TEMPLATE_TILES * TEMPLAT
  */
 static void RotateTemplateTile(ModularTemplatePlacementTile &tile, uint8_t r, uint8_t width, uint8_t height)
 {
-	r &= 3;
-	if (r == 0) return;
-
-	uint8_t ox = tile.dx;
-	uint8_t oy = tile.dy;
-	uint8_t old_rotation = tile.rotation;
-
-	switch (r) {
-		case 1:
-			tile.dx = height - 1 - oy;
-			tile.dy = ox;
-			break;
-		case 2:
-			tile.dx = width - 1 - ox;
-			tile.dy = height - 1 - oy;
-			break;
-		case 3:
-			tile.dx = oy;
-			tile.dy = width - 1 - ox;
-			break;
-		default: NOT_REACHED();
-	}
-
-	tile.rotation = (old_rotation + r) & 3;
-
-	/* A hangar's facing is carried by `rotation` on the way in -- the script API and
-	 * the builder both send the canonical APT_DEPOT_SE -- and
-	 * BuildModularAirportTile_Apply turns that into the directional variant when the
-	 * tile is placed. Rotating the piece type here as well would encode the turn
-	 * twice, and because every reader resolves piece_type ahead of rotation, the
-	 * piece would win and the caller's original facing would be silently discarded:
-	 * a hangar authored facing NW came out facing whatever the template rotation
-	 * alone said. Leave canonical hangars alone and let rotation speak for them.
-	 *
-	 * Pieces that genuinely encode orientation in the type itself -- the building
-	 * 1/2 pair, small runway near/far ends -- still have to be swapped. */
-	if (!IsCanonicalHangarPiece(tile.piece_type)) {
-		SwapBuildingPieceForRotation(tile.piece_type, r);
-	}
-
-	auto rotate_mask = [r](uint8_t mask) -> uint8_t {
-		uint8_t out = 0;
-		for (uint8_t i = 0; i < 4; i++) {
-			if ((mask & (1 << i)) != 0) out |= (1 << ((i + r) & 3));
-		}
-		return out;
-	};
-
-	tile.user_taxi_dir_mask = rotate_mask(tile.user_taxi_dir_mask);
-	tile.edge_block_mask = rotate_mask(tile.edge_block_mask);
-
-	/* Swap low/high when coordinate order along the original axis reverses. */
-	bool original_x_axis = (old_rotation % 2) == 0;
-	bool reverse = false;
-	if (original_x_axis) {
-		reverse = (r == 2 || r == 3);
-	} else {
-		reverse = (r == 1 || r == 2);
-	}
-	if (reverse) {
-		uint8_t flags = tile.runway_flags;
-		uint8_t low = flags & RUF_DIR_LOW;
-		uint8_t high = flags & RUF_DIR_HIGH;
-		flags &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
-		if (low != 0) flags |= RUF_DIR_HIGH;
-		if (high != 0) flags |= RUF_DIR_LOW;
-		tile.runway_flags = flags;
-	}
+	RotateModularTemplateTile(tile, r, width, height);
 }
 
 static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_t rotation, uint16_t &out_w, uint16_t &out_h)

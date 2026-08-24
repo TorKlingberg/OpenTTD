@@ -52,75 +52,7 @@ static std::optional<uint8_t> ResolveAirportTileIndexByGRF(uint32_t grfid, uint1
 
 void AirportTemplateTile::Rotate(uint8_t r, uint16_t template_w, uint16_t template_h)
 {
-	r &= 3;
-	if (r == 0) return;
-
-	uint16_t ox = this->dx;
-	uint16_t oy = this->dy;
-	uint8_t old_rotation = this->rotation;
-
-	/* Offset transform. */
-	switch (r) {
-		case 1: // 90 CW
-			this->dx = template_h - 1 - oy;
-			this->dy = ox;
-			break;
-		case 2: // 180
-			this->dx = template_w - 1 - ox;
-			this->dy = template_h - 1 - oy;
-			break;
-		case 3: // 270 CW
-			this->dx = oy;
-			this->dy = template_w - 1 - ox;
-			break;
-		default: NOT_REACHED();
-	}
-
-	/* Tile rotation. */
-	this->rotation = (old_rotation + r) & 3;
-
-	if (!IsCanonicalHangarPiece(this->piece_type)) {
-		SwapBuildingPieceForRotation(this->piece_type, r);
-	}
-
-	/* Taxi mask rotation (NESW bitmask). */
-	uint8_t old_mask = this->user_taxi_dir_mask;
-	uint8_t new_mask = 0;
-	for (uint8_t i = 0; i < 4; i++) {
-		if (old_mask & (1 << i)) {
-			new_mask |= (1 << ((i + r) & 3));
-		}
-	}
-	this->user_taxi_dir_mask = new_mask;
-
-	/* Runway flags: swap low/high if axis is reversed. */
-	bool is_x_axis = (old_rotation == 0 || old_rotation == 2);
-	bool reverse = false;
-	if (is_x_axis) {
-		if (r == 2 || r == 3) reverse = true;
-	} else {
-		if (r == 1 || r == 2) reverse = true;
-	}
-
-	if (reverse) {
-		uint8_t flags = this->runway_flags;
-		uint8_t low = flags & RUF_DIR_LOW;
-		uint8_t high = flags & RUF_DIR_HIGH;
-		flags &= ~(RUF_DIR_LOW | RUF_DIR_HIGH);
-		if (low) flags |= RUF_DIR_HIGH;
-		if (high) flags |= RUF_DIR_LOW;
-		this->runway_flags = flags;
-	}
-
-	/* Edge block mask rotation (NESW). Same bitmask as taxi. */
-	old_mask = this->edge_block_mask;
-	new_mask = 0;
-	for (uint8_t i = 0; i < 4; i++) {
-		if (old_mask & (1 << i)) {
-			new_mask |= (1 << ((i + r) & 3));
-		}
-	}
-	this->edge_block_mask = new_mask;
+	RotateModularTemplateTile(*this, r, template_w, template_h);
 }
 
 uint AirportTemplate::GetCatchmentRadius() const
@@ -203,7 +135,11 @@ void AirportTemplateManager::Refresh()
 				tile.dx = jt.value("dx", static_cast<uint16_t>(0));
 				tile.dy = jt.value("dy", static_cast<uint16_t>(0));
 				tile.piece_type = jt.value("piece_type", static_cast<uint8_t>(0));
-				tile.rotation = jt.value("rotation", static_cast<uint8_t>(0));
+				/* Rotation is mod 4 everywhere downstream -- hangar facings, the
+				 * (old_rotation + r) & 3 accumulation in Rotate(). Clamp on the way in
+				 * so a hand-edited file cannot smuggle an out-of-range value past the
+				 * dx/dy bounds checks below. */
+				tile.rotation = jt.value("rotation", static_cast<uint8_t>(0)) & 3;
 				tile.runway_flags = jt.value("runway_flags", static_cast<uint8_t>(0));
 				tile.one_way_taxi = jt.value("one_way_taxi", false);
 				tile.user_taxi_dir_mask = jt.value("user_taxi_dir_mask", static_cast<uint8_t>(0x0F));
