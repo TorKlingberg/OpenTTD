@@ -136,7 +136,7 @@ TEST_CASE("ModularAirportTileNamesCarryNoColourCode")
 
 	const auto HasColourCode = [](std::string_view text) {
 		for (char32_t c : Utf8View(text)) {
-			if (c >= SCC_BLUE && c <= SCC_BLACK) return true;
+			if (c >= SCC_BLUE && c <= SCC_POP_COLOUR) return true;
 		}
 		return false;
 	};
@@ -147,7 +147,24 @@ TEST_CASE("ModularAirportTileNamesCarryNoColourCode")
 	std::string sentinel;
 	StringBuilder(sentinel).PutUtf8(SCC_BLACK);
 	REQUIRE(HasColourCode(sentinel));
+	sentinel.clear();
+	StringBuilder(sentinel).PutUtf8(SCC_COLOUR);
+	REQUIRE(HasColourCode(sentinel));
+	sentinel.clear();
+	StringBuilder(sentinel).PutUtf8(SCC_PUSH_COLOUR);
+	REQUIRE(HasColourCode(sentinel));
+	sentinel.clear();
+	StringBuilder(sentinel).PutUtf8(SCC_POP_COLOUR);
+	REQUIRE(HasColourCode(sentinel));
 	REQUIRE_FALSE(HasColourCode("Runway"));
+
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END) == "Runway");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_NEAR) == "Small runway");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_MID) == "Small runway");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_FAR) == "Small runway");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT) == "Terminal");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER) == "Terminal");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_PLAIN_H) == "Helipad");
 
 	/* Land Area Information draws the tile description line in light blue, and an
 	 * embedded colour overrides that for the remainder of the line -- only a caller
