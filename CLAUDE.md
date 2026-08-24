@@ -108,9 +108,16 @@ The modular airport system lets players build airports tile-by-tile. The reserva
 
 ## Regression Testing
 
-`scripts/regression_test.sh` runs headless 5-year simulations and compares total airport
-movements against committed minimums (the `min_movements=` floors in
-`scripts/testdata/*.expected`).
+`scripts/regression_test.sh` runs headless 5-year simulations and checks each fixture two
+ways: total airport movements against the committed minimum (the `min_movements=` floor in
+`scripts/testdata/*.expected`), **and** the run's log against the `FAILURE_PATTERNS` array in
+the script — should-never-happen lines like `landing-chain-invariant`, both `[FALLBACK]`
+markers, `invalid ground state` and `[AircraftLost]`. Ordinary contention
+(`stuck(reserve)`, `runway-rest-invariant`, `retarget failed`, …) is explicitly not gated.
+The log check exists because throughput hides small correctness faults: a few aircraft on a
+broken path cost a handful of movements out of thousands, well inside the floor's headroom.
+Fixtures run at `-d misc=2` so the `[FALLBACK]` markers are visible; that costs ~2.7x the log
+volume and does not change any total.
 
 | Invocation | Fixtures |
 |---|---|

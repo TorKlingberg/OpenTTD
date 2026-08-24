@@ -23,6 +23,12 @@
 # sets of [AirportStats] lines are lost, which surfaces as "no countable years"
 # and reads exactly like a broken fixture. Give a concurrent run its own
 # --log-dir.
+
+# Each fixture is checked two ways: total movements against the min_movements=
+# floor in its .expected file, and the run's log against FAILURE_PATTERNS below.
+# The log check exists because throughput alone hides small correctness faults --
+# a few aircraft on a broken path cost a handful of movements out of thousands,
+# comfortably inside the floor's headroom.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -63,6 +69,9 @@ Usage: scripts/regression_test.sh [--full] [--no-build] [--sequential]
   --log-dir DIR  Write the per-fixture openttd logs to DIR (default: /tmp).
                  Use this when another regression run may be in flight; the
                  default paths are shared and the two would clobber each other.
+
+A fixture passes only if its movement total clears the floor in its .expected
+file AND its log is free of every FAILURE_PATTERNS entry in this script.
 USAGE
 }
 
@@ -91,6 +100,69 @@ if [[ -n "${OPENTTD_REGRESSION_LOG:-}" ]]; then
 fi
 
 mkdir -p "${log_dir}"
+
+# Log lines that mean the modular airport code went wrong, as opposed to the
+# ordinary contention a busy fixture is *supposed* to produce. Each of these
+# must be absent from a run; any occurrence fails the fixture.
+#
+# Deliberately NOT here, because a healthy busy airport emits them constantly:
+# stuck(reserve) / stuck(occupied) / stuck(no-path), runway-rest-invariant (a
+# rollout end is physically on the runway, so some waiting there is unavoidable
+# and it self-clears), clamp pre-ground-move, retarget failed, landing-chain
+# fail/reject, takeoff-skip, takeoff-path not enterable, and diverted.
+#
+# Format: <extended regex>|<what it means>. See skills/stuck_plane_debugging.md.
+FAILURE_PATTERNS=(
+	'landing-chain-invariant|aircraft off a safe stop with no reserved route to one'
+	'\[FALLBACK\] stale-clear|reservation left behind by a vehicle that moved on'
+	'\[FALLBACK\] force-clear-all|reservations force-dropped from under a stuck aircraft'
+	'landing-chain restore failed|post-load landing chain could not be rebuilt'
+	'rollout fallback failed|aircraft could not vacate the runway after landing'
+	'invalid ground state|aircraft in a ground state at flight speed'
+	'invalid HANGAR state|aircraft in HANGAR state off a hangar tile'
+	'in unexpected state|aircraft in a state the modular handler does not know'
+	'reached non-hangar tile|hangar target resolved to something that is not a hangar'
+	'goal_data null|ground goal tile has no modular tile data'
+	'helicopter touchdown without ground goal|helicopter landed with nowhere to go'
+	'takeoff recovery failed|no runway available for a takeoff already committed'
+	'takeoff recovery: invalid takeoff tile|takeoff target is not a runway piece'
+	'cannot move further on Airport|classic FTA state machine dead end'
+	'is not valid for current airport|classic FTA position out of range'
+	'[Ee]xception in Aircraft::Tick|C++ exception escaped the tick handler'
+	'\[AircraftLost\]|an aircraft crashed; every fixture has crashes off'
+)
+
+# Fails the fixture if the run's log contains any FAILURE_PATTERNS match.
+# Prints one summary line per matching pattern plus the first example, so the
+# report says which bug fired without replaying thousands of lines.
+scan_log_for_failures() {
+	local log_path="$1"
+	local save_file="$2"
+	local entry pattern description count example
+	local found=0
+
+	if [[ ! -f "${log_path}" ]]; then
+		echo "FAIL: ${save_file}: log ${log_path} is missing; cannot check for failure patterns"
+		return 1
+	fi
+
+	for entry in "${FAILURE_PATTERNS[@]}"; do
+		pattern="${entry%%|*}"
+		description="${entry#*|}"
+		count="$(grep -cE "${pattern}" "${log_path}" || true)"
+		[[ "${count}" -eq 0 ]] && continue
+		found=1
+		echo "FAIL: ${save_file}: ${count}x ${description}"
+		example="$(grep -m1 -E "${pattern}" "${log_path}" || true)"
+		echo "      ${example}"
+	done
+
+	if [[ "${found}" -eq 1 ]]; then
+		echo "      Full log: ${log_path}"
+		return 1
+	fi
+	return 0
+}
 
 read_min_movements() {
 	local expected_file="$1"
@@ -156,7 +228,12 @@ run_case() {
 		return 1
 	fi
 
-	echo "PASS: ${save_file} (${actual} >= ${min_movements})"
+	# Throughput can hold up while the code is quietly misbehaving -- a handful of
+	# aircraft taking a broken path costs a few movements out of thousands, well
+	# inside the floor's headroom. So check the log as well as the total.
+	scan_log_for_failures "${OPENTTD_REGRESSION_LOG}" "${save_file}" || return 1
+
+	echo "PASS: ${save_file} (${actual} >= ${min_movements}, log clean)"
 }
 
 # Build once, here, rather than letting each fixture's n_years_plus2.sh do it.

@@ -115,19 +115,30 @@ grep 'V{id}.*reserve-state reason=.reserve granted.' /tmp/openttd.log | tail -30
 ```
 Repeated deny/grant oscillation for the same vehicle/runway is a strong signal for reservation instability.
 
-### Runway-transit contract diagnostics (Reservation V3+)
-```bash
-grep 'runway-transit-' /tmp/openttd.log | tail -50
-```
-Important patterns:
-- `runway-transit-deny: continuation blocked` — the crossing chain to the next safe stop could not be reserved; `tile=` / `by V…` name the blocker. The aircraft correctly waits *before* the runway. Ordinary contention.
-- `runway-transit-deny: runway resource unresolved` — a crossed runway's contiguous extent could not be resolved. Layout/metadata problem, not traffic.
-- `runway-transit-debug` — emitted from stuck(reserve) context for runway segments. For transit runways it reports the chain exactly as the entry decision computes it: `status=` (0=OK, 1=RESOURCE_ERROR, 2=BLOCKED, 3=NO_SAFE_STOP), `safe_stop=`, `blocker=`, `resources=`, `chain_tiles=`.
-- `runway-transit-invariant` — hard contract violation; should be **zero** in healthy runs.
-  - `missing exit ownership` — aircraft about to step onto a transit runway without owning the tile just past it.
-  - `chain has no terminator` — the crossing walk ran off the end of the path without reaching the goal or a safe stop. The walk is constructed so this cannot happen from traffic (see `skills/reservations-design.md` §3); it means `taxi_path` does not end at `ground_path_goal`. Look upstream at path construction / retargeting, not at contention. Compare the logged `goal=` and `path_end=`.
+### Runway transit vs. runway as destination
 
-**Note:** a *permanently* stuck aircraft whose `stuck(reserve)` line shows every blocker false (`reserved_by_other=false occupied_by_other=false runway_busy=false`) is never contention. Check `runway-transit-debug status=` first — an unsatisfiable entry contract looks exactly like traffic otherwise, and the wait counter wraps at 16 bits so a huge `wait=` can cycle back to a small one.
+An aircraft crossing a runway must be able to reserve the whole chain to the next
+safe stop *before* it steps on; otherwise it waits before the runway. That is
+ordinary contention and shows up as `stuck(reserve)` with a `deny=` of
+`runway_busy` or `reserved_by_other`.
+
+Two deny reasons are contract violations rather than traffic:
+
+- `deny=runway_resource_error` — a crossed runway's contiguous extent could not be
+  resolved. Layout/metadata problem.
+- `deny=no_safe_stop` — the crossing walk ran off the end of the path without
+  reaching the goal or a safe stop. The walk is constructed so traffic cannot cause
+  this (see `skills/reservations-design.md` §3); it means `taxi_path` does not end
+  at `ground_path_goal`. Look at path construction and retargeting, not contention.
+
+**Note:** a *permanently* stuck aircraft whose `stuck(reserve)` line shows every
+blocker false is never contention. Read `deny=` first — an unsatisfiable entry
+contract looks exactly like traffic otherwise, and the wait counter wraps at 16
+bits so a huge `wait=` can cycle back to a small one.
+
+**Historical note:** this section used to document `runway-transit-deny`,
+`runway-transit-debug` and `runway-transit-invariant` log lines. Those were removed
+from the source; only the `deny=` reasons above survive. Do not grep for them.
 
 ### Takeoff retarget
 `TryRetargetModularGroundGoal` re-runs `FindModularRunwayTileForTakeoff` for
@@ -228,8 +239,8 @@ common case, not the exception (63% of stuck reports in one T5j2 run). The old f
 this line re-derived blockers from `next` and so printed all-clear for genuinely blocked
 aircraft; always read `deny_tile`, and treat `next` as route context only.
 
-`deny=no_safe_stop` is a contract violation rather than traffic — see
-`runway-transit-invariant` above.
+`deny=no_safe_stop` and `deny=runway_resource_error` are contract violations rather
+than traffic — see "Runway transit vs. runway as destination" above.
 
 ### Safe-stop invariants after landing
 
@@ -241,7 +252,18 @@ grep -c 'runway-rest-invariant'   /tmp/openttd.log   # small and self-clearing
 - `landing-chain-invariant: off a safe stop with no reserved route to one` — the
   aircraft is standing where it may not wait (in practice a rollout end) and owns
   no reserved safe stop. Landing is only permitted against such a route, so this
-  means the route was thrown away after commit. **Expect zero.**
+  means the route was thrown away after commit. **Expect zero**, and
+  `scripts/regression_test.sh` fails a fixture that emits any.
+
+  One case is *not* a violation and is suppressed: `landing_chain_path` is a
+  `unique_ptr` and deliberately not saved, so an aircraft that was already
+  committed to a landing when the game was saved arrives at its rollout end with
+  no chain to install. `AfterLoadGame` marks those aircraft
+  (`Aircraft::rollout_restored_from_save`, transient, consumed by the first
+  rollout arrival) and the check skips them once. Without that, every fixture
+  reported a handful of these in the first seconds after load — from whichever
+  aircraft happened to be mid-landing at save time — and re-saving the fixture
+  only reshuffled which ones.
 - `runway-rest-invariant: waiting on runway` — the aircraft is waiting on a runway
   tile. Unlike the above it still holds a route to a safe stop; it is losing the
   race for the next runway resource (`deny=runway_busy`). Ordinary contention at
@@ -251,15 +273,14 @@ grep -c 'runway-rest-invariant'   /tmp/openttd.log   # small and self-clearing
 
 For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
 
-When runway is involved, also inspect:
-```bash
-grep 'V{id}.*runway-transit-debug' /tmp/openttd.log | tail -20
-grep 'V{id}.*runway-transit-invariant' /tmp/openttd.log | tail -20
-grep 'V{id}.*freemove-deny: exit runway tile' /tmp/openttd.log | tail -20
-```
-- `terminal=true` means runway is treated as the destination segment (takeoff/rollout flow).
-- `terminal=false` means runway is transit; the full chain across it to the next safe stop (ONE_WAY tile / stand / hangar / helipad / goal) must be reservable before entry, otherwise the aircraft waits before the runway.
-- Repeated `freemove-deny: exit runway tile=...` with `runway-reserve denied` usually indicates runway contention, not a reservation leak.
+When a runway is involved, read the `deny=` field on the `stuck(reserve)` line:
+
+- A runway reached as the *destination* segment (takeoff/rollout flow) only needs
+  the runway itself.
+- A runway crossed in *transit* needs the full chain across it to the next safe
+  stop (ONE_WAY tile / stand / hangar / helipad / goal) before entry, otherwise the
+  aircraft waits before the runway. Repeated `deny=runway_busy` there is contention,
+  not a reservation leak.
 
 ### Takeoff failures
 ```
@@ -293,30 +314,50 @@ No topology path exists between the aircraft's tile and the runway end. The grou
 
 ## Fallback / Safety Net Monitoring
 
-All fallback mechanisms log with `[FALLBACK]` for easy monitoring:
+Fallback mechanisms log with `[FALLBACK]`, at `misc=2`:
 ```bash
 grep '\[FALLBACK\]' /tmp/openttd.log
 ```
 
-These should be rare. Frequent occurrences indicate an underlying bug:
+Only two markers exist:
 
 | Pattern | Meaning | Concern |
 |---------|---------|---------|
 | `stale-clear` | Cleared a reservation left behind by a vehicle that moved on | Reservation not cleaned up properly on state transition |
-| `orphan-runway-clear` | Runway reservation scan found tiles reserved to wrong vehicle | Runway reservation tracking out of sync |
-| `orphan-taxi-clear` | Taxi reservation scan found tiles reserved to wrong vehicle | Taxi reservation tracking out of sync |
 | `force-clear-all` | Force-cleared all taxi reservations for a stuck vehicle | Vehicle stuck >64 ticks, aggressive cleanup |
-| `takeoff-fallback-runway` | Used fallback runway (wrong direction or small size) | No ideal runway available, using best effort |
-| `landing-small-runway` | Large aircraft landing on small runway | No large runway at this airport |
-| `pathfind-crossing-fallback` | Pathfinder strict pass failed, fallback allowed runway crossing | Layout requires crossing a runway to reach destination |
+
+Both should be zero, and `scripts/regression_test.sh` fails a fixture that emits
+either. Earlier versions of this file also listed `orphan-runway-clear`,
+`orphan-taxi-clear`, `takeoff-fallback-runway`, `landing-small-runway` and
+`pathfind-crossing-fallback`. **None of those exist any more** — do not grep for
+them. (`pathfind-crossing-required` is a live `misc=2` line, but it is a routine
+report that the strict pathfinder pass failed and crossing was allowed, not a
+`[FALLBACK]`.)
 
 ### Stale-clear reasons
 
-The `stale-clear` fallback includes a reason code:
 - `invalid_vehicle` — reservation points to a non-existent vehicle
 - `not_normal_aircraft` — reservation points to something that isn't a normal aircraft
 - `not_on_ground` — aircraft is flying/landing, not on the ground at this airport
-- `untracked_intent` — aircraft is on the ground but tile isn't in its reservation tracking
+- `active_untracked` — aircraft is on the ground but the tile isn't in its reservation tracking
+
+## What the Regression Suite Gates On
+
+`scripts/regression_test.sh` runs its fixtures at `-d misc=2` and fails any fixture
+whose log contains one of the patterns in that script's `FAILURE_PATTERNS` array —
+the should-never-happen lines above, plus both `[FALLBACK]` markers and
+`[AircraftLost]`. Throughput alone does not catch these: a few aircraft on a broken
+path cost a handful of movements out of thousands, comfortably inside the
+`min_movements=` floor's headroom.
+
+`stuck(reserve)` / `stuck(occupied)` / `stuck(no-path)`, `runway-rest-invariant`,
+`clamp pre-ground-move`, `retarget failed`, `landing-chain fail`/`reject`,
+`takeoff-skip`, `takeoff-path not enterable` and `diverted` are **not** gated —
+a healthy busy fixture emits tens of thousands of them.
+
+`FAILURE_PATTERNS` is the authoritative list; this file is prose about it. If you
+add a should-never-happen `Debug()` call, add it there too, and log it at `misc<=2`
+or the suite will never see it.
 
 ## Debugging Workflow
 
@@ -356,11 +397,11 @@ If V74 needs a tile held by V82 and V82 needs a tile held by V74, that's a deadl
 For overload stress tests (intentional over-capacity), add:
 ```bash
 tail -n 10000 /tmp/openttd.log > /tmp/openttd_last10k.log
-rg -c 'runway-transit-invariant' /tmp/openttd_last10k.log
+rg -c 'landing-chain-invariant' /tmp/openttd_last10k.log
 rg -c '\[FALLBACK\]' /tmp/openttd_last10k.log
 ```
 - Expect many `stuck(reserve)` lines under overload.
-- Treat non-zero `runway-transit-invariant` or frequent `[FALLBACK]` as correctness regressions.
+- Treat any `[FALLBACK]` or `landing-chain-invariant` as a correctness regression.
 
 ### Step 6: Map the airport layout
 When takeoff paths fail, map out the tiles between the stand and runway:
@@ -396,6 +437,15 @@ Check each tile along the expected path for:
 4. **Layout dead ends**: A stand reachable only by crossing another stand or runway. The pathfinder's two-pass system allows runway crossing as a fallback (+8 cost penalty), but stand traversal is blocked if the stand is occupied. Consider adding one-way taxiway routing.
 
 5. **Unreachable fallback runway**: `FindModularRunwayTileForTakeoff` returns a Manhattan-distance fallback runway that has no ground path (e.g., separated by an intervening runway). Fixed by preferring "blocked but topologically reachable" runway ends over unreachable fallbacks. If all reachable ends are filtered by direction/size, the aircraft gets the unreachable fallback and loops. Fix: check `takeoff-skip dir`/`takeoff-skip large` logs to see which filters are too aggressive.
+
+7. **Rollout fallback ignoring the reserved buffer** (fixed): a landing admitted with
+   no free stand reserves the runway plus one one-way queue tile, so the aircraft
+   always has somewhere legal to wait. `FindModularRolloutHoldingTile` then searched
+   for a stop on the route to the *cheapest* service tile — a different route — and
+   gave up when that route's safe stops were held, stranding the aircraft on the
+   runway at landing speed with no goal. Signature: `rollout fallback failed`
+   immediately followed by `invalid ground state ... at speed`. It now falls back to
+   the reserved queue tile the landing was admitted against.
 
 6. **Runway sandwiching stands**: Airports with runways on both sides of the stands can create situations where aircraft can only reach one runway (the one they landed on) but need to take off from the other. Ensure at least one runway end reachable from each stand has `RUF_TAKEOFF` with correct direction flags.
 
