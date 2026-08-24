@@ -164,6 +164,7 @@ TEST_CASE("ModularAirportTileNamesCarryNoColourCode")
 	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_SMALL_FAR) == "Small runway");
 	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_ALT) == "Terminal");
 	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_TERMINAL_OTHER) == "Terminal");
+	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3) == "Small terminal");
 	CHECK(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_PLAIN_H) == "Helipad");
 
 	/* Land Area Information draws the tile description line in light blue, and an
