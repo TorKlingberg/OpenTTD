@@ -3235,6 +3235,74 @@ TEST_CASE("ModularAirportRunwayRestKeepsSafeStop")
 	}
 }
 
+TEST_CASE("ModularAirportRolloutHoldingUsesReservedBuffer")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Two ways off one rollout end, with the nearest stand *not* on the same route
+	 * as the far queue tile:
+	 *
+	 *   runway (0,2)-(2,2), rolling out at (2,2)
+	 *   near exit: (2,3) one-way queue -> (2,4) stand          <- cheapest service tile
+	 *   far exit:  (3,2) one-way queue -> (4,2) apron -> (5,2) stand
+	 *
+	 * A landing admitted with no free stand reserves the runway plus one one-way
+	 * queue tile, and which one it gets depends on where the admission horizon
+	 * ended -- not on which stand is nearest. So the reserved buffer routinely sits
+	 * off the route to the cheapest stand, as it does here. */
+	AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+
+	ModularAirportTileData *near_queue = AddModularTileWithData(st, base + TileDiffXY(2, 3), APT_APRON, 0);
+	near_queue->one_way_taxi = true;
+	near_queue->user_taxi_dir_mask = 0x04; // +Y, entered from the rollout end
+	AddModularTile(st, base + TileDiffXY(2, 4), APT_STAND, 0);
+
+	ModularAirportTileData *far_queue = AddModularTileWithData(st, base + TileDiffXY(3, 2), APT_APRON, 0);
+	far_queue->one_way_taxi = true;
+	far_queue->user_taxi_dir_mask = 0x02; // +X, entered from the rollout end
+	AddModularTile(st, base + TileDiffXY(4, 2), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(5, 2), APT_STAND, 0);
+
+	const TileIndex rollout = base + TileDiffXY(2, 2);
+	const TileIndex near_stop = base + TileDiffXY(2, 3);
+	const TileIndex near_stand = base + TileDiffXY(2, 4);
+	const TileIndex far_buffer = base + TileDiffXY(3, 2);
+	REQUIRE(IsModularSafeStopTile(st, far_buffer));
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->targetairport = st->index;
+	v->tile = rollout;
+
+	/* The buffer this aircraft's landing was admitted against. */
+	SetTaxiReservation(v, far_buffer);
+
+	SECTION("Falls back to the reserved buffer when the nearest route is held") {
+		Aircraft *blocker = CreateAircraft(VehicleID(11));
+		blocker->targetairport = st->index;
+		blocker->tile = near_stand;
+		SetTaxiReservation(blocker, near_stop);
+		SetTaxiReservation(blocker, near_stand);
+
+		/* Regression: the search picks the single cheapest service tile and walks
+		 * only that one route. With both of its safe stops held it used to give up
+		 * outright, leaving the aircraft parked on the runway at landing speed with
+		 * no goal -- while it owned a perfectly good one-way queue tile the other
+		 * way. That produced `rollout fallback failed` immediately followed by
+		 * `invalid ground state ... at speed`. */
+		CHECK(FindModularRolloutHoldingTile(st, v, rollout) == far_buffer);
+	}
+
+	SECTION("Still prefers a clear stop on the route towards a stand") {
+		/* Nothing is held, so the ordinary search wins and the aircraft keeps making
+		 * progress towards parking instead of retreating onto its own buffer. */
+		CHECK(FindModularRolloutHoldingTile(st, v, rollout) == near_stop);
+	}
+}
+
 TEST_CASE("ModularAirportUnstackParking")
 {
 	Map::Allocate(64, 64);

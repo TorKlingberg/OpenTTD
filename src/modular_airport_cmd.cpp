@@ -2010,6 +2010,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 
 	if (IsValidTile(ground_goal)) {
 		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(route.path));
+		v->rollout_restored_from_save = false;
 	} else {
 		v->landing_chain_path.reset();
 	}
@@ -2633,6 +2634,31 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 	if (!IsValidTile(start_tile) || st->airport.modular_tile_data == nullptr) return INVALID_TILE;
 
 	const GroundPathRestriction restriction = GetGroundPathRestriction(v);
+
+	/* The safe stop the landing chain already reserved, used whenever the search
+	 * below comes up empty. Admitting a landing with no free stand requires a
+	 * one-way queue tile at the end of the reserved horizon (see
+	 * TryReserveLandingChain), precisely so the aircraft always has somewhere legal
+	 * to wait once it is down. That tile is not necessarily on the route searched
+	 * below: the search aims at the cheapest service tile, while the buffer sits
+	 * wherever the admission horizon happened to end, so the two routinely diverge
+	 * and the search can fail while the aircraft owns a perfectly good stop.
+	 *
+	 * Only one-way queue tiles qualify, the same restriction admission applied. A
+	 * reservation this aircraft happens to hold on a stand is not somewhere to
+	 * park -- that stand belongs to whatever it was routing towards. */
+	const auto reserved_queue_tile = [&]() -> TileIndex {
+		for (TileIndex tile : v->taxi_reserved_tiles) {
+			if (!IsValidTile(tile) || tile == start_tile) continue;
+			if (!IsOneWayTaxiTile(st, tile)) continue;
+			if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) continue;
+			TaxiPath own_path = BuildTaxiPath(st, start_tile, tile, nullptr, false, restriction);
+			if (!own_path.valid || own_path.tiles.size() < 2 || own_path.segments.empty()) continue;
+			return tile;
+		}
+		return INVALID_TILE;
+	};
+
 	TileIndex best_target = INVALID_TILE;
 	int best_cost = INT_MAX;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
@@ -2648,19 +2674,20 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 			best_cost = p.cost;
 		}
 	}
-	if (best_target == INVALID_TILE) return INVALID_TILE;
+	if (best_target == INVALID_TILE) return reserved_queue_tile();
 
 	TaxiPath path = BuildTaxiPath(st, start_tile, best_target, nullptr, false, restriction);
-	if (!path.valid || path.tiles.size() < 2 || path.segments.empty()) return INVALID_TILE;
+	if (!path.valid || path.tiles.size() < 2 || path.segments.empty()) return reserved_queue_tile();
 
 	/* Return the nearest safe-stop tile along the path (one-way taxiway queue tile
 	 * or a stand/hangar/helipad) that is currently clear. An aircraft must never
-	 * stop on a free-move apron/grass tile: that pins a shared transit section. If
-	 * no safe stop is reachable and clear, return INVALID and let the caller hold.
+	 * stop on a free-move apron/grass tile: that pins a shared transit section.
 	 *
-	 * Parking that is not this aircraft's target does not qualify, with no fallback: an
-	 * aircraft cannot be stranded on a runway needing somebody else's stand, because
-	 * landing is not initiated unless a way off the runway already exists. */
+	 * Parking that is not this aircraft's target does not qualify: an aircraft
+	 * cannot be stranded on a runway needing somebody else's stand, because landing
+	 * is not initiated unless a way off the runway already exists. When every safe
+	 * stop on this route is held by someone else, that reserved way off the runway
+	 * is what reserved_queue_tile() returns. */
 	for (TileIndex tile : path.tiles) {
 		if (tile == start_tile) continue;
 		if (!IsModularSafeStopTile(st, tile, best_target)) continue;
@@ -2671,7 +2698,7 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 		return tile;
 	}
 
-	return INVALID_TILE;
+	return reserved_queue_tile();
 }
 
 bool IsModularTileOccupiedByOtherAircraft(const Station *st, TileIndex tile, VehicleID self)
@@ -3598,6 +3625,13 @@ void HandleModularGroundArrival(Aircraft *v)
 			/* Completed rollout along runway, now find a terminal */
 			Debug(misc, 3, "[ModAp] Vehicle {} completed rollout, finding terminal", v->index);
 			{
+				/* One-shot: this rollout was already in progress when the game was saved,
+				 * so landing_chain_path is absent by the save/load contract rather than
+				 * because a committed route was lost. Consume the flag here -- every later
+				 * arrival for this aircraft is judged normally. */
+				const bool restored_from_save = v->rollout_restored_from_save;
+				v->rollout_restored_from_save = false;
+
 				const bool wants_depot = ModularAircraftWantsHangar(v, st);
 				TileIndex goal = INVALID_TILE;
 				uint8_t target = MGT_NONE;
@@ -3661,7 +3695,7 @@ void HandleModularGroundArrival(Aircraft *v)
 						 * that aircraft is perfectly safe -- it owns its queueing tile. */
 						const bool owns_safe_stop = std::any_of(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(),
 							[&](TileIndex t) { return IsValidTile(t) && (t == goal || IsModularSafeStopTile(st, t, goal)); });
-						if (!owns_safe_stop) {
+						if (!owns_safe_stop && !restored_from_save) {
 							Debug(misc, 1,
 								"[ModAp] V{} unit#{} landing-chain-invariant: off a safe stop with no reserved route to one tile={} goal={} owned={}",
 								v->index, v->unitnumber,
