@@ -11,13 +11,10 @@
 
 #include "modular_airport_draw.h"
 
-#include "bridge_map.h"
-#include "airport_pathfinder.h"
 #include "gfx_func.h"
 #include "landscape.h"
 #include "modular_airport_cmd.h"
 #include "modular_airport_gui.h"
-#include "newgrf_airporttiles.h"
 #include "sprite.h"
 #include "spritecache.h"
 #include "station_base.h"
@@ -27,6 +24,7 @@
 #include "viewport_func.h"
 #include "zoom_func.h"
 
+#include "bridge_map.h"
 #include "table/airporttile_ids.h"
 #include "table/station_land.h"
 
@@ -111,11 +109,6 @@ static constexpr int HANGAR_BUILDING_ORIGIN_Y = 0;
 /**
  * Find the sprite offset that draws a hangar building at the canonical position.
  *
- * The result is a SpriteBounds::offset rather than an origin, so the bounding box stays
- * exactly where the upstream layouts put it. That matters: the origin and extent are what
- * the viewport sorts tiles by, and moving the box off the stock slab makes the hangar
- * draw on top of neighbouring buildings it belongs behind.
- *
  * @param sprite Building sprite to place.
  * @param[out] offset_x Offset along the X axis, relative to the canonical origin.
  * @param[out] offset_y Offset along the Y axis, relative to the canonical origin.
@@ -130,13 +123,14 @@ static bool SolveHangarBuildingOffset(SpriteID sprite, int &offset_x, int &offse
 	/* RemapCoords(x, y, 0) is ((y - x) * 2, y + x), so the position follows from the sum
 	 * and the difference of its two components. The sum is pinned exactly; the
 	 * difference only moves the sprite in steps of two pixels and has to have the same
-	 * parity as the sum, so take the closest one that keeps both components whole. */
+	 * parity as the sum. */
 	const int sum = HANGAR_BUILDING_SCREEN_BOTTOM - height - offset.y;
 	const int wanted_screen_x = HANGAR_BUILDING_SCREEN_X - offset.x;
+	const int center_diff = wanted_screen_x / 2;
 
 	bool found = false;
 	int best_error = 0;
-	for (int diff = -64; diff <= 64; diff++) {
+	for (int diff = center_diff - 2; diff <= center_diff + 2; diff++) {
 		if (((diff + sum) % 2) != 0) continue;
 		const int x = (sum - diff) / 2 - HANGAR_BUILDING_ORIGIN_X;
 		const int y = (sum + diff) / 2 - HANGAR_BUILDING_ORIGIN_Y;
@@ -245,7 +239,8 @@ void InitModularAirportHangarLayouts()
  */
 void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom)
 {
-	std::vector<const DrawTileSeqStruct *> order;
+	std::array<const DrawTileSeqStruct *, 8> order;
+	size_t count = 0;
 	for (const DrawTileSeqStruct &dtss : dts->GetSequence()) {
 		const SpriteID image = dtss.image.sprite;
 
@@ -253,16 +248,17 @@ void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID
 		if (GB(image, 0, SPRITE_WIDTH) == 0 && !HasBit(image, SPRITE_MODIFIER_CUSTOM_SPRITE)) continue;
 		if (!dtss.IsParentSprite()) continue;
 
-		order.push_back(&dtss);
+		if (count < order.size()) order[count++] = &dtss;
 	}
 
 	/* The viewport counts a sprite as being in front when its box starts beyond another's
 	 * along any axis; these layouts sit on one tile, so ordering on the sum agrees. */
-	std::stable_sort(order.begin(), order.end(), [](const DrawTileSeqStruct *a, const DrawTileSeqStruct *b) {
+	std::stable_sort(order.begin(), order.begin() + count, [](const DrawTileSeqStruct *a, const DrawTileSeqStruct *b) {
 		return a->origin.x + a->origin.y + a->origin.z < b->origin.x + b->origin.y + b->origin.z;
 	});
 
-	for (const DrawTileSeqStruct *dtss : order) {
+	for (size_t i = 0; i < count; ++i) {
+		const DrawTileSeqStruct *dtss = order[i];
 		const SpriteID image = dtss->image.sprite;
 		const PaletteID pal = SpriteLayoutPaletteTransform(image, dtss->image.pal, default_palette);
 		const Point pt = RemapCoords(dtss->origin.x + dtss->offset.x, dtss->origin.y + dtss->offset.y, dtss->origin.z + dtss->offset.z);
@@ -281,7 +277,7 @@ const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_h
 	}
 }
 
-const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation)
+static const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation)
 {
 	const bool is_large_hangar =
 			piece_type == APT_DEPOT_SE || piece_type == APT_DEPOT_SW ||
@@ -311,7 +307,7 @@ const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uin
 	return GetModularHangarTileLayout(visual_rot, is_small_hangar);
 }
 
-const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type)
+static const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1:           return &_station_display_modular_ns_runway_1;
@@ -358,11 +354,7 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 
 	/* APT_STAND_1 and APT_STAND_PIER_NE carry a jetway in their stock layouts,
 	 * because in the stock city airport they are only ever the stands beside the
-	 * round terminal. A modular airport can put them anywhere -- the script API
-	 * offers them as "a stand that also counts as a large terminal", and templates
-	 * and stock-airport conversion can persist them too -- so the jetway has to
-	 * follow the terminal rather than the piece, or a stand next to a hangar ends
-	 * up with a jetway bridging to nothing. Plain stand is the default here;
+	 * round terminal. Plain stand is the default here;
 	 * ApplyModularAirportTileLayoutOverrides puts the jetway back when a round
 	 * terminal really is next door. */
 	if (modular_piece_type == APT_STAND_1 || modular_piece_type == APT_STAND_PIER_NE) {
@@ -382,8 +374,7 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uin
 		case APT_RADAR_FENCE_NE:
 			t = &_station_display_datas_airport_radar_fence_ne[animation_frame % lengthof(_station_display_datas_airport_radar_fence_ne)];
 			break;
-		case APT_GRASS_FENCE_NE_FLAG_2:
-			t = &_station_display_datas_airport_flag_grass_fence_ne_2[animation_frame % lengthof(_station_display_datas_airport_flag_grass_fence_ne_2)];
+		default:
 			break;
 	}
 
@@ -401,35 +392,32 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 	const ModularAirportTileData *md = airport_st->airport.GetModularTileData(ti->tile);
 	if (md == nullptr) return;
 
-	t = GetAirportTileLayoutWithModularOverrides(gfx, md->piece_type, md->rotation, GetAnimationFrame(ti->tile));
-
-	/* Auto-jetway: a stand adjacent to a round terminal grows a jetway towards it.
-	 * Only two jetway sprites exist and each points a fixed way:
+	/* Auto-jetway: if this stand tile sits next to a round terminal, replace the
+	 * stand sprite with one that carries the matching jetway.
 	 *   jetway_1 (APT_STAND_1)       -- terminal one tile to the SE (dy=+1)
 	 *   jetway_2 (APT_STAND_PIER_NE) -- terminal one tile to the NE (dx=-1)
-	 * so a terminal on either of the other two sides draws no jetway.
-	 *
-	 * This runs for every stand piece, including the two whose stock layout has a
-	 * jetway baked in, so that what is drawn always describes what is next to the
-	 * tile. Placing one of those pieces is a gameplay choice (they count as a large
-	 * terminal) and must not by itself conjure a jetway to nowhere. */
+	 */
 	if (IsModularStandPiece(md->piece_type)) {
-		auto NeighborPiece = [&](int dx, int dy) -> uint8_t {
-			TileIndex nb = TileAddXY(ti->tile, dx, dy);
-			if (!IsValidTile(nb)) return 0xFF;
-			const ModularAirportTileData *nb_md = airport_st->airport.GetModularTileData(nb);
-			return nb_md != nullptr ? nb_md->piece_type : 0xFF;
+		auto NeighborPiece = [&](TileIndexDiff diff) -> uint8_t {
+			TileIndex nb = ti->tile + diff;
+			if (!IsValidTile(nb) || !airport_st->TileBelongsToAirport(nb)) return APT_EMPTY;
+			const ModularAirportTileData *nd = airport_st->airport.GetModularTileData(nb);
+			return nd != nullptr ? nd->piece_type : APT_EMPTY;
 		};
-		if (NeighborPiece(0, +1) == APT_ROUND_TERMINAL) {
+
+		if (NeighborPiece(TileDiffXY(0, 1)) == APT_ROUND_TERMINAL) {
 			gfx = APT_STAND_1;
-			/* Fence-free variant: the stock jetway_1 layout has a baked-in north
-			 * fence that doesn't belong in modular airports. */
 			t = &_station_display_modular_jetway_1;
-		} else if (NeighborPiece(-1, 0) == APT_ROUND_TERMINAL) {
+			return;
+		}
+		if (NeighborPiece(TileDiffXY(-1, 0)) == APT_ROUND_TERMINAL) {
 			gfx = APT_STAND_PIER_NE;
 			t = GetStationTileLayout(StationType::Airport, gfx);
+			return;
 		}
 	}
+
+	t = GetAirportTileLayoutWithModularOverrides(gfx, md->piece_type, md->rotation, GetAnimationFrame(ti->tile));
 }
 
 /**
@@ -506,26 +494,24 @@ void DrawModularAirportDirectionOverlays(const TileInfo *ti)
 {
 	if (!_show_runway_direction_overlay || !IsAirport(ti->tile)) return;
 
-	Station *station = Station::GetByTile(ti->tile);
+	const Station *station = Station::GetByTile(ti->tile);
 	if (station == nullptr || !station->airport.blocks.Test(AirportBlock::Modular)) return;
 
 	const ModularAirportTileData *tile_data = station->airport.GetModularTileData(ti->tile);
 	if (tile_data == nullptr) return;
 
 	if (IsModularRunwayPiece(tile_data->piece_type)) {
-		uint8_t flags = tile_data->runway_flags;
-		bool horizontal = (tile_data->rotation % 2) == 0;
-		SpriteID base = SPR_ONEWAY_BASE;
+		const uint8_t flags = tile_data->runway_flags;
+		const bool horizontal = (tile_data->rotation % 2) == 0;
+		const SpriteID base = SPR_ONEWAY_BASE;
 
-		bool dir_low = (flags & RUF_DIR_LOW) != 0;
-		bool dir_high = (flags & RUF_DIR_HIGH) != 0;
-		bool can_land = (flags & RUF_LANDING) != 0;
-		bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
+		const bool dir_low = (flags & RUF_DIR_LOW) != 0;
+		const bool dir_high = (flags & RUF_DIR_HIGH) != 0;
+		const bool can_land = (flags & RUF_LANDING) != 0;
+		const bool can_takeoff = (flags & RUF_TAKEOFF) != 0;
 
 		if (can_land || can_takeoff) {
 			SpriteID sprite;
-			PaletteID pal_overlay;
-
 			if (dir_low && dir_high) {
 				sprite = base + (horizontal ? 2 : 5);
 			} else if (dir_low) {
@@ -534,32 +520,19 @@ void DrawModularAirportDirectionOverlays(const TileInfo *ti)
 				sprite = base + (horizontal ? 0 : 4);
 			}
 
-			if (can_land && can_takeoff) {
-				pal_overlay = PAL_NONE;
-			} else if (can_land) {
-				pal_overlay = PALETTE_SEL_TILE_BLUE;
-			} else {
-				pal_overlay = PALETTE_SEL_TILE_RED;
+			PaletteID pal_overlay = PAL_NONE;
+			if (!can_land || !can_takeoff) {
+				pal_overlay = can_land ? PALETTE_SEL_TILE_BLUE : PALETTE_SEL_TILE_RED;
 			}
 
 			DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
 			if (pal_overlay != PAL_NONE) DrawGroundSpriteAt(SPR_SELECT_TILE + SlopeToSpriteOffset(ti->tileh), pal_overlay, 0, 0, 7);
 		}
 	} else if (IsTaxiwayPiece(tile_data->piece_type) && tile_data->one_way_taxi && HasExactlyOneBit(tile_data->user_taxi_dir_mask)) {
-		SpriteID sprite = 0;
-		SpriteID base = SPR_ONEWAY_BASE;
-		const uint8_t dir = tile_data->user_taxi_dir_mask & 0x0F;
-
-		if (dir == 0x01) {
-			sprite = base + 3;
-		} else if (dir == 0x02) {
-			sprite = base + 0;
-		} else if (dir == 0x04) {
-			sprite = base + 4;
-		} else if (dir == 0x08) {
-			sprite = base + 1;
+		static constexpr uint8_t kDirOffsets[] = {3, 0, 4, 1}; // 0x01, 0x02, 0x04, 0x08 -> N, E, S, W
+		const uint8_t bit = FindFirstBit(static_cast<uint32_t>(tile_data->user_taxi_dir_mask & 0x0F));
+		if (bit < lengthof(kDirOffsets)) {
+			DrawGroundSpriteAt(SPR_ONEWAY_BASE + kDirOffsets[bit], PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
 		}
-
-		if (sprite != 0) DrawGroundSpriteAt(sprite, PAL_NONE, 8, 8, GetPartialPixelZ(8, 8, ti->tileh));
 	}
 }
