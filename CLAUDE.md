@@ -38,6 +38,12 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 ## Before Committing
 
+Do go ahead and commit if you are confident about a change. No need to wait for my approval.
+
+Run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
+
+Also ask a subagent to review your change before comitting. Run this in parallel with the regression test.
+
 The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; the `pre-commit` hook checks the staged diff automatically. The `commit-msg` hook that enforced the `<keyword>: <Details>` subject format is disabled (renamed to `.git/hooks/commit-msg.disabled`); rename it back to re-enable. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
 
 ```bash
@@ -46,10 +52,6 @@ python3 .github/script-missing-mode-enforcement.py &&
 cmake --build build --target openttd_test -j8 &&
 ./build/openttd_test
 ```
-
-Also run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
-
-Also ask a subagent to review your change before comitting. This can run in parallel with the regression test.
 
 ## Git Worktrees
 
