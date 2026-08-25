@@ -446,7 +446,7 @@ enum class TaxiReserveFailure : uint8_t {
 /**
  * Detail of a refused reservation, so diagnostics can report the tile that actually
  * blocked rather than re-deriving a guess from the next path tile. The claim a
- * segment makes is frequently wider than one tile -- a whole FREE_MOVE segment, or a
+ * segment makes is frequently wider than one tile -- a whole FreeMove segment, or a
  * crossing chain spanning several runways -- so "the next tile looks free" and "the
  * reservation failed" are routinely both true at once.
  */

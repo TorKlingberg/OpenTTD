@@ -10,9 +10,9 @@ not by treating every runway segment as the same resource:
 
 | Type | Where it applies | Reservation model |
 |------|------------------|-------------------|
-| `RUNWAY` | `IsModularRunwayPiece(piece_type)` | Crossing: traveled tiles only. Explicit landing/takeoff operation: entire contiguous runway |
-| `ONE_WAY` | `IsTaxiwayPiece` with `one_way_taxi == true` | Queue tile and forward-horizon boundary |
-| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward horizon |
+| `Runway` | `IsModularRunwayPiece(piece_type)` | Crossing: traveled tiles only. Explicit landing/takeoff operation: entire contiguous runway |
+| `OneWay` | `IsTaxiwayPiece` with `one_way_taxi == true` | Queue tile and forward-horizon boundary |
+| `FreeMove` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward horizon |
 
 `TaxiSegmentType` is assigned by `ClassifyTile` in
 `airport_ground_pathfinder.cpp`. `TryReserveTaxiSegment` builds one reservation
@@ -27,9 +27,9 @@ horizon from the current path index regardless of which segment triggered the ca
 | Stand | Yes | Parking; per-stand exclusivity, others route around |
 | Hangar | Yes | Multi-capacity parking; never hard-blocks |
 | Helipad | Yes | Parking for helicopters |
-| `ONE_WAY` taxiway tile | Yes | Designed as a queue; per-tile semantics support waiting |
+| `OneWay` taxiway tile | Yes | Designed as a queue; per-tile semantics support waiting |
 | Runway tile | **No** (in transit) | Shared crossing/operation space; an aircraft may not wait there |
-| `FREE_MOVE` grass / apron | **No** | Pure transit; stopping blocks anyone else needing to cross |
+| `FreeMove` grass / apron | **No** | Pure transit; stopping blocks anyone else needing to cross |
 
 A runway tile is special: it *is* the destination during takeoff (`MGT_RUNWAY_TAKEOFF` → state `TAKEOFF`), where the aircraft transitions out of ground movement entirely. So a runway-end takeoff goal is acceptable as a path terminus, but **never** as a mid-path resting place.
 
@@ -113,7 +113,7 @@ If any operation or taxi claim is unavailable, nothing in the landing transactio
 is acquired. This prevents an aircraft from landing with a reserved touchdown
 runway but no reserved route through an adjacent runway or apron to safety.
 
-The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `ONE_WAY` buffer after the runway.
+The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway.
 
 ## 6. Path rebuilding and retargeting
 
@@ -138,7 +138,7 @@ planner; there is **no** vehicle-class or runway-segment special case at the
 `AirportMoveModular` boundary.
 
 History: this used to pin only the first continuation tile, leaving the rest of
-the downstream `FREE_MOVE` segment unreserved, so fixed-wing could strand on
+the downstream `FreeMove` segment unreserved, so fixed-wing could strand on
 grass. A helicopter-only revalidation at the segment boundary patched the
 symptom; the forward-horizon contract removed the root cause and let the special
 case be deleted. Tightening the fixed-wing contract cost ~2% on the
@@ -215,7 +215,7 @@ If a per-tick movement function (`AirportMoveModular*`) sets its target based on
 
 Cure: don't let movement read the shared-resource bit unless movement also reserves. Keep movement targeting on a private waypoint (holding pattern, current path) until the commit handler claims the resource and changes state — after which a different movement function takes over off the committed state. Helicopters in `AirportMoveModularFlying` now always target the holding waypoint; commit happens in `AircraftEventHandler_Flying`, and post-commit movement runs in `AirportMoveModularLanding` driven by `HELILANDING` state.
 
-### Pitfall 8: Never park an aircraft on a `ONE_WAY` tile
+### Pitfall 8: Never park an aircraft on a `OneWay` tile
 
 A one-way tile is a queueing corridor, not a parking space. Holding an aircraft
 there (computed heli pad, fallback holding spot, giving up mid-corridor) is a
@@ -231,7 +231,7 @@ movements on `helis2.sav`. Tried and reverted; re-measure before retrying.
 
 When evaluating proposed fixes for stuck aircraft:
 
-- Prefer strict "can I enter?" rules before movement into `FREE_MOVE` or runway-transit sections.
+- Prefer strict "can I enter?" rules before movement into `FreeMove` or runway-transit sections.
 - Prevent unsafe entry rather than trying to "unstick" later.
 - `[FALLBACK]` cleanup paths (stale-clear, orphan-clear, force-clear-all) are safety nets — frequent occurrences mean an upstream contract is wrong, not that the fallbacks need tuning.
-- If a plane stops on a `FREE_MOVE` tile, the first question is whether entry should have been denied earlier.
+- If a plane stops on a `FreeMove` tile, the first question is whether entry should have been denied earlier.

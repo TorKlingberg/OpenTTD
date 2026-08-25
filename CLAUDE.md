@@ -328,9 +328,9 @@ Every taxiable tile is one of three types used by the segment reservation system
 
 | Type | Condition | Reservation |
 |------|-----------|-------------|
-| `RUNWAY` | `IsModularRunwayPiece(piece_type)` — `APT_RUNWAY_1-5`, `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_*` | Crossing: traveled tiles only; explicit landing/takeoff: entire contiguous runway |
-| `ONE_WAY` | `IsTaxiwayPiece(piece_type) && one_way_taxi == true` | Safe queue boundary in the forward reservation horizon |
-| `FREE_MOVE` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward reservation horizon |
+| `Runway` | `IsModularRunwayPiece(piece_type)` — `APT_RUNWAY_1-5`, `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_*` | Crossing: traveled tiles only; explicit landing/takeoff: entire contiguous runway |
+| `OneWay` | `IsTaxiwayPiece(piece_type) && one_way_taxi == true` | Safe queue boundary in the forward reservation horizon |
+| `FreeMove` | Everything else (aprons, stands, hangars, fenced apron variants) | Traveled tiles through the forward reservation horizon |
 
 Notes:
 - Runway end fence variants (`APT_RUNWAY_END_FENCE_*`) are **not** in `IsModularRunwayPiece` — they're decorative. Only `APT_RUNWAY_END`, `APT_RUNWAY_SMALL_NEAR_END`, `APT_RUNWAY_SMALL_FAR_END` are landing targets.

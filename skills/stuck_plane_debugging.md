@@ -240,7 +240,7 @@ These list the exact tiles reserved by and tracked for this vehicle.
 - `deny_by` — who holds it, where known
 
 **`deny_tile` is usually not `next`.** A segment claims far more than one tile — a whole
-FREE_MOVE run, or a crossing chain spanning several runways — so the aircraft can be
+FreeMove run, or a crossing chain spanning several runways — so the aircraft can be
 solidly blocked while the tile immediately ahead is free. On a busy save this is the
 common case, not the exception (63% of stuck reports in one T5j2 run). The old form of
 this line re-derived blockers from `next` and so printed all-clear for genuinely blocked
@@ -277,14 +277,14 @@ grep -c 'runway-rest-invariant'   /tmp/openttd.log   # small and self-clearing
   so some of this is unavoidable. Worth investigating only if a single vehicle
   stays there indefinitely, or if the count climbs sharply after a change.
 
-For FREE_MOVE segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
+For FreeMove segments, remember current behavior reserves/checks only the forward part of the segment when already inside it (from `path_idx + 1` onward), plus one boundary tile. Missing "behind us" reservations are expected and not a bug by themselves.
 
 When a runway is involved, read the `deny=` field on the `stuck(reserve)` line:
 
 - A runway reached as the *destination* segment (takeoff/rollout flow) only needs
   the runway itself.
 - A runway crossed in *transit* needs the full chain across it to the next safe
-  stop (ONE_WAY tile / stand / hangar / helipad / goal) before entry, otherwise the
+  stop (OneWay tile / stand / hangar / helipad / goal) before entry, otherwise the
   aircraft waits before the runway. Repeated `deny=runway_busy` there is contention,
   not a reservation leak.
 
@@ -462,7 +462,7 @@ Check each tile along the expected path for:
 
 When evaluating or proposing fixes, prefer solid reservation contracts over recovery behavior:
 
-- Prefer strict "can I enter?" rules before movement into `FREE_MOVE`/runway-transit sections.
+- Prefer strict "can I enter?" rules before movement into `FreeMove`/runway-transit sections.
 - Prevent unsafe entry (missing forward ownership chain) rather than trying to "unstick" later.
 - Treat fallback cleanup (`[FALLBACK]` stale/orphan clears, force-clear paths) as safety net only, not primary control flow.
 - If a plane gets stuck on a free-move tile, first question is whether entry should have been denied earlier.

@@ -2050,13 +2050,13 @@ TEST_CASE("ModularAirportLandingChain")
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), VehicleID(11)));
 	}
 
-	SECTION("Stops at first ONE_WAY tile") {
+	SECTION("Stops at first OneWay tile") {
 		/* Layout:
 		 *   Row 0: RWY_END RWY_5 RWY_END         (rollout runway)
-		 *   Row 1: APRON   APRON APRON           (FREE_MOVE)
-		 *   Row 2: APRON   APRON APRON_ONEWAY    (ONE_WAY tile at (2,2))
+		 *   Row 1: APRON   APRON APRON           (FreeMove)
+		 *   Row 2: APRON   APRON APRON_ONEWAY    (OneWay tile at (2,2))
 		 *   Row 3: APRON   APRON STAND_GOAL
-		 * Path: rollout(2,0) -> (2,1) -> (2,2)[ONE_WAY] -> (2,3)[goal].
+		 * Path: rollout(2,0) -> (2,1) -> (2,2)[OneWay] -> (2,3)[goal].
 		 * Walk reserves up to and including (2,2), then stops. (2,3) is NOT reserved. */
 		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
 		AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
@@ -2082,11 +2082,11 @@ TEST_CASE("ModularAirportLandingChain")
 		for (int i = 0; i < 3; i++) {
 			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
 		}
-		/* (2,1) FREE_MOVE reserved (segment before ONE_WAY). */
+		/* (2,1) FreeMove reserved (segment before OneWay). */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 1), v->index));
-		/* (2,2) ONE_WAY entry reserved -- the safe stop. */
+		/* (2,2) OneWay entry reserved -- the safe stop. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
-		/* (2,3) goal NOT reserved -- walk stopped at ONE_WAY. */
+		/* (2,3) goal NOT reserved -- walk stopped at OneWay. */
 		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 	}
 }
