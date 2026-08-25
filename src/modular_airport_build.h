@@ -34,7 +34,7 @@ ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(const Station *st);
 ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(std::span<const ModularAirportNoisePiece> pieces);
 CommandCost CheckModularAirportNoiseChange(const ModularAirportNoiseSnapshot &before, const ModularAirportNoiseSnapshot &after);
 void ApplyModularAirportNoiseChange(const Station *st, const ModularAirportNoiseSnapshot &before);
-CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, CommandCost &cost, bool check_noise = true);
+CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, bool &is_noop_rebuild, CommandCost &cost, bool check_noise = true);
 void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bool is_modular_replace, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway);
 CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags);
 void CancelModularHangarOrdersIfNoneLeft(const Station *st);

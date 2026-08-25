@@ -746,11 +746,16 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
  * @param allow_adjacent Whether to allow adjacent stations.
  * @param st [in/out] Reference to station pointer.
  * @param is_modular_replace [out] Reference to replacement flag.
+ * @param is_noop_rebuild [out] Set when the tile already carries this exact piece, so the
+ *                        caller must skip the apply step entirely rather than rebuild it.
  * @param cost [in/out] Accumulated construction cost.
  * @return Success or error code.
  */
-CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, CommandCost &cost, bool check_noise)
+CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, bool &is_noop_rebuild, CommandCost &cost, bool check_noise)
 {
+	is_modular_replace = false;
+	is_noop_rebuild = false;
+
 	bool reuse = (station_to_join != NEW_STATION);
 	if (!reuse) station_to_join = StationID::Invalid();
 	bool distant_join = (station_to_join != StationID::Invalid());
@@ -776,21 +781,24 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 				piece_type == APT_SMALL_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SW ||
 				piece_type == APT_SMALL_DEPOT_NW || piece_type == APT_SMALL_DEPOT_NE;
 	};
-	auto IsReplaceableTile = [&](TileIndex t, uint8_t new_piece_type) {
-		if (!IsTileType(t, TileType::Station) || !IsAirport(t)) return false;
-		const Station *st_local = Station::GetByTile(t);
-		if (st_local == nullptr || !st_local->airport.blocks.Test(AirportBlock::Modular)) return false;
-		const ModularAirportTileData *md = st_local->airport.GetModularTileData(t);
-		if (md == nullptr) return false;
-
-		if (md->piece_type == APT_GRASS_1 || md->piece_type == APT_EMPTY) return true;
-
-		const bool existing_hangar = IsHangarPiece(md->piece_type);
-		const bool new_hangar = IsHangarPiece(new_piece_type);
-		return existing_hangar && new_hangar;
-	};
-	is_modular_replace = IsReplaceableTile(tile, static_cast<uint8_t>(gfx));
+	const ModularAirportTileData *existing_md = nullptr;
+	if (IsTileType(tile, TileType::Station) && IsAirport(tile)) {
+		const Station *st_local = Station::GetByTile(tile);
+		if (st_local != nullptr && st_local->airport.blocks.Test(AirportBlock::Modular)) existing_md = st_local->airport.GetModularTileData(tile);
+	}
+	is_modular_replace = existing_md != nullptr &&
+			(existing_md->piece_type == APT_GRASS_1 || existing_md->piece_type == APT_EMPTY ||
+				(IsHangarPiece(existing_md->piece_type) && IsHangarPiece(static_cast<uint8_t>(gfx))));
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
+
+	/* Empty and grass are draggable tools, so a drag across a partly-finished airport
+	 * routinely re-places a piece that is already there. Laying the same ground piece
+	 * over itself is meant to change nothing and cost nothing -- see is_noop_rebuild
+	 * below, which is where that is decided once the station is known. Only these two
+	 * qualify: every other piece can still differ in rotation, one-way taxi state or
+	 * runway flags when the piece type matches, so re-placing it is a real edit. */
+	const bool same_ground_piece = existing_md != nullptr && existing_md->piece_type == gfx &&
+			(gfx == APT_EMPTY || gfx == APT_GRASS_1);
 
 	/* Replacing a piece within an existing modular airport takes no new land,
 	 * so the town authority has no say; only builds onto new tiles are gated. */
@@ -891,6 +899,19 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? StationNaming::Heliport : StationNaming::Airport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
+
+	/* Nothing to do, so nothing to charge. The tile has to already belong to the very
+	 * station being built into: an identical piece under a *different* station is still
+	 * a transfer of ownership, and skipping the apply would leave the tile with the
+	 * other station while this one believes it placed it.
+	 *
+	 * The apply step is skipped rather than run for free, because rebuilding a tile is
+	 * not the no-op the equal piece type suggests: it pushes a fresh
+	 * ModularAirportTileData, which drops the tile's edge_block_mask (its fences), and
+	 * MakeAirport clears the reservation-present bit and re-rolls the tile's random
+	 * bits. Grass is taxiable, so that reservation can be one an aircraft is holding. */
+	is_noop_rebuild = same_ground_piece && st != nullptr && st->index == existing_at_tile;
+	if (is_noop_rebuild) return CommandCost();
 
 	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
 
@@ -1045,10 +1066,14 @@ CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uin
 {
 	Station *st = nullptr;
 	bool is_modular_replace = false;
+	bool is_noop_rebuild = false;
 	CommandCost cost(ExpensesType::Construction);
 
-	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, station_to_join, allow_adjacent, st, is_modular_replace, cost);
+	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, station_to_join, allow_adjacent, st, is_modular_replace, is_noop_rebuild, cost);
 	if (ret.Failed()) return ret;
+
+	/* The tile already is this piece. Leave it alone, at no charge. */
+	if (is_noop_rebuild) return cost;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		const ModularAirportNoiseSnapshot noise_before = GetModularAirportNoiseSnapshot(st);

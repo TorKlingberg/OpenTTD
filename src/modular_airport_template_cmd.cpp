@@ -502,16 +502,19 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	/* Step 3.B: Per-tile validation loop. Noise was checked once above against
 	 * the finished layout; intermediate per-tile layouts are not meaningful. */
 	std::vector<bool> is_replace(rotated_tiles.size(), false);
+	std::vector<bool> is_noop(rotated_tiles.size(), false);
 	for (size_t i : placement_order) {
 		const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 		TileIndex t = abs_tiles[i];
 
 		Station *tile_st = st;
 		bool tile_replace = false;
+		bool tile_noop = false;
 
-		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_replace, total, false);
+		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_replace, tile_noop, total, false);
 		if (ret.Failed()) return ret;
 		is_replace[i] = tile_replace;
+		is_noop[i] = tile_noop;
 
 		if (IsModularRunwayPiece(rt.piece_type)) {
 			uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
@@ -543,7 +546,23 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 			TileIndex t = abs_tiles[i];
 
-			BuildModularAirportTile_Apply(t, rt.piece_type, st, is_replace[i], rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
+			/* A tile the template would lay down exactly as it already is stays untouched,
+			 * so it keeps its fences and any reservation on it. The fence loop below only
+			 * sets bits, so such a tile ends up with the template's fences *added* to the
+			 * ones it already had -- unlike every other tile, where the apply wipes the mask
+			 * first and the template is authoritative. A player fence on a retained tile can
+			 * therefore still block an edge the template meant to leave open. That is the
+			 * price of not destroying fences the template never asked to touch.
+			 *
+			 * The check proved the tile already belongs to the station it validated against.
+			 * That it is *this* station holds only because step 3.A resolved st across the
+			 * whole footprint; assert it rather than let a future change to that scan split
+			 * the airport across two stations in silence. */
+			if (is_noop[i]) {
+				assert(Station::GetByTile(t) == st);
+			} else {
+				BuildModularAirportTile_Apply(t, rt.piece_type, st, is_replace[i], rt.rotation, rt.user_taxi_dir_mask, rt.one_way_taxi, false);
+			}
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
 				uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
