@@ -1430,6 +1430,56 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		return log_chain_fail(TaxiReserveFailureName(reserve_result.reason), reserve_result.tile);
 	}
 
+	/* The planned route may open by carrying on along the landing runway to a further exit.
+	 * Roll those tiles instead of taxiing them: the aircraft is already on the runway and
+	 * moving, and holds the whole runway as one reservation either way, so taxiing them
+	 * costs about 41 ticks apiece and looks wrong besides. Absorbing them also puts the
+	 * turn-off on the exit the route actually uses rather than on the braking floor, which
+	 * is what stops an aircraft overshooting an exit and then taxiing back up its own
+	 * runway to reach it.
+	 *
+	 * A route that heads back toward touchdown is left alone. That is a real back-taxi to
+	 * the only reachable exit, and it already starts from the floor -- the earliest the
+	 * aircraft could have turned off -- which is the right place for it to start.
+	 *
+	 * Only the path is trimmed, never route.plan: the reservation covers the whole runway
+	 * as a single resource, so the absorbed tiles stay held either way. */
+	if (touchdown_on_runway && !heli_direct_ground && route.path.valid && route.path.tiles.size() > 1) {
+		std::vector<TileIndex> runway_tiles;
+		if (GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) {
+			const size_t none = runway_tiles.size();
+			const auto runway_index = [&](TileIndex t) {
+				const auto it = std::find(runway_tiles.begin(), runway_tiles.end(), t);
+				return it == runway_tiles.end() ? none : static_cast<size_t>(std::distance(runway_tiles.begin(), it));
+			};
+			const size_t touchdown_index = runway_index(runway_tile);
+			const size_t origin_index = runway_index(route.path.tiles.front());
+			size_t absorb = 0;
+			if (touchdown_index != none && origin_index != none) {
+				const auto rolled_distance = [&](size_t i) {
+					return i > touchdown_index ? i - touchdown_index : touchdown_index - i;
+				};
+				size_t prev_distance = rolled_distance(origin_index);
+				for (size_t i = 1; i < route.path.tiles.size(); i++) {
+					const size_t index = runway_index(route.path.tiles[i]);
+					if (index == none) break;
+					const size_t distance = rolled_distance(index);
+					/* Strictly further from touchdown, so a route that turns back -- or
+					 * crosses to the far side through the touchdown tile -- stops here. */
+					if (distance <= prev_distance) break;
+					absorb = i;
+					prev_distance = distance;
+				}
+			}
+			if (absorb > 0) {
+				Debug(misc, 3, "[ModAp] V{} rollout extended {} tile(s) to exit {}",
+					v->index, absorb, route.path.tiles[absorb].base());
+				route.path.tiles.erase(route.path.tiles.begin(), route.path.tiles.begin() + absorb);
+				route.path.segments = ClassifyTaxiSegments(st, route.path.tiles);
+			}
+		}
+	}
+
 	if (IsValidTile(ground_goal)) {
 		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(route.path));
 		v->rollout_restored_from_save = false;
@@ -2085,17 +2135,25 @@ uint ModularRolloutBrakingTiles(const Aircraft *v)
  * them. Stopping the rollout at the braking distance is what gives a runway longer than
  * that distance any value at all.
  *
- * The tile returned is only where the rollout *may* end. It is not required to have a
- * taxiway beside it: the landing chain plans from here to the parking goal, and if the
- * nearest exit is further along the aircraft simply keeps rolling as ordinary taxi.
+ * This is the *earliest* the aircraft may turn off, not where it will: it is the floor
+ * TryReserveLandingChain plans its route from, and that route is free to carry on along
+ * the runway to a further exit, in which case the rollout is extended to cover it.
  *
- * A runway shorter than the braking distance clamps to the far end, which is what every
+ * The floor is capped at LARGE_RUNWAY_LENGTH_TILES tiles of runway even when the aircraft
+ * has not finished braking by then. A fast jet needs eight tiles to reach taxi speed at
+ * the default plane_speed, but six is the shortest runway it is allowed to land on at
+ * all, and on one of those it has always crossed the far end at about 160% of taxi speed
+ * and had the remainder clamped off. Rolling further than that on a long runway only
+ * overshoots exits the aircraft then has to taxi back to; a jet that can take off from
+ * six tiles can turn off within six.
+ *
+ * A runway shorter than the resulting distance clamps to the far end, which is what every
  * rollout did before this, so nothing changes on a minimum-length runway.
  *
  * @param st The station.
  * @param v The landing aircraft.
  * @param landing_tile Touchdown tile.
- * @return Rollout end tile, or INVALID_TILE if @p landing_tile is not a runway piece.
+ * @return Earliest turn-off tile, or INVALID_TILE if @p landing_tile is not a runway piece.
  */
 TileIndex FindModularRunwayRolloutPoint(const Station *st, const Aircraft *v, TileIndex landing_tile)
 {
@@ -2134,7 +2192,11 @@ TileIndex FindModularRunwayRolloutPoint(const Station *st, const Aircraft *v, Ti
 	const size_t far_index = static_cast<size_t>(std::distance(runway_tiles.begin(), far_it));
 	const bool toward_high = far_index > touchdown_index;
 	const size_t available = toward_high ? far_index - touchdown_index : touchdown_index - far_index;
-	const size_t rolled = std::min<size_t>(ModularRolloutBrakingTiles(v), available);
+	/* ModularRolloutBrakingTiles answers the physics question -- how far to taxi speed --
+	 * and the cap is the gameplay one. Keep them separate: a slow aircraft that brakes in
+	 * less than the cap still turns off where it actually stops. */
+	const size_t brake_cap = LARGE_RUNWAY_LENGTH_TILES - 1;
+	const size_t rolled = std::min({static_cast<size_t>(ModularRolloutBrakingTiles(v)), brake_cap, available});
 
 	return toward_high ? runway_tiles[touchdown_index + rolled] : runway_tiles[touchdown_index - rolled];
 }

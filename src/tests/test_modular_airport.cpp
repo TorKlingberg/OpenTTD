@@ -2301,7 +2301,7 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		CHECK(ModularRolloutBrakingTiles(nullptr) == 1);
 	}
 
-	SECTION("Rollout stops at the braking distance on a long runway") {
+	SECTION("The earliest turn-off is capped at a large runway's length") {
 		_settings_game.vehicle.plane_speed = 4;
 		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
 
@@ -2310,15 +2310,20 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
-		/* Touchdown at the low end rolls toward high: 7 tiles, not the full 11. */
-		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(7, 0));
+		/* Touchdown at the low end rolls toward high. This aircraft needs 7 tiles to reach
+		 * taxi speed, but the floor caps it at LARGE_RUNWAY_LENGTH_TILES of runway -- 5
+		 * steps past touchdown -- so it may turn off there. */
+		CHECK(ModularRolloutBrakingTiles(v) == 7);
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(5, 0));
 		/* Mirrored from the other end, so the direction follows the runway rather than
 		 * the tile order. */
-		CHECK(FindModularRunwayRolloutPoint(st, v, base + TileDiffXY(11, 0)) == base + TileDiffXY(4, 0));
+		CHECK(FindModularRunwayRolloutPoint(st, v, base + TileDiffXY(11, 0)) == base + TileDiffXY(6, 0));
 
-		/* A slower aircraft on the same runway turns off earlier. */
-		v->vcache.cached_max_speed = 473;
-		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(5, 0));
+		/* An aircraft that brakes in less than the cap still turns off where it stops:
+		 * the cap is a ceiling on the floor, not a fixed distance. */
+		v->vcache.cached_max_speed = 400;
+		REQUIRE(ModularRolloutBrakingTiles(v) == 4);
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(4, 0));
 	}
 
 	SECTION("A runway no longer than the braking distance still rolls to the far end") {
@@ -2381,10 +2386,10 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		CHECK(IsModularAirportTileReservedBy(goal, v->index));
 	}
 
-	SECTION("Rolling on past the turn-off point when the exit is further along") {
+	SECTION("The rollout extends to an exit further along the runway") {
 		_settings_game.vehicle.plane_speed = 4;
 		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
-		/* The only way off is at tile 10, past the 7-tile braking distance. */
+		/* The only way off is at tile 10, past the turn-off floor at tile 5. */
 		AddModularTile(st, base + TileDiffXY(10, 1), APT_APRON, 0);
 		AddModularTile(st, base + TileDiffXY(10, 2), APT_STAND, 0);
 
@@ -2396,26 +2401,59 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		const TileIndex goal = base + TileDiffXY(10, 2);
 		REQUIRE(TryReserveLandingChain(v, st, base, goal));
 		REQUIRE(v->landing_chain_path != nullptr);
-		/* The rollout still ends at the braking distance; the remaining runway tiles are
-		 * ordinary taxi, at the head of the chain. */
-		CHECK(v->landing_chain_path->tiles.front() == base + TileDiffXY(7, 0));
-		CHECK(v->landing_chain_path->tiles[1] == base + TileDiffXY(8, 0));
+		/* The route's leading run along the runway is absorbed into the rollout, so the
+		 * chain starts at the exit itself and leaves the runway on its first step. The
+		 * aircraft rolls tiles 5..10 rather than taxiing them. */
+		CHECK(v->landing_chain_path->tiles.front() == base + TileDiffXY(10, 0));
+		CHECK(v->landing_chain_path->tiles[1] == base + TileDiffXY(10, 1));
+		CHECK(v->landing_chain_path->tiles.back() == goal);
+	}
+
+	SECTION("A back-taxi to the only exit starts from the turn-off floor") {
+		_settings_game.vehicle.plane_speed = 4;
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		/* The only way off is at tile 2, behind the floor at tile 5 -- the shape of
+		 * Little Wondingbury, where every exit sits in the first half of the runway. */
+		AddModularTile(st, base + TileDiffXY(2, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(2, 2), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		const TileIndex goal = base + TileDiffXY(2, 2);
+		REQUIRE(TryReserveLandingChain(v, st, base, goal));
+		REQUIRE(v->landing_chain_path != nullptr);
+		/* Nothing is absorbed: the route turns back immediately. The aircraft still rolls
+		 * only as far as the floor and back-taxis from there, rather than continuing to
+		 * the braking distance and taxiing back further. */
+		CHECK(v->landing_chain_path->tiles.front() == base + TileDiffXY(5, 0));
+		CHECK(v->landing_chain_path->tiles[1] == base + TileDiffXY(4, 0));
 		CHECK(v->landing_chain_path->tiles.back() == goal);
 	}
 
 	SECTION("Landing target scoring measures taxi distance from the rollout point") {
 		_settings_game.vehicle.plane_speed = 4;
-		/* Runway 1: 12-tile runway at row 0 (base). Rollout point is (base + (7,0)), far end is (base + (11,0)).
-		 * Runway 2: 6-tile runway at row 4. Rollout point is far end (base + (5,4)).
-		 * Stand: (base + (7,2)).
-		 * Aircraft positioned midway in Y between runways at (base + (0,2)) so flight distance is identical.
-		 * From Runway 1's rollout point (7,0), taxi distance to stand (7,2) is 2 tiles.
-		 * From Runway 2's rollout point (5,4), taxi distance to stand (7,2) is 4 tiles.
-		 * (If scored from Runway 1's far end (11,0), distance would have been 6 tiles, incorrectly losing to Runway 2.) */
+		/* Runway 1: 12 tiles at row 0. Landing end is base; turn-off floor is (5,0); the
+		 *           physical far end is (11,0).
+		 * Runway 2: 6 tiles at row 4. Landing end is (0,4); its floor is the far end (5,4).
+		 * A stand at (5,1), joined to runway 2 by aprons at (5,3) and (5,2), so both
+		 * candidates can actually reach it -- FindFreeModularTerminal pathfinds and skips
+		 * stands it cannot route to, and with no connecting tiles neither candidate would
+		 * score a taxi term at all.
+		 *
+		 * The aircraft sits midway between the two landing ends, so flight distance ties
+		 * and the taxi term alone decides:
+		 *   from runway 1's floor (5,0)     -> 1 tile   <- chosen
+		 *   from runway 2's floor (5,4)     -> 3 tiles
+		 *   from runway 1's far end (11,0)  -> 7 tiles  <- would lose to runway 2 */
 		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
 		const TileIndex rwy2 = base + TileDiffXY(0, 4);
 		AddLargeRunway(st, rwy2, 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
-		AddModularTile(st, base + TileDiffXY(7, 2), APT_STAND, 0);
+		AddModularTile(st, base + TileDiffXY(5, 1), APT_STAND, 0);
+		AddModularTile(st, base + TileDiffXY(5, 2), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(5, 3), APT_APRON, 0);
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
@@ -2423,6 +2461,12 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		v->targetairport = st->index;
 		v->x_pos = TileX(base) * TILE_SIZE + TILE_SIZE / 2;
 		v->y_pos = TileY(base + TileDiffXY(0, 2)) * TILE_SIZE + TILE_SIZE / 2;
+
+		/* Guard the premise: if the stand were unreachable both candidates would score a
+		 * bare flight distance and the tie would be broken by layout order, passing this
+		 * test without ever consulting a rollout point. */
+		REQUIRE(FindFreeModularTerminal(st, v, base + TileDiffXY(5, 0)) == base + TileDiffXY(5, 1));
+		REQUIRE(FindFreeModularTerminal(st, v, base + TileDiffXY(5, 4)) == base + TileDiffXY(5, 1));
 
 		CHECK(FindModularLandingTarget(st, v) == base);
 	}
