@@ -41,7 +41,7 @@ static constexpr size_t TEMPLATE_PLACEMENT_TILE_WIRE_SIZE =
 /** Fixed part of a PlaceModularAirportTemplate payload: tile, station_to_join, allow_adjacent, and the data header. */
 static constexpr size_t TEMPLATE_PLACEMENT_HEADER_WIRE_SIZE =
 		sizeof(uint32_t) + sizeof(uint16_t) + sizeof(uint8_t) + // tile, station_to_join, allow_adjacent
-		sizeof(uint16_t) * 2 + sizeof(uint8_t) + sizeof(uint16_t); // width, height, rotation, tile count
+		sizeof(uint16_t) * 2 + sizeof(uint8_t) * 2 + sizeof(uint16_t); // width, height, rotation, drag-build mode, tile count
 
 /* A full template must fit in one command packet: placement preflights the whole
  * layout before executing, so it cannot be split across commands. */
@@ -404,6 +404,46 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 
 	if (st == nullptr && distant_join) st = Station::GetIfValid(station_to_join);
 
+	/* Saved templates authoritatively carry runway flags. An interactive drag does not:
+	 * it should extend an existing runway with that runway's flags, just like the former
+	 * tile-at-a-time build path, or use the fresh-runway default when it is isolated. */
+	std::unordered_map<TileIndex, size_t> proposed_tile_indices;
+	if (data.is_drag_build) {
+		proposed_tile_indices.reserve(abs_tiles.size());
+		for (size_t i = 0; i < abs_tiles.size(); i++) proposed_tile_indices.emplace(abs_tiles[i], i);
+	}
+	std::vector<uint8_t> effective_runway_flags(rotated_tiles.size(), RUF_DEFAULT);
+	for (size_t i = 0; i < rotated_tiles.size(); i++) {
+		effective_runway_flags[i] = NormalizeModularRunwayFlags(rotated_tiles[i].runway_flags);
+		if (!data.is_drag_build || !IsModularRunwayPiece(rotated_tiles[i].piece_type)) continue;
+
+		const bool horizontal = (rotated_tiles[i].rotation % 2) == 0;
+		bool found_existing_runway = false;
+		for (int sign : {-1, 1}) {
+			TileIndex current = abs_tiles[i];
+			while (true) {
+				current = TileAddWrap(current, horizontal ? sign : 0, horizontal ? 0 : sign);
+				if (current == INVALID_TILE) break;
+
+				auto proposed = proposed_tile_indices.find(current);
+				if (proposed != proposed_tile_indices.end()) {
+					const size_t proposed_index = proposed->second;
+					if (!IsModularRunwayPiece(rotated_tiles[proposed_index].piece_type) ||
+							((rotated_tiles[proposed_index].rotation % 2) == 0) != horizontal) break;
+					continue;
+				}
+
+				const ModularAirportTileData *existing = st != nullptr ? st->airport.GetModularTileData(current) : nullptr;
+				if (IsRunwayPieceOnAxis(existing, horizontal)) {
+					effective_runway_flags[i] = existing->runway_flags;
+					found_existing_runway = true;
+				}
+				break;
+			}
+			if (found_existing_runway) break;
+		}
+	}
+
 	const bool will_create_airport_facility = st == nullptr || !st->facilities.Test(StationFacility::Airport);
 	const ModularAirportNoiseSnapshot noise_before = will_create_airport_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
 	std::vector<ModularAirportNoisePiece> future_noise_pieces;
@@ -420,11 +460,11 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	}
 	for (size_t i = 0; i < rotated_tiles.size(); i++) {
 		future_noise_pieces.push_back({abs_tiles[i], rotated_tiles[i].piece_type});
-		future_capability_pieces.push_back({rotated_tiles[i].piece_type,
-				IsModularRunwayPiece(rotated_tiles[i].piece_type) ? NormalizeModularRunwayFlags(rotated_tiles[i].runway_flags) : RUF_DEFAULT});
+		future_capability_pieces.push_back({rotated_tiles[i].piece_type, effective_runway_flags[i]});
 	}
 	const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_noise_pieces);
-	const StationNaming naming = ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ? StationNaming::Airport : StationNaming::Heliport;
+	const StationNaming naming = data.is_drag_build || ModularAirportAcceptsPlanesFromPieces(future_capability_pieces) ?
+			StationNaming::Airport : StationNaming::Heliport;
 	ret = CheckModularAirportNoiseChange(noise_before, noise_after);
 	if (ret.Failed()) return ret;
 
@@ -516,8 +556,8 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		is_replace[i] = tile_replace;
 		is_noop[i] = tile_noop;
 
-		if (IsModularRunwayPiece(rt.piece_type)) {
-			uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
+		if (IsModularRunwayPiece(rt.piece_type) && !data.is_drag_build) {
+			uint8_t runway_flags = effective_runway_flags[i];
 			ret = SetRunwayFlags_Check(t, runway_flags, st, rt.piece_type);
 			if (ret.Failed()) return ret;
 		}
@@ -534,6 +574,10 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			}
 		}
 	}
+
+	/* NoTest commands do not get the command framework's normal aggregate funds
+	 * check. Do it here, after the complete cost is known and before any mutation. */
+	if (!CheckCompanyHasMoney(total)) return total;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		const ModularAirportNoiseSnapshot execute_noise_before = st != nullptr ? GetModularAirportNoiseSnapshot(st) : ModularAirportNoiseSnapshot{};
@@ -565,8 +609,13 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 			}
 
 			if (IsModularRunwayPiece(rt.piece_type)) {
-				uint8_t runway_flags = NormalizeModularRunwayFlags(rt.runway_flags);
-				SetRunwayFlags_Apply(t, runway_flags, st);
+				if (data.is_drag_build) {
+					ModularAirportTileData *tile_data = st->airport.GetModularTileData(t);
+					assert(tile_data != nullptr);
+					tile_data->runway_flags = effective_runway_flags[i];
+				} else {
+					SetRunwayFlags_Apply(t, effective_runway_flags[i], st);
+				}
 			}
 
 			for (uint8_t edge_bit : kFenceEdgeBits) {
@@ -574,6 +623,10 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 					SetEdgeFence_Apply(t, edge_bit, true, st);
 				}
 			}
+		}
+		if (data.is_drag_build && std::ranges::any_of(rotated_tiles, [](const auto &tile) { return IsModularRunwayPiece(tile.piece_type); })) {
+			st->airport.MarkLayoutDirty();
+			st->RecomputeCatchment();
 		}
 
 		/* Once, on the finished layout. A template overbuilding an existing airport can

@@ -1015,11 +1015,23 @@ public:
 			return;
 		}
 
-		/* Multi-tile drag: find existing station near the drag area.
-		 * Pass it to ALL tiles so they join the same station via distant_join,
-		 * even if a particular tile isn't directly adjacent to existing tiles. */
-		StationID nearby_station = FindNearbyStation(ta);
-		Debug(misc, 3, "[Airport] Drag-building: nearby_station={}", nearby_station != StationID::Invalid() ? (int)nearby_station.base() : -1);
+		/* Build the complete drag through the atomic template-placement command. This
+		 * preflights every tile, resolves one station for the whole footprint, and
+		 * checks authority noise against the finished layout before changing the map. */
+		ModularTemplatePlacementData data;
+		data.width = static_cast<uint16_t>(ta.w);
+		data.height = static_cast<uint16_t>(ta.h);
+		data.is_drag_build = true;
+		data.tiles.reserve(static_cast<size_t>(ta.w) * ta.h);
+
+		auto add_tile = [&](TileIndex tile, uint8_t gfx, uint8_t rotation) {
+			ModularTemplatePlacementTile placement;
+			placement.dx = static_cast<uint8_t>(TileX(tile) - TileX(ta.tile));
+			placement.dy = static_cast<uint8_t>(TileY(tile) - TileY(ta.tile));
+			placement.piece_type = gfx;
+			placement.rotation = rotation;
+			data.tiles.push_back(placement);
+		};
 
 		/* Smart runway building: auto-add end pieces when dragging runway pieces (pieces 0 and 2) */
 		bool is_main_runway  = (this->selected_piece == 0);
@@ -1043,26 +1055,24 @@ public:
 				}
 			}
 
-			Debug(misc, 3, "[Airport] Drag-building runway: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
+			Debug(misc, 3, "[Airport] Drag-building runway atomically: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
 
 			if (is_main_runway) {
 				/* Place large runway end pieces at both ends */
-				this->PlaceDragTile(ordered_tiles.front(), 1, nearby_station, drag_rotation);
+				add_tile(ordered_tiles.front(), GetModularAirportPieceGfx(1), drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
-					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
+					add_tile(ordered_tiles[i], GetModularAirportPieceGfx(this->selected_piece), drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTile(ordered_tiles.back(), 1, nearby_station, drag_rotation);
+					add_tile(ordered_tiles.back(), GetModularAirportPieceGfx(1), drag_rotation);
 				}
 			} else {
-				/* Small runway: place contiguously front->middles->back so each tile is adjacent
-				 * to the last, allowing GetStationAround to find the growing station. */
-				this->PlaceDragTileRawGfx(ordered_tiles.front(), APT_RUNWAY_SMALL_NEAR_END, nearby_station, drag_rotation);
+				add_tile(ordered_tiles.front(), APT_RUNWAY_SMALL_NEAR_END, drag_rotation);
 				for (size_t i = 1; i < ordered_tiles.size() - 1; i++) {
-					this->PlaceDragTile(ordered_tiles[i], this->selected_piece, nearby_station, drag_rotation);
+					add_tile(ordered_tiles[i], GetModularAirportPieceGfx(this->selected_piece), drag_rotation);
 				}
 				if (ordered_tiles.size() > 1) {
-					this->PlaceDragTileRawGfx(ordered_tiles.back(), APT_RUNWAY_SMALL_FAR_END, nearby_station, drag_rotation);
+					add_tile(ordered_tiles.back(), APT_RUNWAY_SMALL_FAR_END, drag_rotation);
 				}
 			}
 		} else {
@@ -1071,12 +1081,15 @@ public:
 			for (TileIndex tile : ta) {
 				if (is_runway) {
 					uint8_t drag_rotation = (ta.w >= ta.h) ? 0 : 1;
-					this->PlaceDragTile(tile, this->selected_piece, nearby_station, drag_rotation);
+					add_tile(tile, GetModularAirportPieceGfx(this->selected_piece), drag_rotation);
 				} else {
-					this->PlaceDragTile(tile, this->selected_piece, nearby_station);
+					add_tile(tile, GetModularAirportPieceGfx(this->selected_piece), 0);
 				}
 			}
 		}
+
+		Command<Commands::PlaceModularAirportTemplate>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
+			ta.tile, StationID::Invalid(), false, data);
 	}
 
 private:
@@ -1143,36 +1156,6 @@ private:
 
 			ShowSelectStationIfNeeded(TileArea(tile, 3, 1), proc);
 		}
-	}
-
-	/**
-	 * Post a single tile build command for a drag operation.
-	 * Bypasses ShowSelectStationIfNeeded - all tiles are posted directly.
-	 * @param tile The tile to build on
-	 * @param piece_index The piece type to build
-	 * @param nearby_station Station to join (Invalid = auto-detect via GetStationAround)
-	 */
-	void PlaceDragTile(TileIndex tile, uint8_t piece_index, StationID nearby_station, uint8_t rot = 0)
-	{
-		uint8_t gfx = GetModularAirportPieceGfx(piece_index);
-
-		/* Pass the nearby station as station_to_join. In the command handler:
-		 * - GetStationAround checks adjacent tiles for a station to join.
-		 * - If no adjacent station found, distant_join uses nearby_station.
-		 * This ensures all drag tiles join the same station even if not all
-		 * are directly adjacent to existing tiles. */
-		Command<Commands::BuildModularAirportTile>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false, false);
-	}
-
-	/**
-	 * Post a drag tile build command using a raw gfx value (bypasses piece-index lookup).
-	 * Used for auto-placed runway end pieces.
-	 */
-	void PlaceDragTileRawGfx(TileIndex tile, uint8_t gfx, StationID nearby_station, uint8_t rot = 0)
-	{
-		Command<Commands::BuildModularAirportTile>::Post(STR_ERROR_CAN_T_BUILD_AIRPORT_HERE, CcBuildAirport,
-			tile, gfx, nearby_station, false, rot, (uint8_t)0x0F, false, false);
 	}
 
 	/**

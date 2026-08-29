@@ -3935,6 +3935,8 @@ static void UpdateTownGrowth(Town *t)
 	SetWindowDirty(WindowClass::TownView, t->index);
 }
 
+static int GetRating(const Town *t);
+
 /**
  * Checks whether the local authority allows construction of a new station (rail, road, airport, dock) on the given tile
  * @param tile The tile where the station shall be constructed.
@@ -3951,7 +3953,10 @@ CommandCost CheckIfAuthorityAllowsNewStation(TileIndex tile, DoCommandFlags flag
 	Town *t = ClosestTownFromTile(tile, _settings_game.economy.dist_local_authority);
 	if (t == nullptr) return CommandCost();
 
-	if (t->ratings[_current_company] > RATING_VERYPOOR) return CommandCost();
+	/* Compound construction commands accumulate their prospective clearing penalties
+	 * in town-rating test mode. Read that shadow rating so a later station tile in the
+	 * same command can be refused without any part of the command reaching the map. */
+	if (GetRating(t) > RATING_VERYPOOR) return CommandCost();
 
 	return CommandCostWithParam(STR_ERROR_LOCAL_AUTHORITY_REFUSES_TO_ALLOW_THIS, t->index);
 }

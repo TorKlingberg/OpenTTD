@@ -57,6 +57,7 @@ struct ModularTemplatePlacementData {
 	uint16_t width = 0;
 	uint16_t height = 0;
 	uint8_t rotation = 0; // 0..3, clockwise
+	bool is_drag_build = false; ///< Preserve interactive drag semantics rather than authoritative saved-template metadata.
 	std::vector<ModularTemplatePlacementTile> tiles;
 };
 
@@ -154,7 +155,7 @@ inline EndianBufferReader &operator >>(EndianBufferReader &buffer, ModularTempla
 template <typename Tcont, typename Titer>
 inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, Titer> &buffer, const ModularTemplatePlacementData &data)
 {
-	buffer << data.width << data.height << data.rotation;
+	buffer << data.width << data.height << data.rotation << data.is_drag_build;
 	uint16_t count = ClampTo<uint16_t>(data.tiles.size());
 	buffer << count;
 	for (uint16_t i = 0; i < count; i++) buffer << data.tiles[i];
@@ -163,7 +164,7 @@ inline EndianBufferWriter<Tcont, Titer> &operator <<(EndianBufferWriter<Tcont, T
 
 inline EndianBufferReader &operator >>(EndianBufferReader &buffer, ModularTemplatePlacementData &data)
 {
-	buffer >> data.width >> data.height >> data.rotation;
+	buffer >> data.width >> data.height >> data.rotation >> data.is_drag_build;
 	uint16_t count = 0;
 	buffer >> count;
 	data.tiles.resize(count);

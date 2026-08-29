@@ -28,6 +28,7 @@
 #include "../network/core/config.h"
 #include "../station_map.h"
 #include "../clear_map.h"
+#include "../tree_map.h"
 #include "../language.h"
 #include "../town.h"
 #include "../airport_ground_pathfinder.h"
@@ -39,6 +40,7 @@
 #include "../engine_base.h"
 #include "../company_base.h"
 #include "../company_func.h"
+#include "../economy_func.h"
 #include "../newgrf_airport.h"
 #include "../cheat_type.h"
 #include "../settings_type.h"
@@ -700,6 +702,155 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	_settings_game.station.station_spread = saved_station_spread;
 	_settings_game.economy.station_noise_level = saved_noise;
 	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	TimerGameCalendar::year = saved_year;
+	_station_pool.CleanPool();
+	_town_pool.CleanPool();
+	_company_pool.CleanPool();
+	RebuildStationKdtree();
+	RebuildTownKdtree();
+	RebuildViewportKdtree();
+}
+
+TEST_CASE("ModularAirportAtomicDragPreservesInteractiveBuildSemantics")
+{
+	MockEnvironment::Instance();
+	static LanguageMetadata test_language;
+	const std::filesystem::path language_file = std::filesystem::exists("build/lang/english.lng") ?
+			"build/lang/english.lng" : "lang/english.lng";
+	test_language.file = std::filesystem::absolute(language_file);
+	REQUIRE(ReadLanguagePack(&test_language));
+
+	const CompanyID saved_company = _current_company;
+	const bool saved_distant_join = _settings_game.station.distant_join_stations;
+	const bool saved_never_expire = _settings_game.station.never_expire_airports;
+	const uint8_t saved_station_spread = _settings_game.station.station_spread;
+	const bool saved_noise = _settings_game.economy.station_noise_level;
+	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const uint16_t saved_authority_distance = _settings_game.economy.dist_local_authority;
+	const Money saved_airport_build_price = _price[Price::BuildStationAirport];
+	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+
+	_settings_game.station.distant_join_stations = true;
+	_settings_game.station.never_expire_airports = true;
+	_settings_game.station.station_spread = 64;
+	_settings_game.economy.station_noise_level = false;
+	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	_settings_game.economy.dist_local_authority = 20;
+	_price[Price::BuildStationAirport] = 100;
+	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
+
+	auto reset_world = [](TileIndex town_tile) {
+		Map::Allocate(64, 64);
+		_station_pool.CleanPool();
+		_town_pool.CleanPool();
+		_company_pool.CleanPool();
+		RebuildStationKdtree();
+		RebuildViewportKdtree();
+		AirportSpec::ResetAirports();
+
+		Company *company = Company::CreateAtIndex(CompanyID(0));
+		REQUIRE(company != nullptr);
+		company->money = INT64_MAX;
+		company->clear_limit = UINT32_MAX;
+		_current_company = company->index;
+
+		Town *town = Town::CreateAtIndex(TownID(0), town_tile);
+		REQUIRE(town != nullptr);
+		town->cache.population = 10000;
+		RebuildTownKdtree();
+		return std::pair{company, town};
+	};
+
+	SECTION("runway extensions inherit existing usage flags")
+	{
+		reset_world(TileXY(32, 32));
+		const TileIndex base = TileXY(4, 4);
+		for (uint x = 0; x < 3; x++) {
+			REQUIRE(CmdBuildModularAirportTile(DoCommandFlag::Execute, TileAddXY(base, x, 0), APT_RUNWAY_5,
+					x == 0 ? NEW_STATION : StationID::Invalid(), false, 0, 0x0F, false, false).Succeeded());
+		}
+		Station *st = Station::GetByTile(base);
+		REQUIRE(st != nullptr);
+		const uint8_t configured_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH;
+		REQUIRE(CmdSetRunwayFlags(DoCommandFlag::Execute, base, configured_flags).Succeeded());
+
+		ModularTemplatePlacementData data;
+		data.width = 2;
+		data.height = 1;
+		data.is_drag_build = true;
+		data.tiles = {{0, 0, APT_RUNWAY_5, 0}, {1, 0, APT_RUNWAY_END, 0}};
+		const TileIndex extension = TileAddXY(base, 3, 0);
+		REQUIRE(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, extension, st->index, false, data).Succeeded());
+
+		for (uint x = 0; x < 5; x++) {
+			const ModularAirportTileData *tile_data = st->airport.GetModularTileData(TileAddXY(base, x, 0));
+			REQUIRE(tile_data != nullptr);
+			CHECK(tile_data->runway_flags == configured_flags);
+		}
+	}
+
+	SECTION("ground-only starter drags keep the Airport name class")
+	{
+		reset_world(TileXY(32, 32));
+		const TileIndex base = TileXY(4, 4);
+		ModularTemplatePlacementData data;
+		data.width = 2;
+		data.height = 1;
+		data.is_drag_build = true;
+		data.tiles = {{0, 0, APT_EMPTY}, {1, 0, APT_EMPTY}};
+		REQUIRE(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data).Succeeded());
+		const Station *st = Station::GetByTile(base);
+		REQUIRE(st != nullptr);
+		CHECK(st->string_id == STR_SV_STNAME_AIRPORT);
+		CHECK(Station::GetByTile(TileAddXY(base, 1, 0)) == st);
+	}
+
+	SECTION("the full drag cost is checked before construction")
+	{
+		Company *company = reset_world(TileXY(32, 32)).first;
+		company->money = 0;
+		const TileIndex base = TileXY(4, 4);
+		ModularTemplatePlacementData data;
+		data.width = 2;
+		data.height = 1;
+		data.is_drag_build = true;
+		data.tiles = {{0, 0, APT_EMPTY}, {1, 0, APT_EMPTY}};
+		CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data).Failed());
+		CHECK(!IsTileType(base, TileType::Station));
+		CHECK(!IsTileType(TileAddXY(base, 1, 0), TileType::Station));
+	}
+
+	SECTION("cumulative tree-clearing penalties reject the whole drag")
+	{
+		auto [company, town] = reset_world(TileXY(10, 10));
+		_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_TOLERANT;
+		town->ratings[company->index] = 0;
+		const TileIndex base = TileXY(10, 11);
+		ModularTemplatePlacementData data;
+		data.width = 7;
+		data.height = 1;
+		data.is_drag_build = true;
+		for (uint8_t x = 0; x < data.width; x++) {
+			const TileIndex tile = TileAddXY(base, x, 0);
+			MakeTree(Tile(tile), TREE_TEMPERATE, 0, TreeGrowthStage::Grown, TreeGround::Grass, 3);
+			data.tiles.push_back({x, 0, APT_EMPTY});
+		}
+
+		const CommandCost result = Command<Commands::PlaceModularAirportTemplate>::Do(DoCommandFlag::Execute,
+				base, StationID::Invalid(), false, data);
+		CHECK(result.Failed());
+		for (uint8_t x = 0; x < data.width; x++) CHECK(IsTileType(TileAddXY(base, x, 0), TileType::Trees));
+		CHECK(town->ratings[company->index] == 0);
+	}
+
+	_current_company = saved_company;
+	_settings_game.station.distant_join_stations = saved_distant_join;
+	_settings_game.station.never_expire_airports = saved_never_expire;
+	_settings_game.station.station_spread = saved_station_spread;
+	_settings_game.economy.station_noise_level = saved_noise;
+	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	_settings_game.economy.dist_local_authority = saved_authority_distance;
+	_price[Price::BuildStationAirport] = saved_airport_build_price;
 	TimerGameCalendar::year = saved_year;
 	_station_pool.CleanPool();
 	_town_pool.CleanPool();
@@ -4734,6 +4885,7 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		data.width = 64;
 		data.height = 64;
 		data.rotation = 0;
+		data.is_drag_build = true;
 		for (uint16_t i = 0; i < MAX_TEMPLATE_TILES; i++) {
 			ModularTemplatePlacementTile t{};
 			t.dx = static_cast<uint8_t>(i % 64);
@@ -4755,6 +4907,7 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		REQUIRE(back.tiles.size() == data.tiles.size());
 		CHECK(back.width == data.width);
 		CHECK(back.height == data.height);
+		CHECK(back.is_drag_build == data.is_drag_build);
 		CHECK(back.tiles.back().dx == data.tiles.back().dx);
 		CHECK(back.tiles.back().dy == data.tiles.back().dy);
 	}
