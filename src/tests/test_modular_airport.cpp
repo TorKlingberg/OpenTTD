@@ -90,9 +90,10 @@ static Aircraft *CreateAircraft(VehicleID index)
 	v->subtype = AIR_AIRCRAFT;
 	/* Rollout length is derived from how far this aircraft takes to brake, so a
 	 * bare shell needs a speed a real aircraft would have. Anything at or above
-	 * SPEED_LIMIT_APPROACH * plane_speed brakes in the full ~7 tiles, which is
-	 * longer than the short runways these tests build and therefore rolls to the
-	 * far end -- the behaviour every test written before early turn-off assumes. */
+	 * SPEED_LIMIT_APPROACH * plane_speed saturates the braking distance, which at
+	 * the ambient test plane_speed of 0 (clamped to 1) is 5 tiles -- longer than
+	 * the runways these tests build, so they still roll to the far end, which is
+	 * what every test written before early turn-off assumes. */
 	v->vcache.cached_max_speed = 1000;
 	return v;
 }
@@ -2129,9 +2130,10 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		CHECK(ModularRolloutBrakingTiles(v) == 7);
 		v->vcache.cached_max_speed = 920;
 		CHECK(ModularRolloutBrakingTiles(v) == 7);
-		/* An early prop (Sampson U52 tops out at 473) touches down slower and stops sooner. */
+		/* An early prop (Sampson U52 tops out at 473) touches down slower and stops sooner:
+		 * 64 pixels, an exact 4 tiles, so the slack pixel puts the turn-off at 5. */
 		v->vcache.cached_max_speed = 473;
-		CHECK(ModularRolloutBrakingTiles(v) == 4);
+		CHECK(ModularRolloutBrakingTiles(v) == 5);
 		/* Never above taxi speed: there is nothing to brake off, but the aircraft still
 		 * has to clear the touchdown tile. */
 		v->vcache.cached_max_speed = 200;
@@ -2163,7 +2165,7 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 
 		/* A slower aircraft on the same runway turns off earlier. */
 		v->vcache.cached_max_speed = 473;
-		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(4, 0));
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(5, 0));
 	}
 
 	SECTION("A runway no longer than the braking distance still rolls to the far end") {

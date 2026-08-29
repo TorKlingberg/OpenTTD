@@ -2067,7 +2067,11 @@ uint ModularRolloutBrakingTiles(const Aircraft *v)
 		progress &= 0xFF;
 	}
 
-	return std::max<uint>(1, CeilDiv(pixels, TILE_SIZE));
+	/* One pixel of slack: the aircraft carries v->progress across the tile boundary, so
+	 * an exact multiple of TILE_SIZE -- which is what this comes to at plane_speed 2 --
+	 * would place the turn-off one pixel before the aircraft has actually reached taxi
+	 * speed, and the ground-move clamp would have to shed the remainder. */
+	return std::max<uint>(1, CeilDiv(pixels + 1, TILE_SIZE));
 }
 
 /**
@@ -3637,9 +3641,13 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	/* A departure standing on its runway with enough of it left to get airborne is where
 	 * it needs to be, whether or not that is the end the route was aiming at. The arrival
 	 * handler starts the roll from the tile the aircraft is on, so this is only a matter
-	 * of stopping the taxi. The rest of the route is released with the taxi path; the
-	 * runway itself is held separately, as the whole contiguous resource it was claimed
-	 * as, and an aircraft cannot be standing on it without already holding that claim. */
+	 * of stopping the taxi early; the rest of the route is released with the taxi path.
+	 * The whole-runway claim is not held yet -- taxiing out only ever takes the per-tile
+	 * crossing reservations -- so the arrival handler makes it here exactly as it does at
+	 * the runway end, and waits on this tile, retrying every tick, if it is refused. That
+	 * cannot strand the aircraft behind another user of the same runway: from the moment
+	 * modular_takeoff_tile is set, a pending departure excludes every other operation on
+	 * that runway (IsContiguousModularRunwayQueuedForTakeoffByOther). */
 	if (v->modular_ground_target == MGT_RUNWAY_TAKEOFF && ModularTakeoffRunFitsFrom(st, v, v->tile)) {
 		UpdateModularAircraftParkedDirection(v, st);
 		ClearTaxiPathState(v, v->tile);
