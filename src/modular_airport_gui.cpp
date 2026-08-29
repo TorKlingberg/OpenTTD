@@ -2157,11 +2157,23 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			 * directly from touchdown, even when a no-helipad airport uses a runway tile. */
 			AppendRouteTile(route, v->modular_landing_tile);
 			if (v->subtype != AIR_HELICOPTER && st != nullptr) {
-				std::vector<TileIndex> runway_route;
 				/* Only as far as the rollout will actually go: the runway past the
-				 * turn-off point is reserved, but it is not route the aircraft drives. */
-				if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route,
-						FindModularRunwayRolloutPoint(st, v, v->modular_landing_tile))) {
+				 * turn-off point is reserved, but it is not route the aircraft drives.
+				 *
+				 * Where the chain starts on this runway, that tile is the turn-off --
+				 * the same answer the touchdown handoff takes, and the one to draw. The
+				 * rollout point on its own is just the braking floor, and a chain whose
+				 * route carries on to a further exit has already absorbed the tiles past
+				 * it into the rollout. Stopping at the floor there would break the route
+				 * where the chain picks up, leaving the whole taxi in as bare markers. */
+				const TileIndex chain_start = (v->landing_chain_path != nullptr && v->landing_chain_path->valid &&
+						!v->landing_chain_path->tiles.empty()) ? v->landing_chain_path->tiles.front() : INVALID_TILE;
+				std::vector<TileIndex> runway_route;
+				const bool have_route = (IsValidTile(chain_start) &&
+						BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route, chain_start)) ||
+						BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route,
+								FindModularRunwayRolloutPoint(st, v, v->modular_landing_tile));
+				if (have_route) {
 					for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
 				}
 			}
