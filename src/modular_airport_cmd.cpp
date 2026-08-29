@@ -835,27 +835,37 @@ static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
  * else the shared tiles it holds while covering it, so the budget stays small: take a
  * genuinely parallel route, never a scenic one.
  *
- * Detours change length in even steps, so this is a budget of two steps rather than four.
+ * Detours change length in even steps, so this is a budget of three steps rather than six.
  * One step is not enough. Excluding a busy transit runway takes the whole contiguous strip
  * out of the search -- crossing the same runway two tiles along is refused for the same
  * reason -- so the alternative has to reach the far side by another runway entirely, which
  * is rarely within one step. At a budget of one step those routes were found and then
  * discarded unvalidated, and the aircraft waited as though nothing had been tried: T7d
  * measured 0 detours longer than one step, over 3656 in two years. Two steps admits them
- * and they stay rare (103 of 3803, 2.7%), which is what the second step is buying.
+ * and they stay rare (103 of 3803, 2.7%), which is what the second step bought.
  *
- * Three and four steps were measured on 2026-08-29 and both are worse, so two is not just
- * better than one -- it is near the turnover. T7d over five years: 27001 movements at 4,
- * 26974 at 6, 26413 at 8, while diverts rise 8109 -> 8253 -> 8554. The extra length is
- * spent, and throughput falls as it is: no single aircraft's route gets worse, but more of
- * them hold shared tiles for longer, which is the same emergent contention that cost 8%
- * when the ground-pathfinder heuristic changed. Past a couple of tiles, waiting for the
- * blocker to move genuinely beats going round.
+ * The third step buys reach around a blocked runway exit. A four-exit runway whose nearer
+ * exits are occupied can leave the only usable one six tiles out; at two steps that route
+ * was built and thrown away unvalidated, so the airport refused every arrival while an
+ * empty exit stood open. Reaching it is worth a measurable but small cost, and a player
+ * who wants the shorter routing back can fence the long way round.
+ *
+ * Measured on T7d over five years, 2026-08-29: 27001 movements at a budget of 4, 26974 at
+ * 6, 26413 at 8, while diverts rise 8109 -> 8253 -> 8554. So the third step is nearly free
+ * (-27, -0.1%) and the fourth is not (-2.2%). The extra length is spent rather than
+ * ignored, and past a point throughput falls as it is: no single aircraft's route gets
+ * worse, but more of them hold shared tiles for longer, which is the same emergent
+ * contention that cost 8% when the ground-pathfinder heuristic changed. Do not read the
+ * gentle step from 4 to 6 as a licence to keep going -- 8 is where it turns.
+ *
+ * Loosening this for landings alone was tried and is worse than loosening it for
+ * everything: -554 on T7d against -27, for 4% fewer refusals at the airport that prompted
+ * it. The landing case is not special enough to justify its own budget.
  *
  * This is a busy decision, not a rare one -- the same run logs 14136 rate-limited
  * detour-capped fires -- so treat a change here as a throughput change and measure T7d.
  */
-static constexpr int MAX_ROUTE_DETOUR_TILES = 4;
+static constexpr int MAX_ROUTE_DETOUR_TILES = 6;
 
 /** One route plus the horizon it would claim. @see FindReservableRoute */
 struct ReservableRoute {

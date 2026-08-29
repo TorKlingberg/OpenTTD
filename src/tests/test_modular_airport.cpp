@@ -2713,9 +2713,11 @@ TEST_CASE("ModularAirportAlternateRoutes")
 		 * Shortest:  (2,2) -> (2,1) -> STAND                      -- 3 tiles.
 		 * Alternate: (2,2) -> queue -> (3,1) -> (2,1) -> STAND    -- 5 tiles.
 		 *
-		 * The detour is deliberately +2, the whole of MAX_ROUTE_DETOUR_TILES: an earlier
-		 * version of this layout looped the long way round for +6 and is now correctly
-		 * refused, which is the cap doing its job rather than a regression. */
+		 * The detour is deliberately +2, well inside MAX_ROUTE_DETOUR_TILES, so what this
+		 * section tests is the horizon-scoped ban rather than the length cap. Keep it that
+		 * way: an earlier version of this layout reached the stand by a +6 loop, which the
+		 * cap refused when the budget was 4 and admits now that it is 6, so the assertion
+		 * below would have been measuring the budget rather than the ban. */
 		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
 		AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
 		const TileIndex loop_goal = base + TileDiffXY(2, 0);
