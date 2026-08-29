@@ -2078,7 +2078,7 @@ static bool AppendTaxiPathContinuation(std::vector<TileIndex> &route, const Taxi
 }
 
 /** Build the runway traversal from the operation end toward the opposite end. */
-static bool BuildForwardRunwayRoute(const Station *st, TileIndex operation_end, std::vector<TileIndex> &runway_route)
+static bool BuildForwardRunwayRoute(const Station *st, TileIndex operation_end, std::vector<TileIndex> &runway_route, TileIndex stop_at = INVALID_TILE)
 {
 	runway_route.clear();
 	if (st == nullptr || !IsValidTile(operation_end)) return false;
@@ -2086,8 +2086,11 @@ static bool BuildForwardRunwayRoute(const Station *st, TileIndex operation_end, 
 	std::vector<TileIndex> runway_tiles;
 	if (!GetContiguousModularRunwayTiles(st, operation_end, runway_tiles) || runway_tiles.empty()) return false;
 
+	/* A landing rollout stops at the braking distance, not at the far end, and the rest
+	 * of the runway is not part of the route the aircraft will drive. */
+	const TileIndex last = IsValidTile(stop_at) ? stop_at : GetRunwayOtherEnd(st, operation_end);
 	const auto start = std::find(runway_tiles.begin(), runway_tiles.end(), operation_end);
-	const auto finish = std::find(runway_tiles.begin(), runway_tiles.end(), GetRunwayOtherEnd(st, operation_end));
+	const auto finish = std::find(runway_tiles.begin(), runway_tiles.end(), last);
 	if (start == runway_tiles.end() || finish == runway_tiles.end()) return false;
 
 	if (start <= finish) {
@@ -2170,9 +2173,12 @@ void DrawModularTaxiReservationOverlay(const Viewport &vp, DrawPixelInfo *dpi)
 			/* Fixed-wing landing continues through runway rollout. Helicopters hand off
 			 * directly from touchdown, even when a no-helipad airport uses a runway tile. */
 			AppendRouteTile(route, v->modular_landing_tile);
-			if (v->subtype != AIR_HELICOPTER) {
+			if (v->subtype != AIR_HELICOPTER && st != nullptr) {
 				std::vector<TileIndex> runway_route;
-				if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route)) {
+				/* Only as far as the rollout will actually go: the runway past the
+				 * turn-off point is reserved, but it is not route the aircraft drives. */
+				if (BuildForwardRunwayRoute(st, v->modular_landing_tile, runway_route,
+						FindModularRunwayRolloutPoint(st, v, v->modular_landing_tile))) {
 					for (TileIndex tile : runway_route) AppendRouteTile(route, tile);
 				}
 			}

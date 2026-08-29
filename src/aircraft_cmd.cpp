@@ -2137,7 +2137,7 @@ static bool TryCommitModularLanding(Aircraft *v, Station *st, TileIndex runway_t
 		if (dist_tiles >= 50) return false;
 	}
 
-	TileIndex rollout = FindModularRunwayRolloutPoint(st, runway_tile);
+	TileIndex rollout = FindModularRunwayRolloutPoint(st, v, runway_tile);
 	/* For helicopter landing on a computed apron tile, rollout is INVALID_TILE;
 	 * use the landing tile itself as the pathfinder origin. */
 	TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : runway_tile;

@@ -88,6 +88,12 @@ static Aircraft *CreateAircraft(VehicleID index)
 {
 	Aircraft *v = Aircraft::CreateAtIndex(index);
 	v->subtype = AIR_AIRCRAFT;
+	/* Rollout length is derived from how far this aircraft takes to brake, so a
+	 * bare shell needs a speed a real aircraft would have. Anything at or above
+	 * SPEED_LIMIT_APPROACH * plane_speed brakes in the full ~7 tiles, which is
+	 * longer than the short runways these tests build and therefore rolls to the
+	 * far end -- the behaviour every test written before early turn-off assumes. */
+	v->vcache.cached_max_speed = 1000;
 	return v;
 }
 
@@ -2089,6 +2095,160 @@ TEST_CASE("ModularAirportLandingChain")
 		/* (2,3) goal NOT reserved -- walk stopped at OneWay. */
 		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
 	}
+}
+
+/**
+ * Early rollout turn-off: a landing aircraft leaves the runway once it has braked to taxi
+ * speed, instead of rolling to the far end of whatever runway it landed on.
+ *
+ * The distance is the aircraft's own braking distance, so these expectations are tied to
+ * the deceleration model in UpdateAircraftSpeed and to the plane-speed setting. Each
+ * section sets that setting explicitly: the test environment leaves it at 0, which no real
+ * game ever has.
+ */
+TEST_CASE("ModularAirportEarlyRolloutTurnOff")
+{
+	const uint8_t saved_plane_speed = _settings_game.vehicle.plane_speed;
+
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 20, 8);
+	REQUIRE(st != nullptr);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	SECTION("Braking distance follows the speed model") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+
+		_settings_game.vehicle.plane_speed = 4; // the game default: aircraft fly at 1/4 speed
+		/* Anything at or above SPEED_LIMIT_APPROACH * 4 touches down at that limit. */
+		v->vcache.cached_max_speed = 1000;
+		CHECK(ModularRolloutBrakingTiles(v) == 7);
+		v->vcache.cached_max_speed = 920;
+		CHECK(ModularRolloutBrakingTiles(v) == 7);
+		/* An early prop (Sampson U52 tops out at 473) touches down slower and stops sooner. */
+		v->vcache.cached_max_speed = 473;
+		CHECK(ModularRolloutBrakingTiles(v) == 4);
+		/* Never above taxi speed: there is nothing to brake off, but the aircraft still
+		 * has to clear the touchdown tile. */
+		v->vcache.cached_max_speed = 200;
+		CHECK(ModularRolloutBrakingTiles(v) == 1);
+
+		/* Undivided plane speed approaches at 230 rather than 920, so everything stops
+		 * shorter -- the rollout has to follow the setting, not a fixed tile count. */
+		_settings_game.vehicle.plane_speed = 1;
+		v->vcache.cached_max_speed = 1000;
+		CHECK(ModularRolloutBrakingTiles(v) == 5);
+		v->vcache.cached_max_speed = 473;
+		CHECK(ModularRolloutBrakingTiles(v) == 5);
+	}
+
+	SECTION("Rollout stops at the braking distance on a long runway") {
+		_settings_game.vehicle.plane_speed = 4;
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		/* Touchdown at the low end rolls toward high: 7 tiles, not the full 11. */
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(7, 0));
+		/* Mirrored from the other end, so the direction follows the runway rather than
+		 * the tile order. */
+		CHECK(FindModularRunwayRolloutPoint(st, v, base + TileDiffXY(11, 0)) == base + TileDiffXY(4, 0));
+
+		/* A slower aircraft on the same runway turns off earlier. */
+		v->vcache.cached_max_speed = 473;
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(4, 0));
+	}
+
+	SECTION("A runway no longer than the braking distance still rolls to the far end") {
+		_settings_game.vehicle.plane_speed = 4;
+		AddLargeRunway(st, base, 6, 0, RUF_DEFAULT);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		/* 6 tiles is the shortest large-safe runway, and 5 tiles of roll is less than the
+		 * 7 this aircraft needs: unchanged behaviour, the whole runway. */
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(5, 0));
+		CHECK(FindModularRunwayRolloutPoint(st, v, base + TileDiffXY(5, 0)) == base);
+	}
+
+	SECTION("Helicopters keep the far end") {
+		_settings_game.vehicle.plane_speed = 4;
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		v->subtype = AIR_HELICOPTER;
+
+		/* Nothing about a helicopter rolls out, and the only thing that reads this for one
+		 * is landing-target scoring. Moving it would re-route helicopters. */
+		CHECK(FindModularRunwayRolloutPoint(st, v, base) == base + TileDiffXY(11, 0));
+	}
+
+	SECTION("The landing chain is planned from the turn-off point") {
+		_settings_game.vehicle.plane_speed = 4;
+		/* Runway along row 0, with its only exit beside the turn-off point. */
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		AddModularTile(st, base + TileDiffXY(7, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(7, 2), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		const TileIndex rollout = base + TileDiffXY(7, 0);
+		const TileIndex goal = base + TileDiffXY(7, 2);
+		REQUIRE(TryReserveLandingChain(v, st, base, goal));
+
+		/* The chain starts where the roll ends, which is what HandleModularGroundArrival
+		 * requires to install it as the taxi path on arrival. */
+		REQUIRE(v->landing_chain_path != nullptr);
+		CHECK(v->landing_chain_path->tiles.front() == rollout);
+		CHECK(v->landing_chain_path->tiles.back() == goal);
+
+		/* Turning off early does not divide the runway: it is still claimed whole, for
+		 * the whole operation. */
+		for (uint i = 0; i < 12; i++) {
+			CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(IsModularAirportTileReservedBy(goal, v->index));
+	}
+
+	SECTION("Rolling on past the turn-off point when the exit is further along") {
+		_settings_game.vehicle.plane_speed = 4;
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		/* The only way off is at tile 10, past the 7-tile braking distance. */
+		AddModularTile(st, base + TileDiffXY(10, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(10, 2), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		const TileIndex goal = base + TileDiffXY(10, 2);
+		REQUIRE(TryReserveLandingChain(v, st, base, goal));
+		REQUIRE(v->landing_chain_path != nullptr);
+		/* The rollout still ends at the braking distance; the remaining runway tiles are
+		 * ordinary taxi, at the head of the chain. */
+		CHECK(v->landing_chain_path->tiles.front() == base + TileDiffXY(7, 0));
+		CHECK(v->landing_chain_path->tiles[1] == base + TileDiffXY(8, 0));
+		CHECK(v->landing_chain_path->tiles.back() == goal);
+	}
+
+	_settings_game.vehicle.plane_speed = saved_plane_speed;
 }
 
 /**

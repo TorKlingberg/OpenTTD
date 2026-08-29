@@ -1375,7 +1375,7 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	const ModularAirportTileData *touchdown_data = st->airport.GetModularTileData(runway_tile);
 	const bool touchdown_on_runway = touchdown_data != nullptr && IsModularRunwayPiece(touchdown_data->piece_type);
 	const bool heli_direct_ground = v->subtype == AIR_HELICOPTER;
-	TileIndex rollout = touchdown_on_runway ? FindModularRunwayRolloutPoint(st, runway_tile) : INVALID_TILE;
+	TileIndex rollout = touchdown_on_runway ? FindModularRunwayRolloutPoint(st, v, runway_tile) : INVALID_TILE;
 	/* Fixed-wing aircraft reserve from the rollout point because they must stay on the
 	 * runway through landing rollout. Helicopters hand off to ground movement directly
 	 * from their touchdown tile, so their pre-landing chain must start there or the
@@ -1575,7 +1575,7 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 		/* Per-runway terminal scoring: find the nearest stand from this runway's
 		 * rollout point, not a single global terminal. */
 		if (is_runway) {
-			TileIndex rollout = FindModularRunwayRolloutPoint(st, data.tile);
+			TileIndex rollout = FindModularRunwayRolloutPoint(st, v, data.tile);
 			TileIndex term_tile = FindFreeModularTerminal(st, v, rollout);
 			if (term_tile != INVALID_TILE) {
 				TileIndex other_end = GetRunwayOtherEnd(st, data.tile);
@@ -1741,7 +1741,7 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 		 * was lost. Fixed-wing INVALID_TILE is preserved as-is: it represents a
 		 * deliberate "queue on a one-way buffer" landing handled by TryReserveLandingChain. */
 		if (v->subtype == AIR_HELICOPTER && v->modular_landing_goal == INVALID_TILE) {
-			TileIndex rollout = FindModularRunwayRolloutPoint(st, v->modular_landing_tile);
+			TileIndex rollout = FindModularRunwayRolloutPoint(st, v, v->modular_landing_tile);
 			TileIndex goal_from = (rollout != INVALID_TILE) ? rollout : v->modular_landing_tile;
 			v->modular_landing_goal = FindModularLandingGroundGoal(st, v, nullptr, goal_from);
 		}
@@ -1851,7 +1851,25 @@ bool AirportMoveModularLanding(Aircraft *v, const Station *st)
 			Debug(misc, 1, "[ModAp] V{} helicopter touchdown without ground goal -- should not happen", v->index);
 			AircraftEventHandler_EndLanding(v, st->airport.GetFTA());
 		} else {
-			TileIndex rollout_point = FindModularRunwayRolloutPoint(st, v->tile);
+			/* Prefer the tile the reserved chain already starts from over asking again.
+			 * The two answers are the same function of the same aircraft, but they are
+			 * computed a whole approach apart, and the braking distance depends on the
+			 * plane-speed setting, which a single-player game can change in between. A
+			 * disagreement would land the aircraft somewhere its precomputed chain does
+			 * not begin, which HandleModularGroundArrival reports as a broken landing
+			 * chain. Only accept it while it is still part of this runway: a layout edit
+			 * during the approach can leave it somewhere the aircraft cannot roll to. */
+			TileIndex rollout_point = INVALID_TILE;
+			if (v->landing_chain_path != nullptr && v->landing_chain_path->valid &&
+					!v->landing_chain_path->tiles.empty()) {
+				const TileIndex chain_start = v->landing_chain_path->tiles.front();
+				std::vector<TileIndex> runway_tiles;
+				if (GetContiguousModularRunwayTiles(st, v->tile, runway_tiles) &&
+						std::find(runway_tiles.begin(), runway_tiles.end(), chain_start) != runway_tiles.end()) {
+					rollout_point = chain_start;
+				}
+			}
+			if (rollout_point == INVALID_TILE) rollout_point = FindModularRunwayRolloutPoint(st, v, v->tile);
 			if (rollout_point != INVALID_TILE) {
 				Debug(misc, 3, "[ModAp] Vehicle {} starting rollout to tile {}", v->index, rollout_point.base());
 				v->ground_path_goal = rollout_point;
@@ -2006,12 +2024,70 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 }
 
 /**
- * Find a free modular terminal for an aircraft.
- * @param st The station.
- * @param v The aircraft.
- * @return Terminal tile or INVALID_TILE if none found.
+ * How many tiles of runway an aircraft needs after touchdown to brake from its
+ * approach speed down to taxi speed.
+ *
+ * This replays the deceleration UpdateAircraftSpeed actually performs, rather than
+ * approximating it: the soft brake sheds cur_speed^2/16384 per half-tick, which is a
+ * fast start and a very long tail, and the tail is most of the distance. The result is
+ * where the rollout may end, so being a tile short would have the aircraft turn off a
+ * runway above taxi speed and be snapped down by the clamp in AirportMoveModular --
+ * which is exactly the thing this is meant to avoid.
+ *
+ * Touchdown speed is predicted rather than observed because the rollout point has to be
+ * known one landing-chain reservation earlier, while the aircraft is still on final. The
+ * prediction is exact in practice: approach runs at SPEED_LIMIT_APPROACH capped by the
+ * aircraft's own maximum, and the gate sits 12 tiles out -- far enough to shed holding
+ * speed, which takes under 3. A broken-down aircraft is capped lower still
+ * (SPEED_LIMIT_BROKEN) and so only ever brakes shorter than predicted, which costs it a
+ * few tiles of rollout and nothing else.
+ *
+ * @param v The landing aircraft.
+ * @return Rollout distance in tiles, at least 1.
  */
-TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_tile)
+uint ModularRolloutBrakingTiles(const Aircraft *v)
+{
+	const uint plane_speed = std::max<uint>(1, _settings_game.vehicle.plane_speed);
+	const uint taxi_limit = SPEED_LIMIT_TAXI * plane_speed;
+	uint speed = std::min<uint>(v->vcache.cached_max_speed, SPEED_LIMIT_APPROACH * plane_speed);
+
+	/* Mirrors the movement loop: one iteration per UpdateAircraftSpeed call, distance
+	 * accumulated from the post-brake speed through the same 8-bit progress remainder.
+	 * Runway travel is axis-aligned, so GetOldAdvanceSpeed does not scale it down. */
+	uint pixels = 0;
+	uint progress = 0;
+	while (speed > taxi_limit) {
+		speed -= std::max<uint>(1, ((speed * speed) / 16384) / plane_speed);
+		progress += speed / plane_speed;
+		pixels += progress >> 8;
+		progress &= 0xFF;
+	}
+
+	return std::max<uint>(1, CeilDiv(pixels, TILE_SIZE));
+}
+
+/**
+ * Find where a landing aircraft's runway rollout ends.
+ *
+ * An aircraft leaves the runway once it has slowed to taxi speed, not once it has run
+ * out of runway: rolling the remaining length of a long runway costs about 41 ticks per
+ * tile and holds the whole runway -- as one reservation resource -- for every one of
+ * them. Stopping the rollout at the braking distance is what gives a runway longer than
+ * that distance any value at all.
+ *
+ * The tile returned is only where the rollout *may* end. It is not required to have a
+ * taxiway beside it: the landing chain plans from here to the parking goal, and if the
+ * nearest exit is further along the aircraft simply keeps rolling as ordinary taxi.
+ *
+ * A runway shorter than the braking distance clamps to the far end, which is what every
+ * rollout did before this, so nothing changes on a minimum-length runway.
+ *
+ * @param st The station.
+ * @param v The landing aircraft.
+ * @param landing_tile Touchdown tile.
+ * @return Rollout end tile, or INVALID_TILE if @p landing_tile is not a runway piece.
+ */
+TileIndex FindModularRunwayRolloutPoint(const Station *st, const Aircraft *v, TileIndex landing_tile)
 {
 	const ModularAirportTileData *data = st->airport.GetModularTileData(landing_tile);
 	if (data == nullptr) return INVALID_TILE;
@@ -2028,10 +2104,29 @@ TileIndex FindModularRunwayRolloutPoint(const Station *st, TileIndex landing_til
 		return INVALID_TILE;
 	}
 
-	/* Always roll out to the far end of the contiguous runway.
-	 * If taxi egress exists only near touchdown, pathfinding can taxi back later,
-	 * but touchdown should never stop short of rollout. */
-	return GetRunwayOtherEnd(st, landing_tile);
+	const TileIndex far_end = GetRunwayOtherEnd(st, landing_tile);
+	/* Helicopters never roll out: they hand off to ground movement from the touchdown tile
+	 * itself (see the chain_origin choice in TryReserveLandingChain). The callers that ask
+	 * for a rollout point anyway use it as a taxi-distance proxy when scoring landing
+	 * targets, so shortening it would quietly re-score every helicopter arriving at a
+	 * runway -- a change to helicopter routing, made by a change about aeroplane braking.
+	 * Leave them the far end they have always been given. */
+	if (v == nullptr || v->subtype == AIR_HELICOPTER) return far_end;
+
+	/* Index both ends rather than assuming the touchdown tile is at one extremity: it
+	 * always is today (only end pieces are landing targets), but the roll direction has
+	 * to follow GetRunwayOtherEnd either way for the two to agree. */
+	const auto touchdown_it = std::find(runway_tiles.begin(), runway_tiles.end(), landing_tile);
+	const auto far_it = std::find(runway_tiles.begin(), runway_tiles.end(), far_end);
+	if (touchdown_it == runway_tiles.end() || far_it == runway_tiles.end()) return far_end;
+
+	const size_t touchdown_index = static_cast<size_t>(std::distance(runway_tiles.begin(), touchdown_it));
+	const size_t far_index = static_cast<size_t>(std::distance(runway_tiles.begin(), far_it));
+	const bool toward_high = far_index > touchdown_index;
+	const size_t available = toward_high ? far_index - touchdown_index : touchdown_index - far_index;
+	const size_t rolled = std::min<size_t>(ModularRolloutBrakingTiles(v), available);
+
+	return toward_high ? runway_tiles[touchdown_index + rolled] : runway_tiles[touchdown_index - rolled];
 }
 
 TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, TileIndex start_tile)
