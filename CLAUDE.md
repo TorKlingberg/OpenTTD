@@ -12,8 +12,11 @@ The build directory is `OpenTTD/build/`. To rebuild after source changes:
 
 Equivalent manual command (if needed):
 ```bash
-make -j8 -C /Users/tor/ttd/OpenTTD/build && codesign -s - --deep --force /Users/tor/ttd/OpenTTD/build/openttd
+make -j8 -C /Users/tor/ttd/OpenTTD/build && codesign -s - --deep --force --entitlements /Users/tor/ttd/OpenTTD/scripts/debug.entitlements /Users/tor/ttd/OpenTTD/build/openttd
 ```
+
+Keep the `--entitlements` flag: it grants `get-task-allow`, without which `lldb -p <pid>`
+attaches to a running game but cannot pause it, and the failed attach kills the game.
 
 If you need to reconfigure (e.g. after cmake file changes):
 ```bash

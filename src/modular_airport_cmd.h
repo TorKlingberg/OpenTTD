@@ -461,8 +461,17 @@ struct TaxiReserveResult {
  * Routes tried per goal when looking for one that can be reserved, counting the shortest.
  * An aircraft whose preferred route is held by somebody else takes an alternative route instead of waiting.
  * 1 disables alternative route searching.
+ *
+ * Each refused attempt bans one held tile, so this is also the number of blocked runway
+ * exits a landing can route around: at 3, an airport whose first three exits are all held
+ * never generates a candidate through a fourth, and refuses every arrival while a usable
+ * exit stands empty. 4 covers the four-exit runways this has been seen on. Raising it
+ * further costs a pathfinder run per extra attempt on every refused route, and it is not
+ * the only cap -- a candidate longer than the shortest route plus MAX_ROUTE_DETOUR_TILES
+ * is discarded before it is validated, so exits far along a runway stay out of reach
+ * regardless of the attempt budget.
  */
-inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 3;
+inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 4;
 
 std::string_view TaxiReserveFailureName(TaxiReserveFailure reason);
 bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out = nullptr);
