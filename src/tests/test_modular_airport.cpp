@@ -2146,6 +2146,8 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		CHECK(ModularRolloutBrakingTiles(v) == 5);
 		v->vcache.cached_max_speed = 473;
 		CHECK(ModularRolloutBrakingTiles(v) == 5);
+
+		CHECK(ModularRolloutBrakingTiles(nullptr) == 1);
 	}
 
 	SECTION("Rollout stops at the braking distance on a long runway") {
@@ -2248,6 +2250,30 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 		CHECK(v->landing_chain_path->tiles.front() == base + TileDiffXY(7, 0));
 		CHECK(v->landing_chain_path->tiles[1] == base + TileDiffXY(8, 0));
 		CHECK(v->landing_chain_path->tiles.back() == goal);
+	}
+
+	SECTION("Landing target scoring measures taxi distance from the rollout point") {
+		_settings_game.vehicle.plane_speed = 4;
+		/* Runway 1: 12-tile runway at row 0 (base). Rollout point is (base + (7,0)), far end is (base + (11,0)).
+		 * Runway 2: 6-tile runway at row 4. Rollout point is far end (base + (5,4)).
+		 * Stand: (base + (7,2)).
+		 * Aircraft positioned midway in Y between runways at (base + (0,2)) so flight distance is identical.
+		 * From Runway 1's rollout point (7,0), taxi distance to stand (7,2) is 2 tiles.
+		 * From Runway 2's rollout point (5,4), taxi distance to stand (7,2) is 4 tiles.
+		 * (If scored from Runway 1's far end (11,0), distance would have been 6 tiles, incorrectly losing to Runway 2.) */
+		AddLargeRunway(st, base, 12, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		const TileIndex rwy2 = base + TileDiffXY(0, 4);
+		AddLargeRunway(st, rwy2, 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		AddModularTile(st, base + TileDiffXY(7, 2), APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		v->x_pos = TileX(base) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(base + TileDiffXY(0, 2)) * TILE_SIZE + TILE_SIZE / 2;
+
+		CHECK(FindModularLandingTarget(st, v) == base);
 	}
 
 	_settings_game.vehicle.plane_speed = saved_plane_speed;

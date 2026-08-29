@@ -1578,9 +1578,9 @@ TileIndex FindModularLandingTarget(const Station *st, const Aircraft *v)
 			TileIndex rollout = FindModularRunwayRolloutPoint(st, v, data.tile);
 			TileIndex term_tile = FindFreeModularTerminal(st, v, rollout);
 			if (term_tile != INVALID_TILE) {
-				TileIndex other_end = GetRunwayOtherEnd(st, data.tile);
-				int end_x = TileX(other_end) * TILE_SIZE;
-				int end_y = TileY(other_end) * TILE_SIZE;
+				const TileIndex origin = IsValidTile(rollout) ? rollout : data.tile;
+				int end_x = TileX(origin) * TILE_SIZE;
+				int end_y = TileY(origin) * TILE_SIZE;
 				int tx = TileX(term_tile) * TILE_SIZE;
 				int ty = TileY(term_tile) * TILE_SIZE;
 				int dist_taxi = abs(end_x - tx) + abs(end_y - ty);
@@ -2051,6 +2051,8 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
  */
 uint ModularRolloutBrakingTiles(const Aircraft *v)
 {
+	if (v == nullptr) return 1;
+
 	const uint plane_speed = std::max<uint>(1, _settings_game.vehicle.plane_speed);
 	const uint taxi_limit = SPEED_LIMIT_TAXI * plane_speed;
 	uint speed = std::min<uint>(v->vcache.cached_max_speed, SPEED_LIMIT_APPROACH * plane_speed);
