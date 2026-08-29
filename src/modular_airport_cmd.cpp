@@ -843,6 +843,17 @@ static bool TryCommitForwardReservationPlan(Aircraft *v, const Station *st,
  * discarded unvalidated, and the aircraft waited as though nothing had been tried: T7d
  * measured 0 detours longer than one step, over 3656 in two years. Two steps admits them
  * and they stay rare (103 of 3803, 2.7%), which is what the second step is buying.
+ *
+ * Three and four steps were measured on 2026-08-29 and both are worse, so two is not just
+ * better than one -- it is near the turnover. T7d over five years: 27001 movements at 4,
+ * 26974 at 6, 26413 at 8, while diverts rise 8109 -> 8253 -> 8554. The extra length is
+ * spent, and throughput falls as it is: no single aircraft's route gets worse, but more of
+ * them hold shared tiles for longer, which is the same emergent contention that cost 8%
+ * when the ground-pathfinder heuristic changed. Past a couple of tiles, waiting for the
+ * blocker to move genuinely beats going round.
+ *
+ * This is a busy decision, not a rare one -- the same run logs 14136 rate-limited
+ * detour-capped fires -- so treat a change here as a throughput change and measure T7d.
  */
 static constexpr int MAX_ROUTE_DETOUR_TILES = 4;
 
@@ -925,7 +936,19 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		if (attempt == 0) {
 			shortest_length = this_length;
 		} else if (this_length > shortest_length + MAX_ROUTE_DETOUR_TILES) {
-			/* Every further ban only makes the route longer, so stop rather than keep looking. */
+			/* Every further ban only makes the route longer, so stop rather than keep looking.
+			 *
+			 * Logged because this and the attempt budget are the two ways the alternate-route
+			 * search gives up, and without a line here they are indistinguishable from the
+			 * outside: the caller reports the same refusal either way, so an airport whose
+			 * usable exit sits just past the budget looks exactly like one with no exit at
+			 * all. Rate-limited like the landing-chain refusal it usually precedes -- a
+			 * refused landing retries every tick it spends in an approach gate. */
+			if (ShouldLogModularRateLimited(v->index, 45, 128)) {
+				Debug(misc, 2, "[ModAp] V{} detour-capped: attempt={} origin={} goal={} len={} shortest_len={} budget={}",
+						v->index, static_cast<int>(attempt), origin.base(), goal.base(),
+						this_length, shortest_length, MAX_ROUTE_DETOUR_TILES);
+			}
 			break;
 		}
 
