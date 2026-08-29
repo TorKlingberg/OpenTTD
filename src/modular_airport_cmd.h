@@ -33,6 +33,7 @@ inline constexpr uint8_t MGT_ROLLOUT = 5;
 inline constexpr uint8_t MGT_HELI_TAKEOFF_TILE = 6;
 
 inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this are not usable for landing or takeoff
+inline constexpr int LARGE_RUNWAY_LENGTH_TILES = 6; ///< Runway length a fast jet needs; shorter ones are not large-safe
 
 int UpdateAircraftSpeed(Aircraft *v, uint speed_limit = UINT16_MAX, bool hard_limit = true);
 void AircraftEntersTerminal(Aircraft *v);
@@ -480,6 +481,8 @@ void GetModularHeliHoldingTarget(Aircraft *v, const Station *st, int *target_x, 
 bool IsHoldingGateActive(uint32_t aircraft_wp, uint32_t gate_wp, uint32_t n_wp);
 bool DirectionsWithin45(Direction dir_a, Direction dir_b);
 uint ModularRolloutBrakingTiles(const Aircraft *v);
+uint ModularTakeoffRunTiles(const Aircraft *v);
+bool ModularTakeoffRunFitsFrom(const Station *st, const Aircraft *v, TileIndex tile);
 TileIndex FindModularRunwayRolloutPoint(const Station *st, const Aircraft *v, TileIndex landing_tile);
 TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, TileIndex start_tile);
 TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);

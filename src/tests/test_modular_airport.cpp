@@ -2252,6 +2252,122 @@ TEST_CASE("ModularAirportEarlyRolloutTurnOff")
 }
 
 /**
+ * Mid-runway takeoff start: a departure rolls from the first point with enough runway
+ * ahead of it, rather than back-taxiing to the far end of a long runway.
+ */
+TEST_CASE("ModularAirportMidRunwayTakeoffStart")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 20, 8);
+	REQUIRE(st != nullptr);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+	const EngineID jet_engine = CreateAircraftEngine(EngineID(1), AIR_FAST);
+
+	SECTION("Required run follows the runway lengths the airport is already built around") {
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+
+		v->engine_type = jet_engine;
+		CHECK(ModularTakeoffRunTiles(v) == (uint)LARGE_RUNWAY_LENGTH_TILES);
+		v->engine_type = prop_engine;
+		CHECK(ModularTakeoffRunTiles(v) == (uint)MIN_RUNWAY_LENGTH_TILES);
+	}
+
+	SECTION("A roll may start wherever enough runway is left") {
+		/* Rolling low -> high, so the run remaining at index i is 12 - i. */
+		AddLargeRunway(st, base, 12, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->modular_takeoff_tile = base;
+
+		v->engine_type = jet_engine;
+		for (uint i = 0; i < 12; i++) {
+			CHECK(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(i, 0)) == (12 - i >= 6));
+		}
+
+		/* A small aircraft needs less, so it may start further along the same runway. */
+		v->engine_type = prop_engine;
+		for (uint i = 0; i < 12; i++) {
+			CHECK(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(i, 0)) == (12 - i >= 4));
+		}
+	}
+
+	SECTION("The direction is the runway's, not the tile order's") {
+		/* Rolling high -> low, so the run remaining at index i is i + 1. */
+		AddLargeRunway(st, base, 12, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = jet_engine;
+		v->modular_takeoff_tile = base + TileDiffXY(11, 0);
+
+		for (uint i = 0; i < 12; i++) {
+			CHECK(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(i, 0)) == (i + 1 >= 6));
+		}
+	}
+
+	SECTION("A runway with nothing to spare is used end to end") {
+		/* Six tiles is the shortest large-safe runway: only its own end qualifies, so a
+		 * jet taxis to the end and departs from there exactly as it always did. */
+		AddLargeRunway(st, base, 6, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = jet_engine;
+		v->modular_takeoff_tile = base;
+
+		CHECK(ModularTakeoffRunFitsFrom(st, v, base));
+		for (uint i = 1; i < 6; i++) {
+			CHECK_FALSE(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(i, 0)));
+		}
+	}
+
+	SECTION("A short strip never permits an early start") {
+		/* A jet is only ever sent to a runway this short when the airport has nothing
+		 * better. It needs all of it, so nothing here qualifies and the aircraft keeps
+		 * taxiing to the end. */
+		AddLargeRunway(st, base, 4, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = jet_engine;
+		v->modular_takeoff_tile = base;
+
+		for (uint i = 0; i < 4; i++) {
+			CHECK_FALSE(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(i, 0)));
+		}
+		/* The same strip is long enough for a small aircraft, from its end only. */
+		v->engine_type = prop_engine;
+		CHECK(ModularTakeoffRunFitsFrom(st, v, base));
+		CHECK_FALSE(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(1, 0)));
+	}
+
+	SECTION("Another runway is not this aircraft's runway") {
+		/* An aircraft crossing some other runway on the way to its own is transiting, and
+		 * has no run ahead of it at all. */
+		AddLargeRunway(st, base, 12, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+		AddLargeRunway(st, base + TileDiffXY(0, 3), 12, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->targetairport = st->index;
+		v->engine_type = jet_engine;
+		v->modular_takeoff_tile = base;
+
+		CHECK(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(2, 0)));
+		CHECK_FALSE(ModularTakeoffRunFitsFrom(st, v, base + TileDiffXY(2, 3)));
+	}
+}
+
+/**
  * Alternate-route selection: where the shortest route off a runway is held by another
  * aircraft, a second exit is used instead of refusing the movement.
  * @see plans/route-selection-plan.md

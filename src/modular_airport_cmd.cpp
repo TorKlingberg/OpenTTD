@@ -486,7 +486,7 @@ bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end)
 {
 	std::vector<TileIndex> tiles;
 	if (!GetContiguousModularRunwayTiles(st, runway_end, tiles)) return false;
-	if (tiles.size() < 6) return false;
+	if ((int)tiles.size() < LARGE_RUNWAY_LENGTH_TILES) return false;
 	for (TileIndex t : tiles) {
 		const ModularAirportTileData *td = st->airport.GetModularTileData(t);
 		if (td == nullptr || !IsLargeRunwayFamily(td->piece_type)) return false;
@@ -1942,14 +1942,18 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 
 	const bool horizontal = (data->rotation % 2) == 0;
 
-	/* Compute runway length in tiles for liftoff point calculation. */
+	/* Liftoff after 2/3 of the ground run this aircraft needs, rather than 2/3 of
+	 * whatever runway it happens to be on. The two agree on a runway of exactly the
+	 * length the aircraft needs -- which is where every takeoff used to start -- and on a
+	 * longer one there is no reason to keep the aircraft down for the extra tiles it was
+	 * never going to use. The runway still caps it, so a jet on a short strip it was only
+	 * allowed onto because the airport has nothing better rotates where it always did. */
 	std::vector<TileIndex> takeoff_runway_tiles;
 	int runway_length_tiles = 1;
 	if (GetContiguousModularRunwayTiles(st, v->modular_takeoff_tile, takeoff_runway_tiles)) {
 		runway_length_tiles = std::max(1, (int)takeoff_runway_tiles.size());
 	}
-	/* Liftoff after 2/3 of runway length (in sub-tile progress units). */
-	int liftoff_progress = runway_length_tiles * TILE_SIZE * 2 / 3;
+	int liftoff_progress = std::min(runway_length_tiles, (int)ModularTakeoffRunTiles(v)) * TILE_SIZE * 2 / 3;
 
 	if (v->modular_takeoff_progress == 0) {
 		/* Determine takeoff direction by finding the other end of the runway */
@@ -2531,6 +2535,67 @@ bool TryClearStaleModularReservation(const Station *st, TileIndex tile, VehicleI
 		IsValidTile(a->tile) ? a->tile.base() : 0);
 	ClearModularAirportTileReservation(tile);
 	return true;
+}
+
+/**
+ * How much runway a departing aircraft needs ahead of it to get airborne.
+ *
+ * These are the two lengths the rest of the airport is already built around: a fast jet
+ * needs a large-safe runway, which is LARGE_RUNWAY_LENGTH_TILES long, and nothing may use
+ * a runway below MIN_RUNWAY_LENGTH_TILES at all. Reusing them means a runway that is long
+ * enough to be selected is always long enough to depart from.
+ *
+ * This only ever *permits* an early start. An aircraft that cannot find that much runway
+ * ahead of it taxis to the end and departs from there exactly as before, which is what
+ * happens to a jet on the short strip it is allowed onto when an airport has nothing
+ * better.
+ *
+ * @param v The departing aircraft.
+ * @return Required ground run in tiles.
+ */
+uint ModularTakeoffRunTiles(const Aircraft *v)
+{
+	const bool is_fast = v != nullptr && (AircraftVehInfo(v->engine_type)->subtype & AIR_FAST) != 0;
+	return is_fast ? LARGE_RUNWAY_LENGTH_TILES : MIN_RUNWAY_LENGTH_TILES;
+}
+
+/**
+ * Whether a takeoff roll starting on @p tile has enough of the aircraft's selected runway
+ * ahead of it.
+ *
+ * A departure does not have to reach the far end of its runway, only a point with enough
+ * runway left to get airborne. Back-taxiing the rest costs about 41 ticks per tile and
+ * holds the whole runway -- one reservation resource -- for every one of them, which is
+ * most of what a long runway costs its owner today.
+ *
+ * The direction is the one the takeoff already rolls in: from the selected end toward the
+ * far end. @p tile lies between the two whenever it is on this runway at all, so the
+ * distance to the far end is the run remaining ahead of it.
+ *
+ * @param st   The station.
+ * @param v    The departing aircraft, with its takeoff runway already selected.
+ * @param tile Candidate tile to start the roll from.
+ * @return true when the roll may start here.
+ */
+bool ModularTakeoffRunFitsFrom(const Station *st, const Aircraft *v, TileIndex tile)
+{
+	if (st == nullptr || v == nullptr) return false;
+	if (!IsValidTile(tile) || !IsValidTile(v->modular_takeoff_tile)) return false;
+
+	std::vector<TileIndex> runway_tiles;
+	if (!GetContiguousModularRunwayTiles(st, v->modular_takeoff_tile, runway_tiles)) return false;
+
+	/* Not on this runway: an aircraft crossing some other runway on its way here is
+	 * transiting, and has no runway ahead of it at all. */
+	const auto here = std::find(runway_tiles.begin(), runway_tiles.end(), tile);
+	if (here == runway_tiles.end()) return false;
+
+	const auto far = std::find(runway_tiles.begin(), runway_tiles.end(),
+			GetRunwayOtherEnd(st, v->modular_takeoff_tile));
+	if (far == runway_tiles.end()) return false;
+
+	const size_t ahead = static_cast<size_t>(std::abs(std::distance(here, far))) + 1;
+	return ahead >= ModularTakeoffRunTiles(v);
 }
 
 /** Why a runway-end tile is or isn't a usable takeoff end (occupancy/safety aside). */
@@ -3360,7 +3425,10 @@ void HandleModularGroundArrival(Aircraft *v)
 				SetTaxiReservationUnlessOperationRunway(v, v->tile);
 			}
 			v->state = TAKEOFF;
-			v->modular_takeoff_tile = v->tile;
+			/* Keep the selected runway end rather than overwriting it with wherever the
+			 * roll begins. GetRunwayOtherEnd is only meaningful from an end tile -- from a
+			 * middle one it always answers "the high end" -- and it is what tells
+			 * AirportMoveModularTakeoff which way to roll. */
 			v->modular_takeoff_progress = 0;
 			v->modular_ground_target = MGT_NONE;
 			break;
@@ -3559,6 +3627,20 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 
 	if (v->tile == v->ground_path_goal) {
+		UpdateModularAircraftParkedDirection(v, st);
+		ClearTaxiPathState(v, v->tile);
+		v->ground_path_goal = INVALID_TILE;
+		HandleModularGroundArrival(v);
+		return true;
+	}
+
+	/* A departure standing on its runway with enough of it left to get airborne is where
+	 * it needs to be, whether or not that is the end the route was aiming at. The arrival
+	 * handler starts the roll from the tile the aircraft is on, so this is only a matter
+	 * of stopping the taxi. The rest of the route is released with the taxi path; the
+	 * runway itself is held separately, as the whole contiguous resource it was claimed
+	 * as, and an aircraft cannot be standing on it without already holding that claim. */
+	if (v->modular_ground_target == MGT_RUNWAY_TAKEOFF && ModularTakeoffRunFitsFrom(st, v, v->tile)) {
 		UpdateModularAircraftParkedDirection(v, st);
 		ClearTaxiPathState(v, v->tile);
 		v->ground_path_goal = INVALID_TILE;
