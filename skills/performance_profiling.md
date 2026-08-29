@@ -7,7 +7,7 @@ How to find hotspots in OpenTTD on macOS using the built-in `sample` profiler, p
 - **`sample`** — macOS built-in sampling profiler (no install needed). Attaches to a PID, captures stack snapshots at intervals, prints a call tree with sample counts.
 - **`scripts/profile_helis.sh`** — wraps headless openttd + `sample` for a given save (defaults to `helis2.sav`, 365 days).
 - **`scripts/quick_test.sh`** — build + headless run for N years on one or more saves, prints elapsed wall time and `[AirportStats]` movement counts. Use to confirm speedup without behavior regressions.
-- **`scripts/regression_test.sh`** — compares per-save movement counts against `*.expected` baselines (5-year run). A bare run is the `T5j2` fixture only (~2 min), which is the normal check; `--full` adds the other three, run concurrently (~13 min, nearly all of it `T7d`), for changes that could affect ground/taxi pathfinding.
+- **`scripts/regression_test.sh`** — compares per-save movement counts against `*.expected` baselines (5-year run). A bare run is `T5j2`, `mass7-inair`, and `helis2`, run concurrently (well under a minute), which is the normal check; `--full` adds `T7d` (~13 min total, nearly all of it `T7d`), for changes that could affect ground/taxi pathfinding.
 
 On Linux, swap `sample` for `perf record` / `perf report`. Everything else (headless flags, log parsing) is the same.
 
@@ -51,8 +51,8 @@ After changing the hot path, two checks before declaring victory:
 scripts/quick_test.sh 1                      # 1 year, default saves
 scripts/quick_test.sh 5 scripts/testdata/helis2.sav   # 5 years, single save
 
-# Regression check before commit (T5j2 fixture, ~2 min). Add --full only if the
-# change could plausibly affect ground/taxi pathfinding.
+# Regression check before commit (T5j2/mass7-inair/helis2, <1 min). Add --full
+# only if the change could plausibly affect ground/taxi pathfinding.
 bash scripts/regression_test.sh
 ```
 

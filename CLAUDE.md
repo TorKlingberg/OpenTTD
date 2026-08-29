@@ -40,7 +40,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 Do go ahead and commit if you are confident about a change. No need to wait for my approval.
 
-Run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — the `T5j2` fixture only, about two minutes, and the right check for almost everything. Save `--full` for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
+Run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — `T5j2`, `mass7-inair`, and `helis2` concurrently, under a minute apiece, and the right check for almost everything. Save `--full` (adds `T7d`, ~13 min) for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
 
 Also ask a subagent to review your change before comitting. Run this in parallel with the regression test.
 
@@ -125,25 +125,29 @@ volume and does not change any total.
 
 | Invocation | Fixtures |
 |---|---|
-| `scripts/regression_test.sh` | `T5j2` only, ~2 min — the normal check, including before a commit |
-| `scripts/regression_test.sh --full` | all four, ~13 min — only when a change could break taxi pathfinding |
+| `scripts/regression_test.sh` | `T5j2`, `mass7-inair`, `helis2` concurrently, ~40s — the normal check, including before a commit |
+| `scripts/regression_test.sh --full` | adds `T7d`, ~13 min total — only when a change could break taxi pathfinding |
 
 Other flags: `--no-build` reuses whatever `./build/openttd` already is, `--sequential` runs the
 fixtures one at a time, and `--log-dir DIR` moves the per-fixture logs off their default `/tmp`
 paths.
 
-**`T5j2` is the default because it is the cheapest**, at ~108s against `T7d`'s 784s. It is a
-real player layout under sustained contention, so it exercises reservation and queuing hard,
-but it is explicitly *not* the broadest fixture. What the default run cannot see:
+**The default run holds back only `T7d`**, at ~784s versus ~30-40s apiece for the other three
+— running it every commit would make the bare check as slow as `--full` is today. `T5j2`,
+`mass7-inair`, and `helis2` together already cover sustained reservation contention, fixed-wing
+throughput, and helicopters. What the default run still cannot see, because only `T7d` has it:
 
 - **Alternate routing.** `T7d` is the only fixture with genuine route diversity — two or more
-  routes between the same endpoints — so route-selection work is invisible here.
+  routes between the same endpoints — so route-selection work is invisible to the default run.
 - **The wait-don't-downgrade tier.** Also `T7d` only.
-- **Helicopters.** `helis2` only.
 
 So reach for `--full` when a change has a real chance of breaking ground/taxi pathfinding, and
 always for routing work. It is not a per-commit gate; for ordinary changes the bare run is the
 check.
+
+Before 2026-08-29 the bare run was `T5j2` alone, and it missed a real ~8% throughput regression
+on `mass7-inair`/`helis2` (see the floor-history note below) for five days because neither
+fixture ran by default. Broadening the default run is the direct fix for that gap.
 
 Note also that `T5j2` has the loosest floor of the four on purpose (see the save/load note
 below), so it is the least sensitive fixture to a small regression as well as the fastest.
@@ -163,9 +167,9 @@ paused fixture. Pass `--log-dir` to whichever run is the guest. (This is real �
 The fixtures:
 
 - `scripts/testdata/T7d.sav` — route diversity: Pladingbury Airport has multiple paths off one landing runway under heavy arrival demand, Sledinghead Cross Airport has multiple paths to one takeoff runway, and other airports mix large and small runways. Busiest fixture (~7.4k movements/year), so with the fixtures running concurrently it is the one that sets the suite's wall time
-- `scripts/testdata/T5j2.sav` — **the default fixture.** Real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
-- `scripts/testdata/mass7-inair.sav` — mixed fixed-wing throughput; every airport is large-safe
-- `scripts/testdata/helis2.sav` — helicopter-heavy stress; every airport is large-safe
+- `scripts/testdata/T5j2.sav` — **default.** Real player layout under sustained contention (~26k `stuck(reserve)` reports over 8 years with no permanent stall); 16 modular airports, mixed fleet
+- `scripts/testdata/mass7-inair.sav` — **default.** Mixed fixed-wing throughput; every airport is large-safe
+- `scripts/testdata/helis2.sav` — **default.** Helicopter-heavy stress; every airport is large-safe
 
 **Aircraft crashes are off in all four fixtures** (`vehicle.plane_crashes = 0`, set by
 `scripts/disable_crashes.sh`), so which aircraft happen to die no longer perturbs a total. That
@@ -269,6 +273,25 @@ A sim is deterministic for a fixed save + tick count, so the floors are exact an
 `helis2` both round-tripped to identical totals. Whatever state does not survive `T5j2`'s
 save/load is worth about half a percent there, so a 30-movement margin of the kind the other
 fixtures use would sit inside the noise.
+
+**Floor history:** `mass7-inair` (9100) and `helis2` (14000) were lowered to 8400 and 13400 on
+2026-08-29. `cd876d1b676162e60ed80454a9db935332d8edda` ("Refactor: Simplify ground pathfinder
+and holding pattern calculations", 2026-08-24) swapped the ground-pathfinder A* heuristic from
+a locally-defined `CalculateHeuristic()` to the shared `DistanceManhattan()` — a correctness
+fix, since the old function silently underflowed (`TileX`/`TileY` return `uint`) and returned
+negative heuristic values for any goal up/right of the start tile. The corrected heuristic
+still guarantees optimal-cost paths for any single aircraft (an admissible heuristic, even a
+broken-weak one, never breaks A* optimality), but it dropped `mass7-inair`/`helis2` throughput
+~8% (9229→8500, 14127→13505) — every other change in that commit was verified inert by
+reverting each individually and rebuilding. The mechanism is not fully understood: the working
+theory is that the two heuristics break cost-ties between equal-length alternate routes
+differently, and that shift creates emergent reservation contention across aircraft even though
+no single aircraft's path got worse. The floors were lowered to match rather than reverting the
+correctness fix; the throughput loss itself is still open.
+
+Because `T5j2`/`mass7-inair`/`helis2` moved into the default run on 2026-08-29 (see the
+invocation table above), a regression like this one — invisible to the old T5j2-only default —
+will fail the bare run in the future rather than needing `--full` or a manual bisect to catch.
 
 Per-commit attribution: `scripts/airport_stats_history.sh <start_commit> <out_dir> <years>` checks out + rebuilds each commit in `<start>^..HEAD` and records movements to CSV (history mode runs **only** the default save). `--current <years> [save]` runs just the working tree. Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mass7-inair.sav).
 

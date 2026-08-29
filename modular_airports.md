@@ -450,7 +450,7 @@ Unit tests: `src/tests/test_modular_airport.cpp` covers classification, rotation
 /Users/tor/ttd/OpenTTD/build/openttd_test "ModularAirport*"
 ```
 
-Regression: `scripts/regression_test.sh` runs headless 5-year simulations and compares total airport movements against the committed floors in `scripts/testdata/*.expected`. A bare run is the `T5j2` fixture only (~2 min), which is the normal check; `--full` runs all four concurrently (~13 min) and is worth it when a change could break ground/taxi pathfinding — always for routing work, since only `T7d` has route diversity. Per-commit attribution is `scripts/airport_stats_history.sh`. See `CLAUDE.md` for the fixture-by-fixture detail and the caveats about paused saves and log paths.
+Regression: `scripts/regression_test.sh` runs headless 5-year simulations and compares total airport movements against the committed floors in `scripts/testdata/*.expected`. A bare run is `T5j2`, `mass7-inair`, and `helis2` concurrently (well under a minute), which is the normal check; `--full` adds `T7d` (~13 min total) and is worth it when a change could break ground/taxi pathfinding — always for routing work, since only `T7d` has route diversity. Per-commit attribution is `scripts/airport_stats_history.sh`. See `CLAUDE.md` for the fixture-by-fixture detail and the caveats about paused saves and log paths.
 
 ## Debugging
 

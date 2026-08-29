@@ -3,15 +3,15 @@
 #
 # Usage: scripts/regression_test.sh [--full] [--no-build] [--sequential]
 #
-# By default this runs the single T5j2 fixture: a real player layout under
-# sustained contention, and at ~2 minutes the cheapest of the four by a wide
-# margin. That is the normal check, before a commit included.
+# By default this runs the three fast fixtures -- T5j2, mass7-inair, helis2 --
+# concurrently, so it costs about as much as the slowest of the three (well
+# under a minute apiece). That is the normal check, before a commit included.
 #
-# --full adds the other three. It is not a per-commit gate: reach for it when a
-# change has a real chance of breaking ground/taxi pathfinding. In particular
-# T7d is the only fixture with genuine route diversity and the only probe of the
-# wait-don't-downgrade tier, so alternate-routing work is invisible to the
-# default run — and T7d alone costs ~13 minutes, which is why it is not it.
+# --full adds T7d, the one slow fixture (~13 minutes on its own). It is not a
+# per-commit gate: reach for it when a change has a real chance of breaking
+# ground/taxi pathfinding. T7d is the only fixture with genuine route diversity
+# and the only probe of the wait-don't-downgrade tier, so alternate-routing
+# work is invisible to the default run.
 #
 # Fixtures run concurrently: the simulation is single-threaded, so four of them
 # cost roughly one wall-clock fixture on any multi-core machine. Each writes its
@@ -34,12 +34,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
-# The default fixture. See the block comment above for why it is this one.
+# The default fixtures: every fixture except the slow one. See the block
+# comment above for why T7d is held back.
 DEFAULT_CASES=(
 	"scripts/testdata/T5j2.sav:scripts/testdata/T5j2.expected"
+	"scripts/testdata/mass7-inair.sav:scripts/testdata/mass7-inair.expected"
+	"scripts/testdata/helis2.sav:scripts/testdata/helis2.expected"
 )
 
-# --full. T7d stays first so the longest fixture starts first.
+# --full. All four; T7d stays first so the longest fixture starts first.
 FULL_CASES=(
 	"scripts/testdata/T7d.sav:scripts/testdata/T7d.expected"
 	"scripts/testdata/T5j2.sav:scripts/testdata/T5j2.expected"
@@ -60,10 +63,10 @@ usage() {
 Usage: scripts/regression_test.sh [--full] [--no-build] [--sequential]
                                  [--log-dir DIR]
 
-  --full         Run every fixture (T5j2, T7d, mass7-inair, helis2) instead of
-                 just T5j2. For changes that could break taxi pathfinding; the
-                 bare run is the normal check. Costs ~13 minutes against the
-                 default run's ~2, all of it T7d.
+  --full         Also run T7d, the one slow fixture (~13 minutes on its own),
+                 on top of the default T5j2/mass7-inair/helis2. For changes
+                 that could break taxi pathfinding, or any routing work; the
+                 bare run is the normal check.
   --no-build     Skip the build; run whatever ./build/openttd already is.
   --sequential   Run the fixtures one at a time instead of concurrently.
   --log-dir DIR  Write the per-fixture openttd logs to DIR (default: /tmp).
