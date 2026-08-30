@@ -6,6 +6,10 @@ SAVE_FILE="${1:-}"
 
 scripts/build_and_sign.sh
 
+# Self-contained symbols, so this game stays inspectable under `lldb -p` even
+# after the build directory has moved on. See scripts/make_dsym.sh.
+scripts/make_dsym.sh
+
 # Modular airport diagnostics use the misc channel; level 3 enables detailed [ModAp] traces.
 CMD=(./build/openttd -d misc=3)
 if [[ -n "$SAVE_FILE" ]]; then

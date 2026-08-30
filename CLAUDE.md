@@ -88,6 +88,11 @@ cd /Users/tor/ttd/OpenTTD && git merge --ff-only claude/<branch>
 
 The main runtime log is `/tmp/openttd.log`.
 
+`scripts/build_and_run*.sh` also run `scripts/make_dsym.sh`, which gives the game
+self-contained symbols so `lldb -p` still works after the build directory has moved
+on. Without it a rebuild makes every pool walk return zero rows, which reads as an
+empty game rather than a failed attach.
+
 Debugger/logging workflows are documented in the skills list below.
 
 ## Coordinate System

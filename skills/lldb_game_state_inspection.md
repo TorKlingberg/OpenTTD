@@ -78,6 +78,10 @@ If a debugger-side recursive dump helps, print `GetName()`/`GetType().GetName()`
 
 ## Pitfalls (all learned the hard way)
 
+- **A rebuild blinds the debugger, silently.** Zero rows from every pool usually
+  means LLDB refused the debug map, not an empty game. `scripts/make_dsym.sh`
+  (run automatically by the two `build_and_run*` scripts) prevents it; see
+  `skills/lldb_debugging.md`.
 - **Check every pointer before drilling.** Reading through a null/absent `unique_ptr` or invalid slot yields plausible-looking garbage, not an error — e.g. phantom "3 modular tiles of piece 0" on stations that have no modular data at all. If a value looks suspiciously uniform across many objects, it's probably a misread.
 - **Names are lazy and fuzzy.** `Town::cached_name` is only filled once the label has been drawn; and the user's recollection of a generated name may be slightly off ("Grenford" vs actual "Grennford"). Prefer identifying objects by state (tile counts, piece types, town links) and treat name matches as confirmation.
 - **Oil rigs look like airports.** They are stations with facilities Airport|Dock (0x18) and `airport.type == 9` (`AT_OILRIG`). Exclude them when counting player airports, as the game itself does.
