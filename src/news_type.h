@@ -50,6 +50,7 @@ enum class NewsType : uint8_t {
 /** Sub type of the #NewsType::Advice to be able to remove specific news items. */
 enum class AdviceType : uint8_t {
 	AircraftDestinationTooFar, ///< Next (order) destination is too far for the aircraft type.
+	AircraftMovedToHangar, ///< The aircraft was moved to a hangar because the modular airport tile under it was removed.
 	AutorenewFailed, ///< Autorenew or autoreplace failed.
 	Order, ///< Something wrong with the order, e.g. invalid or duplicate entries, too few entries
 	RefitFailed, ///< The refit order failed to execute.

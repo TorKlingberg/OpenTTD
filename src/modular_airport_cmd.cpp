@@ -620,6 +620,13 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 		SetAircraftPosition(v, hx, hy, hz);
 		VehicleEnterDepot(v);
 
+		/* Tell the owner where their aircraft went: it is now parked in a hangar it never
+		 * asked for, somewhere other than the tile they were watching. News is client-local
+		 * state, so the _local_company guard cannot desync a network game. */
+		if (v->owner == _local_company) {
+			AddVehicleAdviceNewsItem(AdviceType::AircraftMovedToHangar, GetEncodedString(STR_NEWS_AIRCRAFT_MOVED_TO_HANGAR, v->index), v->index);
+		}
+
 		Debug(misc, 1, "[ModAp] Teleported vehicle {} from removed tile {} to hangar {}, state reset to HANGAR",
 			v->index, tile.base(), hangar.base());
 	}
