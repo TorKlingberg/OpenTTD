@@ -515,6 +515,7 @@ TileIndex FindFreeModularHangar(const Station *st, const Aircraft *v, TileIndex 
 TileIndex FindModularUnstackParkingTile(const Station *st, const Aircraft *v, uint8_t *target = nullptr);
 bool CanUseModularGroundRouting(const Station *st, const Aircraft *v);
 bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st);
+bool MaybeSwitchModularDepartureToHangar(Aircraft *v, const Station *st);
 void HandleModularGroundArrival(Aircraft *v);
 void LogModularVehicleReservationState(const Station *st, const Aircraft *v, std::string_view reason);
 void LogModularTakeoffRunwayUnavailable(const Station *st, const Aircraft *v);

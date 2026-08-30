@@ -3201,6 +3201,94 @@ bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, 
 	return TryCommitForwardReservationPlan(v, st, plan, out, true);
 }
 
+/**
+ * Re-decide a latched departure when the aircraft's order now sends it to this airport's
+ * hangar.
+ *
+ * The departure/hangar choice is made once, at the moment an aircraft is ready to leave its
+ * stand (HandleModularTerminal), and is then latched in Aircraft::modular_ground_target.
+ * Nothing re-reads the order afterwards -- TryRetargetModularGroundGoal only ever re-picks a
+ * goal of the target's own kind -- so an aircraft that has settled on "take off" stays a
+ * departing aircraft. A "send to hangar" issued after that moment was ignored until the
+ * aircraft had flown a full circuit, and at an airport where it cannot reach a runway at all,
+ * ignored for good.
+ *
+ * Only the departure targets need this. A terminal, helipad or rollout target is cleared on
+ * arrival, so those re-run the order ladder by themselves; MGT_HANGAR is deliberately left
+ * alone, because it is also set for automatic servicing and cancelling it here would read a
+ * withdrawn depot order as a reason to skip the service.
+ *
+ * The switch is applied directly rather than by clearing the target to MGT_NONE: the ladder
+ * that would re-run is in HandleModularTerminal, which AirportGoToNextPosition cannot even
+ * reach while ground_path_goal is set, so clearing would leave the aircraft with no target
+ * and no one to give it a new one.
+ *
+ * @param v Aircraft on modular airport ground.
+ * @param st The modular airport it is standing on.
+ * @return True if the aircraft was switched to a hangar goal.
+ */
+bool MaybeSwitchModularDepartureToHangar(Aircraft *v, const Station *st)
+{
+	if (v->modular_ground_target != MGT_RUNWAY_TAKEOFF && v->modular_ground_target != MGT_HELI_TAKEOFF_TILE) return false;
+
+	/* Still parked inside a hangar. Aircraft::state is no use for this: HandleModularHangar
+	 * latches the departure without changing it, and nothing changes it again until the
+	 * aircraft reaches the runway, so state stays HANGAR for the whole taxi out of one. */
+	if (v->vehstatus.Test(VehState::Hidden)) return false;
+
+	/* The hangar is chosen from st, but the order names v->targetairport and
+	 * HandleModularGroundArrival re-reads that station when the aircraft gets there. Acting
+	 * while the two disagree would hand it a goal the arrival handler does not recognise. */
+	if (st->index != v->targetairport) return false;
+
+	/* Mirrors the ladder in HandleModularTerminal. ModularAircraftWantsHangar is the shared
+	 * answer to "does this aircraft want a hangar here", and the order tests narrow it the
+	 * way the ladder does: an order naming a different airport is a reason to depart, and a
+	 * service merely falling due is not a reason to abandon a departure already under way.
+	 * They come first so the depot-order test short-circuits ModularAircraftWantsHangar's
+	 * NeedsAutomaticServicing(), which is the expensive half and reads company state. */
+	if (!v->current_order.IsType(OT_GOTO_DEPOT)) return false;
+	if (v->current_order.GetDestination() != v->targetairport) return false;
+	if (!ModularAircraftWantsHangar(v, st)) return false;
+
+	/* Never abandon a goal part-way across a runway, or anywhere the aircraft is not
+	 * entitled to stand.
+	 *
+	 * cur_speed is deliberately not consulted. Modular ground movement never zeroes it when
+	 * an aircraft stops -- a blocked aircraft returns before UpdateAircraftSpeed is reached
+	 * -- so anything that has taxied at all keeps taxi speed for as long as it waits, and
+	 * testing it would exclude exactly the jammed aircraft this exists for. Aircraft::tile
+	 * advances precisely when the aircraft reaches the next tile's centre, so standing on
+	 * the centre of the tile it claims is what "not part-way through a step" means. */
+	if (!v->modular_runway_reservation.empty()) return false;
+	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) return false;
+	if (!IsModularSafeStopTile(st, v->tile)) return false;
+	if (v->x_pos != TileX(v->tile) * TILE_SIZE + TILE_SIZE / 2) return false;
+	if (v->y_pos != TileY(v->tile) * TILE_SIZE + TILE_SIZE / 2) return false;
+
+	/* Probe on one tick in 64, staggered by vehicle so an airport's aircraft never pathfind
+	 * on the same one. An aircraft whose hangar is unreachable stays eligible for as long as
+	 * it waits, and FindFreeModularHangar is an A* per hangar. taxi_wait_counter cannot pace
+	 * this -- ClearTaxiPathState resets it, so it is not a monotonic clock. */
+	if (((TimerGameTick::counter + v->index.base()) % 64) != 0) return false;
+
+	const TileIndex hangar = FindFreeModularHangar(st, v);
+	if (hangar == INVALID_TILE) return false;
+
+	Debug(misc, 2, "[ModAp] V{} unit#{} depot order overrides departure: tgt={} goal={} -> hangar={} from tile={}",
+		v->index, v->unitnumber, v->modular_ground_target,
+		IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
+		hangar.base(), v->tile.base());
+
+	ClearTaxiPathState(v, v->tile);
+	v->modular_takeoff_tile = INVALID_TILE;
+	v->modular_takeoff_progress = 0;
+	v->ground_path_goal = hangar;
+	v->modular_ground_target = MGT_HANGAR;
+	v->taxi_wait_counter = 0;
+	return true;
+}
+
 bool TryRetargetModularGroundGoal(Aircraft *v, const Station *st)
 {
 	TileIndex alt_goal = INVALID_TILE;

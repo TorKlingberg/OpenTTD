@@ -8,6 +8,7 @@
 /** @file test_modular_airport.cpp Unit tests for modular airport logic. */
 
 #include "../stdafx.h"
+#include "../timer/timer_game_tick.h"
 #include "../newgrf.h"
 #include "../3rdparty/catch2/catch.hpp"
 
@@ -4859,6 +4860,187 @@ TEST_CASE("ModularAirportTakeoffRetargetsUnreachableRunway")
 		CHECK_FALSE(TryRetargetModularGroundGoal(v, st));
 		CHECK(v->ground_path_goal == chosen);
 		CHECK(v->modular_takeoff_tile == chosen);
+	}
+}
+
+TEST_CASE("ModularAirportDepotOrderOverridesLatchedDeparture")
+{
+	Map::Allocate(64, 64);
+	TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 10, 10);
+	REQUIRE(st != nullptr);
+
+	/* Bindhattan shape: a single-file stand row whose east end is the only way into the
+	 * hangar and whose west end is the only way to the runway. Two aircraft heading
+	 * opposite ways along it cannot pass, so a depot order from the player is the only
+	 * thing that can resolve the jam -- and it only can if it is allowed to override a
+	 * departure the aircraft has already settled on.
+	 *   y=0  runway (x 0..4)
+	 *   y=1  APRON                             HANGAR
+	 *   y=2  APRON  STAND  STAND  STAND  APRON        */
+	AddLargeRunway(st, base + TileDiffXY(0, 0), 5, 0, RUF_DEFAULT);
+	AddModularTile(st, base + TileDiffXY(0, 1), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(0, 2), APT_APRON, 0);
+	AddModularTile(st, base + TileDiffXY(1, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(2, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(3, 2), APT_STAND, 0);
+	AddModularTile(st, base + TileDiffXY(4, 2), APT_APRON, 0);
+
+	const TileIndex own_stand = base + TileDiffXY(2, 2);
+	const TileIndex hangar = base + TileDiffXY(4, 1);
+	const TileIndex runway_end = base + TileDiffXY(4, 0);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	/* Parked at a stand with a takeoff already latched, exactly as HandleModularTerminal
+	 * leaves an aircraft that decided to depart before the order arrived. */
+	auto departing_aircraft = [&]() {
+		SetupAircraftPool();
+		/* The probe is staggered by vehicle index over a 64-tick cycle; index 0 at counter
+		 * 0 is on-cycle, so the refusals below fail for their own reason, not the cadence. */
+		TimerGameTick::counter = 0;
+		Aircraft *v = CreateAircraft(VehicleID(0));
+		v->targetairport = st->index;
+		v->engine_type = prop_engine;
+		v->tile = own_stand;
+		v->x_pos = TileX(own_stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(own_stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		v->modular_takeoff_tile = runway_end;
+		v->ground_path_goal = runway_end;
+		return v;
+	};
+
+	SECTION("A depot order for this airport overrides the latched takeoff") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+
+		CHECK(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_HANGAR);
+		CHECK(v->ground_path_goal == hangar);
+		CHECK(v->modular_takeoff_tile == INVALID_TILE);
+	}
+
+	SECTION("A depot order naming another airport still departs") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(StationID(1), OrderDepotTypeFlag::PartOfOrders);
+
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
+		CHECK(v->ground_path_goal == runway_end);
+	}
+
+	SECTION("Without a depot order the departure stands") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToStation(st->index);
+
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
+	}
+
+	SECTION("A jammed aircraft still carrying taxi speed is retargeted") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+		/* Modular ground movement never zeroes cur_speed when an aircraft stops: a blocked
+		 * one returns before UpdateAircraftSpeed is reached, so it keeps taxi speed for as
+		 * long as it waits. Aircraft jammed for thousands of ticks were observed at 200.
+		 * Reading that as "in motion" would refuse exactly the aircraft this exists for. */
+		v->cur_speed = 200;
+
+		CHECK(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_HANGAR);
+		CHECK(v->ground_path_goal == hangar);
+	}
+
+	SECTION("An aircraft taxiing out of a hangar is retargeted") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+		/* HandleModularHangar latches the departure without changing state, and nothing
+		 * changes it again before the runway, so state stays HANGAR across the whole taxi
+		 * out. Only being hidden means still parked inside. */
+		v->state = HANGAR;
+
+		CHECK(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_HANGAR);
+	}
+
+	SECTION("An aircraft still inside the hangar is left alone") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+		v->state = HANGAR;
+		v->vehstatus.Set(VehState::Hidden);
+
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
+	}
+
+	SECTION("The pathfinder probe is paced") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+		/* Off-cycle: an aircraft whose hangar never becomes reachable stays eligible
+		 * forever, so the A* behind this must not run on every tick. */
+		TimerGameTick::counter = 1;
+
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		TimerGameTick::counter = 64;
+		CHECK(MaybeSwitchModularDepartureToHangar(v, st));
+	}
+
+	SECTION("An aircraft stopped between two tiles is never retargeted") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+		/* Aircraft::tile still reports the stand it left, but the aircraft is half a tile
+		 * past it, so the stand's safe-stop status says nothing about where it is. */
+		v->x_pos += TILE_SIZE / 2;
+
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
+	}
+
+	SECTION("A terminal target is left to the arrival handler") {
+		AddModularTile(st, hangar, APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->modular_ground_target = MGT_TERMINAL;
+		v->ground_path_goal = base + TileDiffXY(3, 2);
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+
+		/* Terminal targets are cleared on arrival, so they re-read the order by
+		 * themselves and must not be churned part-way there. */
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_TERMINAL);
+	}
+
+	SECTION("An airport with no hangar keeps departing") {
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+
+		/* Nothing to switch to. Clearing the target here would let the departure ladder
+		 * re-latch takeoff on the next tick, churning the taxi path forever. */
+		REQUIRE_FALSE(st->airport.HasHangar());
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
+		CHECK(v->ground_path_goal == runway_end);
+	}
+
+	SECTION("A hangar with no ground route to it keeps departing") {
+		/* Hangar walled off from the stand row: the aircraft cannot taxi to it, so the
+		 * departure is still the only way it can leave. */
+		AddModularTile(st, base + TileDiffXY(8, 8), APT_DEPOT_SE, 0);
+		Aircraft *v = departing_aircraft();
+		v->current_order.MakeGoToDepot(st->index, OrderDepotTypeFlag::PartOfOrders);
+
+		REQUIRE(st->airport.HasHangar());
+		CHECK_FALSE(MaybeSwitchModularDepartureToHangar(v, st));
+		CHECK(v->modular_ground_target == MGT_RUNWAY_TAKEOFF);
 	}
 }
 

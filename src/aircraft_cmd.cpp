@@ -2502,6 +2502,10 @@ static void AirportGoToNextPosition(Aircraft *v)
 			return;
 		}
 
+		/* The departure/hangar choice is latched once and never re-read, so act on an
+		 * order that has changed under it before moving another tile. */
+		MaybeSwitchModularDepartureToHangar(v, active_st);
+
 		/* For ground movement with active pathfinding goal */
 		if (v->taxi_path != nullptr || v->ground_path_goal != INVALID_TILE) {
 			/* Skip AircraftController - we handle movement ourselves */
