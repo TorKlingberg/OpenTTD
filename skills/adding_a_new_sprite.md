@@ -2,6 +2,9 @@
 
 How to add a new sprite (e.g. a toolbar button icon) to the OpenTTD base graphics set.
 
+For world sprites, generated-art cleanup, palette-index restrictions, alternate-base-set
+compatibility, and in-game visual QA, read `skills/creating_new_graphics.md` first.
+
 ## Prerequisites
 
 - `grfcodec` and `nforenum` must be installed to regenerate the GRF file.

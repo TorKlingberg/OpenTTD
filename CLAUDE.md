@@ -345,6 +345,8 @@ Run only modular airport tests:
 
 ## Skills (Brief)
 
+- `skills/creating_new_graphics.md` — create native 8bpp world art, preserve palette semantics, register it in `openttd.grf`, and verify it across base graphics sets.
+- `skills/adding_a_new_sprite.md` — add and register a GUI sprite in the OpenTTD extra base graphics.
 - `skills/lldb_debugging.md` — LLDB attach/run workflows and modular runtime log commands.
 - `skills/lldb_game_state_inspection.md` — read live game state (pools, towns, stations) from a running game via batch LLDB + Python, no rebuild needed.
 - `skills/gui_screenshot_verification.md` — see a GUI change: scratch instance under a chosen base set, windows opened from LLDB, game screenshots itself. Use for any drawing question, especially base-set-specific ones.
