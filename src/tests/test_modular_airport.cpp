@@ -1927,6 +1927,14 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(IsModernModularPiece(APT_RUNWAY_1));
 		CHECK(GetModularPieceMinYear(APT_APRON) == CalendarTime::MIN_YEAR);
 		CHECK(GetModularPieceMinYear(APT_RUNWAY_1) == AirportSpec::Get(AT_LARGE)->min_year);
+
+		/* The decorations depict modern infrastructure, so they share the large
+		 * airport's start year rather than being buildable from year one. */
+		CHECK(IsModernModularPiece(APT_MODULAR_FIRE_STATION));
+		CHECK(IsModernModularPiece(APT_MODULAR_CARGO_TERMINAL));
+		CHECK(IsModernModularPiece(APT_MODULAR_FUEL_FARM));
+		CHECK(IsModernModularPiece(APT_MODULAR_CAR_PARK));
+		CHECK(GetModularPieceMinYear(APT_MODULAR_CAR_PARK) == AirportSpec::Get(AT_LARGE)->min_year);
 	}
 }
 

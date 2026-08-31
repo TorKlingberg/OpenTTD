@@ -102,11 +102,11 @@ bool IsModernModularPiece(ModularAirportPieceID piece_type)
 		case APT_SMALL_BUILDING_3:
 		case APT_STAND_1:
 		case APT_RADIO_TOWER_FENCE_NE:
-		case APT_MODULAR_FIRE_STATION:
-		case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_CAR_PARK:
 			return false;
+		/* The metadata-only decorations depict modern airport infrastructure -- a
+		 * multi-storey car park, a cargo warehouse, a fuel farm -- so they fall
+		 * through to the modern branch and share the large airport's start year
+		 * rather than being buildable from the first year of the game. */
 		default:
 			return true;
 	}
