@@ -827,7 +827,12 @@ public:
 		switch (widget) {
 			case WID_TM_PREVIEW: {
 				const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
-				if (templ == nullptr || templ->tiles.empty()) break;
+				/* An unavailable template is still selectable, so that the list can say why
+				 * it cannot be built. Its tiles have not been through CheckAvailability's
+				 * resolution, so they may name a NewGRF tile that is not loaded or a piece
+				 * ID outside the airport-tile namespace -- neither of which the layout
+				 * lookup below can map. Say nothing rather than draw a wrong airport. */
+				if (templ == nullptr || !templ->is_available || templ->tiles.empty()) break;
 
 				/* Build rotated tile list. */
 				std::vector<AirportTemplateTile> tiles;

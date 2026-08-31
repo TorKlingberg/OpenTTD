@@ -365,9 +365,10 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, Mod
 		default: break;
 	}
 
-	if (const DrawTileSprites *hangar_layout = GetModularHangarTileLayoutByPiece(modular_piece_type, modular_rotation);
-			t == nullptr && hangar_layout != nullptr) {
-		t = hangar_layout;
+	if (t == nullptr) {
+		if (const DrawTileSprites *hangar_layout = GetModularHangarTileLayoutByPiece(modular_piece_type, modular_rotation); hangar_layout != nullptr) {
+			t = hangar_layout;
+		}
 	}
 
 	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */

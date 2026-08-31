@@ -406,6 +406,10 @@ static ModularPiecePreviewBox GetModularCompoundPiecePreviewBox(ModularAirportPi
 		const Point tile = GetModularCompoundPieceTileOffset(*ct, zoom);
 		const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(ct->gfx, ct->gfx, 0);
 		const ModularPiecePreviewBox tile_box = GetModularTilePreviewBox(t, zoom);
+		/* A layout that paints nothing measures as an empty box at the origin. Folding
+		 * that into the union would stretch the piece's box to the tile's own origin,
+		 * which is not a pixel anything draws on, and shift the centring. */
+		if (tile_box.Width() == 0 && tile_box.Height() == 0) continue;
 		box.left   = std::min(box.left,   tile.x + tile_box.left);
 		box.top    = std::min(box.top,    tile.y + tile_box.top);
 		box.right  = std::max(box.right,  tile.x + tile_box.right);
@@ -1598,7 +1602,8 @@ public:
 			const ModularPiecePreviewBox box = GetModularTilePreviewBox(t, icon_zoom);
 			const int x = (ir.Width() - box.Width()) / 2 - box.left;
 			const int y = (ir.Height() - box.Height()) / 2 - box.top;
-			DrawSprite(t->ground.sprite, PAL_NONE, x, y, nullptr, icon_zoom);
+			const SpriteID ground = t->ground.sprite;
+			DrawSprite(ground, HasBit(ground, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y, nullptr, icon_zoom);
 			DrawModularTileSeqInGUI(x, y, t, pal, icon_zoom);
 			return;
 		}
