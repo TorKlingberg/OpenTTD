@@ -1687,6 +1687,10 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_14), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
+			EndContainer(),
+			/* Four pieces per row, with the two-tile small terminal counting as two, leaves
+			 * the second car park alone on the last row. Left-align it to keep the grid. */
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(0, 0, 1),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_15), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
 			EndContainer(),
