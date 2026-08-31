@@ -828,10 +828,11 @@ public:
 			case WID_TM_PREVIEW: {
 				const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 				/* An unavailable template is still selectable, so that the list can say why
-				 * it cannot be built. Its tiles have not been through CheckAvailability's
-				 * resolution, so they may name a NewGRF tile that is not loaded or a piece
-				 * ID outside the airport-tile namespace -- neither of which the layout
-				 * lookup below can map. Say nothing rather than draw a wrong airport. */
+				 * it cannot be built. CheckAvailability() stops at the tile it rejected, so
+				 * every tile from there on keeps whatever the file said -- a NewGRF tile
+				 * that is not loaded, or a piece ID outside the airport-tile namespace,
+				 * neither of which the layout lookup below can map. Say nothing rather
+				 * than draw a wrong airport. */
 				if (templ == nullptr || !templ->is_available || templ->tiles.empty()) break;
 
 				/* Build rotated tile list. */
