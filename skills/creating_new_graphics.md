@@ -10,6 +10,31 @@ The difficult part is not drawing a recognisable object. It is making the object
 size, preserving the indexed palette exactly, anchoring it to the world correctly, and deciding
 which part should come from the user's selected base graphics set.
 
+## Agent and tool portability
+
+This is a repository skill, not a ChatGPT-only skill. Its OpenTTD geometry, palette, NFO, build,
+and verification instructions apply equally when working with ChatGPT/Codex, Claude, or Gemini
+Antigravity. Shell commands, Pillow checks, LLDB inspection, and edits to repository files are
+provider-neutral where the environment supplies the relevant tools. Availability, operating
+system, and permission requirements can still differ between agent environments.
+
+The following parts are specifically OpenAI/ChatGPT terminology:
+
+- **ImageGen** is the image-generation tool/skill available to ChatGPT/Codex in environments
+  that expose it. Claude or Gemini should use whichever image-generation or image-editing tool
+  their environment provides. If none is available, skip concept generation and draw or edit the
+  sprite directly at native scale.
+- **`Use case: stylized-concept`** in the example prompt is a prompt-scaffolding convention used
+  by the currently installed Codex ImageGen skill, not a universal image-model parameter. Other
+  environments can omit it or translate its intent to an equivalent control.
+- Supplying the target sprite sheet as a tool-level reference image depends on the image tool's
+  interface. If reference images are unsupported, describe the sheet's projection, lighting,
+  palette, and pixel density in the prompt, then rely more heavily on native-scale manual cleanup.
+
+The descriptive part of the prompt is portable. Regardless of provider, generated art is only a
+concept source; the indexed-palette conversion, pixel cleanup, registration, and in-game checks
+remain required.
+
 ## Choose the graphics layer first
 
 Decide who should own the sprite before making the art:
@@ -55,8 +80,10 @@ markings; buildings usually need their lighting and readable details corrected a
 ## Generate a concept, then finish it at native scale
 
 Image generation is useful for composition and vocabulary, but its large, antialiased output is
-not a finished OpenTTD sprite. When ImageGen is available, supply a crop of the actual target
-sheet as a style reference and generate one asset at a time. A useful prompt shape is:
+not a finished OpenTTD sprite. When an image-generation tool is available, supply a crop of the
+actual target sheet as a style reference when the tool supports reference images, and generate
+one asset at a time. A useful prompt shape is shown below. The first `Use case` line is
+OpenAI/ChatGPT-specific as explained above; the rest can be adapted to other providers.
 
 ```text
 Use case: stylized-concept
