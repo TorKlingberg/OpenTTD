@@ -187,8 +187,8 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     SPR_AIRPORT_FIRE_STATION,     0,                    APT_MODULAR_FIRE_STATION, 0, false, true},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL,   SPR_AIRPORT_CARGO_TERMINAL,   0,                    APT_MODULAR_CARGO_TERMINAL, 0, false, true},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM,        SPR_AIRPORT_FUEL_FARM,        0,                    APT_MODULAR_FUEL_FARM, 0, false, true},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS,  SPR_AIRPORT_APPROACH_LIGHTS,       0, APT_MODULAR_APPROACH_LIGHTS, 0, false, true, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS,  SPR_AIRPORT_APPROACH_LIGHTS_OTHER, 0, APT_MODULAR_APPROACH_LIGHTS, 0, false, true, 1},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         SPR_AIRPORT_CAR_PARK,         0,                    APT_MODULAR_CAR_PARK, 0, false, true, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         SPR_AIRPORT_CAR_PARK_OTHER,   0,                    APT_MODULAR_CAR_PARK, 0, false, true, 1},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -316,9 +316,9 @@ Dimension GetModularCompoundPieceSize(ModularAirportPieceID gfx)
 	return size;
 }
 
-/** Screen box a compound piece's preview covers. Right and bottom edges are exclusive. */
-struct ModularCompoundPiecePreviewBox {
-	int left = 0;   ///< Leftmost pixel, relative to the drawing origin of the piece's first tile.
+/** Screen box a modular piece's preview covers. Right and bottom edges are exclusive. */
+struct ModularPiecePreviewBox {
+	int left = 0;   ///< Leftmost pixel, relative to the drawing origin of the piece.
 	int top = 0;    ///< Topmost pixel, relative to that same origin.
 	int right = 0;  ///< One past the rightmost pixel.
 	int bottom = 0; ///< One past the bottom pixel.
@@ -326,6 +326,34 @@ struct ModularCompoundPiecePreviewBox {
 	int Width() const { return this->right - this->left; }
 	int Height() const { return this->bottom - this->top; }
 };
+
+/** Measure one tile layout relative to its drawing origin. */
+static ModularPiecePreviewBox GetModularTilePreviewBox(const DrawTileSprites *t, ZoomLevel zoom)
+{
+	ModularPiecePreviewBox box{INT_MAX, INT_MAX, INT_MIN, INT_MIN};
+
+	auto include = [&](SpriteID sprite, int x, int y) {
+		/* TTD sprite 0 means no sprite. */
+		if (GB(sprite, 0, SPRITE_WIDTH) == 0 && !HasBit(sprite, SPRITE_MODIFIER_CUSTOM_SPRITE)) return;
+
+		Point offset;
+		const Dimension d = GetSpriteSize(sprite & SPRITE_MASK, &offset, zoom);
+		box.left   = std::min(box.left,   x + offset.x);
+		box.top    = std::min(box.top,    y + offset.y);
+		box.right  = std::max(box.right,  x + static_cast<int>(d.width));
+		box.bottom = std::max(box.bottom, y + static_cast<int>(d.height));
+	};
+
+	include(t->ground.sprite, 0, 0);
+	for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
+		if (!dtss.IsParentSprite()) continue;
+		const Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
+		include(dtss.image.sprite, UnScaleByZoom(pt.x, zoom), UnScaleByZoom(pt.y, zoom));
+	}
+
+	if (box.left > box.right) return {};
+	return box;
+}
 
 /**
  * Where one tile of a compound piece is drawn, relative to the piece's first tile.
@@ -370,31 +398,18 @@ static std::vector<const ModularCompoundPieceTile *> GetModularCompoundPieceTile
  * @param zoom Zoom level the preview is drawn at.
  * @return The box covered, or an empty box if @a gfx is not a compound piece.
  */
-static ModularCompoundPiecePreviewBox GetModularCompoundPiecePreviewBox(ModularAirportPieceID gfx, ZoomLevel zoom)
+static ModularPiecePreviewBox GetModularCompoundPiecePreviewBox(ModularAirportPieceID gfx, ZoomLevel zoom)
 {
-	ModularCompoundPiecePreviewBox box{INT_MAX, INT_MAX, INT_MIN, INT_MIN};
-
-	auto include = [&](SpriteID sprite, int x, int y) {
-		/* TTD sprite 0 means no sprite. */
-		if (GB(sprite, 0, SPRITE_WIDTH) == 0 && !HasBit(sprite, SPRITE_MODIFIER_CUSTOM_SPRITE)) return;
-
-		Point offset;
-		const Dimension d = GetSpriteSize(sprite & SPRITE_MASK, &offset, zoom);
-		box.left   = std::min(box.left,   x + offset.x);
-		box.top    = std::min(box.top,    y + offset.y);
-		box.right  = std::max(box.right,  x + static_cast<int>(d.width));
-		box.bottom = std::max(box.bottom, y + static_cast<int>(d.height));
-	};
+	ModularPiecePreviewBox box{INT_MAX, INT_MAX, INT_MIN, INT_MIN};
 
 	for (const ModularCompoundPieceTile *ct : GetModularCompoundPieceTilesBackToFront(gfx)) {
 		const Point tile = GetModularCompoundPieceTileOffset(*ct, zoom);
 		const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(ct->gfx, ct->gfx, 0);
-		include(t->ground.sprite, tile.x, tile.y);
-		for (const DrawTileSeqStruct &dtss : t->GetSequence()) {
-			if (!dtss.IsParentSprite()) continue;
-			const Point pt = RemapCoords(dtss.origin.x + dtss.offset.x, dtss.origin.y + dtss.offset.y, dtss.origin.z + dtss.offset.z);
-			include(dtss.image.sprite, tile.x + UnScaleByZoom(pt.x, zoom), tile.y + UnScaleByZoom(pt.y, zoom));
-		}
+		const ModularPiecePreviewBox tile_box = GetModularTilePreviewBox(t, zoom);
+		box.left   = std::min(box.left,   tile.x + tile_box.left);
+		box.top    = std::min(box.top,    tile.y + tile_box.top);
+		box.right  = std::max(box.right,  tile.x + tile_box.right);
+		box.bottom = std::max(box.bottom, tile.y + tile_box.bottom);
 	}
 
 	if (box.left > box.right) return {};
@@ -1545,7 +1560,13 @@ public:
 		/* A compound piece shows its whole footprint, so it needs a button that holds it. */
 		const CosmeticPiece &piece = _cosmetic_pieces[widget - WID_MACP_PIECE_FIRST];
 		if (piece.is_multi_tile) {
-			const ModularCompoundPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, _gui_zoom);
+			const ModularPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, _gui_zoom);
+			size.width  = std::max<uint>(size.width,  box.Width()  + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
+			size.height = std::max<uint>(size.height, box.Height() + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
+		} else if (piece.use_layout_preview) {
+			const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(
+					GetModularAirportMapGfx(piece.apt_gfx), piece.apt_gfx, piece.rotation);
+			const ModularPiecePreviewBox box = GetModularTilePreviewBox(t, _gui_zoom);
 			size.width  = std::max<uint>(size.width,  box.Width()  + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
 			size.height = std::max<uint>(size.height, box.Height() + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
 		}
@@ -1565,7 +1586,7 @@ public:
 
 		/* A compound piece is previewed as the tiles it places, centred on what they cover. */
 		if (piece.is_multi_tile) {
-			const ModularCompoundPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, icon_zoom);
+			const ModularPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, icon_zoom);
 			DrawModularCompoundPiecePreview((ir.Width() - box.Width()) / 2 - box.left,
 					(ir.Height() - box.Height()) / 2 - box.top, piece.apt_gfx, pal, icon_zoom);
 			return;
@@ -1574,8 +1595,9 @@ public:
 		if (piece.use_layout_preview) {
 			const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(
 					GetModularAirportMapGfx(piece.apt_gfx), piece.apt_gfx, piece.rotation);
-			const int x = (ir.Width() - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
-			const int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
+			const ModularPiecePreviewBox box = GetModularTilePreviewBox(t, icon_zoom);
+			const int x = (ir.Width() - box.Width()) / 2 - box.left;
+			const int y = (ir.Height() - box.Height()) / 2 - box.top;
 			DrawSprite(t->ground.sprite, PAL_NONE, x, y, nullptr, icon_zoom);
 			DrawModularTileSeqInGUI(x, y, t, pal, icon_zoom);
 			return;
@@ -1664,9 +1686,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(0, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_14), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_15), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

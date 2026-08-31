@@ -358,9 +358,8 @@ static Money GetModularAirportPieceBuildCost(ModularAirportPieceID piece_type)
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_CAR_PARK:
 			return ScaleModularAirportCost(base, 30);
-		case APT_MODULAR_APPROACH_LIGHTS:
-			return ScaleModularAirportCost(base, 12);
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
 		case APT_GRASS_FENCE_SW:

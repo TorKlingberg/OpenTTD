@@ -106,6 +106,6 @@ using ModularAirportPieceID = uint16_t;
 inline constexpr ModularAirportPieceID APT_MODULAR_FIRE_STATION = 0x100;
 inline constexpr ModularAirportPieceID APT_MODULAR_CARGO_TERMINAL = 0x101;
 inline constexpr ModularAirportPieceID APT_MODULAR_FUEL_FARM = 0x102;
-inline constexpr ModularAirportPieceID APT_MODULAR_APPROACH_LIGHTS = 0x103;
+inline constexpr ModularAirportPieceID APT_MODULAR_CAR_PARK = 0x103;
 
 #endif /* AIRPORTTILE_IDS_H */

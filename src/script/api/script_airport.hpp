@@ -269,7 +269,7 @@ public:
 		MP_FIRE_STATION = 25,      ///< Airport fire station with a visible fire engine.
 		MP_CARGO_TERMINAL = 26,    ///< Cargo terminal / warehouse.
 		MP_FUEL_FARM = 27,         ///< Aviation fuel tanks and pumping equipment.
-		MP_APPROACH_LIGHTS = 28,   ///< One-tile runway approach-light array on grass.
+		MP_CAR_PARK = 28,          ///< Multi-storey car park; rotation parity selects the entrance axis.
 
 		MP_INVALID = -1,           ///< Not a modular airport piece.
 	};
@@ -403,8 +403,10 @@ public:
 	 * @param rotation The rotation of the piece, 0 to 3. For hangars this is the
 	 *  direction the hangar faces (0 = SE, 1 = NE, 2 = NW, 3 = SW). For runway
 	 *  pieces an even rotation lays the runway along the X axis and an odd one
-	 *  along the Y axis. MP_SMALL_HANGAR has only one graphic and requires 0.
-	 *  Ignored by other pieces that cannot rotate.
+	 *  along the Y axis. For MP_CAR_PARK, rotations 0/2 select one road-facing
+	 *  entrance axis and rotations 1/3 select the perpendicular axis.
+	 *  MP_SMALL_HANGAR has only one graphic and requires 0. Ignored by other
+	 *  pieces that cannot rotate.
 	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
 	 * @pre ScriptMap::IsValidTile(tile).
 	 * @pre rotation >= 0 && rotation <= 3.

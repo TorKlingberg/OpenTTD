@@ -105,7 +105,7 @@ bool IsModernModularPiece(ModularAirportPieceID piece_type)
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_APPROACH_LIGHTS:
+		case APT_MODULAR_CAR_PARK:
 			return false;
 		default:
 			return true;
@@ -494,10 +494,8 @@ static uint GetModularAirportPieceMaintenancePoints(ModularAirportPieceID piece_
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_CAR_PARK:
 			return 4;
-
-		case APT_MODULAR_APPROACH_LIGHTS:
-			return 1;
 
 		case APT_GRASS_FENCE_NE_FLAG_2:
 		case APT_EMPTY:

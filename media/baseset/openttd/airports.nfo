@@ -23,8 +23,8 @@
    -1 sprites/airports.png 8bpp 100  170  64  55 -31 -24 normal
    -1 sprites/airports.png 8bpp 180  175  64  55 -31 -24 normal
    -1 sprites/airports.png 8bpp 260  181  64  55 -31 -24 normal
-   -1 sprites/airports.png 8bpp 340  170  64  31 -31   0 normal
-   -1 sprites/airports.png 8bpp 420  170  64  31 -31   0 normal
+   -1 sprites/airports.png 8bpp 340  170  64  55 -31 -24 normal
+   -1 sprites/airports.png 8bpp 420  170  64  55 -31 -24 normal
    -1 * 0	 0C "Climate specific sprites by PaulC"
    -1 * 0	 07 83 01 \7! 01 03
    -1 * 0	 05 90 02 0D

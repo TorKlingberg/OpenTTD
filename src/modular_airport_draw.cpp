@@ -94,16 +94,16 @@ static const DrawTileSeqStruct _station_display_modular_fuel_farm_seq[] = {
 static const DrawTileSpriteSpan _station_display_modular_fuel_farm(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_fuel_farm_seq);
 
-static const DrawTileSeqStruct _station_display_modular_approach_lights_seq[] = {
-	{0, 0, 0, 16, 16, 12, {SPR_AIRPORT_APPROACH_LIGHTS, PAL_NONE}},
+static const DrawTileSeqStruct _station_display_modular_car_park_seq[] = {
+	{0, 0, 0, 16, 16, 36, {SPR_AIRPORT_CAR_PARK, PAL_NONE}},
 };
-static const DrawTileSpriteSpan _station_display_modular_approach_lights(
-	PalSpriteID{SPR_FLAT_GRASS_TILE, PAL_NONE}, _station_display_modular_approach_lights_seq);
-static const DrawTileSeqStruct _station_display_modular_approach_lights_other_seq[] = {
-	{0, 0, 0, 16, 16, 12, {SPR_AIRPORT_APPROACH_LIGHTS_OTHER, PAL_NONE}},
+static const DrawTileSpriteSpan _station_display_modular_car_park(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_car_park_seq);
+static const DrawTileSeqStruct _station_display_modular_car_park_other_seq[] = {
+	{0, 0, 0, 16, 16, 36, {SPR_AIRPORT_CAR_PARK_OTHER, PAL_NONE}},
 };
-static const DrawTileSpriteSpan _station_display_modular_approach_lights_other(
-	PalSpriteID{SPR_FLAT_GRASS_TILE, PAL_NONE}, _station_display_modular_approach_lights_other_seq);
+static const DrawTileSpriteSpan _station_display_modular_car_park_other(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_car_park_other_seq);
 
 /* NS (NW-SE on screen) runway sprites for modular airports. */
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});
@@ -359,8 +359,8 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, Mod
 		case APT_MODULAR_FIRE_STATION:    t = &_station_display_modular_fire_station; break;
 		case APT_MODULAR_CARGO_TERMINAL:  t = &_station_display_modular_cargo_terminal; break;
 		case APT_MODULAR_FUEL_FARM:       t = &_station_display_modular_fuel_farm; break;
-		case APT_MODULAR_APPROACH_LIGHTS:
-			t = (modular_rotation & 1) != 0 ? &_station_display_modular_approach_lights_other : &_station_display_modular_approach_lights;
+		case APT_MODULAR_CAR_PARK:
+			t = (modular_rotation & 1) != 0 ? &_station_display_modular_car_park_other : &_station_display_modular_car_park;
 			break;
 		default: break;
 	}
@@ -493,7 +493,7 @@ uint8_t GetModularTileFenceOpenMask(ModularAirportPieceID piece_type, uint8_t ro
 		case APT_SMALL_BUILDING_1: case APT_SMALL_BUILDING_2: case APT_SMALL_BUILDING_3:
 		case APT_TOWER: case APT_TOWER_FENCE_SW:
 		case APT_MODULAR_FIRE_STATION: case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM: case APT_MODULAR_APPROACH_LIGHTS:
+		case APT_MODULAR_FUEL_FARM: case APT_MODULAR_CAR_PARK:
 			return 0x0F;
 		default:
 			return 0x00;

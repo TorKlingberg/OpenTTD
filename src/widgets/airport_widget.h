@@ -113,8 +113,8 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_11, ///< Airport fire station button.
 	WID_MACP_PIECE_12, ///< Cargo terminal button.
 	WID_MACP_PIECE_13, ///< Fuel farm button.
-	WID_MACP_PIECE_14, ///< Approach lights button.
-	WID_MACP_PIECE_15, ///< Approach lights button, perpendicular axis.
+	WID_MACP_PIECE_14, ///< Multi-storey car park button.
+	WID_MACP_PIECE_15, ///< Multi-storey car park button, perpendicular entrance axis.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;

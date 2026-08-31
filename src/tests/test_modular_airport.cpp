@@ -703,7 +703,7 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 		{APT_MODULAR_FIRE_STATION, APT_APRON},
 		{APT_MODULAR_CARGO_TERMINAL, APT_APRON},
 		{APT_MODULAR_FUEL_FARM, APT_APRON},
-		{APT_MODULAR_APPROACH_LIGHTS, APT_GRASS_1},
+		{APT_MODULAR_CAR_PARK, APT_APRON},
 	};
 	for (const auto &[piece, map_gfx] : decorations) {
 		tile.piece_type = piece;
@@ -1591,19 +1591,19 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(IsModularBuildingPiece(APT_MODULAR_FIRE_STATION));
 		CHECK(IsModularBuildingPiece(APT_MODULAR_CARGO_TERMINAL));
 		CHECK(IsModularBuildingPiece(APT_MODULAR_FUEL_FARM));
-		CHECK_FALSE(IsModularBuildingPiece(APT_MODULAR_APPROACH_LIGHTS));
+		CHECK(IsModularBuildingPiece(APT_MODULAR_CAR_PARK));
 		CHECK_FALSE(IsModularBuildingPiece(APT_APRON));
 		CHECK_FALSE(IsModularBuildingPiece(APT_RUNWAY_1));
 	}
 
 	SECTION("Decoration Map Graphics") {
 		CHECK(IsModularAirportDecorationPiece(APT_MODULAR_FIRE_STATION));
-		CHECK(IsModularAirportDecorationPiece(APT_MODULAR_APPROACH_LIGHTS));
+		CHECK(IsModularAirportDecorationPiece(APT_MODULAR_CAR_PARK));
 		CHECK_FALSE(IsModularAirportDecorationPiece(APT_APRON));
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_FIRE_STATION) == APT_APRON);
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_CARGO_TERMINAL) == APT_APRON);
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_FUEL_FARM) == APT_APRON);
-		CHECK(GetModularAirportMapGfx(APT_MODULAR_APPROACH_LIGHTS) == APT_GRASS_1);
+		CHECK(GetModularAirportMapGfx(APT_MODULAR_CAR_PARK) == APT_APRON);
 	}
 
 	SECTION("Taxiway Pieces") {
@@ -1643,7 +1643,7 @@ TEST_CASE("ModularAirportDecorationDrawing")
 		{APT_MODULAR_FIRE_STATION, SPR_AIRPORT_FIRE_STATION, SPR_AIRPORT_APRON},
 		{APT_MODULAR_CARGO_TERMINAL, SPR_AIRPORT_CARGO_TERMINAL, SPR_AIRPORT_APRON},
 		{APT_MODULAR_FUEL_FARM, SPR_AIRPORT_FUEL_FARM, SPR_AIRPORT_APRON},
-		{APT_MODULAR_APPROACH_LIGHTS, SPR_AIRPORT_APPROACH_LIGHTS, SPR_FLAT_GRASS_TILE},
+		{APT_MODULAR_CAR_PARK, SPR_AIRPORT_CAR_PARK, SPR_AIRPORT_APRON},
 	};
 
 	for (const DecorationCase &c : cases) {
@@ -1659,14 +1659,20 @@ TEST_CASE("ModularAirportDecorationDrawing")
 		CHECK(found);
 	}
 
-	const DrawTileSprites *rotated = GetAirportTileLayoutWithModularOverrides(
-			APT_GRASS_1, APT_MODULAR_APPROACH_LIGHTS, 1, 0);
-	REQUIRE(rotated != nullptr);
-	bool found_rotated = false;
-	for (const DrawTileSeqStruct &dtss : rotated->GetSequence()) {
-		if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_APPROACH_LIGHTS_OTHER) found_rotated = true;
+	for (uint8_t rotation = 0; rotation < 4; ++rotation) {
+		CAPTURE(rotation);
+		const DrawTileSprites *rotated = GetAirportTileLayoutWithModularOverrides(
+				APT_APRON, APT_MODULAR_CAR_PARK, rotation, 0);
+		REQUIRE(rotated != nullptr);
+		bool found_primary = false;
+		bool found_other = false;
+		for (const DrawTileSeqStruct &dtss : rotated->GetSequence()) {
+			if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_CAR_PARK) found_primary = true;
+			if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_CAR_PARK_OTHER) found_other = true;
+		}
+		CHECK(found_primary == (rotation % 2 == 0));
+		CHECK(found_other == (rotation % 2 != 0));
 	}
-	CHECK(found_rotated);
 }
 
 TEST_CASE("ModularAirportBuilderVocabulary")
@@ -1698,7 +1704,7 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 			ScriptAirport::MP_RADIO_TOWER, ScriptAirport::MP_RADAR, ScriptAirport::MP_RADAR_GRASS,
 			ScriptAirport::MP_FLAG_GRASS, ScriptAirport::MP_GRASS, ScriptAirport::MP_EMPTY,
 			ScriptAirport::MP_FIRE_STATION, ScriptAirport::MP_CARGO_TERMINAL,
-			ScriptAirport::MP_FUEL_FARM, ScriptAirport::MP_APPROACH_LIGHTS,
+			ScriptAirport::MP_FUEL_FARM, ScriptAirport::MP_CAR_PARK,
 		};
 		for (ScriptAirport::ModularPiece piece : script_pieces) {
 			CAPTURE(piece);
@@ -5154,7 +5160,7 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		ModularTemplatePlacementTile src{};
 		src.dx = 63;
 		src.dy = 42;
-		src.piece_type = APT_MODULAR_APPROACH_LIGHTS;
+		src.piece_type = APT_MODULAR_CAR_PARK;
 		src.rotation = 3;
 		src.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH;
 		src.one_way_taxi = true;

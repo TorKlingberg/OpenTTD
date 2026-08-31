@@ -169,7 +169,7 @@ inline bool IsModularAirportDecorationPiece(ModularAirportPieceID piece_type)
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_APPROACH_LIGHTS:
+		case APT_MODULAR_CAR_PARK:
 			return true;
 		default:
 			return false;
@@ -189,9 +189,8 @@ inline uint8_t GetModularAirportMapGfx(ModularAirportPieceID piece_type)
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_CAR_PARK:
 			return APT_APRON;
-		case APT_MODULAR_APPROACH_LIGHTS:
-			return APT_GRASS_1;
 		default:
 			assert(piece_type < NUM_AIRPORTTILES);
 			return static_cast<uint8_t>(piece_type);
@@ -399,6 +398,7 @@ inline bool IsModularBuildingPiece(ModularAirportPieceID piece_type)
 		case APT_MODULAR_FIRE_STATION:
 		case APT_MODULAR_CARGO_TERMINAL:
 		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_CAR_PARK:
 			return true;
 		default:
 			return false;

@@ -220,7 +220,7 @@ static const std::pair<ScriptAirport::ModularPiece, ModularAirportPieceID> _modu
 	{ScriptAirport::MP_FIRE_STATION,          APT_MODULAR_FIRE_STATION},
 	{ScriptAirport::MP_CARGO_TERMINAL,        APT_MODULAR_CARGO_TERMINAL},
 	{ScriptAirport::MP_FUEL_FARM,             APT_MODULAR_FUEL_FARM},
-	{ScriptAirport::MP_APPROACH_LIGHTS,       APT_MODULAR_APPROACH_LIGHTS},
+	{ScriptAirport::MP_CAR_PARK,              APT_MODULAR_CAR_PARK},
 };
 
 /**

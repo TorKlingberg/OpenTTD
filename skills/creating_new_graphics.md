@@ -100,8 +100,8 @@ gradients, blur, text, logos, watermark, or partial transparency. Transparent ba
 
 Ask for the details that make the asset identifiable at a glance: the fire engine outside the
 station, loading doors and pallets at a warehouse, tanks and pipework at a fuel farm, or the
-light bar and centreline for approach lights. Avoid broad scene descriptions, which encourage
-background scenery and the wrong scale.
+open decks, parked cars, and road-facing entrance of a multi-storey car park. Avoid broad scene
+descriptions, which encourage background scenery and the wrong scale.
 
 Then redraw or simplify at the final 64-pixel tile width:
 
@@ -178,7 +178,8 @@ Update all linked counts and constants together:
    `media/baseset/openttd/CMakeLists.txt`.
 
 For example, the airport decoration work appended five entries at offsets `+15..+19` and raised
-`AIRPORTX_SPRITE_COUNT` from 15 to 20. Two entries represented the two approach-light axes.
+`AIRPORTX_SPRITE_COUNT` from 15 to 20. Two entries represent the car park's two road-facing
+entrance orientations.
 
 Use a sortable world-sprite layout for a structure with height, and give its bounding box the
 real occupied footprint and sufficient Z extent. A flat marking or light array still needs a
