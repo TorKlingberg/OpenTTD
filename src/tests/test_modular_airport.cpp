@@ -111,7 +111,7 @@ static EngineID CreateAircraftEngine(EngineID index, uint8_t subtype)
 	return index;
 }
 
-static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)
+static void AddModularTile(Station *st, TileIndex tile, ModularAirportPieceID piece_type, uint8_t rotation = 0)
 {
 	ModularAirportTileData data;
 	data.tile = tile;
@@ -122,7 +122,7 @@ static void AddModularTile(Station *st, TileIndex tile, uint8_t piece_type, uint
 	st->airport.MarkLayoutDirty();
 }
 
-static ModularAirportTileData *AddModularTileWithData(Station *st, TileIndex tile, uint8_t piece_type, uint8_t rotation = 0)
+static ModularAirportTileData *AddModularTileWithData(Station *st, TileIndex tile, ModularAirportPieceID piece_type, uint8_t rotation = 0)
 {
 	AddModularTile(st, tile, piece_type, rotation);
 	return st->airport.GetModularTileData(tile);
@@ -190,7 +190,7 @@ TEST_CASE("ModularAirportLayoutAccountingMatchesStockCalibration")
 		const AirportSpec *as = AirportSpec::Get(entry.airport_type);
 		REQUIRE(as->layouts.size() == 1);
 
-		std::vector<uint8_t> pieces;
+		std::vector<ModularAirportPieceID> pieces;
 		const TileIndex base = TileXY(1, 1);
 		for (AirportTileTableIterator iter(as->layouts[0].tiles, base); iter != INVALID_TILE; ++iter) {
 			const TileIndex tile = iter;
@@ -258,7 +258,7 @@ TEST_CASE("ModularAirportTypeSpecAndNewGRFReservation")
 
 TEST_CASE("ModularAirportNoiseSaturatesAtStorageLimit")
 {
-	std::vector<uint8_t> pieces(256, APT_HELIPORT);
+	std::vector<ModularAirportPieceID> pieces(256, APT_HELIPORT);
 	CHECK(GetModularAirportNoiseLevelFromPieces(pieces) == UINT8_MAX);
 
 	Map::Allocate(64, 64);
@@ -696,6 +696,27 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	CHECK(tile_data->piece_type == APT_APRON);
 	CHECK(tile_data->one_way_taxi);
 	CHECK(tile_data->user_taxi_dir_mask == 0x02);
+
+	/* Metadata-only decorations must survive template placement without ever
+	 * writing their pseudo piece ID into the map's airport-gfx field. */
+	static constexpr std::pair<ModularAirportPieceID, uint8_t> decorations[] = {
+		{APT_MODULAR_FIRE_STATION, APT_APRON},
+		{APT_MODULAR_CARGO_TERMINAL, APT_APRON},
+		{APT_MODULAR_FUEL_FARM, APT_APRON},
+		{APT_MODULAR_APPROACH_LIGHTS, APT_GRASS_1},
+	};
+	for (const auto &[piece, map_gfx] : decorations) {
+		tile.piece_type = piece;
+		tile.one_way_taxi = false;
+		tile.user_taxi_dir_mask = 0x0F;
+		result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, st->index, false, data);
+		CAPTURE(piece, result.GetErrorMessage(), result.GetExtraErrorMessage());
+		REQUIRE(result.Succeeded());
+		tile_data = st->airport.GetModularTileData(base);
+		REQUIRE(tile_data != nullptr);
+		CHECK(tile_data->piece_type == piece);
+		CHECK(GetStationGfx(base) == map_gfx);
+	}
 
 	_current_company = saved_company;
 	_settings_game.station.distant_join_stations = saved_distant_join;
@@ -1567,8 +1588,22 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(IsModularBuildingPiece(APT_DEPOT_SE));
 		CHECK(IsModularBuildingPiece(APT_SMALL_DEPOT_NW));
 		CHECK(IsModularBuildingPiece(APT_TOWER));
+		CHECK(IsModularBuildingPiece(APT_MODULAR_FIRE_STATION));
+		CHECK(IsModularBuildingPiece(APT_MODULAR_CARGO_TERMINAL));
+		CHECK(IsModularBuildingPiece(APT_MODULAR_FUEL_FARM));
+		CHECK_FALSE(IsModularBuildingPiece(APT_MODULAR_APPROACH_LIGHTS));
 		CHECK_FALSE(IsModularBuildingPiece(APT_APRON));
 		CHECK_FALSE(IsModularBuildingPiece(APT_RUNWAY_1));
+	}
+
+	SECTION("Decoration Map Graphics") {
+		CHECK(IsModularAirportDecorationPiece(APT_MODULAR_FIRE_STATION));
+		CHECK(IsModularAirportDecorationPiece(APT_MODULAR_APPROACH_LIGHTS));
+		CHECK_FALSE(IsModularAirportDecorationPiece(APT_APRON));
+		CHECK(GetModularAirportMapGfx(APT_MODULAR_FIRE_STATION) == APT_APRON);
+		CHECK(GetModularAirportMapGfx(APT_MODULAR_CARGO_TERMINAL) == APT_APRON);
+		CHECK(GetModularAirportMapGfx(APT_MODULAR_FUEL_FARM) == APT_APRON);
+		CHECK(GetModularAirportMapGfx(APT_MODULAR_APPROACH_LIGHTS) == APT_GRASS_1);
 	}
 
 	SECTION("Taxiway Pieces") {
@@ -1597,6 +1632,43 @@ TEST_CASE("ModularAirportPieceClassification")
 	}
 }
 
+TEST_CASE("ModularAirportDecorationDrawing")
+{
+	struct DecorationCase {
+		ModularAirportPieceID piece;
+		SpriteID sprite;
+		SpriteID ground;
+	};
+	static constexpr DecorationCase cases[] = {
+		{APT_MODULAR_FIRE_STATION, SPR_AIRPORT_FIRE_STATION, SPR_AIRPORT_APRON},
+		{APT_MODULAR_CARGO_TERMINAL, SPR_AIRPORT_CARGO_TERMINAL, SPR_AIRPORT_APRON},
+		{APT_MODULAR_FUEL_FARM, SPR_AIRPORT_FUEL_FARM, SPR_AIRPORT_APRON},
+		{APT_MODULAR_APPROACH_LIGHTS, SPR_AIRPORT_APPROACH_LIGHTS, SPR_FLAT_GRASS_TILE},
+	};
+
+	for (const DecorationCase &c : cases) {
+		CAPTURE(c.piece);
+		const DrawTileSprites *layout = GetAirportTileLayoutWithModularOverrides(
+				GetModularAirportMapGfx(c.piece), c.piece, 0, 0);
+		REQUIRE(layout != nullptr);
+		CHECK((layout->ground.sprite & SPRITE_MASK) == c.ground);
+		bool found = false;
+		for (const DrawTileSeqStruct &dtss : layout->GetSequence()) {
+			if ((dtss.image.sprite & SPRITE_MASK) == c.sprite) found = true;
+		}
+		CHECK(found);
+	}
+
+	const DrawTileSprites *rotated = GetAirportTileLayoutWithModularOverrides(
+			APT_GRASS_1, APT_MODULAR_APPROACH_LIGHTS, 1, 0);
+	REQUIRE(rotated != nullptr);
+	bool found_rotated = false;
+	for (const DrawTileSeqStruct &dtss : rotated->GetSequence()) {
+		if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_APPROACH_LIGHTS_OTHER) found_rotated = true;
+	}
+	CHECK(found_rotated);
+}
+
 TEST_CASE("ModularAirportBuilderVocabulary")
 {
 	/* Which airport graphics a modular airport may be built from is a design
@@ -1611,13 +1683,27 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 	 * merely overlapping: a piece added to one and not the other fails this test,
 	 * in whichever direction it was forgotten. */
 	SECTION("The script API places exactly the builder's pieces") {
-		const std::vector<uint8_t> from_builder = GetModularAirportBuilderPieceGfx();
+		const std::vector<ModularAirportPieceID> from_builder = GetModularAirportBuilderPieceGfx();
 
-		std::vector<uint8_t> from_script;
-		for (int i = 0; i <= ScriptAirport::MP_EMPTY; i++) {
-			CAPTURE(i);
-			const uint8_t gfx = GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(i));
-			REQUIRE(gfx != UINT8_MAX);
+		std::vector<ModularAirportPieceID> from_script;
+		static constexpr ScriptAirport::ModularPiece script_pieces[] = {
+			ScriptAirport::MP_APRON, ScriptAirport::MP_STAND, ScriptAirport::MP_RUNWAY,
+			ScriptAirport::MP_RUNWAY_END, ScriptAirport::MP_RUNWAY_SMALL_MIDDLE,
+			ScriptAirport::MP_RUNWAY_SMALL_NEAR_END, ScriptAirport::MP_RUNWAY_SMALL_FAR_END,
+			ScriptAirport::MP_HANGAR, ScriptAirport::MP_SMALL_HANGAR, ScriptAirport::MP_HELIPAD,
+			ScriptAirport::MP_HELIPAD_PLAIN, ScriptAirport::MP_HELIPORT, ScriptAirport::MP_TERMINAL,
+			ScriptAirport::MP_TERMINAL_ALT, ScriptAirport::MP_TERMINAL_OTHER,
+			ScriptAirport::MP_TERMINAL_ROUND, ScriptAirport::MP_LOW_TERMINAL,
+			ScriptAirport::MP_SMALL_TERMINAL_3, ScriptAirport::MP_TOWER,
+			ScriptAirport::MP_RADIO_TOWER, ScriptAirport::MP_RADAR, ScriptAirport::MP_RADAR_GRASS,
+			ScriptAirport::MP_FLAG_GRASS, ScriptAirport::MP_GRASS, ScriptAirport::MP_EMPTY,
+			ScriptAirport::MP_FIRE_STATION, ScriptAirport::MP_CARGO_TERMINAL,
+			ScriptAirport::MP_FUEL_FARM, ScriptAirport::MP_APPROACH_LIGHTS,
+		};
+		for (ScriptAirport::ModularPiece piece : script_pieces) {
+			CAPTURE(piece);
+			const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
+			REQUIRE(gfx != UINT16_MAX);
 			from_script.push_back(gfx);
 		}
 		std::sort(from_script.begin(), from_script.end());
@@ -1625,16 +1711,16 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 
 		CHECK(from_script == from_builder);
 
-		/* The loop above trusts MP_EMPTY to be the last piece. Say so, or a piece
-		 * appended after it would go unchecked. */
-		CHECK(GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(ScriptAirport::MP_EMPTY + 1)) == UINT8_MAX);
+		CHECK(ScriptAirport::MP_GRASS == 23);
+		CHECK(ScriptAirport::MP_EMPTY == 24);
+		CHECK(GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(29)) == UINT16_MAX);
 	}
 
 	SECTION("A compound piece is named by one of its own tiles") {
 		/* Otherwise building it and reading it back disagree: the script asks for
 		 * the naming graphic, and every tile that lands on the map reports some
 		 * other piece -- or none. */
-		for (uint8_t gfx : GetModularAirportBuilderPieceGfx()) {
+		for (ModularAirportPieceID gfx : GetModularAirportBuilderPieceGfx()) {
 			CAPTURE(gfx);
 			const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
 			if (compound.empty()) continue;
@@ -3468,6 +3554,20 @@ TEST_CASE("ModularAirportTemplateCatchment")
 	}
 }
 
+TEST_CASE("ModularAirportTemplateAvailabilityValidatesWidePieceIDs")
+{
+	AirportTemplate templ;
+	AirportTemplateTile tile{};
+	tile.piece_type = APT_MODULAR_FIRE_STATION;
+	templ.tiles.push_back(tile);
+	templ.CheckAvailability();
+	CHECK(templ.is_available);
+
+	templ.tiles.front().piece_type = UINT16_MAX;
+	templ.CheckAvailability();
+	CHECK_FALSE(templ.is_available);
+}
+
 TEST_CASE("ModularAirportRunwayGoalCrossing")
 {
 	Map::Allocate(64, 64);
@@ -5054,7 +5154,7 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		ModularTemplatePlacementTile src{};
 		src.dx = 63;
 		src.dy = 42;
-		src.piece_type = APT_RUNWAY_END;
+		src.piece_type = APT_MODULAR_APPROACH_LIGHTS;
 		src.rotation = 3;
 		src.runway_flags = RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH;
 		src.one_way_taxi = true;
@@ -5069,7 +5169,7 @@ TEST_CASE("ModularAirportTemplatePlacementWireRoundTrip")
 		EndianBufferReader reader(buffer);
 		reader >> dst;
 
-		CHECK(buffer.size() == 5);
+		CHECK(buffer.size() == 6);
 		CHECK(dst.dx == src.dx);
 		CHECK(dst.dy == src.dy);
 		CHECK(dst.piece_type == src.piece_type);

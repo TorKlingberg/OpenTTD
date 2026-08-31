@@ -74,6 +74,37 @@ static const DrawTileSpriteSpan _station_display_modular_jetway_1(
 static const DrawTileSpriteSpan _station_display_modular_stand(
 	PalSpriteID{SPR_AIRPORT_AIRCRAFT_STAND, PAL_NONE});
 
+/* Metadata-only one-tile airport decorations. The map keeps a canonical apron
+ * or grass graphic; these layouts supply the dedicated object sprite. */
+static const DrawTileSeqStruct _station_display_modular_fire_station_seq[] = {
+	{0, 0, 0, 16, 16, 36, {SPR_AIRPORT_FIRE_STATION, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_fire_station(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_fire_station_seq);
+
+static const DrawTileSeqStruct _station_display_modular_cargo_terminal_seq[] = {
+	{0, 0, 0, 16, 16, 30, {SPR_AIRPORT_CARGO_TERMINAL, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_cargo_terminal(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_cargo_terminal_seq);
+
+static const DrawTileSeqStruct _station_display_modular_fuel_farm_seq[] = {
+	{0, 0, 0, 16, 16, 24, {SPR_AIRPORT_FUEL_FARM, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_fuel_farm(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_fuel_farm_seq);
+
+static const DrawTileSeqStruct _station_display_modular_approach_lights_seq[] = {
+	{0, 0, 0, 16, 16, 12, {SPR_AIRPORT_APPROACH_LIGHTS, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_approach_lights(
+	PalSpriteID{SPR_FLAT_GRASS_TILE, PAL_NONE}, _station_display_modular_approach_lights_seq);
+static const DrawTileSeqStruct _station_display_modular_approach_lights_other_seq[] = {
+	{0, 0, 0, 16, 16, 12, {SPR_AIRPORT_APPROACH_LIGHTS_OTHER, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_approach_lights_other(
+	PalSpriteID{SPR_FLAT_GRASS_TILE, PAL_NONE}, _station_display_modular_approach_lights_other_seq);
+
 /* NS (NW-SE on screen) runway sprites for modular airports. */
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_1(PalSpriteID{SPR_NSRUNWAY1, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_ns_runway_2(PalSpriteID{SPR_NSRUNWAY2, PAL_NONE});
@@ -277,7 +308,7 @@ const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_h
 	}
 }
 
-static const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_type, uint8_t rotation)
+static const DrawTileSprites *GetModularHangarTileLayoutByPiece(ModularAirportPieceID piece_type, uint8_t rotation)
 {
 	const bool is_large_hangar =
 			piece_type == APT_DEPOT_SE || piece_type == APT_DEPOT_SW ||
@@ -307,7 +338,7 @@ static const DrawTileSprites *GetModularHangarTileLayoutByPiece(uint8_t piece_ty
 	return GetModularHangarTileLayout(visual_rot, is_small_hangar);
 }
 
-static const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type)
+static const DrawTileSprites *GetModularNSRunwayLayout(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1:           return &_station_display_modular_ns_runway_1;
@@ -320,11 +351,22 @@ static const DrawTileSprites *GetModularNSRunwayLayout(uint8_t piece_type)
 	}
 }
 
-const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame)
+const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, ModularAirportPieceID modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame)
 {
 	const DrawTileSprites *t = nullptr;
 
-	if (const DrawTileSprites *hangar_layout = GetModularHangarTileLayoutByPiece(modular_piece_type, modular_rotation); hangar_layout != nullptr) {
+	switch (modular_piece_type) {
+		case APT_MODULAR_FIRE_STATION:    t = &_station_display_modular_fire_station; break;
+		case APT_MODULAR_CARGO_TERMINAL:  t = &_station_display_modular_cargo_terminal; break;
+		case APT_MODULAR_FUEL_FARM:       t = &_station_display_modular_fuel_farm; break;
+		case APT_MODULAR_APPROACH_LIGHTS:
+			t = (modular_rotation & 1) != 0 ? &_station_display_modular_approach_lights_other : &_station_display_modular_approach_lights;
+			break;
+		default: break;
+	}
+
+	if (const DrawTileSprites *hangar_layout = GetModularHangarTileLayoutByPiece(modular_piece_type, modular_rotation);
+			t == nullptr && hangar_layout != nullptr) {
 		t = hangar_layout;
 	}
 
@@ -398,7 +440,7 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 	 *   jetway_2 (APT_STAND_PIER_NE) -- terminal one tile to the NE (dx=-1)
 	 */
 	if (IsModularStandPiece(md->piece_type)) {
-		auto NeighborPiece = [&](TileIndexDiff diff) -> uint8_t {
+		auto NeighborPiece = [&](TileIndexDiff diff) -> ModularAirportPieceID {
 			TileIndex nb = ti->tile + diff;
 			if (!IsValidTile(nb) || !airport_st->TileBelongsToAirport(nb)) return APT_EMPTY;
 			const ModularAirportTileData *nd = airport_st->airport.GetModularTileData(nb);
@@ -426,7 +468,7 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
  * @param rotation Piece rotation.
  * @return Mask of edge bits (N/E/S/W = 0x01/0x02/0x04/0x08) that stay fence-free.
  */
-uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
+uint8_t GetModularTileFenceOpenMask(ModularAirportPieceID piece_type, uint8_t rotation)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
@@ -450,6 +492,8 @@ uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation)
 		case APT_LOW_BUILDING: case APT_LOW_BUILDING_FENCE_N: case APT_LOW_BUILDING_FENCE_NW:
 		case APT_SMALL_BUILDING_1: case APT_SMALL_BUILDING_2: case APT_SMALL_BUILDING_3:
 		case APT_TOWER: case APT_TOWER_FENCE_SW:
+		case APT_MODULAR_FIRE_STATION: case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM: case APT_MODULAR_APPROACH_LIGHTS:
 			return 0x0F;
 		default:
 			return 0x00;

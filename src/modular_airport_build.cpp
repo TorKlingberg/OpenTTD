@@ -276,7 +276,7 @@ static Money ScaleModularAirportCost(Money base, uint16_t percent)
 	return static_cast<Money>((static_cast<int64_t>(base) * percent + 50) / 100);
 }
 
-static Money GetModularAirportPieceBuildCost(uint8_t piece_type)
+static Money GetModularAirportPieceBuildCost(ModularAirportPieceID piece_type)
 {
 	const Money base = _price[Price::BuildStationAirport];
 
@@ -355,6 +355,12 @@ static Money GetModularAirportPieceBuildCost(uint8_t piece_type)
 		case APT_RADIO_TOWER_FENCE_NE:
 		case APT_GRASS_FENCE_NE_FLAG_2:
 			return ScaleModularAirportCost(base, 24);
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
+			return ScaleModularAirportCost(base, 30);
+		case APT_MODULAR_APPROACH_LIGHTS:
+			return ScaleModularAirportCost(base, 12);
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
 		case APT_GRASS_FENCE_SW:
@@ -373,7 +379,7 @@ ModularAirportNoiseSnapshot GetModularAirportNoiseSnapshot(std::span<const Modul
 	if (pieces.empty()) return result;
 
 	std::vector<TileIndex> tiles;
-	std::vector<uint8_t> piece_types;
+	std::vector<ModularAirportPieceID> piece_types;
 	tiles.reserve(pieces.size());
 	piece_types.reserve(pieces.size());
 	for (const ModularAirportNoisePiece &piece : pieces) {
@@ -465,7 +471,7 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 		if (ret.Failed()) return ret;
 	}
 
-	auto is_small_terminal_piece = [](uint8_t piece_type) {
+	auto is_small_terminal_piece = [](ModularAirportPieceID piece_type) {
 		return piece_type == APT_SMALL_BUILDING_1 || piece_type == APT_SMALL_BUILDING_2 || piece_type == APT_SMALL_BUILDING_3;
 	};
 
@@ -476,9 +482,9 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 		const ModularAirportTileData *seed_md = st->airport.GetModularTileData(seed);
 		if (seed_md == nullptr || !is_small_terminal_piece(seed_md->piece_type)) return tiles;
 
-		auto get_terminal_piece = [&](TileIndex t) -> uint8_t {
+		auto get_terminal_piece = [&](TileIndex t) -> ModularAirportPieceID {
 			const ModularAirportTileData *md = st->airport.GetModularTileData(t);
-			return md != nullptr ? md->piece_type : 0xFF;
+			return md != nullptr ? md->piece_type : UINT16_MAX;
 		};
 
 		TileIndex middle = INVALID_TILE;
@@ -615,9 +621,9 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 /**
  * Get the upgraded piece type for a modular airport tile.
  * @param piece_type The current piece type.
- * @return The upgraded piece type, or 0xFF if no upgrade is available.
+ * @return The upgraded piece type, or UINT16_MAX if no upgrade is available.
  */
-static uint8_t GetUpgradedPieceType(uint8_t piece_type)
+static ModularAirportPieceID GetUpgradedPieceType(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_SMALL_NEAR_END: return APT_RUNWAY_END;
@@ -628,7 +634,7 @@ static uint8_t GetUpgradedPieceType(uint8_t piece_type)
 		case APT_SMALL_DEPOT_NW:        return APT_DEPOT_NW;
 		case APT_SMALL_DEPOT_NE:        return APT_DEPOT_NE;
 		case APT_GRASS_1:               return APT_APRON;
-		default:                        return 0xFF;
+		default:                        return UINT16_MAX;
 	}
 }
 
@@ -647,7 +653,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 		TileIndex tile;
 		Station *station;
 		ModularAirportTileData *data;
-		uint8_t new_piece;
+		ModularAirportPieceID new_piece;
 	};
 
 	CommandCost cost(ExpensesType::Construction);
@@ -670,8 +676,8 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 		ModularAirportTileData *md = st->airport.GetModularTileData(t);
 		if (md == nullptr) continue;
 
-		uint8_t new_piece = GetUpgradedPieceType(md->piece_type);
-		if (new_piece == 0xFF) continue;
+		ModularAirportPieceID new_piece = GetUpgradedPieceType(md->piece_type);
+		if (new_piece == UINT16_MAX) continue;
 
 		/* Year-gate: modern pieces may not be available yet. */
 		if (IsModernModularPiece(new_piece) &&
@@ -698,7 +704,8 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 			noise_before.try_emplace(st->index, GetModularAirportNoiseSnapshot(st));
 			/* Update map tile gfx and modular metadata. */
 			uint8_t old_rotation = md->rotation;
-			SetStationGfx(Tile(t), target.new_piece);
+			assert(target.new_piece < NUM_AIRPORTTILES);
+			SetStationGfx(Tile(t), static_cast<uint8_t>(target.new_piece));
 			md->piece_type = target.new_piece;
 			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(target.new_piece, old_rotation);
 
@@ -762,11 +769,10 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 
 	if (distant_join && (!_settings_game.station.distant_join_stations || !Station::IsValidID(station_to_join))) return CMD_ERROR;
 
-	if (gfx >= NUM_AIRPORTTILES) return CMD_ERROR;
+	if (gfx >= NUM_AIRPORTTILES && !IsModularAirportDecorationPiece(gfx)) return CMD_ERROR;
 
 	/* Modern pieces are unavailable before the city airport introduction year. */
-	if (IsModernModularPiece(static_cast<uint8_t>(gfx)) &&
-			TimerGameCalendar::year < GetModularPieceMinYear(static_cast<uint8_t>(gfx))) {
+	if (IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx)) {
 		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
 	}
 
@@ -775,7 +781,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	/* Check if we're replacing an allowed modular airport tile.
 	 * In that case, skip the landscape clear (which would fail with Auto flag or
 	 * destroy station state) and just check for vehicles on the tile. */
-	auto IsHangarPiece = [](uint8_t piece_type) {
+	auto IsHangarPiece = [](ModularAirportPieceID piece_type) {
 		return piece_type == APT_DEPOT_SE || piece_type == APT_DEPOT_SW ||
 				piece_type == APT_DEPOT_NW || piece_type == APT_DEPOT_NE ||
 				piece_type == APT_SMALL_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SW ||
@@ -788,7 +794,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	}
 	is_modular_replace = existing_md != nullptr &&
 			(existing_md->piece_type == APT_GRASS_1 || existing_md->piece_type == APT_EMPTY ||
-				(IsHangarPiece(existing_md->piece_type) && IsHangarPiece(static_cast<uint8_t>(gfx))));
+				(IsHangarPiece(existing_md->piece_type) && IsHangarPiece(gfx)));
 	StationID existing_at_tile = is_modular_replace ? Station::GetByTile(tile)->index : StationID::Invalid();
 
 	/* Empty and grass are draggable tools, so a drag across a partly-finished airport
@@ -851,7 +857,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 				if (data.tile != tile) future_pieces.push_back({data.tile, data.piece_type});
 			}
 		}
-		future_pieces.push_back({tile, static_cast<uint8_t>(gfx)});
+		future_pieces.push_back({tile, gfx});
 		const ModularAirportNoiseSnapshot noise_before = new_facility ? ModularAirportNoiseSnapshot{} : GetModularAirportNoiseSnapshot(st);
 		const ModularAirportNoiseSnapshot noise_after = GetModularAirportNoiseSnapshot(future_pieces);
 		ret = CheckModularAirportNoiseChange(noise_before, noise_after);
@@ -896,7 +902,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	 * happens to be a helipad still comes out "Heliport". What this does buy is the
 	 * case that matters -- a hand-built heliport now gets the same name as the stock
 	 * heliport built as modular. */
-	const StationNaming naming = IsModularHelipadPiece(static_cast<uint8_t>(gfx)) ? StationNaming::Heliport : StationNaming::Airport;
+	const StationNaming naming = IsModularHelipadPiece(gfx) ? StationNaming::Heliport : StationNaming::Airport;
 	ret = BuildStationPart(&st, flags, reuse, airport_area, naming);
 	if (ret.Failed()) return ret;
 
@@ -913,7 +919,7 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	is_noop_rebuild = same_ground_piece && st != nullptr && st->index == existing_at_tile;
 	if (is_noop_rebuild) return CommandCost();
 
-	cost.AddCost(GetModularAirportPieceBuildCost(static_cast<uint8_t>(gfx)));
+	cost.AddCost(GetModularAirportPieceBuildCost(gfx));
 
 	return CommandCost();
 }
@@ -948,11 +954,13 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
 
 	Tile t(tile);
-	MakeAirport(t, st->owner, st->index, static_cast<uint8_t>(gfx), WaterClass::Invalid);
+	const ModularAirportPieceID piece_type = gfx;
+	const uint8_t map_gfx = GetModularAirportMapGfx(piece_type);
+	MakeAirport(t, st->owner, st->index, map_gfx, WaterClass::Invalid);
 	SetStationTileRandomBits(t, GB(Random(), 0, 4));
 	st->airport.Add(tile);
 
-	if (AirportTileSpec::Get(GetTranslatedAirportTileID(static_cast<uint8_t>(gfx)))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+	if (AirportTileSpec::Get(GetTranslatedAirportTileID(map_gfx))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
 	TriggerAirportTileAnimation(st, tile, AirportAnimationTrigger::Built);
 
 	/* Store modular airport tile data */
@@ -976,7 +984,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	 * template tiles arrive pre-rotated via RotateTemplateTile and pass through unchanged.
 	 * Do NOT use SwapBuildingPieceForRotation here -- it would double-rotate template tiles
 	 * (which also apply it) and double-swap APT_BUILDING_1/2 and runway near/far ends. */
-	uint8_t directional_piece = static_cast<uint8_t>(gfx);
+	ModularAirportPieceID directional_piece = piece_type;
 	if (directional_piece == APT_DEPOT_SE) {
 		static constexpr uint8_t kLargeByRot[] = {APT_DEPOT_SE, APT_DEPOT_NE, APT_DEPOT_NW, APT_DEPOT_SW};
 		directional_piece = kLargeByRot[rotation % 4];
@@ -1339,11 +1347,13 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 		for (const ModularAirportTileData &data : converted_data) {
 			Tile t(data.tile);
-			MakeAirport(t, st->owner, st->index, data.piece_type, WaterClass::Invalid);
+			assert(data.piece_type < NUM_AIRPORTTILES);
+			const uint8_t map_gfx = static_cast<uint8_t>(data.piece_type);
+			MakeAirport(t, st->owner, st->index, map_gfx, WaterClass::Invalid);
 			SetStationTileRandomBits(t, GB(Random(), 0, 4));
 			st->airport.Add(data.tile);
 
-			if (AirportTileSpec::Get(GetTranslatedAirportTileID(data.piece_type))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
+			if (AirportTileSpec::Get(GetTranslatedAirportTileID(map_gfx))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
 			tile_data_vec.push_back(data);
 		}
 

@@ -14,6 +14,7 @@
 #include "../squirrel_helper_type.hpp"
 #include "../../airport.h"
 #include "../../station_type.h"
+#include "../../table/airporttile_ids.h"
 
 /**
  * Class that handles all airport related functions.
@@ -263,8 +264,12 @@ public:
 		MP_RADAR,                  ///< Radar.
 		MP_RADAR_GRASS,            ///< Radar on grass.
 		MP_FLAG_GRASS,             ///< Windsock on grass.
-		MP_GRASS,                  ///< Plain airport grass.
-		MP_EMPTY,                  ///< Empty airport tile. Reserves the ground without building anything on it.
+		MP_GRASS = 23,             ///< Plain airport grass.
+		MP_EMPTY = 24,             ///< Empty airport tile. Reserves the ground without building anything on it.
+		MP_FIRE_STATION = 25,      ///< Airport fire station with a visible fire engine.
+		MP_CARGO_TERMINAL = 26,    ///< Cargo terminal / warehouse.
+		MP_FUEL_FARM = 27,         ///< Aviation fuel tanks and pumping equipment.
+		MP_APPROACH_LIGHTS = 28,   ///< One-tile runway approach-light array on grass.
 
 		MP_INVALID = -1,           ///< Not a modular airport piece.
 	};
@@ -572,9 +577,9 @@ public:
 };
 
 /** Convert a script-visible modular piece to its airport tile graphic. */
-uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece);
+ModularAirportPieceID GetGfxForModularPiece(ScriptAirport::ModularPiece piece);
 
 /** Convert an airport tile graphic to its script-visible modular piece. */
-ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx);
+ScriptAirport::ModularPiece GetModularPieceForGfx(ModularAirportPieceID gfx);
 
 #endif /* SCRIPT_AIRPORT_HPP */

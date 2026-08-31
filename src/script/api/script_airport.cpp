@@ -191,7 +191,7 @@
  * truth for both directions of the mapping, so a piece cannot be built as one
  * graphic and read back as another.
  */
-static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[] = {
+static const std::pair<ScriptAirport::ModularPiece, ModularAirportPieceID> _modular_piece_gfx[] = {
 	{ScriptAirport::MP_APRON,                 APT_APRON},
 	{ScriptAirport::MP_STAND,                 APT_STAND},
 	{ScriptAirport::MP_RUNWAY,                APT_RUNWAY_5},
@@ -217,6 +217,10 @@ static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[
 	{ScriptAirport::MP_FLAG_GRASS,            APT_GRASS_FENCE_NE_FLAG_2},
 	{ScriptAirport::MP_GRASS,                 APT_GRASS_1},
 	{ScriptAirport::MP_EMPTY,                 APT_EMPTY},
+	{ScriptAirport::MP_FIRE_STATION,          APT_MODULAR_FIRE_STATION},
+	{ScriptAirport::MP_CARGO_TERMINAL,        APT_MODULAR_CARGO_TERMINAL},
+	{ScriptAirport::MP_FUEL_FARM,             APT_MODULAR_FUEL_FARM},
+	{ScriptAirport::MP_APPROACH_LIGHTS,       APT_MODULAR_APPROACH_LIGHTS},
 };
 
 /**
@@ -226,14 +230,14 @@ static const std::pair<ScriptAirport::ModularPiece, uint8_t> _modular_piece_gfx[
  * the builder's own piece tables, which is what keeps a script's vocabulary and
  * a player's identical.
  * @param piece The piece to look up.
- * @return The graphic, or UINT8_MAX when the piece is not a valid ModularPiece.
+ * @return The graphic, or UINT16_MAX when the piece is not a valid ModularPiece.
  */
-uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
+ModularAirportPieceID GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
 {
 	for (const auto &[named, gfx] : _modular_piece_gfx) {
 		if (named == piece) return gfx;
 	}
-	return UINT8_MAX;
+	return UINT16_MAX;
 }
 
 /**
@@ -251,7 +255,7 @@ uint8_t GetGfxForModularPiece(ScriptAirport::ModularPiece piece)
  * @param gfx The graphic to look up.
  * @return The piece, or MP_INVALID when nothing sensible names it.
  */
-ScriptAirport::ModularPiece GetModularPieceForGfx(uint8_t gfx)
+ScriptAirport::ModularPiece GetModularPieceForGfx(ModularAirportPieceID gfx)
 {
 	for (const auto &[named, named_gfx] : _modular_piece_gfx) {
 		if (named_gfx == gfx) return named;
@@ -330,8 +334,8 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		if (taxi_dir_mask < 0 || taxi_dir_mask > 0x0F) return false;
 		if (edge_fence_mask < 0 || edge_fence_mask > 0x0F) return false;
 
-		const uint8_t gfx = GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(piece));
-		if (gfx == UINT8_MAX) return false;
+		const ModularAirportPieceID gfx = GetGfxForModularPiece(static_cast<ScriptAirport::ModularPiece>(piece));
+		if (gfx == UINT16_MAX) return false;
 		/* The legacy small hangar has only its SE graphic. Giving it another
 		 * rotation changes its taxi opening without changing what is drawn. */
 		if (::IsLegacySmallHangarPiece(gfx) && rotation != 0) return false;
@@ -446,16 +450,16 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 
 /* static */ bool ScriptAirport::IsModularPieceAvailable(ModularPiece piece)
 {
-	const uint8_t gfx = GetGfxForModularPiece(piece);
-	if (gfx == UINT8_MAX) return false;
+	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
+	if (gfx == UINT16_MAX) return false;
 
 	return !::IsModernModularPiece(gfx) || TimerGameCalendar::year >= ::GetModularPieceMinYear(gfx);
 }
 
 /* static */ SQInteger ScriptAirport::GetModularPieceMinYear(ModularPiece piece)
 {
-	const uint8_t gfx = GetGfxForModularPiece(piece);
-	if (gfx == UINT8_MAX) return -1;
+	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
+	if (gfx == UINT16_MAX) return -1;
 
 	return ::GetModularPieceMinYear(gfx).base();
 }
@@ -476,7 +480,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforcePrecondition(false, piece != MP_SMALL_HANGAR || rotation == 0);
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
-	const uint8_t gfx = GetGfxForModularPiece(piece);
+	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
 
 	/* A compound piece covers several tiles, so it goes through the template
 	 * command the same way the builder's own click does -- one atomic placement,
@@ -579,7 +583,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	std::vector<ModularTemplatePlacementTile> tiles;
 	if (!ParseModularLayout(layout, tiles)) return -1;
 
-	std::vector<uint8_t> piece_types;
+	std::vector<ModularAirportPieceID> piece_types;
 	piece_types.reserve(tiles.size());
 	for (const ModularTemplatePlacementTile &t : tiles) piece_types.push_back(t.piece_type);
 
@@ -599,7 +603,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	std::vector<ModularTemplatePlacementTile> tiles;
 	if (!ParseModularLayout(layout, tiles)) return -1;
 
-	std::vector<uint8_t> piece_types;
+	std::vector<ModularAirportPieceID> piece_types;
 	piece_types.reserve(tiles.size());
 	for (const ModularTemplatePlacementTile &t : tiles) piece_types.push_back(t.piece_type);
 

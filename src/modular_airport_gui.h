@@ -13,6 +13,7 @@
 #include "station_type.h"
 #include "viewport_type.h"
 #include "gfx_type.h"
+#include "table/airporttile_ids.h"
 
 void ShowBuildModularAirportWindow();
 
@@ -26,7 +27,7 @@ void ShowBuildModularAirportWindow();
  * A compound piece appears here once, under the graphic that names it; see
  * GetModularCompoundPieceTiles for what it actually puts on the ground.
  */
-std::vector<uint8_t> GetModularAirportBuilderPieceGfx();
+std::vector<ModularAirportPieceID> GetModularAirportBuilderPieceGfx();
 
 /** One tile of a compound piece, relative to the tile the player clicked. */
 struct ModularCompoundPieceTile {
@@ -44,10 +45,10 @@ struct ModularCompoundPieceTile {
  * its neighbours in one orientation only.
  * @param gfx The graphic naming the piece (the one in GetModularAirportBuilderPieceGfx).
  */
-std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(uint8_t gfx);
+std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(ModularAirportPieceID gfx);
 
 /** Footprint of a piece in tiles: the compound's bounding box, or 1x1. */
-Dimension GetModularCompoundPieceSize(uint8_t gfx);
+Dimension GetModularCompoundPieceSize(ModularAirportPieceID gfx);
 
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;

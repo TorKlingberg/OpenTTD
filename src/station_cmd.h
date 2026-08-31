@@ -17,6 +17,7 @@
 #include "station_type.h"
 #include "newgrf_roadstop.h"
 #include "newgrf_station.h"
+#include "table/airporttile_ids.h"
 
 struct Town;
 class AirportTileTableIterator;
@@ -45,7 +46,7 @@ struct ModularTemplatePlacementTile {
 	 * a single command payload; see modular_airport_template_cmd.cpp. */
 	uint8_t dx = 0;
 	uint8_t dy = 0;
-	uint8_t piece_type = 0;
+	ModularAirportPieceID piece_type = 0;
 	uint8_t rotation = 0;
 	uint8_t runway_flags = 0;
 	bool one_way_taxi = false;

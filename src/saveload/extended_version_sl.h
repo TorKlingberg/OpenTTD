@@ -51,8 +51,11 @@ using SlxFeatureFlags = EnumBitSet<SlxFeatureFlag, uint8_t>;
  *    from the layout on load. A version-1 loader reads such a savegame as a path with no
  *    segments and silently discards every aircraft's route, so it must be turned away --
  *    which, the feature being non-ignorable, is what this bump does.
+ * 3: modular airport piece IDs widen from 8 to 16 bits so metadata-only base-set pieces
+ *    can live outside the NewGRF airport-tile namespace. Version-1/2 saves are converted
+ *    from their U8 representation when loaded.
  */
-static constexpr uint16_t MODULAR_AIRPORT_SL_VERSION = 2;
+static constexpr uint16_t MODULAR_AIRPORT_SL_VERSION = 3;
 
 void SlxResetFeatureVersions();
 void SlxSetCurrentFeatureVersions();

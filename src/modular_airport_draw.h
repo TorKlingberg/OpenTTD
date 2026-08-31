@@ -14,13 +14,14 @@
 #include "station_map.h"
 #include "viewport_type.h"
 #include "zoom_type.h"
+#include "table/airporttile_ids.h"
 
 void InitModularAirportHangarLayouts();
 void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom = _gui_zoom);
 void DrawModularAirportPerimeterFences(const TileInfo *ti, PaletteID palette);
-uint8_t GetModularTileFenceOpenMask(uint8_t piece_type, uint8_t rotation);
+uint8_t GetModularTileFenceOpenMask(ModularAirportPieceID piece_type, uint8_t rotation);
 void DrawModularAirportDirectionOverlays(const TileInfo *ti);
-const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, uint8_t modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame = 0);
+const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, ModularAirportPieceID modular_piece_type, uint8_t modular_rotation, uint8_t animation_frame = 0);
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar);
 void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx, const DrawTileSprites *&t);
 

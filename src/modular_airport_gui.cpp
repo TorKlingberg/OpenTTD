@@ -158,9 +158,11 @@ struct CosmeticPiece {
 	StringID name;
 	SpriteID icon;    ///< Small icon at Out2x zoom (for toolbar button)
 	SpriteID ground;  ///< Optional ground sprite drawn behind icon (0 = none)
-	uint8_t apt_gfx;  ///< AirportTiles value for placement and full-size picker preview
+	ModularAirportPieceID apt_gfx; ///< AirportTiles/NewGRF ID or metadata-only piece for placement and preview.
 	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down. Unused by a multi-tile piece, whose preview is measured.
 	bool is_multi_tile = false; ///< True if this piece places multiple tiles at once.
+	bool use_layout_preview = false; ///< Draw the complete modular tile layout instead of a bare icon.
+	uint8_t rotation = 0; ///< Fixed orientation used by the picker and placement.
 };
 
 struct HelipadPiece {
@@ -182,6 +184,11 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_AIRFIELD_TERM_B,          0,                    APT_SMALL_BUILDING_2,     0, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     SPR_AIRPORT_FIRE_STATION,     0,                    APT_MODULAR_FIRE_STATION, 0, false, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL,   SPR_AIRPORT_CARGO_TERMINAL,   0,                    APT_MODULAR_CARGO_TERMINAL, 0, false, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM,        SPR_AIRPORT_FUEL_FARM,        0,                    APT_MODULAR_FUEL_FARM, 0, false, true},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS,  SPR_AIRPORT_APPROACH_LIGHTS,       0, APT_MODULAR_APPROACH_LIGHTS, 0, false, true, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS,  SPR_AIRPORT_APPROACH_LIGHTS_OTHER, 0, APT_MODULAR_APPROACH_LIGHTS, 0, false, true, 1},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -210,7 +217,7 @@ static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 
 static constexpr int MODULAR_AIRPORT_PIECE_ERASE_INDEX = lengthof(_modular_airport_pieces) - 1;
 
-static uint8_t GetModularAirportPieceGfx(uint8_t piece)
+static ModularAirportPieceID GetModularAirportPieceGfx(uint8_t piece)
 {
 	switch (piece) {
 		case 0:  return APT_RUNWAY_5;
@@ -254,9 +261,9 @@ static constexpr uint8_t _modular_airport_implicit_gfx[] = {
  * A compound piece is listed once, under the graphic that names it in the picker
  * table; GetModularCompoundPieceTiles says what it puts on the ground.
  */
-std::vector<uint8_t> GetModularAirportBuilderPieceGfx()
+std::vector<ModularAirportPieceID> GetModularAirportBuilderPieceGfx()
 {
-	std::vector<uint8_t> out;
+	std::vector<ModularAirportPieceID> out;
 
 	for (uint8_t i = 0; i < lengthof(_modular_airport_pieces); i++) {
 		/* The two picker buttons resolve to whatever the picker currently has
@@ -293,13 +300,13 @@ static constexpr ModularCompoundPieceTile _small_terminal_3_tiles[] = {
 	{2, 0, APT_SMALL_BUILDING_3},
 };
 
-std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(uint8_t gfx)
+std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(ModularAirportPieceID gfx)
 {
 	if (gfx == APT_SMALL_BUILDING_2) return _small_terminal_3_tiles;
 	return {};
 }
 
-Dimension GetModularCompoundPieceSize(uint8_t gfx)
+Dimension GetModularCompoundPieceSize(ModularAirportPieceID gfx)
 {
 	Dimension size{1, 1};
 	for (const ModularCompoundPieceTile &ct : GetModularCompoundPieceTiles(gfx)) {
@@ -341,7 +348,7 @@ static Point GetModularCompoundPieceTileOffset(const ModularCompoundPieceTile &c
 
 /** The tiles of a compound piece, back to front: the viewport paints a tile in front of
  * another when it starts beyond it along an axis, which on a flat piece is their sum. */
-static std::vector<const ModularCompoundPieceTile *> GetModularCompoundPieceTilesBackToFront(uint8_t gfx)
+static std::vector<const ModularCompoundPieceTile *> GetModularCompoundPieceTilesBackToFront(ModularAirportPieceID gfx)
 {
 	std::vector<const ModularCompoundPieceTile *> order;
 	for (const ModularCompoundPieceTile &ct : GetModularCompoundPieceTiles(gfx)) order.push_back(&ct);
@@ -363,7 +370,7 @@ static std::vector<const ModularCompoundPieceTile *> GetModularCompoundPieceTile
  * @param zoom Zoom level the preview is drawn at.
  * @return The box covered, or an empty box if @a gfx is not a compound piece.
  */
-static ModularCompoundPiecePreviewBox GetModularCompoundPiecePreviewBox(uint8_t gfx, ZoomLevel zoom)
+static ModularCompoundPiecePreviewBox GetModularCompoundPiecePreviewBox(ModularAirportPieceID gfx, ZoomLevel zoom)
 {
 	ModularCompoundPiecePreviewBox box{INT_MAX, INT_MAX, INT_MIN, INT_MIN};
 
@@ -404,7 +411,7 @@ static ModularCompoundPiecePreviewBox GetModularCompoundPiecePreviewBox(uint8_t 
  * @param pal Company palette to recolour with.
  * @param zoom Zoom level to draw at.
  */
-static void DrawModularCompoundPiecePreview(int x, int y, uint8_t gfx, PaletteID pal, ZoomLevel zoom)
+static void DrawModularCompoundPiecePreview(int x, int y, ModularAirportPieceID gfx, PaletteID pal, ZoomLevel zoom)
 {
 	for (const ModularCompoundPieceTile *ct : GetModularCompoundPieceTilesBackToFront(gfx)) {
 		const Point tile = GetModularCompoundPieceTileOffset(*ct, zoom);
@@ -478,7 +485,7 @@ public:
 		this->SetDirty();
 	}
 
-	static bool IsGfxLockedByYear(uint8_t gfx)
+	static bool IsGfxLockedByYear(ModularAirportPieceID gfx)
 	{
 		return IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
 	}
@@ -1024,7 +1031,7 @@ public:
 		data.is_drag_build = true;
 		data.tiles.reserve(static_cast<size_t>(ta.w) * ta.h);
 
-		auto add_tile = [&](TileIndex tile, uint8_t gfx, uint8_t rotation) {
+		auto add_tile = [&](TileIndex tile, ModularAirportPieceID gfx, uint8_t rotation) {
 			ModularTemplatePlacementTile placement;
 			placement.dx = static_cast<uint8_t>(TileX(tile) - TileX(ta.tile));
 			placement.dy = static_cast<uint8_t>(TileY(tile) - TileY(ta.tile));
@@ -1083,7 +1090,9 @@ public:
 					uint8_t drag_rotation = (ta.w >= ta.h) ? 0 : 1;
 					add_tile(tile, GetModularAirportPieceGfx(this->selected_piece), drag_rotation);
 				} else {
-					add_tile(tile, GetModularAirportPieceGfx(this->selected_piece), 0);
+					const uint8_t rotation = this->selected_piece == 3 ?
+							_cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)].rotation : 0;
+					add_tile(tile, GetModularAirportPieceGfx(this->selected_piece), rotation);
 				}
 			}
 		}
@@ -1163,10 +1172,14 @@ private:
 	 */
 	void PlaceSingleTileWithDialog(TileIndex tile)
 	{
-		uint8_t gfx = GetModularAirportPieceGfx(this->selected_piece);
+		ModularAirportPieceID gfx = GetModularAirportPieceGfx(this->selected_piece);
 		bool adjacent = _ctrl_pressed;
-		/* Use hangar rotation for hangar pieces; rotation 0 for everything else. */
-		uint8_t rot = (this->selected_piece == 4) ? _modular_hangar_rotation : 0;
+		uint8_t rot = 0;
+		if (this->selected_piece == 4) {
+			rot = _modular_hangar_rotation;
+		} else if (this->selected_piece == 3) {
+			rot = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)].rotation;
+		}
 
 		auto proc = [=](bool test, StationID to_join) -> bool {
 			if (test) {
@@ -1558,6 +1571,16 @@ public:
 			return;
 		}
 
+		if (piece.use_layout_preview) {
+			const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(
+					GetModularAirportMapGfx(piece.apt_gfx), piece.apt_gfx, piece.rotation);
+			const int x = (ir.Width() - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
+			const int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
+			DrawSprite(t->ground.sprite, PAL_NONE, x, y, nullptr, icon_zoom);
+			DrawModularTileSeqInGUI(x, y, t, pal, icon_zoom);
+			return;
+		}
+
 		Point offset;
 		Dimension d = GetSpriteSize(piece.icon, &offset, icon_zoom);
 		d.width  -= offset.x;
@@ -1632,6 +1655,18 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_10), SetFill(1, 0), SetMinimalSize(120, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
+			EndContainer(),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_11), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_12), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_14), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_15), SetFill(0, 0),
+					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

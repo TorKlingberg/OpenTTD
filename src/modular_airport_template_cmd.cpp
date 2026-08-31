@@ -35,7 +35,7 @@ static constexpr std::array<uint8_t, 4> kFenceEdgeBits = {0x01, 0x02, 0x04, 0x08
  * Must match operator<<(EndianBufferWriter &, const ModularTemplatePlacementTile &) in station_cmd.h.
  */
 static constexpr size_t TEMPLATE_PLACEMENT_TILE_WIRE_SIZE =
-		sizeof(uint8_t) * 3 + // dx, dy, piece_type
+		sizeof(uint8_t) * 2 + sizeof(ModularAirportPieceID) + // dx, dy, piece_type
 		sizeof(uint8_t) * 2;  // rotation, runway_flags, one_way_taxi, user_taxi_dir_mask and edge_block_mask, bit-packed
 
 /** Fixed part of a PlaceModularAirportTemplate payload: tile, station_to_join, allow_adjacent, and the data header. */
@@ -75,7 +75,7 @@ static void GetRotatedTemplateDimensions(uint16_t width, uint16_t height, uint8_
 }
 
 static CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, Station *st,
-		std::optional<uint8_t> piece_type = std::nullopt)
+		std::optional<ModularAirportPieceID> piece_type = std::nullopt)
 {
 	/* Validate flags: at least one operation and exactly one direction must be set */
 	if ((runway_flags & (RUF_LANDING | RUF_TAKEOFF)) == 0) return CMD_ERROR;
@@ -92,8 +92,8 @@ static CommandCost SetRunwayFlags_Check(TileIndex tile, uint8_t runway_flags, St
 	if (!st->airport.blocks.Test(AirportBlock::Modular)) return CMD_ERROR;
 
 	ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-	const std::optional<uint8_t> checked_piece_type = piece_type.has_value() ? piece_type :
-			data != nullptr ? std::optional<uint8_t>{data->piece_type} : std::nullopt;
+	const std::optional<ModularAirportPieceID> checked_piece_type = piece_type.has_value() ? piece_type :
+			data != nullptr ? std::optional<ModularAirportPieceID>{data->piece_type} : std::nullopt;
 	if (checked_piece_type.has_value() && !IsModularRunwayPiece(*checked_piece_type)) return CMD_ERROR;
 
 	return CommandCost();
@@ -157,7 +157,7 @@ CommandCost CmdSetRunwayFlags(DoCommandFlags flags, TileIndex tile, uint8_t runw
 }
 
 static CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, bool one_way_taxi, Station *st,
-		std::optional<uint8_t> piece_type = std::nullopt, uint8_t rotation = 0)
+		std::optional<ModularAirportPieceID> piece_type = std::nullopt, uint8_t rotation = 0)
 {
 	/* Greenfield template test pass: station hasn't been allocated yet. The caller's
 	 * BuildModularAirportTile_Check has already validated the placement. The taxi-direction
@@ -171,7 +171,7 @@ static CommandCost SetTaxiwayFlags_Check(TileIndex tile, uint8_t taxi_dir_mask, 
 	}
 
 	const bool has_proposed_piece = piece_type.has_value();
-	const uint8_t current_piece_type = has_proposed_piece ? *piece_type : data != nullptr ? data->piece_type : 0;
+	const ModularAirportPieceID current_piece_type = has_proposed_piece ? *piece_type : data != nullptr ? data->piece_type : 0;
 	const uint8_t current_rotation = has_proposed_piece ? rotation : data != nullptr ? data->rotation : 0;
 
 	if (current_piece_type != 0) {

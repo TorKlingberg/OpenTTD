@@ -15,6 +15,7 @@
 #include <vector>
 #include <memory>
 #include "tile_type.h"
+#include "table/airporttile_ids.h"
 
 /**
  * Maximum number of tiles a saved airport template may hold.
@@ -43,7 +44,7 @@ static constexpr uint16_t MAX_TEMPLATE_DIM = 255;
 struct AirportTemplateTile {
 	uint16_t dx;
 	uint16_t dy;
-	uint8_t piece_type;
+	ModularAirportPieceID piece_type;
 	uint8_t rotation;
 	uint8_t runway_flags;
 	bool one_way_taxi;

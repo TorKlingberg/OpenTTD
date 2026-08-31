@@ -106,7 +106,7 @@ struct PathNode {
  * @param piece_type The airport piece type.
  * @return True if it's a building that blocks taxiing.
  */
-static bool IsNonTaxiableBuilding(uint8_t piece_type)
+static bool IsNonTaxiableBuilding(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_BUILDING_1:
@@ -136,7 +136,7 @@ GroundPathRestriction GetGroundPathRestriction(const Aircraft *v)
  * @param piece_type The airport piece type.
  * @return True if this tile is parking-only (stand variants).
  */
-static bool IsParkingOnlyTile(uint8_t piece_type)
+static bool IsParkingOnlyTile(ModularAirportPieceID piece_type)
 {
 	return IsModularHelipadPiece(piece_type) || IsModularStandPiece(piece_type);
 }

@@ -92,6 +92,12 @@ void AirportTemplate::CheckAvailability()
 				return;
 			}
 			tile.piece_type = resolved.value();
+		} else if (tile.piece_type >= NUM_AIRPORTTILES && !IsModularAirportDecorationPiece(tile.piece_type)) {
+			/* Only the explicitly defined metadata-only pieces may live outside
+			 * the 8-bit airport-tile namespace. Reject unknown values from a
+			 * hand-edited template before its preview reaches the map-gfx mapper. */
+			this->is_available = false;
+			return;
 		}
 	}
 }
@@ -134,7 +140,7 @@ void AirportTemplateManager::Refresh()
 				AirportTemplateTile tile;
 				tile.dx = jt.value("dx", static_cast<uint16_t>(0));
 				tile.dy = jt.value("dy", static_cast<uint16_t>(0));
-				tile.piece_type = jt.value("piece_type", static_cast<uint8_t>(0));
+				tile.piece_type = jt.value("piece_type", static_cast<ModularAirportPieceID>(0));
 				/* Rotation is mod 4 everywhere downstream -- hangar facings, the
 				 * (old_rotation + r) & 3 accumulation in Rotate(). Clamp on the way in
 				 * so a hand-edited file cannot smuggle an out-of-range value past the

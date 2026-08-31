@@ -113,7 +113,7 @@ uint8_t CalculateAutoTaxiDirectionsForPiece(uint8_t piece_type, uint8_t rotation
 	return _piece_taxi_directions[piece_type][rotation];
 }
 
-uint8_t CalculateAutoTaxiDirectionsForGfx(uint8_t gfx, uint8_t rotation)
+uint8_t CalculateAutoTaxiDirectionsForGfx(ModularAirportPieceID gfx, uint8_t rotation)
 {
 	if (rotation > 3) rotation = 0;
 

@@ -38,7 +38,7 @@
 
 #include "safeguards.h"
 
-bool IsModularHelipadPiece(uint8_t gfx)
+bool IsModularHelipadPiece(ModularAirportPieceID gfx)
 {
 	switch (gfx) {
 		case APT_HELIPORT:
@@ -55,7 +55,7 @@ bool IsModularHelipadPiece(uint8_t gfx)
 	}
 }
 
-bool IsModernModularPiece(uint8_t piece_type)
+bool IsModernModularPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		/* Legacy pieces -- always available */
@@ -102,19 +102,23 @@ bool IsModernModularPiece(uint8_t piece_type)
 		case APT_SMALL_BUILDING_3:
 		case APT_STAND_1:
 		case APT_RADIO_TOWER_FENCE_NE:
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_APPROACH_LIGHTS:
 			return false;
 		default:
 			return true;
 	}
 }
 
-TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type)
+TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 {
 	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
 	return AirportSpec::Get(AT_LARGE)->min_year;
 }
 
-static bool IsBigTerminalPiece(uint8_t piece_type)
+static bool IsBigTerminalPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_ROUND_TERMINAL:
@@ -396,7 +400,7 @@ TTDPAirportType GetModularAirportNewGRFType(const Station *st)
 	return ModularAirportSupportsLargeAircraft(st) ? ATP_TTDP_LARGE : ATP_TTDP_SMALL;
 }
 
-static uint GetModularAirportPieceMaintenancePoints(uint8_t piece_type)
+static uint GetModularAirportPieceMaintenancePoints(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1:
@@ -487,6 +491,14 @@ static uint GetModularAirportPieceMaintenancePoints(uint8_t piece_type)
 		case APT_RADIO_TOWER_FENCE_NE:
 			return 4;
 
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
+			return 4;
+
+		case APT_MODULAR_APPROACH_LIGHTS:
+			return 1;
+
 		case APT_GRASS_FENCE_NE_FLAG_2:
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
@@ -501,10 +513,10 @@ static uint GetModularAirportPieceMaintenancePoints(uint8_t piece_type)
 	}
 }
 
-uint GetModularAirportMaintenancePointsFromPieces(std::span<const uint8_t> piece_types)
+uint GetModularAirportMaintenancePointsFromPieces(std::span<const ModularAirportPieceID> piece_types)
 {
 	uint points = 0;
-	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceMaintenancePoints(piece_type);
+	for (ModularAirportPieceID piece_type : piece_types) points += GetModularAirportPieceMaintenancePoints(piece_type);
 	return points;
 }
 
@@ -518,7 +530,7 @@ uint GetModularAirportMaintenancePoints(const Station *st)
 	return points;
 }
 
-static uint GetModularAirportPieceNoisePoints(uint8_t piece_type)
+static uint GetModularAirportPieceNoisePoints(ModularAirportPieceID piece_type)
 {
 	if (IsModularRunwayPiece(piece_type)) return 9;
 
@@ -591,10 +603,10 @@ static uint8_t ModularNoisePointsToLevel(uint points)
 	return static_cast<uint8_t>(std::min<uint>((points + 8) / 16, UINT8_MAX));
 }
 
-uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_types)
+uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const ModularAirportPieceID> piece_types)
 {
 	uint points = 0;
-	for (uint8_t piece_type : piece_types) points += GetModularAirportPieceNoisePoints(piece_type);
+	for (ModularAirportPieceID piece_type : piece_types) points += GetModularAirportPieceNoisePoints(piece_type);
 	return ModularNoisePointsToLevel(points);
 }
 
@@ -614,7 +626,7 @@ uint8_t GetModularAirportNoiseLevel(const Station *st)
 }
 
 /** Radar pieces, counted towards the large-hub catchment tier. */
-static bool IsRadarPiece(uint8_t piece_type)
+static bool IsRadarPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RADAR_GRASS_FENCE_SW:

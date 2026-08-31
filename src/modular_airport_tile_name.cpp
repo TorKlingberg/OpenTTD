@@ -108,8 +108,15 @@ static_assert(lengthof(_modular_tile_names) == APT_END);
  * @param piece_type AirportTiles value stored in ModularAirportTileData.
  * @return Name of the piece, or STR_NULL when the value is not recognised.
  */
-StringID GetModularAirportTileName(uint8_t piece_type)
+StringID GetModularAirportTileName(ModularAirportPieceID piece_type)
 {
+	switch (piece_type) {
+		case APT_MODULAR_FIRE_STATION: return STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION;
+		case APT_MODULAR_CARGO_TERMINAL: return STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL;
+		case APT_MODULAR_FUEL_FARM: return STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM;
+		case APT_MODULAR_APPROACH_LIGHTS: return STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS;
+		default: break;
+	}
 	if (piece_type >= lengthof(_modular_tile_names)) return STR_NULL;
 	return _modular_tile_names[piece_type];
 }

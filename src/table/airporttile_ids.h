@@ -91,7 +91,21 @@ enum AirportTiles : uint8_t {
 	APT_SMALL_DEPOT_SW,
 	APT_SMALL_DEPOT_NW,
 	APT_SMALL_DEPOT_NE,
-	APT_END, ///< One past the last built-in airport tile; not a valid tile type.
+	APT_END, ///< One past the last built-in airport piece; not a valid piece type.
 };
+
+/**
+ * Identifier stored in modular-airport metadata and templates.
+ *
+ * Values below 256 are AirportTiles/NewGRF airport-tile IDs. Base-set
+ * metadata-only pieces deliberately live outside that namespace so adding one
+ * cannot consume or collide with a dynamically allocated NewGRF tile ID.
+ */
+using ModularAirportPieceID = uint16_t;
+
+inline constexpr ModularAirportPieceID APT_MODULAR_FIRE_STATION = 0x100;
+inline constexpr ModularAirportPieceID APT_MODULAR_CARGO_TERMINAL = 0x101;
+inline constexpr ModularAirportPieceID APT_MODULAR_FUEL_FARM = 0x102;
+inline constexpr ModularAirportPieceID APT_MODULAR_APPROACH_LIGHTS = 0x103;
 
 #endif /* AIRPORTTILE_IDS_H */

@@ -121,8 +121,12 @@ TEST_CASE("ModularAirportTileNames")
 		CAPTURE(piece_type);
 		CHECK(GetModularAirportTileName(static_cast<uint8_t>(piece_type)) == expected_names[piece_type]);
 	}
+	CHECK(GetModularAirportTileName(APT_MODULAR_FIRE_STATION) == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION);
+	CHECK(GetModularAirportTileName(APT_MODULAR_CARGO_TERMINAL) == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL);
+	CHECK(GetModularAirportTileName(APT_MODULAR_FUEL_FARM) == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM);
+	CHECK(GetModularAirportTileName(APT_MODULAR_APPROACH_LIGHTS) == STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_APPROACH_LIGHTS);
 
-	CHECK(GetModularAirportTileName(UINT8_MAX) == STR_NULL);
+	CHECK(GetModularAirportTileName(UINT16_MAX) == STR_NULL);
 }
 
 TEST_CASE("ModularAirportTileNamesCarryNoColourCode")

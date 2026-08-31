@@ -265,7 +265,12 @@ static const SpriteID SPR_NEWHANGAR_E       = SPR_AIRPORTX_BASE + 11;
 static const SpriteID SPR_NEWHELIPAD        = SPR_AIRPORTX_BASE + 12;
 static const SpriteID SPR_GRASS_RIGHT       = SPR_AIRPORTX_BASE + 13;
 static const SpriteID SPR_GRASS_LEFT        = SPR_AIRPORTX_BASE + 14;
-static const uint16_t AIRPORTX_SPRITE_COUNT = 15;
+static const SpriteID SPR_AIRPORT_FIRE_STATION    = SPR_AIRPORTX_BASE + 15;
+static const SpriteID SPR_AIRPORT_CARGO_TERMINAL  = SPR_AIRPORTX_BASE + 16;
+static const SpriteID SPR_AIRPORT_FUEL_FARM       = SPR_AIRPORTX_BASE + 17;
+static const SpriteID SPR_AIRPORT_APPROACH_LIGHTS = SPR_AIRPORTX_BASE + 18;
+static const SpriteID SPR_AIRPORT_APPROACH_LIGHTS_OTHER = SPR_AIRPORTX_BASE + 19;
+static const uint16_t AIRPORTX_SPRITE_COUNT = 20;
 /** @} */
 
 /** @{

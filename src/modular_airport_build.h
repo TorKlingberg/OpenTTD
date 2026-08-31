@@ -18,7 +18,7 @@ struct Town;
 
 struct ModularAirportNoisePiece {
 	TileIndex tile;
-	uint8_t piece_type;
+	ModularAirportPieceID piece_type;
 };
 
 struct ModularAirportNoiseSnapshot {

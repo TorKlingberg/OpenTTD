@@ -76,7 +76,7 @@ inline bool ModularAircraftWantsHangar(const Aircraft *v, const Station *st)
  */
 bool IsModularPadWithHangarAccess(const Station *st, TileIndex tile);
 
-inline bool IsModularRunwayPiece(uint8_t gfx)
+inline bool IsModularRunwayPiece(ModularAirportPieceID gfx)
 {
 	switch (gfx) {
 		case APT_RUNWAY_1:
@@ -114,7 +114,7 @@ inline uint8_t NormalizeModularRunwayFlags(uint8_t flags)
 }
 
 /** Runway end pieces -- the only valid landing/takeoff target tiles. */
-inline bool IsModularRunwayEndPiece(uint8_t piece_type)
+inline bool IsModularRunwayEndPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_END:
@@ -126,7 +126,7 @@ inline bool IsModularRunwayEndPiece(uint8_t piece_type)
 	}
 }
 
-inline bool IsLegacySmallRunwayPiece(uint8_t piece_type)
+inline bool IsLegacySmallRunwayPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_SMALL_NEAR_END:
@@ -138,7 +138,7 @@ inline bool IsLegacySmallRunwayPiece(uint8_t piece_type)
 	}
 }
 
-inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
+inline bool IsLegacySmallHangarPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_SMALL_DEPOT_SE:
@@ -154,12 +154,48 @@ inline bool IsLegacySmallHangarPiece(uint8_t piece_type)
 /**
  * Check if a piece is non-rotatable (e.g. 3-tile small terminal buildings or small hangars).
  */
-inline bool IsNonRotatableModularPiece(uint8_t piece_type)
+inline bool IsNonRotatableModularPiece(ModularAirportPieceID piece_type)
 {
 	return piece_type == APT_SMALL_BUILDING_1 ||
 	       piece_type == APT_SMALL_BUILDING_2 ||
 	       piece_type == APT_SMALL_BUILDING_3 ||
 	       IsLegacySmallHangarPiece(piece_type);
+}
+
+/** Whether a piece is one of the metadata-only modular airport decorations. */
+inline bool IsModularAirportDecorationPiece(ModularAirportPieceID piece_type)
+{
+	switch (piece_type) {
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
+		case APT_MODULAR_APPROACH_LIGHTS:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Canonical AirportTile graphic stored in the map for a modular piece.
+ *
+ * Metadata-only decorations have IDs beyond the original airport-tile range.
+ * Keeping those IDs exclusively in ModularAirportTileData avoids treating them
+ * as NewGRF airport tiles while still giving the map a valid ground surface.
+ */
+inline uint8_t GetModularAirportMapGfx(ModularAirportPieceID piece_type)
+{
+	switch (piece_type) {
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
+			return APT_APRON;
+		case APT_MODULAR_APPROACH_LIGHTS:
+			return APT_GRASS_1;
+		default:
+			assert(piece_type < NUM_AIRPORTTILES);
+			return static_cast<uint8_t>(piece_type);
+	}
 }
 
 /**
@@ -170,7 +206,7 @@ inline bool IsNonRotatableModularPiece(uint8_t piece_type)
  * directional variant from the two. Anything that rotates a tile before it is
  * placed must leave these alone, or the facing ends up encoded twice.
  */
-inline bool IsCanonicalHangarPiece(uint8_t piece_type)
+inline bool IsCanonicalHangarPiece(ModularAirportPieceID piece_type)
 {
 	return piece_type == APT_DEPOT_SE || piece_type == APT_SMALL_DEPOT_SE;
 }
@@ -180,7 +216,7 @@ inline bool IsCanonicalHangarPiece(uint8_t piece_type)
  * - APT_BUILDING_1 and APT_BUILDING_2 are quarter-turn variants.
  * - Legacy small-runway near/far end sprites swap when axis flips.
  */
-inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
+inline void SwapBuildingPieceForRotation(ModularAirportPieceID &piece_type, uint8_t rotation)
 {
 	rotation &= 3;
 	if (rotation == 0) return;
@@ -192,7 +228,7 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 	 * - GetModularHangarTileLayoutByPiece() (station_cmd.cpp)
 	 * - CalculateValidTaxiDirectionsForPiece() hangar handling (airport_pathfinder.cpp)
 	 */
-	auto rotate_directional_hangar = [&piece_type, rotation](uint8_t se, uint8_t ne, uint8_t nw, uint8_t sw) {
+	auto rotate_directional_hangar = [&piece_type, rotation](ModularAirportPieceID se, ModularAirportPieceID ne, ModularAirportPieceID nw, ModularAirportPieceID sw) {
 		uint8_t idx;
 		if (piece_type == se) {
 			idx = 0;
@@ -227,6 +263,15 @@ inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
 			piece_type = APT_RUNWAY_SMALL_NEAR_END;
 		}
 	}
+}
+
+/** Compatibility overload for callers that only manipulate ordinary 8-bit airport tiles. */
+inline void SwapBuildingPieceForRotation(uint8_t &piece_type, uint8_t rotation)
+{
+	ModularAirportPieceID wide_piece_type = piece_type;
+	SwapBuildingPieceForRotation(wide_piece_type, rotation);
+	assert(wide_piece_type < NUM_AIRPORTTILES);
+	piece_type = static_cast<uint8_t>(wide_piece_type);
 }
 
 /**
@@ -326,12 +371,12 @@ inline void RotateModularTemplateTile(TTile &tile, uint8_t r, uint16_t template_
  * airport they are the stands flanking the round terminal, which is why their
  * graphics carry a jetway.
  */
-inline bool IsModularStandPiece(uint8_t piece_type)
+inline bool IsModularStandPiece(ModularAirportPieceID piece_type)
 {
 	return piece_type == APT_STAND || piece_type == APT_STAND_1 || piece_type == APT_STAND_PIER_NE;
 }
 
-inline bool IsModularBuildingPiece(uint8_t piece_type)
+inline bool IsModularBuildingPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_STAND:
@@ -351,13 +396,16 @@ inline bool IsModularBuildingPiece(uint8_t piece_type)
 		case APT_RADAR_GRASS_FENCE_SW:
 		case APT_RADAR_FENCE_SW:
 		case APT_RADAR_FENCE_NE:
+		case APT_MODULAR_FIRE_STATION:
+		case APT_MODULAR_CARGO_TERMINAL:
+		case APT_MODULAR_FUEL_FARM:
 			return true;
 		default:
 			return false;
 	}
 }
 
-inline bool IsTaxiwayPiece(uint8_t piece_type)
+inline bool IsTaxiwayPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_APRON_HOR:
@@ -377,7 +425,7 @@ inline bool IsTaxiwayPiece(uint8_t piece_type)
 	}
 }
 
-inline bool IsApronOrTaxiwayPiece(uint8_t piece_type)
+inline bool IsApronOrTaxiwayPiece(ModularAirportPieceID piece_type)
 {
 	if (IsTaxiwayPiece(piece_type)) return true;
 	switch (piece_type) {
@@ -399,7 +447,7 @@ inline bool IsRunwayPieceOnAxis(const ModularAirportTileData *data, bool horizon
 	return data != nullptr && IsModularRunwayPiece(data->piece_type) && (((data->rotation % 2) == 0) == horizontal);
 }
 
-bool IsModularHelipadPiece(uint8_t gfx);
+bool IsModularHelipadPiece(ModularAirportPieceID gfx);
 bool IsRunwayEndLow(const Station *st, TileIndex tile);
 uint8_t GetRunwayFlags(const Station *st, TileIndex tile);
 TileIndex GetRunwayOtherEnd(const Station *st, TileIndex start_tile);
@@ -496,7 +544,7 @@ TileIndex FindModularRunwayRolloutPoint(const Station *st, const Aircraft *v, Ti
 TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, TileIndex start_tile);
 TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, TileIndex runway_end);
-bool IsModularHangarPiece(uint8_t piece_type);
+bool IsModularHangarPiece(ModularAirportPieceID piece_type);
 bool IsModularHangarTile(const Station *st, TileIndex tile);
 bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal = INVALID_TILE);
 TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE, bool allow_helicopter = false);
@@ -530,10 +578,10 @@ void ResetModularAirportStaticState();
 
 void EnsureModularHeliTilesValid(const Station *st);
 
-bool IsModernModularPiece(uint8_t piece_type);
-TimerGameCalendar::Year GetModularPieceMinYear(uint8_t piece_type);
+bool IsModernModularPiece(ModularAirportPieceID piece_type);
+TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type);
 
-inline bool IsLargeRunwayFamily(uint8_t piece_type)
+inline bool IsLargeRunwayFamily(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
@@ -568,18 +616,18 @@ bool ModularAirportAcceptsHelicopters(const Station *st);
 TTDPAirportType GetModularAirportNewGRFType(const Station *st);
 
 struct ModularAirportCapabilityPiece {
-	uint8_t piece_type;
+	ModularAirportPieceID piece_type;
 	uint8_t runway_flags;
 };
 
 bool ModularAirportAcceptsPlanesFromPieces(std::span<const ModularAirportCapabilityPiece> pieces);
 
 /** Maintenance numerator in eighths of a stock maintenance-cost point. */
-uint GetModularAirportMaintenancePointsFromPieces(std::span<const uint8_t> piece_types);
+uint GetModularAirportMaintenancePointsFromPieces(std::span<const ModularAirportPieceID> piece_types);
 uint GetModularAirportMaintenancePoints(const Station *st);
 
 /** Noise level derived from the operating surfaces in a modular layout. */
-uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const uint8_t> piece_types);
+uint8_t GetModularAirportNoiseLevelFromPieces(std::span<const ModularAirportPieceID> piece_types);
 uint8_t GetModularAirportNoiseLevel(const Station *st);
 
 uint GetModularAirportCatchmentRadius(const Station *st);
@@ -592,7 +640,7 @@ uint GetModularAirportCatchmentRadius(const Station *st);
 struct ModularCatchmentPiece {
 	int x; ///< Grid X coordinate.
 	int y; ///< Grid Y coordinate.
-	uint8_t piece_type;
+	ModularAirportPieceID piece_type;
 	uint8_t rotation;
 	uint8_t runway_flags;
 };

@@ -11,9 +11,10 @@
 #define MODULAR_AIRPORT_TILE_NAME_H
 
 #include "strings_type.h"
+#include "table/airporttile_ids.h"
 
 #include <cstdint>
 
-StringID GetModularAirportTileName(uint8_t piece_type);
+StringID GetModularAirportTileName(ModularAirportPieceID piece_type);
 
 #endif /* MODULAR_AIRPORT_TILE_NAME_H */

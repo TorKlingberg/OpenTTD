@@ -15,6 +15,7 @@
 #include "viewport_type.h"
 #include "station_map.h"
 #include "timer/timer_game_calendar.h"
+#include "table/airporttile_ids.h"
 
 typedef Pool<BaseStation, StationID, 32> StationPool;
 extern StationPool _station_pool;
@@ -42,7 +43,7 @@ static constexpr uint8_t RUF_DEFAULT  = 0x0F; ///< All operations and directions
 /** Modular airport tile data - stores taxi directions and piece metadata */
 struct ModularAirportTileData {
 	TileIndex tile = INVALID_TILE;
-	uint8_t piece_type = 0;           ///< 0-25 (26 piece types from UI)
+	ModularAirportPieceID piece_type = 0; ///< AirportTiles/NewGRF ID or a metadata-only modular piece.
 	uint8_t rotation = 0;              ///< 0-3
 	uint8_t user_taxi_dir_mask = 0;    ///< bit: 0=N, 1=E, 2=S, 3=W
 	bool one_way_taxi = false;

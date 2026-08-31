@@ -215,8 +215,8 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
 		tile.grfid = 0;
 		tile.local_id = 0;
 
-		if (tile.piece_type >= NEW_AIRPORTTILE_OFFSET) {
-			const AirportTileSpec *ats = AirportTileSpec::Get(tile.piece_type);
+		if (tile.piece_type >= NEW_AIRPORTTILE_OFFSET && tile.piece_type < NUM_AIRPORTTILES) {
+			const AirportTileSpec *ats = AirportTileSpec::Get(static_cast<uint8_t>(tile.piece_type));
 			if (ats != nullptr) {
 				tile.grfid = FlattenNewGRFLabel(ats->grf_prop.grfid);
 				tile.local_id = ats->grf_prop.local_id;
@@ -242,7 +242,8 @@ static bool BuildTemplateFromStation(const Station *st, AirportTemplate &templ)
  */
 static const DrawTileSprites *GetTileLayoutForTemplateTile(const AirportTemplateTile &t)
 {
-	uint8_t gfx = t.piece_type >= NEW_AIRPORTTILE_OFFSET ? static_cast<uint8_t>(APT_APRON) : t.piece_type;
+	uint8_t gfx = t.piece_type >= NEW_AIRPORTTILE_OFFSET && t.piece_type < NUM_AIRPORTTILES ?
+			static_cast<uint8_t>(APT_APRON) : GetModularAirportMapGfx(t.piece_type);
 	return GetAirportTileLayoutWithModularOverrides(gfx, t.piece_type, t.rotation, 0);
 }
 

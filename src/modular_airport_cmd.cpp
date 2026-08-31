@@ -68,7 +68,7 @@ static constexpr uint16_t SPEED_LIMIT_NONE = UINT16_MAX; ///< No environmental s
 
 static std::string_view GetModularAirportDebugName(const Station *st);
 
-static bool IsModularTerminalBuildingPiece(uint8_t piece_type)
+static bool IsModularTerminalBuildingPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_BUILDING_1:
@@ -129,11 +129,11 @@ Direction GetModularAircraftParkedDirection(const Station *st, TileIndex tile)
 		{ 1,  0, Direction::SW},
 	}};
 
-	const auto NeighborPiece = [&](const NeighborDirection &neighbor) -> uint8_t {
+	const auto NeighborPiece = [&](const NeighborDirection &neighbor) -> ModularAirportPieceID {
 		const TileIndex adjacent = TileAddXY(tile, neighbor.dx, neighbor.dy);
-		if (!IsValidTile(adjacent)) return 0xFF;
+		if (!IsValidTile(adjacent)) return UINT16_MAX;
 		const ModularAirportTileData *neighbor_data = st->airport.GetModularTileData(adjacent);
-		return neighbor_data != nullptr ? neighbor_data->piece_type : 0xFF;
+		return neighbor_data != nullptr ? neighbor_data->piece_type : UINT16_MAX;
 	};
 
 	/* These are the two round-terminal sides for which the drawing code can add a jetway. */
@@ -688,7 +688,7 @@ bool ShouldRetainRunwayReservation(const Aircraft *v, const Station *st)
 	return tracked == intended_runway;
 }
 
-static bool IsServiceStyleGroundPiece(uint8_t piece_type)
+static bool IsServiceStyleGroundPiece(ModularAirportPieceID piece_type)
 {
 	return piece_type == APT_STAND || piece_type == APT_STAND_1 ||
 			IsModularHangarPiece(piece_type) || IsModularHelipadPiece(piece_type);
@@ -2526,7 +2526,7 @@ TileIndex FindModularUnstackParkingTile(const Station *st, const Aircraft *v, ui
 	return goal;
 }
 
-bool IsModularHangarPiece(uint8_t piece_type)
+bool IsModularHangarPiece(ModularAirportPieceID piece_type)
 {
 	switch (piece_type) {
 		case APT_DEPOT_SE:
@@ -2724,7 +2724,7 @@ enum class ModularTakeoffEndStatus : uint8_t {
  * travel direction: a takeoff from the low end travels toward the high end, and
  * vice versa.
  */
-static ModularTakeoffEndStatus ClassifyModularTakeoffEnd(const Station *st, TileIndex tile, uint8_t piece_type)
+static ModularTakeoffEndStatus ClassifyModularTakeoffEnd(const Station *st, TileIndex tile, ModularAirportPieceID piece_type)
 {
 	if (!IsModularRunwayEndPiece(piece_type)) return ModularTakeoffEndStatus::NotEnd;
 

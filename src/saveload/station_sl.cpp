@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 
 #include "saveload.h"
+#include "extended_version_sl.h"
 #include "compat/station_sl_compat.h"
 
 #include "../station_base.h"
@@ -614,9 +615,20 @@ public:
 
 class SlModularAirportTileData : public DefaultSaveLoadHandler<SlModularAirportTileData, BaseStation> {
 public:
+	static inline const SaveLoad description_v2[] = {
+	    SLE_VAR(ModularAirportTileData, tile,                VarTypes::U32),
+	    SLE_VARNAME(ModularAirportTileData, piece_type, "piece_type", VarFileType::U8 | VarMemType::U16),
+	    SLE_VAR(ModularAirportTileData, rotation,            VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, one_way_taxi,        VarTypes::BOOL),
+	    SLE_VAR(ModularAirportTileData, auto_taxi_dir_mask,  VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, runway_flags,        VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, edge_block_mask,     VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, reservation_owner,   VarTypes::U32),
+	};
 	static inline const SaveLoad description[] = {
 	    SLE_VAR(ModularAirportTileData, tile,                VarTypes::U32),
-	    SLE_VAR(ModularAirportTileData, piece_type,          VarTypes::U8),
+	    SLE_VAR(ModularAirportTileData, piece_type,          VarTypes::U16),
 	    SLE_VAR(ModularAirportTileData, rotation,            VarTypes::U8),
 	    SLE_VAR(ModularAirportTileData, user_taxi_dir_mask,  VarTypes::U8),
 	    SLE_VAR(ModularAirportTileData, one_way_taxi,        VarTypes::BOOL),
@@ -626,6 +638,11 @@ public:
 	    SLE_VAR(ModularAirportTileData, reservation_owner,  VarTypes::U32),
 	};
 	static inline const SaveLoadCompatTable compat_description = {};
+
+	SaveLoadTable GetDescription() const override
+	{
+		return IsModularAirportSaveFeaturePresent(3) ? description : description_v2;
+	}
 
 	void Save(BaseStation *bst) const override
 	{
