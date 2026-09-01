@@ -679,6 +679,7 @@ struct StationSettings {
 	bool distant_join_stations; ///< allow to join non-adjacent stations
 	bool never_expire_airports; ///< never expire airports
 	bool modular_airports; ///< allow building modular airports
+	bool new_airport_graphics; ///< allow the modular airport pieces that need this fork's own graphics
 	uint8_t station_spread; ///< amount a station may spread
 };
 

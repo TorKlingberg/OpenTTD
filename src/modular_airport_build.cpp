@@ -775,6 +775,14 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
 	}
 
+	/* Pieces that exist only as this fork's own graphics follow the setting for them.
+	 * Rotation is not checked here: the mirrored orientation of a piece the base sets
+	 * draw for one axis only is what a rotated template has always produced, so the
+	 * setting governs which pieces the builder offers, not how a layout may be turned. */
+	if (IsNewAirportGraphicsPiece(gfx) && !AreNewAirportGraphicsAvailable()) {
+		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
+	}
+
 	int allowed_z = -1;
 
 	/* Check if we're replacing an allowed modular airport tile.

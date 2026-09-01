@@ -362,8 +362,9 @@ public:
 	static SQInteger GetModularRunwayFlags(TileIndex tile);
 
 	/**
-	 * Checks whether a modular piece can be built in the current year.
-	 * Some pieces only become available once large airports do.
+	 * Checks whether a modular piece can be built right now.
+	 * Some pieces only become available once large airports do, and the decorative
+	 * pieces are only offered while the "new airport graphics" setting is on.
 	 * @param piece The piece to check.
 	 * @return True if and only if the piece can be built now.
 	 */

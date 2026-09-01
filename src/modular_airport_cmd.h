@@ -580,6 +580,8 @@ void EnsureModularHeliTilesValid(const Station *st);
 
 bool IsModernModularPiece(ModularAirportPieceID piece_type);
 TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type);
+bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation = 0);
+bool AreNewAirportGraphicsAvailable();
 
 inline bool IsLargeRunwayFamily(ModularAirportPieceID piece_type)
 {

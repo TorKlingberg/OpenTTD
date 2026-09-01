@@ -636,6 +636,7 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	const uint8_t saved_station_spread = _settings_game.station.station_spread;
 	const bool saved_noise = _settings_game.economy.station_noise_level;
 	const uint8_t saved_tolerance = _settings_game.difficulty.town_council_tolerance;
+	const bool saved_new_graphics = _settings_game.station.new_airport_graphics;
 	const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
 
 	_settings_game.station.distant_join_stations = true;
@@ -643,6 +644,8 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	_settings_game.station.station_spread = 64;
 	_settings_game.economy.station_noise_level = false;
 	_settings_game.difficulty.town_council_tolerance = TOWN_COUNCIL_PERMISSIVE;
+	/* The decorations placed below are gated behind this. */
+	_settings_game.station.new_airport_graphics = true;
 	TimerGameCalendar::year = TimerGameCalendar::Year{2100};
 
 	Map::Allocate(64, 64);
@@ -725,6 +728,7 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	_settings_game.station.station_spread = saved_station_spread;
 	_settings_game.economy.station_noise_level = saved_noise;
 	_settings_game.difficulty.town_council_tolerance = saved_tolerance;
+	_settings_game.station.new_airport_graphics = saved_new_graphics;
 	TimerGameCalendar::year = saved_year;
 	_station_pool.CleanPool();
 	_town_pool.CleanPool();
@@ -2038,6 +2042,32 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(IsModernModularPiece(APT_MODULAR_FUEL_FARM));
 		CHECK(IsModernModularPiece(APT_MODULAR_CAR_PARK));
 		CHECK(GetModularPieceMinYear(APT_MODULAR_CAR_PARK) == AirportSpec::Get(AT_LARGE)->min_year);
+	}
+
+	SECTION("New Graphics Pieces") {
+		/* The decorations need the new graphics whichever way round they are placed. */
+		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FIRE_STATION, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FIRE_STATION, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_CARGO_TERMINAL, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FUEL_FARM, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_CAR_PARK, 1));
+
+		/* The base sets draw these along one axis only, so only the mirrored
+		 * orientation of them is new. */
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_2, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_1, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_2, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_3, 3));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_NEAR_END, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_FAR_END, 1));
+
+		/* Everything the base sets draw for every rotation is untouched by the setting. */
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_APRON, 0));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_APRON, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_5, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_DEPOT_NE, 1));
 	}
 }
 

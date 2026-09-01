@@ -202,6 +202,38 @@ static constexpr HelipadPiece _helipad_pieces[] = {
 static_assert(lengthof(_cosmetic_pieces) == WID_MACP_PIECE_LAST - WID_MACP_PIECE_FIRST + 1);
 static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PIECE_FIRST + 1);
 
+/**
+ * Whether a piece cannot be built right now, so its button is shown disabled.
+ *
+ * Two gates gather here: a modern piece is unavailable until the year the large
+ * airport arrives, and a piece that only exists as this fork's own graphics is
+ * unavailable while the setting for those is off.
+ *
+ * @param gfx Piece to check.
+ * @param rotation Rotation the button places the piece in, which is what tells a
+ *                 mirrored piece from the base set's own one.
+ * @return True if the piece may not be placed now.
+ */
+static bool IsModularPieceLocked(ModularAirportPieceID gfx, uint8_t rotation = 0)
+{
+	if (IsNewAirportGraphicsPiece(gfx, rotation) && !AreNewAirportGraphicsAvailable()) return true;
+	return IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
+}
+
+/**
+ * Match the tile highlight to the footprint of the selected cosmetic piece.
+ *
+ * A lock can change that selection under the player -- from the three-tile small
+ * terminal to a one-tile piece, say -- so this runs wherever the selection moves,
+ * not only where the player moves it.
+ */
+static void UpdateModularCosmeticSelectSize()
+{
+	const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
+	const Dimension size = GetModularCompoundPieceSize(piece.apt_gfx, piece.rotation);
+	SetTileSelectSize(size.width, size.height);
+}
+
 static constexpr ModularAirportPiece _modular_airport_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY,           SPR_AIRPORT_RUNWAY_EXIT_B,  PC_DARK_GREY,     true},  // 0
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RUNWAY_END,       SPR_NSRUNWAY_END,           PC_DARK_GREY,     true},  // 1
@@ -489,7 +521,7 @@ class BuildModularAirportWindow : public PickerWindowBase {
 	bool upgrade_tool_active = false; ///< When true, clicks upgrade old tiles to modern variants.
 	TimerGameCalendar::Year cached_year = CalendarTime::MIN_YEAR;
 	const IntervalTimer<TimerGameCalendar> yearly_interval = {{TimerGameCalendar::Trigger::Year, TimerGameCalendar::Priority::None}, [this](auto) {
-		this->RefreshYearGating();
+		this->RefreshPieceGating();
 	}};
 
 public:
@@ -498,7 +530,7 @@ public:
 		this->InitNested(WN_BUILD_MODULAR_AIRPORT);
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, false);
 		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, false);
-		this->UpdateYearGating();
+		this->UpdatePieceGating();
 		this->cached_year = TimerGameCalendar::year;
 		this->UpdatePlacementCursor();
 		_show_runway_direction_overlay = this->show_taxi_arrows;
@@ -517,15 +549,10 @@ public:
 		this->SetDirty();
 	}
 
-	static bool IsGfxLockedByYear(ModularAirportPieceID gfx)
-	{
-		return IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
-	}
-
 	static uint8_t FirstAvailableCosmeticPiece()
 	{
 		for (uint8_t i = 0; i < lengthof(_cosmetic_pieces); i++) {
-			if (!IsGfxLockedByYear(_cosmetic_pieces[i].apt_gfx)) return i;
+			if (!IsModularPieceLocked(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) return i;
 		}
 		return 0;
 	}
@@ -533,17 +560,21 @@ public:
 	static uint8_t FirstAvailableHelipadPiece()
 	{
 		for (uint8_t i = 0; i < lengthof(_helipad_pieces); i++) {
-			if (!IsGfxLockedByYear(_helipad_pieces[i].apt_gfx)) return i;
+			if (!IsModularPieceLocked(_helipad_pieces[i].apt_gfx)) return i;
 		}
 		return 0;
 	}
 
-	void NormalizePickerSelectionsForYear()
+	void NormalizePickerSelections()
 	{
-		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces) || IsGfxLockedByYear(_cosmetic_pieces[_modular_cosmetic_piece].apt_gfx)) {
+		if (_modular_cosmetic_piece >= lengthof(_cosmetic_pieces) ||
+				IsModularPieceLocked(_cosmetic_pieces[_modular_cosmetic_piece].apt_gfx, _cosmetic_pieces[_modular_cosmetic_piece].rotation)) {
 			_modular_cosmetic_piece = FirstAvailableCosmeticPiece();
+			/* The cosmetic tool may be placing right now, and the piece it places has
+			 * just changed size under it. */
+			if (this->selected_piece == 3) UpdateModularCosmeticSelectSize();
 		}
-		if (_modular_helipad_piece >= lengthof(_helipad_pieces) || IsGfxLockedByYear(_helipad_pieces[_modular_helipad_piece].apt_gfx)) {
+		if (_modular_helipad_piece >= lengthof(_helipad_pieces) || IsModularPieceLocked(_helipad_pieces[_modular_helipad_piece].apt_gfx)) {
 			_modular_helipad_piece = FirstAvailableHelipadPiece();
 		}
 	}
@@ -553,23 +584,23 @@ public:
 		if (piece == MODULAR_AIRPORT_PIECE_ERASE_INDEX) return false;
 		if (piece == 3) {
 			for (const CosmeticPiece &cp : _cosmetic_pieces) {
-				if (!IsGfxLockedByYear(cp.apt_gfx)) return false;
+				if (!IsModularPieceLocked(cp.apt_gfx, cp.rotation)) return false;
 			}
 			return true;
 		}
 		if (piece == 6) {
 			for (const HelipadPiece &hp : _helipad_pieces) {
-				if (!IsGfxLockedByYear(hp.apt_gfx)) return false;
+				if (!IsModularPieceLocked(hp.apt_gfx)) return false;
 			}
 			return true;
 		}
-		return IsGfxLockedByYear(GetModularAirportPieceGfx(piece));
+		return IsModularPieceLocked(GetModularAirportPieceGfx(piece));
 	}
 
-	/** Disable piece buttons whose GFX is gated behind a future year. */
-	void UpdateYearGating()
+	/** Disable piece buttons that are gated behind a future year or a switched-off graphics setting. */
+	void UpdatePieceGating()
 	{
-		this->NormalizePickerSelectionsForYear();
+		this->NormalizePickerSelections();
 		for (int i = 0; i < PIECE_COUNT; i++) {
 			this->SetWidgetDisabledState(WID_MA_PIECE_0 + i, this->IsPieceButtonLocked(static_cast<uint8_t>(i)));
 		}
@@ -582,9 +613,9 @@ public:
 		}
 	}
 
-	void RefreshYearGating()
+	void RefreshPieceGating()
 	{
-		this->UpdateYearGating();
+		this->UpdatePieceGating();
 		InvalidateWindowClassesData(WindowClass::BuildDepot, 0);
 		this->SetDirty();
 	}
@@ -989,8 +1020,14 @@ public:
 		if (supports_drag) {
 			/* Enable drag-building */
 			if (is_runway) {
-				/* Linear pieces: allow drag in X or Y direction only */
-				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
+				/* The legacy (small) runway along the other axis is one of the pieces the
+				 * new graphics add, so without them it drags on the stock axis only. */
+				if (this->selected_piece == 2 && !AreNewAirportGraphicsAvailable()) {
+					VpStartPlaceSizing(tile, VPM_FIX_Y, DDSP_BUILD_STATION);
+				} else {
+					/* Linear pieces: allow drag in X or Y direction only */
+					VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
+				}
 			} else {
 				/* Rectangular pieces: allow drag in both X and Y */
 				VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUILD_STATION);
@@ -1325,7 +1362,7 @@ private:
 			return;
 		}
 		this->cached_year = TimerGameCalendar::year;
-		this->UpdateYearGating();
+		this->UpdatePieceGating();
 		this->SetWidgetLoweredState(WID_MA_TEMPLATE_MANAGER, FindWindowById(WindowClass::AirportTemplateManager, 0) != nullptr);
 		this->SetWidgetLoweredState(WID_MA_INFO_OVERLAY, FindWindowById(WindowClass::ModularAirportInfoOverlay, 0) != nullptr);
 		this->SetDirty();
@@ -1335,7 +1372,7 @@ private:
 	{
 		if (this->cached_year != TimerGameCalendar::year) {
 			this->cached_year = TimerGameCalendar::year;
-			this->RefreshYearGating();
+			this->RefreshPieceGating();
 		}
 
 		if (!this->show_taxi_reservations) return;
@@ -1366,7 +1403,7 @@ private:
 	{
 		if (this->cached_year == TimerGameCalendar::year) return;
 		this->cached_year = TimerGameCalendar::year;
-		this->RefreshYearGating();
+		this->RefreshPieceGating();
 	}
 
 private:
@@ -1511,11 +1548,10 @@ class BuildModularCosmeticPickerWindow : public PickerWindowBase {
 public:
 	void RefreshAvailability()
 	{
-		/* Disable pieces gated behind a future year. */
+		/* Disable pieces gated behind a future year or a switched-off graphics setting. */
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
-			bool locked = IsModernModularPiece(_cosmetic_pieces[i].apt_gfx) &&
-				TimerGameCalendar::year < GetModularPieceMinYear(_cosmetic_pieces[i].apt_gfx);
-			this->SetWidgetDisabledState(WID_MACP_PIECE_0 + i, locked);
+			this->SetWidgetDisabledState(WID_MACP_PIECE_0 + i,
+					IsModularPieceLocked(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation));
 		}
 		if (this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
 			/* Selected piece is locked; pick the first available one. */
@@ -1525,6 +1561,8 @@ public:
 					break;
 				}
 			}
+			/* This window is only open while the cosmetic tool is the active one. */
+			UpdateModularCosmeticSelectSize();
 		}
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
 			this->RaiseWidget(WID_MACP_PIECE_0 + i);
@@ -1648,9 +1686,7 @@ public:
 		this->SetDirty();
 
 		/* Update cursor footprint for multi-tile pieces. */
-		const CosmeticPiece &piece = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)];
-		const Dimension size = GetModularCompoundPieceSize(piece.apt_gfx, piece.rotation);
-		SetTileSelectSize(size.width, size.height);
+		UpdateModularCosmeticSelectSize();
 	}
 };
 
@@ -1740,9 +1776,7 @@ public:
 		this->InitNested(0);
 		/* Disable helipad pieces gated behind a future year. */
 		for (uint i = 0; i < lengthof(_helipad_pieces); i++) {
-			bool locked = IsModernModularPiece(_helipad_pieces[i].apt_gfx) &&
-				TimerGameCalendar::year < GetModularPieceMinYear(_helipad_pieces[i].apt_gfx);
-			this->SetWidgetDisabledState(WID_MAHPAD_PIECE_0 + i, locked);
+			this->SetWidgetDisabledState(WID_MAHPAD_PIECE_0 + i, IsModularPieceLocked(_helipad_pieces[i].apt_gfx));
 		}
 		if (this->IsWidgetDisabled(WID_MAHPAD_PIECE_0 + _modular_helipad_piece)) {
 			for (uint i = 0; i < lengthof(_helipad_pieces); i++) {

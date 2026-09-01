@@ -30,6 +30,7 @@
 #include "newgrf_airporttiles.h"
 #include "timer/timer_game_calendar.h"
 #include "modular_airport_cmd.h"
+#include "settings_type.h"
 #include "table/airporttile_ids.h"
 #include <map>
 #include <span>
@@ -116,6 +117,54 @@ TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 {
 	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
 	return AirportSpec::Get(AT_LARGE)->min_year;
+}
+
+/**
+ * Whether a piece needs the graphics this fork adds on top of the base sets.
+ *
+ * Two kinds do: the metadata-only decorations, which have sprites of their own,
+ * and the pieces the base sets only draw along the X axis, whose other axis is
+ * their own sprite mirrored. The latter are told apart by their rotation, so an
+ * ordinary X-axis small terminal or small runway is not one of them.
+ *
+ * @param piece_type Piece to check.
+ * @param rotation Rotation the piece is placed in.
+ * @return True if the piece is only drawn correctly with the new graphics.
+ */
+bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation)
+{
+	if (IsModularAirportDecorationPiece(piece_type)) return true;
+	if ((rotation % 2) == 0) return false;
+
+	switch (piece_type) {
+		case APT_SMALL_BUILDING_1:
+		case APT_SMALL_BUILDING_2:
+		case APT_SMALL_BUILDING_3:
+		case APT_RUNWAY_SMALL_NEAR_END:
+		case APT_RUNWAY_SMALL_MIDDLE:
+		case APT_RUNWAY_SMALL_FAR_END:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Whether the pieces that need this fork's own graphics may be built.
+ *
+ * Only the setting for them, deliberately: the modular airports setting has
+ * never gated a command, and folding it in here would refuse those pieces with
+ * an error naming the wrong setting. The settings window greys this one out
+ * while the builder is off, which is where that dependency belongs.
+ *
+ * Already-placed pieces keep their graphics either way; this only says what may
+ * be built now.
+ *
+ * @return True if those pieces may be built.
+ */
+bool AreNewAirportGraphicsAvailable()
+{
+	return _settings_game.station.new_airport_graphics;
 }
 
 static bool IsBigTerminalPiece(ModularAirportPieceID piece_type)

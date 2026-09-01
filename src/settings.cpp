@@ -913,6 +913,24 @@ void IniSaveWindowSettings(IniFile &ini, std::string_view grpname, WindowDesc *d
 }
 
 /**
+ * Check the settings this fork's own settings depend on.
+ *
+ * A setting that only does something while another setting is on is greyed out
+ * rather than silently ineffective, so this is consulted by both the settings
+ * window and the change command.
+ *
+ * @param sd The setting to check.
+ * @return True unless another setting currently makes this one meaningless.
+ */
+static bool IsSettingEnabledByDependency(const SettingDesc &sd)
+{
+	/* The new airport graphics are pieces of the modular airport builder, so
+	 * without that builder there is nothing for them to be offered in. */
+	if (sd.GetName() == "station.new_airport_graphics") return GetGameSettings().station.modular_airports;
+	return true;
+}
+
+/**
  * Check whether the setting is editable in the current gamemode.
  * @param do_command true if this is about checking a command from the server.
  * @return true if editable.
@@ -927,6 +945,7 @@ bool SettingDesc::IsEditable(bool do_command) const
 			(_game_mode == GameMode::Normal ||
 			(_game_mode == GameMode::Editor && !this->flags.Test(SettingFlag::SceneditToo)))) return false;
 	if (this->flags.Test(SettingFlag::SceneditOnly) && _game_mode != GameMode::Editor) return false;
+	if (!IsSettingEnabledByDependency(*this)) return false;
 	return true;
 }
 
