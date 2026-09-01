@@ -486,7 +486,7 @@ static void DrawModularCompoundPiecePreview(int x, int y, ModularAirportPieceID 
 	}
 }
 
-static void ShowModularHangarPicker(Window *parent);
+static void ShowModularHangarPicker(Window *parent, bool large_hangar);
 static void ShowModularCosmeticPicker(Window *parent);
 static void ShowModularHelipadPicker(Window *parent);
 static void ShowModularInfoOverlayWindow(Window *parent);
@@ -741,9 +741,7 @@ public:
 		if (widget >= WID_MA_PIECE_FIRST && widget <= WID_MA_PIECE_LAST) {
 			uint8_t new_piece = static_cast<uint8_t>(widget - WID_MA_PIECE_FIRST);
 			bool already_selected = (new_piece == this->selected_piece);
-			/* Piece 5, the small hangar, is absent on purpose: its graphics exist in a single
-			 * orientation, so there is no direction for a picker to offer. */
-			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 6);
+			bool wants_picker = (new_piece == 3 || new_piece == 4 || new_piece == 5 || new_piece == 6);
 
 			/* Deactivate fence/upgrade tools when selecting a piece. */
 			if (this->fence_tool_active) {
@@ -777,8 +775,8 @@ public:
 
 			/* Open picker for pieces that need one (unless we just toggled off). */
 			if (wants_picker && !already_selected) {
-				if (new_piece == 4) {
-					ShowModularHangarPicker(this);
+				if (new_piece == 4 || new_piece == 5) {
+					ShowModularHangarPicker(this, new_piece == 4);
 				} else if (new_piece == 3) {
 					ShowModularCosmeticPicker(this);
 				} else {
@@ -1240,7 +1238,7 @@ private:
 		ModularAirportPieceID gfx = GetModularAirportPieceGfx(this->selected_piece);
 		bool adjacent = _ctrl_pressed;
 		uint8_t rot = 0;
-		if (this->selected_piece == 4) {
+		if (this->selected_piece == 4 || this->selected_piece == 5) {
 			rot = _modular_hangar_rotation;
 		} else if (this->selected_piece == 3) {
 			rot = _cosmetic_pieces[std::min<uint8_t>(_modular_cosmetic_piece, lengthof(_cosmetic_pieces) - 1)].rotation;
@@ -1428,14 +1426,16 @@ private:
 	}
 };
 
-/** Hangar direction picker window (opened when clicking the large hangar piece button). */
+/** Hangar direction picker window. */
 class BuildModularHangarPickerWindow : public PickerWindowBase {
+	bool large_hangar; ///< Whether the picker previews the large or small hangar.
+
 	/** Widget-to-rotation mapping: NW=2, NE=1, SW=3, SE=0 */
 	static constexpr uint8_t _widget_to_rot[4] = {2, 1, 3, 0}; // indexed by (widget - WID_MAHP_DIR_NW)
 
 public:
-	BuildModularHangarPickerWindow(WindowDesc &desc, Window *parent)
-		: PickerWindowBase(desc, parent)
+	BuildModularHangarPickerWindow(WindowDesc &desc, Window *parent, bool large_hangar)
+		: PickerWindowBase(desc, parent), large_hangar(large_hangar)
 	{
 		this->InitNested(0);
 		/* Lower the button matching the current rotation */
@@ -1452,7 +1452,7 @@ public:
 		if (this->parent != nullptr &&
 				this->parent->window_class == WindowClass::BuildToolbar &&
 				this->parent->window_number == WN_BUILD_MODULAR_AIRPORT) {
-			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(4);
+			static_cast<BuildModularAirportWindow *>(this->parent)->StopPlacementFromClosedPicker(this->large_hangar ? 4 : 5);
 		}
 		/* Skip PickerWindowBase::Close() which calls ResetObjectToPlace() --
 		 * we're a child picker and must not steal the parent's cursor. */
@@ -1485,7 +1485,7 @@ public:
 			/* Use the modular hangar layout directly -- StationPickerDrawSprite can't handle
 			 * the high gfx indices (APT_DEPOT_NW/NE/SW = 88-90) which are beyond the
 			 * airport tile layout table size and get clamped to index 0 (apron). */
-			const DrawTileSprites *t = GetModularHangarTileLayout(rot, false);
+			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
 			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
 			DrawModularTileSeqInGUI(x, y, t, pal);
@@ -1537,10 +1537,10 @@ static WindowDesc _build_modular_hangar_picker_desc(
 	_nested_build_modular_hangar_picker_widgets
 );
 
-static void ShowModularHangarPicker(Window *parent)
+static void ShowModularHangarPicker(Window *parent, bool large_hangar)
 {
 	CloseWindowByClass(WindowClass::BuildDepot);
-	new BuildModularHangarPickerWindow(_build_modular_hangar_picker_desc, parent);
+	new BuildModularHangarPickerWindow(_build_modular_hangar_picker_desc, parent, large_hangar);
 }
 
 /** Cosmetic tile picker window (opened when clicking the Cosmetic piece button). */

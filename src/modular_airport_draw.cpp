@@ -59,6 +59,28 @@ static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
 
+/* The stock small-hangar composition splits the body from the near doorway. The
+ * opposite direction uses the body alone, with the doorway on the hidden far face;
+ * mirroring the selected base set's pixels supplies the other axis. */
+static const DrawTileSeqStruct _station_display_modular_small_hangar_sw_seq[] = {
+	{ 0, 14, 0, 17,  2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+	{ 0,  0, 0, 17,  2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_REAR  | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_small_hangar_sw(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_sw_seq);
+
+static const DrawTileSeqStruct _station_display_modular_small_hangar_nw_seq[] = {
+	{14, 0, 0, 2, 16, 28, {SPR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_small_hangar_nw(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_nw_seq);
+
+static const DrawTileSeqStruct _station_display_modular_small_hangar_ne_seq[] = {
+	{0, 14, 0, 16, 2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_small_hangar_ne(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_ne_seq);
+
 static const DrawTileSpriteSpan _station_display_modular_newhelipad(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_newhelipad);
 
@@ -323,7 +345,14 @@ void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID
 
 const DrawTileSprites *GetModularHangarTileLayout(uint8_t rotation, bool small_hangar)
 {
-	if (small_hangar) return &_station_display_modular_small_hangar_se;
+	if (small_hangar) {
+		switch (rotation) {
+			case 1: return &_station_display_modular_small_hangar_ne;
+			case 2: return &_station_display_modular_small_hangar_nw;
+			case 3: return &_station_display_modular_small_hangar_sw;
+			default: return &_station_display_modular_small_hangar_se;
+		}
+	}
 	switch (rotation) {
 		case 1: return &_station_display_modular_hangar_ne;
 		case 2: return &_station_display_modular_hangar_nw;

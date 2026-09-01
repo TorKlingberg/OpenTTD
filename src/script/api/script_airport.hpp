@@ -409,8 +409,7 @@ public:
 	 *  MP_FIRE_STATION an odd rotation turns the appliance bay to face the other
 	 *  way. MP_SMALL_TERMINAL_3 covers three tiles: an even rotation lays them
 	 *  along the X axis and an odd one along the Y axis, and it accepts only 0 or
-	 *  1. MP_SMALL_HANGAR has only one graphic and requires 0. Ignored by other
-	 *  pieces that cannot rotate.
+	 *  1. Ignored by other pieces that cannot rotate.
 	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
 	 * @pre ScriptMap::IsValidTile(tile).
 	 * @pre rotation >= 0 && rotation <= 3.
@@ -520,8 +519,7 @@ public:
 	 * @exception ScriptStation::ERR_STATION_TOO_CLOSE_TO_ANOTHER_STATION
 	 * @return Whether the layout has been/can be built or not.
 	 * @note Small runway pieces cannot be rotated by an odd number of quarter turns,
-	 *  MP_SMALL_HANGAR and compound pieces require a per-piece rotation of 0,
-	 *  and this fails if you try.
+	 *  compound pieces require a per-piece rotation of 0, and this fails if you try.
 	 */
 	static bool PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout);
 

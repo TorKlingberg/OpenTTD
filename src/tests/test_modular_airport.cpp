@@ -1758,6 +1758,45 @@ TEST_CASE("MirroredSpriteXOffset")
 	}
 }
 
+TEST_CASE("ModularAirportSmallHangarDrawing")
+{
+	struct HangarSprite {
+		SpriteID sprite;
+		Coord3D<int8_t> origin;
+		Coord3D<uint8_t> extent;
+	};
+	struct HangarCase {
+		uint8_t rotation;
+		std::array<HangarSprite, 2> sprites;
+		size_t sprite_count;
+	};
+	static constexpr HangarCase cases[] = {
+		{0, {{{SPR_AIRFIELD_HANGAR_FRONT, {14, 0, 0}, {2, 17, 28}},
+		      {SPR_AIRFIELD_HANGAR_REAR,   { 0, 0, 0}, {2, 17, 28}}}}, 2},
+		{1, {{{SPR_MIRROR_AIRFIELD_HANGAR_FRONT, {0, 14, 0}, {16, 2, 28}}, {}}}, 1},
+		{2, {{{SPR_AIRFIELD_HANGAR_FRONT, {14, 0, 0}, {2, 16, 28}}, {}}}, 1},
+		{3, {{{SPR_MIRROR_AIRFIELD_HANGAR_FRONT, {0, 14, 0}, {17, 2, 28}},
+		      {SPR_MIRROR_AIRFIELD_HANGAR_REAR,  {0,  0, 0}, {17, 2, 28}}}}, 2},
+	};
+
+	/* The near doorway is a separate sprite in the base set. It is visible in the
+	 * two down-facing views and hidden behind the body in the two up-facing views. */
+	for (const HangarCase &c : cases) {
+		CAPTURE(c.rotation);
+		const DrawTileSprites *layout = GetModularHangarTileLayout(c.rotation, true);
+		REQUIRE(layout != nullptr);
+		CHECK((layout->ground.sprite & SPRITE_MASK) == SPR_AIRPORT_APRON);
+
+		const std::span<const DrawTileSeqStruct> sequence = layout->GetSequence();
+		REQUIRE(sequence.size() == c.sprite_count);
+		for (size_t index = 0; index < c.sprite_count; ++index) {
+			CHECK((sequence[index].image.sprite & SPRITE_MASK) == c.sprites[index].sprite);
+			CHECK(sequence[index].origin == c.sprites[index].origin);
+			CHECK(sequence[index].extent == c.sprites[index].extent);
+		}
+	}
+}
+
 TEST_CASE("ModularAirportMirroredLegacyPieces")
 {
 	/* The base sets draw the small airfield's runway and terminal along the X axis

@@ -400,7 +400,9 @@ static const SpriteID SPR_MIRROR_AIRFIELD_TERM_C_BUILD    = SPR_MIRRORED_BASE + 
 static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_NEAR_END = SPR_MIRRORED_BASE + 4;
 static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_MIDDLE   = SPR_MIRRORED_BASE + 5;
 static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_FAR_END  = SPR_MIRRORED_BASE + 6;
-static const uint16_t MIRRORED_SPRITE_COUNT = 7;
+static const SpriteID SPR_MIRROR_AIRFIELD_HANGAR_FRONT    = SPR_MIRRORED_BASE + 7;
+static const SpriteID SPR_MIRROR_AIRFIELD_HANGAR_REAR     = SPR_MIRRORED_BASE + 8;
+static const uint16_t MIRRORED_SPRITE_COUNT = 9;
 /** @} */
 
 /** From where can we start putting NewGRFs. */
