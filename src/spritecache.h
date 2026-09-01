@@ -13,6 +13,7 @@
 #include "gfx_type.h"
 #include "spritecache_type.h"
 #include "spriteloader/spriteloader.hpp"
+#include "zoom_func.h"
 
 extern uint _sprite_cache_size;
 
@@ -46,6 +47,29 @@ inline const uint8_t *GetNonSprite(SpriteID sprite, SpriteType type)
 	assert(type == SpriteType::Recolour);
 	return (uint8_t*)GetRawSprite(sprite, type);
 }
+
+/**
+ * Where a horizontally mirrored sprite's leftmost column ends up.
+ *
+ * A sprite is mirrored about its own tile's vertical screen axis, so that a full-tile
+ * sprite lands on exactly the columns its unmirrored neighbours leave for it. A world
+ * tile spans screen columns -31..32 around its origin, whose midpoint sits half a pixel
+ * right of column 0; reflecting column x to (1 - x) is that mirror. Reflecting the whole
+ * box [x_offs, x_offs + width - 1] therefore puts its new left edge at
+ * 1 - (x_offs + width - 1), which is what this returns.
+ *
+ * @param width Sprite width, in ZoomLevel::Min units.
+ * @param x_offs Sprite's leftmost column, in ZoomLevel::Min units.
+ * @return The mirrored sprite's leftmost column, in the same units.
+ */
+inline int MirroredSpriteXOffset(int width, int x_offs)
+{
+	/* Twice the mirror axis, which sits between two columns and so is a half-integer. */
+	const int axis_x2 = ScaleByZoom(2, ZoomLevel::Normal);
+	return axis_x2 - width - x_offs;
+}
+
+void SetupMirroredSprites();
 
 void GfxInitSpriteMem();
 void GfxClearSpriteCache();

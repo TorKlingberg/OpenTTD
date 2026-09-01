@@ -258,7 +258,7 @@ public:
 		MP_TERMINAL_OTHER,         ///< Large terminal building, third variant.
 		MP_TERMINAL_ROUND,         ///< Round terminal concourse.
 		MP_LOW_TERMINAL,           ///< Low terminal building. Does not count as a large terminal.
-		MP_SMALL_TERMINAL_3,       ///< Small terminal, three tiles wide. Placed from its west end and never rotated.
+		MP_SMALL_TERMINAL_3,       ///< Small terminal, three tiles long. Placed from its north end; rotation parity selects the axis it runs along.
 		MP_TOWER,                  ///< Control tower.
 		MP_RADIO_TOWER,            ///< Radio tower.
 		MP_RADAR,                  ///< Radar.
@@ -266,7 +266,7 @@ public:
 		MP_FLAG_GRASS,             ///< Windsock on grass.
 		MP_GRASS = 23,             ///< Plain airport grass.
 		MP_EMPTY = 24,             ///< Empty airport tile. Reserves the ground without building anything on it.
-		MP_FIRE_STATION = 25,      ///< Airport fire station with a visible fire engine.
+		MP_FIRE_STATION = 25,      ///< Airport fire station with a visible fire engine; rotation parity selects the side the bay faces.
 		MP_CARGO_TERMINAL = 26,    ///< Cargo terminal / warehouse.
 		MP_FUEL_FARM = 27,         ///< Aviation fuel tanks and pumping equipment.
 		MP_CAR_PARK = 28,          ///< Multi-storey car park; rotation parity selects the entrance axis.
@@ -404,8 +404,11 @@ public:
 	 *  direction the hangar faces (0 = SE, 1 = NE, 2 = NW, 3 = SW). For runway
 	 *  pieces an even rotation lays the runway along the X axis and an odd one
 	 *  along the Y axis. For MP_CAR_PARK, rotations 0/2 select one road-facing
-	 *  entrance axis and rotations 1/3 select the perpendicular axis.
-	 *  MP_SMALL_HANGAR has only one graphic and requires 0. Ignored by other
+	 *  entrance axis and rotations 1/3 select the perpendicular axis. For
+	 *  MP_FIRE_STATION an odd rotation turns the appliance bay to face the other
+	 *  way. MP_SMALL_TERMINAL_3 covers three tiles: an even rotation lays them
+	 *  along the X axis and an odd one along the Y axis, and it accepts only 0 or
+	 *  1. MP_SMALL_HANGAR has only one graphic and requires 0. Ignored by other
 	 *  pieces that cannot rotate.
 	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
 	 * @pre ScriptMap::IsValidTile(tile).

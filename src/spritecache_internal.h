@@ -28,6 +28,7 @@ struct SpriteCache {
 	uint32_t lru = 0;
 	SpriteType type = SpriteType::Invalid; ///< In some cases a single sprite is misused by two NewGRFs. Once as real sprite and once as recolour sprite. If the recolour sprite gets into the cache it might be drawn as real sprite which causes enormous trouble.
 	bool warned = false; ///< True iff the user has been warned about incorrect use of this sprite
+	bool mirrored = false; ///< True iff this entry is a horizontally mirrored view of the sprite at #file_pos, see SetupMirroredSprites().
 	SpriteCacheCtrlFlags control_flags{}; ///< Control flags, see SpriteCacheCtrlFlags
 
 	void ClearSpriteData();

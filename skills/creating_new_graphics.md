@@ -47,6 +47,24 @@ Decide who should own the sprite before making the art:
   compiled into OpenTTD's fallback extra GRF, `openttd.grf`. A selected base set or NewGRF can
   replace the corresponding Action 5 slot later, so this is not a guarantee of identical art.
 - Use a NewGRF when the art is optional content rather than part of the fork's core behaviour.
+- Draw no art at all when what is wanted is an existing base-set sprite the other way round.
+  `SPR_MIRRORED_BASE` in `src/table/sprites.h` is a small block of sprite IDs that hold no
+  pixels: `SetupMirroredSprites()` points each at the sprite it mirrors once all graphics are
+  loaded, and the sprite cache flips the pixels as it decodes them. Add a row to
+  `_mirrored_sprites` in `src/spritecache.cpp`, raise `MIRRORED_SPRITE_COUNT`, and the mirrored
+  piece follows whatever base set or NewGRF supplied the original instead of clashing with it.
+  Its bounding box is reflected about the tile's own axis, so a full-tile sprite lands on
+  exactly the columns its unmirrored neighbours leave for it.
+
+Prefer a second stored sprite for the fork's own art, even when the two orientations start out as
+an exact mirror of each other. `SPR_MIRRORED_BASE` exists because a base set's sprite is not ours
+to copy into the sheet; a sprite already in `media/baseset/openttd/` has no such problem, and
+storing both orientations leaves the pixels there for anyone who later wants to tweak one of them.
+That matters because a mechanical mirror swaps which of a building's faces points up-left and
+which points up-right. Measure rather than assume how much that costs: the decorations on this
+sheet turned out near enough symmetric in shading to flip cleanly, and the two car park variants
+differ by only thirteen pixels of kerb, but a subject with a strongly lit face or an asymmetric
+detail such as a road-facing entrance will want real correction.
 
 For an object placed on a tile, separate ground from object whenever practical. Draw a canonical
 ground sprite supplied by the selected base set, such as apron or grass, then draw the new

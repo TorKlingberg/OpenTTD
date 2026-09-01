@@ -40,15 +40,17 @@ struct ModularCompoundPieceTile {
  * The tiles a compound piece places, or an empty span for an ordinary piece.
  *
  * Some airport buildings are drawn across several tiles and only make sense
- * whole, so the builder places them as a unit from one click. The footprint is
- * fixed and unrotatable: each tile has its own graphic, drawn to join up with
- * its neighbours in one orientation only.
+ * whole, so the builder places them as a unit from one click. Each tile has its
+ * own graphic, drawn to join up with its neighbours along one axis; an odd
+ * rotation lays the piece along the other axis instead, and every tile of it is
+ * then drawn from the mirrored sprites.
  * @param gfx The graphic naming the piece (the one in GetModularAirportBuilderPieceGfx).
+ * @param rotation Rotation the piece is placed with.
  */
-std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(ModularAirportPieceID gfx);
+std::span<const ModularCompoundPieceTile> GetModularCompoundPieceTiles(ModularAirportPieceID gfx, uint8_t rotation = 0);
 
 /** Footprint of a piece in tiles: the compound's bounding box, or 1x1. */
-Dimension GetModularCompoundPieceSize(ModularAirportPieceID gfx);
+Dimension GetModularCompoundPieceSize(ModularAirportPieceID gfx, uint8_t rotation = 0);
 
 extern StationID _last_modular_airport_station;
 extern bool _show_runway_direction_overlay;

@@ -81,6 +81,11 @@ static const DrawTileSeqStruct _station_display_modular_fire_station_seq[] = {
 };
 static const DrawTileSpriteSpan _station_display_modular_fire_station(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_fire_station_seq);
+static const DrawTileSeqStruct _station_display_modular_fire_station_other_seq[] = {
+	{0, 0, 0, 16, 16, 36, {SPR_AIRPORT_FIRE_STATION_OTHER, PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_fire_station_other(
+	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_fire_station_other_seq);
 
 static const DrawTileSeqStruct _station_display_modular_cargo_terminal_seq[] = {
 	{0, 0, 0, 16, 16, 30, {SPR_AIRPORT_CARGO_TERMINAL, PAL_NONE}},
@@ -116,6 +121,25 @@ static const DrawTileSpriteSpan _station_display_modular_ns_runway_end(PalSprite
 static const DrawTileSpriteSpan _station_display_modular_old_runway_near_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_NEAR_END, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_old_runway_middle(PalSpriteID{SPR_AIRFIELD_RUNWAY_MIDDLE, PAL_NONE});
 static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end(PalSpriteID{SPR_AIRFIELD_RUNWAY_FAR_END, PAL_NONE});
+
+/* The same strip on the other axis. The base sets draw the small airfield's runway for one
+ * axis only, so the other one is their own sprite mirrored -- see SetupMirroredSprites(). */
+static const DrawTileSpriteSpan _station_display_modular_old_runway_near_end_mirror(PalSpriteID{SPR_MIRROR_AIRFIELD_RUNWAY_NEAR_END, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_old_runway_middle_mirror(PalSpriteID{SPR_MIRROR_AIRFIELD_RUNWAY_MIDDLE, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_old_runway_far_end_mirror(PalSpriteID{SPR_MIRROR_AIRFIELD_RUNWAY_FAR_END, PAL_NONE});
+
+/* The small terminal's three pieces, mirrored onto the other axis the same way. The stock
+ * layouts of APT_SMALL_BUILDING_1..3 are reproduced here with the mirrored sprites; only
+ * the third piece has a building of its own on top of the ground, and its bounding box is
+ * square, so mirroring leaves the box where it is. */
+static const DrawTileSpriteSpan _station_display_modular_small_terminal_a_mirror(PalSpriteID{SPR_MIRROR_AIRFIELD_TERM_A, PAL_NONE});
+static const DrawTileSpriteSpan _station_display_modular_small_terminal_b_mirror(PalSpriteID{SPR_MIRROR_AIRFIELD_TERM_B, PAL_NONE});
+static const DrawTileSeqStruct _station_display_modular_small_terminal_c_mirror_seq[] = {
+	{0, 0, 0, 15, 15, 30, {SPR_MIRROR_AIRFIELD_TERM_C_BUILD | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+};
+static const DrawTileSpriteSpan _station_display_modular_small_terminal_c_mirror(
+	PalSpriteID{SPR_MIRROR_AIRFIELD_TERM_C_GROUND | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE},
+	_station_display_modular_small_terminal_c_mirror_seq);
 
 /**
  * Screen position, relative to the tile origin, of a correctly placed hangar building:
@@ -355,12 +379,17 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, Mod
 {
 	const DrawTileSprites *t = nullptr;
 
+	/* An odd rotation is the mirrored variant of a piece that has one. */
+	const bool mirrored = (modular_rotation % 2) == 1;
+
 	switch (modular_piece_type) {
-		case APT_MODULAR_FIRE_STATION:    t = &_station_display_modular_fire_station; break;
+		case APT_MODULAR_FIRE_STATION:
+			t = mirrored ? &_station_display_modular_fire_station_other : &_station_display_modular_fire_station;
+			break;
 		case APT_MODULAR_CARGO_TERMINAL:  t = &_station_display_modular_cargo_terminal; break;
 		case APT_MODULAR_FUEL_FARM:       t = &_station_display_modular_fuel_farm; break;
 		case APT_MODULAR_CAR_PARK:
-			t = (modular_rotation & 1) != 0 ? &_station_display_modular_car_park_other : &_station_display_modular_car_park;
+			t = mirrored ? &_station_display_modular_car_park_other : &_station_display_modular_car_park;
 			break;
 		default: break;
 	}
@@ -372,16 +401,33 @@ const DrawTileSprites *GetAirportTileLayoutWithModularOverrides(uint8_t gfx, Mod
 	}
 
 	/* NS runway sprite override: rotation%2==1 means Y-axis (NW-SE) runway. */
-	if ((modular_rotation % 2) == 1 && t == nullptr) {
+	if (mirrored && t == nullptr) {
 		t = GetModularNSRunwayLayout(modular_piece_type);
 	}
 
 	/* Legacy small runway sprites include a baked SE fence in stock layouts.
-	 * In modular mode fence rendering should come from edge fences only. */
+	 * In modular mode fence rendering should come from edge fences only. The base sets
+	 * only draw this strip along the X axis, so a Y-axis one uses the mirrored sprites. */
 	switch (modular_piece_type) {
-		case APT_RUNWAY_SMALL_NEAR_END: t = &_station_display_modular_old_runway_near_end; break;
-		case APT_RUNWAY_SMALL_MIDDLE:   t = &_station_display_modular_old_runway_middle; break;
-		case APT_RUNWAY_SMALL_FAR_END:  t = &_station_display_modular_old_runway_far_end; break;
+		case APT_RUNWAY_SMALL_NEAR_END:
+			t = mirrored ? &_station_display_modular_old_runway_near_end_mirror : &_station_display_modular_old_runway_near_end;
+			break;
+		case APT_RUNWAY_SMALL_MIDDLE:
+			t = mirrored ? &_station_display_modular_old_runway_middle_mirror : &_station_display_modular_old_runway_middle;
+			break;
+		case APT_RUNWAY_SMALL_FAR_END:
+			t = mirrored ? &_station_display_modular_old_runway_far_end_mirror : &_station_display_modular_old_runway_far_end;
+			break;
+		/* The small terminal's pieces likewise face along the X axis only. */
+		case APT_SMALL_BUILDING_1:
+			if (mirrored) t = &_station_display_modular_small_terminal_c_mirror;
+			break;
+		case APT_SMALL_BUILDING_2:
+			if (mirrored) t = &_station_display_modular_small_terminal_b_mirror;
+			break;
+		case APT_SMALL_BUILDING_3:
+			if (mirrored) t = &_station_display_modular_small_terminal_a_mirror;
+			break;
 		default: break;
 	}
 

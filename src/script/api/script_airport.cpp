@@ -357,15 +357,16 @@ static bool ParseModularLayout(const Array<SQInteger> &layout, std::vector<Modul
 		 * layout-derived queries that go through this parser -- sees the tiles the
 		 * layout will really occupy, so a script can cost and size a layout
 		 * containing one without knowing its footprint. */
-		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx);
+		const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx, static_cast<uint8_t>(rotation));
 		if (compound.empty()) {
 			if (!append_tile(tile)) return false;
 			continue;
 		}
 
-		/* Each tile of a compound has its own graphic and they join up one way
-		 * only, so there is nothing sensible to do with a rotation. */
-		if (rotation != 0) return false;
+		/* Each tile of a compound has its own graphic and they join up along one
+		 * axis, so the only rotations that mean anything are the two axes: an odd
+		 * rotation lays the piece along the other one and mirrors its graphics. */
+		if (rotation > 1) return false;
 		for (const ModularCompoundPieceTile &ct : compound) {
 			const uint32_t part_dx = static_cast<uint32_t>(dx) + ct.dx;
 			const uint32_t part_dy = static_cast<uint32_t>(dy) + ct.dy;
@@ -485,15 +486,15 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	/* A compound piece covers several tiles, so it goes through the template
 	 * command the same way the builder's own click does -- one atomic placement,
 	 * never a half-built building. */
-	if (const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx); !compound.empty()) {
-		EnforcePrecondition(false, rotation == 0);
-		const Dimension size = GetModularCompoundPieceSize(gfx);
+	if (const std::span<const ModularCompoundPieceTile> compound = GetModularCompoundPieceTiles(gfx, static_cast<uint8_t>(rotation)); !compound.empty()) {
+		EnforcePrecondition(false, rotation == 0 || rotation == 1);
+		const Dimension size = GetModularCompoundPieceSize(gfx, static_cast<uint8_t>(rotation));
 		ModularTemplatePlacementData data;
 		data.width = static_cast<uint16_t>(size.width);
 		data.height = static_cast<uint16_t>(size.height);
 		data.rotation = 0;
 		for (const ModularCompoundPieceTile &ct : compound) {
-			data.tiles.push_back({static_cast<uint8_t>(ct.dx), static_cast<uint8_t>(ct.dy), ct.gfx, 0, 0, false, 0x0F, 0});
+			data.tiles.push_back({static_cast<uint8_t>(ct.dx), static_cast<uint8_t>(ct.dy), ct.gfx, static_cast<uint8_t>(rotation), 0, false, 0x0F, 0});
 		}
 		return ScriptObject::Command<Commands::PlaceModularAirportTemplate>::Do(tile,
 				(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),

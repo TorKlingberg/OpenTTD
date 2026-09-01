@@ -110,15 +110,17 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_8,  ///< Radio tower button.
 	WID_MACP_PIECE_9,  ///< Flag on grass button.
 	WID_MACP_PIECE_10, ///< Small terminal (3-tile) button.
-	WID_MACP_PIECE_11, ///< Airport fire station button.
-	WID_MACP_PIECE_12, ///< Cargo terminal button.
-	WID_MACP_PIECE_13, ///< Fuel farm button.
-	WID_MACP_PIECE_14, ///< Multi-storey car park button.
-	WID_MACP_PIECE_15, ///< Multi-storey car park button, perpendicular entrance axis.
+	WID_MACP_PIECE_11, ///< Small terminal (3-tile) button, mirrored onto the other axis.
+	WID_MACP_PIECE_12, ///< Airport fire station button.
+	WID_MACP_PIECE_13, ///< Airport fire station button, mirrored.
+	WID_MACP_PIECE_14, ///< Cargo terminal button.
+	WID_MACP_PIECE_15, ///< Fuel farm button.
+	WID_MACP_PIECE_16, ///< Multi-storey car park button.
+	WID_MACP_PIECE_17, ///< Multi-storey car park button, perpendicular entrance axis.
 };
 
 static constexpr WidgetID WID_MACP_PIECE_FIRST = WID_MACP_PIECE_0;
-static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_15;
+static constexpr WidgetID WID_MACP_PIECE_LAST  = WID_MACP_PIECE_17;
 
 /** Widgets of the #BuildModularHelipadPickerWindow class. */
 enum ModularAirportHelipadPickerWidgets : WidgetID {

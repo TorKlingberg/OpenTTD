@@ -316,7 +316,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 	}
 
-	/* Legacy (small) runway pieces are axis-locked and only support 0/180 rotation. */
+	/* Legacy (small) runway pieces only support 0/180 rotation. They now have sprites for
+	 * the other axis, so this is no longer a graphics limitation; lifting it needs the
+	 * rotated end-piece normalization tested against templates first. */
 	if ((data.rotation & 1) != 0) {
 		for (const auto &t : data.tiles) {
 			if (IsLegacySmallRunwayPiece(t.piece_type)) return CMD_ERROR;

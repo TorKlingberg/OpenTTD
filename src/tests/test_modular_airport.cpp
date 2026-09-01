@@ -18,6 +18,7 @@
 #include "../modular_airport_gui.h"
 #include "../script/api/script_airport.hpp"
 #include "../sprite.h"
+#include "../spritecache.h"
 #include "../table/sprites.h"
 #include "../airport_template.h"
 #include "../table/airporttile_ids.h"
@@ -1673,6 +1674,92 @@ TEST_CASE("ModularAirportDecorationDrawing")
 		CHECK(found_primary == (rotation % 2 == 0));
 		CHECK(found_other == (rotation % 2 != 0));
 	}
+
+	for (uint8_t rotation = 0; rotation < 4; ++rotation) {
+		CAPTURE(rotation);
+		const DrawTileSprites *rotated = GetAirportTileLayoutWithModularOverrides(
+				APT_APRON, APT_MODULAR_FIRE_STATION, rotation, 0);
+		REQUIRE(rotated != nullptr);
+		bool found_primary = false;
+		bool found_other = false;
+		for (const DrawTileSeqStruct &dtss : rotated->GetSequence()) {
+			if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_FIRE_STATION) found_primary = true;
+			if ((dtss.image.sprite & SPRITE_MASK) == SPR_AIRPORT_FIRE_STATION_OTHER) found_other = true;
+		}
+		CHECK(found_primary == (rotation % 2 == 0));
+		CHECK(found_other == (rotation % 2 != 0));
+	}
+}
+
+TEST_CASE("MirroredSpriteXOffset")
+{
+	/* Offsets are in ZoomLevel::Min units, which are ScaleByZoom(1, ZoomLevel::Normal)
+	 * per screen pixel at normal zoom. */
+	const int unit = ScaleByZoom(1, ZoomLevel::Normal);
+
+	SECTION("A full-tile sprite keeps the columns it already occupies")
+	{
+		/* The airfield's terminal and runway tiles are all 64x31 at -31, and they have to
+		 * stay put: a mirrored tile sits beside unmirrored neighbours in the same airport. */
+		CHECK(MirroredSpriteXOffset(64 * unit, -31 * unit) == -31 * unit);
+	}
+
+	SECTION("A sub-tile sprite is reflected within its tile")
+	{
+		/* The hut on the small terminal's third piece is 50 wide at -21, so it covers
+		 * columns -21..28 and its mirror must cover -27..22. */
+		CHECK(MirroredSpriteXOffset(50 * unit, -21 * unit) == -27 * unit);
+	}
+
+	SECTION("Mirroring twice is the identity")
+	{
+		for (const auto &[width, x_offs] : {std::pair{64, -31}, std::pair{50, -21}, std::pair{1, 0}, std::pair{7, 13}}) {
+			const int once = MirroredSpriteXOffset(width * unit, x_offs * unit);
+			CHECK(MirroredSpriteXOffset(width * unit, once) == x_offs * unit);
+		}
+	}
+}
+
+TEST_CASE("ModularAirportMirroredLegacyPieces")
+{
+	/* The base sets draw the small airfield's runway and terminal along the X axis
+	 * only, so a piece laid along the Y axis has to come from the mirrored copies
+	 * that SetupMirroredSprites() makes of whatever the base set provided. */
+	struct MirrorCase {
+		ModularAirportPieceID piece;
+		SpriteID along_x;
+		SpriteID along_y;
+	};
+	static constexpr MirrorCase cases[] = {
+		{APT_RUNWAY_SMALL_NEAR_END, SPR_AIRFIELD_RUNWAY_NEAR_END, SPR_MIRROR_AIRFIELD_RUNWAY_NEAR_END},
+		{APT_RUNWAY_SMALL_MIDDLE,   SPR_AIRFIELD_RUNWAY_MIDDLE,   SPR_MIRROR_AIRFIELD_RUNWAY_MIDDLE},
+		{APT_RUNWAY_SMALL_FAR_END,  SPR_AIRFIELD_RUNWAY_FAR_END,  SPR_MIRROR_AIRFIELD_RUNWAY_FAR_END},
+		{APT_SMALL_BUILDING_3,      SPR_AIRFIELD_TERM_A,          SPR_MIRROR_AIRFIELD_TERM_A},
+		{APT_SMALL_BUILDING_2,      SPR_AIRFIELD_TERM_B,          SPR_MIRROR_AIRFIELD_TERM_B},
+		{APT_SMALL_BUILDING_1,      SPR_AIRFIELD_TERM_C_GROUND,   SPR_MIRROR_AIRFIELD_TERM_C_GROUND},
+	};
+
+	for (const MirrorCase &c : cases) {
+		CAPTURE(c.piece);
+		for (uint8_t rotation = 0; rotation < 4; ++rotation) {
+			CAPTURE(rotation);
+			const DrawTileSprites *layout = GetAirportTileLayoutWithModularOverrides(
+					GetModularAirportMapGfx(c.piece), c.piece, rotation, 0);
+			REQUIRE(layout != nullptr);
+			const SpriteID expected = (rotation % 2) == 0 ? c.along_x : c.along_y;
+			CHECK((layout->ground.sprite & SPRITE_MASK) == expected);
+		}
+	}
+
+	/* The one piece with a building of its own on top of its ground sprite. */
+	const DrawTileSprites *terminal_c = GetAirportTileLayoutWithModularOverrides(
+			GetModularAirportMapGfx(APT_SMALL_BUILDING_1), APT_SMALL_BUILDING_1, 1, 0);
+	REQUIRE(terminal_c != nullptr);
+	bool found_building = false;
+	for (const DrawTileSeqStruct &dtss : terminal_c->GetSequence()) {
+		if ((dtss.image.sprite & SPRITE_MASK) == SPR_MIRROR_AIRFIELD_TERM_C_BUILD) found_building = true;
+	}
+	CHECK(found_building);
 }
 
 TEST_CASE("ModularAirportBuilderVocabulary")
@@ -1741,7 +1828,7 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 		}
 	}
 
-	SECTION("The small terminal is three tiles in a row and never rotated") {
+	SECTION("The small terminal is three tiles in a row") {
 		const std::span<const ModularCompoundPieceTile> tiles = GetModularCompoundPieceTiles(APT_SMALL_BUILDING_2);
 		REQUIRE(tiles.size() == 3);
 		for (int i = 0; i < 3; i++) {
@@ -1753,6 +1840,22 @@ TEST_CASE("ModularAirportBuilderVocabulary")
 		CHECK(GetModularCompoundPieceSize(APT_SMALL_BUILDING_2).height == 1);
 		CHECK(GetModularPieceForGfx(APT_SMALL_BUILDING_1) == ScriptAirport::MP_SMALL_TERMINAL_3);
 		CHECK(GetModularPieceForGfx(APT_SMALL_BUILDING_3) == ScriptAirport::MP_SMALL_TERMINAL_3);
+	}
+
+	SECTION("An odd rotation lays the small terminal along the other axis") {
+		/* Same three graphics in the same order, so a mirrored terminal reads back
+		 * as the same piece; only the axis they are strung along changes. */
+		const std::span<const ModularCompoundPieceTile> along_x = GetModularCompoundPieceTiles(APT_SMALL_BUILDING_2, 0);
+		const std::span<const ModularCompoundPieceTile> along_y = GetModularCompoundPieceTiles(APT_SMALL_BUILDING_2, 1);
+		REQUIRE(along_y.size() == along_x.size());
+		for (size_t i = 0; i < along_y.size(); i++) {
+			CAPTURE(i);
+			CHECK(along_y[i].gfx == along_x[i].gfx);
+			CHECK(along_y[i].dx == along_x[i].dy);
+			CHECK(along_y[i].dy == along_x[i].dx);
+		}
+		CHECK(GetModularCompoundPieceSize(APT_SMALL_BUILDING_2, 1).width == 1);
+		CHECK(GetModularCompoundPieceSize(APT_SMALL_BUILDING_2, 1).height == 3);
 	}
 
 	SECTION("Ordinary pieces have no compound footprint") {

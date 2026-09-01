@@ -22,6 +22,7 @@
 #include "base_media_graphics.h"
 #include "base_media_sounds.h"
 #include "modular_airport_draw.h"
+#include "spritecache.h"
 
 #include "table/sprites.h"
 
@@ -225,6 +226,9 @@ static void LoadSpriteTables()
 
 	/* Remove the default and baseset extra graphics from the config. */
 	_grfconfig.erase(std::begin(_grfconfig), std::next(std::begin(_grfconfig), 2));
+
+	/* Last, so that each mirror picks up the sprite whichever file finally provided it. */
+	SetupMirroredSprites();
 }
 
 

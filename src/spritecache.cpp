@@ -406,6 +406,36 @@ static bool ResizeSprites(SpriteLoader::SpriteCollection &sprite, ZoomLevels spr
 }
 
 /**
+ * Flip a loaded sprite horizontally, in place.
+ *
+ * Screen x maps to 1 - x. That axis is what makes a mirrored one-tile sprite land on its
+ * tile: the base sets draw a tile as a 64 pixel wide box at x_offs -31, so its columns
+ * -31..32 map onto themselves and the mirrored tile covers exactly the pixels its
+ * unmirrored neighbours leave for it. Smaller sprites drawn inside a tile, such as the
+ * building on top of the small terminal's third piece, do move across the tile.
+ *
+ * The offsets of the lesser zoom levels are derived from the fully zoomed sprite the same
+ * way ResizeSprites() derives them, rather than mirrored one level at a time, so the
+ * collection keeps the exact relation the rest of the sprite code assumes between them.
+ *
+ * @param sprite Sprite collection to mirror, already resized to all zoom levels.
+ */
+static void MirrorSprite(SpriteLoader::SpriteCollection &sprite)
+{
+	const SpriteLoader::Sprite &root = sprite.Root();
+	const int root_x_offs = MirroredSpriteXOffset(root.width, root.x_offs);
+
+	for (ZoomLevel zoom = ZoomLevel::Min; zoom <= ZoomLevel::Max; ++zoom) {
+		SpriteLoader::Sprite &s = sprite[zoom];
+		if (s.data == nullptr) continue;
+		for (uint y = 0; y < s.height; ++y) {
+			std::reverse(s.data + y * s.width, s.data + (y + 1) * s.width);
+		}
+		s.x_offs = UnScaleByZoom(root_x_offs, zoom);
+	}
+}
+
+/**
  * Load a recolour sprite into memory.
  * @param file GRF we're reading from.
  * @param file_pos Position within file.
@@ -523,6 +553,8 @@ static void *ReadSprite(const SpriteCache *sc, SpriteID id, SpriteType sprite_ty
 		if (id == SPR_IMG_QUERY) UserError("Okay... something went horribly wrong. I couldn't resize the fallback sprite. What should I do?");
 		return (void*)GetRawSprite(SPR_IMG_QUERY, SpriteType::Normal, &allocator, encoder);
 	}
+
+	if (sc->mirrored) MirrorSprite(sprite);
 
 	if (sprite_type == SpriteType::Font && _font_zoom != ZoomLevel::Min) {
 		/* Make ZoomLevel::Min the desired font zoom level. */
@@ -889,6 +921,62 @@ void *GetRawSprite(SpriteID sprite, SpriteType type, SpriteAllocator *allocator,
 	} else {
 		/* Do not use the spritecache, but a different allocator. */
 		return ReadSprite(sc, sprite, type, *allocator, encoder);
+	}
+}
+
+/** A sprite in the SPR_MIRRORED_BASE block and the sprite it is a mirror image of. */
+struct MirroredSprite {
+	SpriteID mirror; ///< Sprite to fill in.
+	SpriteID source; ///< Sprite it mirrors.
+};
+
+/** The sprites of the SPR_MIRRORED_BASE block. See its comment in table/sprites.h. */
+static const MirroredSprite _mirrored_sprites[] = {
+	{SPR_MIRROR_AIRFIELD_TERM_A,          SPR_AIRFIELD_TERM_A},
+	{SPR_MIRROR_AIRFIELD_TERM_B,          SPR_AIRFIELD_TERM_B},
+	{SPR_MIRROR_AIRFIELD_TERM_C_GROUND,   SPR_AIRFIELD_TERM_C_GROUND},
+	{SPR_MIRROR_AIRFIELD_TERM_C_BUILD,    SPR_AIRFIELD_TERM_C_BUILD},
+	{SPR_MIRROR_AIRFIELD_RUNWAY_NEAR_END, SPR_AIRFIELD_RUNWAY_NEAR_END},
+	{SPR_MIRROR_AIRFIELD_RUNWAY_MIDDLE,   SPR_AIRFIELD_RUNWAY_MIDDLE},
+	{SPR_MIRROR_AIRFIELD_RUNWAY_FAR_END,  SPR_AIRFIELD_RUNWAY_FAR_END},
+};
+static_assert(lengthof(_mirrored_sprites) == MIRRORED_SPRITE_COUNT);
+
+/**
+ * Point every sprite of the SPR_MIRRORED_BASE block at the sprite it mirrors.
+ *
+ * Call this once all graphics are loaded, so that each mirror picks up whichever base set
+ * or NewGRF ended up providing its source rather than the sprite some earlier file had
+ * there. The entries hold no pixels of their own: they name the same file position as
+ * their source and are flipped by the sprite cache as they are decoded.
+ */
+void SetupMirroredSprites()
+{
+	for (const MirroredSprite &ms : _mirrored_sprites) {
+		if (!SpriteExists(ms.source)) {
+			Debug(sprite, 0, "Sprite {} to be mirrored into {} does not exist", ms.source, ms.mirror);
+			continue;
+		}
+
+		/* Read the source out first: AllocateSpriteCache may reallocate the cache. */
+		const SpriteCache *src = GetSpriteCache(ms.source);
+		SpriteFile *file = src->file;
+		const size_t file_pos = src->file_pos;
+		const uint32_t id = src->id;
+		const SpriteType type = src->type;
+		const uint32_t length = src->length;
+		const SpriteCacheCtrlFlags control_flags = src->control_flags;
+
+		/* GfxLoadSprites() empties the cache before anything is loaded into it, so
+		 * these entries are always fresh here and have nothing to release. */
+		SpriteCache &dst = *AllocateSpriteCache(ms.mirror);
+		dst.file = file;
+		dst.file_pos = file_pos;
+		dst.id = id;
+		dst.type = type;
+		dst.length = length;
+		dst.control_flags = control_flags;
+		dst.mirrored = true;
 	}
 }
 

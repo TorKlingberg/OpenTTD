@@ -270,7 +270,8 @@ static const SpriteID SPR_AIRPORT_CARGO_TERMINAL  = SPR_AIRPORTX_BASE + 16;
 static const SpriteID SPR_AIRPORT_FUEL_FARM       = SPR_AIRPORTX_BASE + 17;
 static const SpriteID SPR_AIRPORT_CAR_PARK        = SPR_AIRPORTX_BASE + 18;
 static const SpriteID SPR_AIRPORT_CAR_PARK_OTHER  = SPR_AIRPORTX_BASE + 19;
-static const uint16_t AIRPORTX_SPRITE_COUNT = 20;
+static const SpriteID SPR_AIRPORT_FIRE_STATION_OTHER = SPR_AIRPORTX_BASE + 20;
+static const uint16_t AIRPORTX_SPRITE_COUNT = 21;
 /** @} */
 
 /** @{
@@ -381,8 +382,29 @@ static const SpriteID SPR_BRIDGE_DECKS_MGLV = SPR_BRIDGE_DECKS_BASE + 12;
 static const SpriteID SPR_BRIDGE_DECKS_ROAD = SPR_BRIDGE_DECKS_BASE + 18;
 /** @} */
 
+/** @{
+ * Horizontally mirrored copies of sprites that come from the selected base graphics set.
+ *
+ * These sprites are in no file. SetupMirroredSprites() points each of them at the sprite
+ * it mirrors once all graphics are loaded, and the sprite cache flips the pixels on the
+ * way out, so a mirrored piece follows whatever base set or NewGRF supplied the original
+ * instead of being fixed art that only matches one of them.
+ *
+ * The one-tile pieces of the legacy small airfield are mirrored so a modular airport can
+ * lay them along the other axis: the base set draws each of them for one axis only. */
+static const SpriteID SPR_MIRRORED_BASE = SPR_BRIDGE_DECKS_BASE + BRIDGE_DECKS_SPRITE_COUNT;
+static const SpriteID SPR_MIRROR_AIRFIELD_TERM_A          = SPR_MIRRORED_BASE + 0;
+static const SpriteID SPR_MIRROR_AIRFIELD_TERM_B          = SPR_MIRRORED_BASE + 1;
+static const SpriteID SPR_MIRROR_AIRFIELD_TERM_C_GROUND   = SPR_MIRRORED_BASE + 2;
+static const SpriteID SPR_MIRROR_AIRFIELD_TERM_C_BUILD    = SPR_MIRRORED_BASE + 3;
+static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_NEAR_END = SPR_MIRRORED_BASE + 4;
+static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_MIDDLE   = SPR_MIRRORED_BASE + 5;
+static const SpriteID SPR_MIRROR_AIRFIELD_RUNWAY_FAR_END  = SPR_MIRRORED_BASE + 6;
+static const uint16_t MIRRORED_SPRITE_COUNT = 7;
+/** @} */
+
 /** From where can we start putting NewGRFs. */
-static const SpriteID SPR_NEWGRFS_BASE = SPR_BRIDGE_DECKS_BASE + BRIDGE_DECKS_SPRITE_COUNT;
+static const SpriteID SPR_NEWGRFS_BASE = SPR_MIRRORED_BASE + MIRRORED_SPRITE_COUNT;
 
 /** Manager face sprites.
  * @{ */
