@@ -656,7 +656,7 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr || !templ->is_available) return false;
 		if (templ->HasNonRotatablePieces()) return false;
-		if (templ->HasLegacySmallRunwayPieces()) {
+		if (templ->HasLegacySmallRunwayPieces() && !AreNewAirportGraphicsAvailable()) {
 			this->selected_rotation ^= 2;
 			this->UpdateLoadingPlacementPreview();
 			this->SetDirty();
@@ -677,7 +677,8 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		this->SetWidgetDisabledState(WID_TM_ROTATE_LEFT, disable);
 		this->SetWidgetDisabledState(WID_TM_ROTATE_RIGHT, disable);
 		if (disable) this->selected_rotation = 0;
-		if (!disable && templ != nullptr && templ->HasLegacySmallRunwayPieces() && (this->selected_rotation & 1) != 0) {
+		if (!disable && templ != nullptr && templ->HasLegacySmallRunwayPieces() &&
+				!AreNewAirportGraphicsAvailable() && (this->selected_rotation & 1) != 0) {
 			this->selected_rotation &= 2;
 		}
 	}
@@ -758,6 +759,14 @@ public:
 		 * already released the cursor if it was ours. */
 		this->Window::Close();
 		if (parent != nullptr) parent->InvalidateData();
+	}
+
+	void OnInvalidateData([[maybe_unused]] int data = 0, bool gui_scope = true) override
+	{
+		if (!gui_scope) return;
+		this->UpdateRotationButtons();
+		if (this->mode == TemplateManagerMode::LoadingPlace) this->UpdateLoadingPlacementPreview();
+		this->SetDirty();
 	}
 
 	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override

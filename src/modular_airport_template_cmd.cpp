@@ -316,10 +316,9 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 	}
 
-	/* Legacy (small) runway pieces only support 0/180 rotation. They now have sprites for
-	 * the other axis, so this is no longer a graphics limitation; lifting it needs the
-	 * rotated end-piece normalization tested against templates first. */
-	if ((data.rotation & 1) != 0) {
+	/* Without the mirrored runway sprites, legacy (small) runway pieces only support
+	 * 0/180-degree template rotation. */
+	if ((data.rotation & 1) != 0 && !AreNewAirportGraphicsAvailable()) {
 		for (const auto &t : data.tiles) {
 			if (IsLegacySmallRunwayPiece(t.piece_type)) return CMD_ERROR;
 		}

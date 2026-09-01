@@ -99,7 +99,8 @@ struct AirportTemplate {
 	bool HasNonRotatablePieces() const;
 
 	/** Check whether this template contains legacy (small) runway pieces.
-	 * These are axis-locked and only support 0/180-degree template rotation. */
+	 * These only support 0/180-degree template rotation when the new airport
+	 * graphics setting is off. */
 	bool HasLegacySmallRunwayPieces() const;
 
 	/** Check if all required NewGRFs are present. Updates is_available. */

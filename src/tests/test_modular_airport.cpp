@@ -722,6 +722,40 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 		CHECK(GetStationGfx(base) == map_gfx);
 	}
 
+	/* A quarter-turned template needs the mirrored small-runway sprites. The
+	 * setting gates that turn, while 0/180-degree placement remains legacy-safe. */
+	ModularTemplatePlacementData runway;
+	runway.width = 3;
+	runway.height = 1;
+	runway.rotation = 1;
+	runway.tiles = {
+		{0, 0, APT_RUNWAY_SMALL_FAR_END, 0, RUF_DEFAULT},
+		{1, 0, APT_RUNWAY_SMALL_MIDDLE, 0, RUF_DEFAULT},
+		{2, 0, APT_RUNWAY_SMALL_NEAR_END, 0, RUF_DEFAULT},
+	};
+	const TileIndex runway_base = TileXY(12, 12);
+	_settings_game.station.new_airport_graphics = false;
+	CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway).Failed());
+	CHECK(!IsTileType(runway_base, TileType::Station));
+
+	_settings_game.station.new_airport_graphics = true;
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *runway_station = Station::GetByTile(runway_base);
+	REQUIRE(runway_station != nullptr);
+	static constexpr ModularAirportPieceID expected_runway_pieces[] = {
+		APT_RUNWAY_SMALL_FAR_END,
+		APT_RUNWAY_SMALL_MIDDLE,
+		APT_RUNWAY_SMALL_NEAR_END,
+	};
+	for (uint y = 0; y < lengthof(expected_runway_pieces); y++) {
+		const ModularAirportTileData *runway_data = runway_station->airport.GetModularTileData(TileAddXY(runway_base, 0, y));
+		REQUIRE(runway_data != nullptr);
+		CHECK(runway_data->piece_type == expected_runway_pieces[y]);
+		CHECK(runway_data->rotation == 1);
+	}
+
 	_current_company = saved_company;
 	_settings_game.station.distant_join_stations = saved_distant_join;
 	_settings_game.station.never_expire_airports = saved_never_expire;
