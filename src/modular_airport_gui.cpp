@@ -989,13 +989,8 @@ public:
 		if (supports_drag) {
 			/* Enable drag-building */
 			if (is_runway) {
-				/* Legacy (small) runway can only drag on the stock axis. */
-				if (this->selected_piece == 2) {
-					VpStartPlaceSizing(tile, VPM_FIX_Y, DDSP_BUILD_STATION);
-				} else {
-					/* Linear pieces: allow drag in X or Y direction only */
-					VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
-				}
+				/* Linear pieces: allow drag in X or Y direction only */
+				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
 			} else {
 				/* Rectangular pieces: allow drag in both X and Y */
 				VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUILD_STATION);
