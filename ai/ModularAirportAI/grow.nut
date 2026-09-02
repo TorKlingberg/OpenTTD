@@ -154,6 +154,9 @@ function TryAddSecondHangar(station)
 	foreach (t in candidates) {
 		local tx = AIMap.GetTileX(t), ty = AIMap.GetTileY(t);
 		foreach (rot in [FACE_NW, FACE_SE, FACE_NE, FACE_SW]) {
+			/* A hangar's rotation is the way it faces, and not every facing of
+			 * every hangar can be drawn -- ask rather than assume. */
+			if (!AIAirport.IsModularPieceAvailableInRotation(AIAirport.MP_HANGAR, rot)) continue;
 			local off = FaceOffset(rot);
 			local n = AIMap.GetTileIndex(tx + off[0], ty + off[1]);
 			if (n in aprons) {
@@ -402,46 +405,69 @@ function AirportHasPiece(station, wanted)
 	return false;
 }
 
-/** Try every plausible origin for the compound old terminal. */
+/**
+ * Try every plausible origin for the compound old terminal, along either axis.
+ *
+ * Its rotation is not a facing but a choice of axis: 0 runs the three tiles
+ * along X from the tile given, 1 along Y. Trying both roughly doubles the gaps
+ * it fits into, and which one a given airport gets is worth varying anyway.
+ */
 function TryAddSmallTerminal(station)
 {
 	if (!AIAirport.IsModularPieceAvailable(AIAirport.MP_SMALL_TERMINAL_3)) return false;
+	local axes = AIBase.RandRange(2) == 0 ? [0, 1] : [1, 0];
 	foreach (t in ExpansionTiles(station, false)) {
-		if (AIAirport.BuildModularAirportTile(t, AIAirport.MP_SMALL_TERMINAL_3, 0, station)) return true;
+		foreach (axis in axes) {
+			if (AIAirport.BuildModularAirportTile(t, AIAirport.MP_SMALL_TERMINAL_3, axis, station)) return true;
+		}
 	}
 	return false;
 }
 
-/** Whether a tile is part of this station's legacy runway. */
-function IsLegacyRunwayTile(station, tile)
+/**
+ * Whether a tile continues this station's legacy runway along the given axis.
+ *
+ * The axis matters: two grass runways at right angles may touch, and walking
+ * from one into the other would report them as a single strip.
+ */
+function IsLegacyRunwayTile(station, tile, axis)
 {
 	return AIMap.IsValidTile(tile)
 	    && AIAirport.IsModularAirportTile(tile)
 	    && AIStation.GetStationID(tile) == station
-	    && IsSmallRunwayPiece(AIAirport.GetModularPiece(tile));
+	    && IsSmallRunwayPiece(AIAirport.GetModularPiece(tile))
+	    && (AIAirport.GetModularPieceRotation(tile) % 2) == (axis % 2);
 }
 
 /**
  * The two ends of the legacy runway containing tile.
  *
- * Legacy runways are axis-locked along X, so walking left and right finds the
- * exact one-row area that the atomic upgrade command should convert.
+ * Walks the runway's own axis, which its tiles carry as their rotation: a
+ * legacy runway used to lie along X only, but its sprites are mirrored at
+ * runtime now, so a layout the AI turned by a quarter has it along Y instead.
+ * Walking the wrong axis finds no neighbours and reports a one-tile runway,
+ * which the caller would then hand to the upgrade command as the whole area --
+ * converting one tile out of the middle of a grass strip and splitting it in
+ * two, which is exactly the half-upgraded state that area is meant to prevent.
  */
 function LegacyRunwayEnds(station, tile)
 {
-	local y = AIMap.GetTileY(tile);
-	local left_x = AIMap.GetTileX(tile), right_x = left_x;
-	while (left_x > 0) {
-		local next = AIMap.GetTileIndex(left_x - 1, y);
-		if (!IsLegacyRunwayTile(station, next)) break;
-		left_x--;
+	local axis = AIAirport.GetModularPieceRotation(tile) % 2;
+	local dx = (axis == 0) ? 1 : 0;
+	local dy = 1 - dx;
+
+	local lo = tile, hi = tile;
+	for (local next = OffsetAirportTile(lo, -dx, -dy);
+	     next >= 0 && IsLegacyRunwayTile(station, next, axis);
+	     next = OffsetAirportTile(lo, -dx, -dy)) {
+		lo = next;
 	}
-	while (right_x + 1 < AIMap.GetMapSizeX()) {
-		local next = AIMap.GetTileIndex(right_x + 1, y);
-		if (!IsLegacyRunwayTile(station, next)) break;
-		right_x++;
+	for (local next = OffsetAirportTile(hi, dx, dy);
+	     next >= 0 && IsLegacyRunwayTile(station, next, axis);
+	     next = OffsetAirportTile(hi, dx, dy)) {
+		hi = next;
 	}
-	return [AIMap.GetTileIndex(left_x, y), AIMap.GetTileIndex(right_x, y)];
+	return [lo, hi];
 }
 
 /** Upgrade one whole old runway, or one old hangar. */

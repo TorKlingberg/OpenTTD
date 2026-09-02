@@ -13,25 +13,43 @@
  * Which rotations a layout may be built in.
  *
  * The AI rotates layouts itself and always places at rotation 0 (see
- * Grid.Rotate). Legacy small runway pieces are axis-locked, so a layout
- * containing one can only be turned by half-turns.
+ * Grid.Rotate), so this asks what each *piece* can be turned into, not what the
+ * placement command would accept for a whole template.
+ *
+ * Two things still restrict it. A compound piece keeps its tiles in anchor
+ * order, so only the quarter-turn that carries an X-axis run onto Y is
+ * expressible. And a hangar's rotation is the direction it faces, which the
+ * small hangar cannot be drawn in for every value: its two closed-back views
+ * come from this fork's own bitmaps and follow the new airport graphics
+ * setting, so with that setting off a layout holding one may be turned to SE
+ * and SW but not to NE or NW. Asking the API per rotation keeps that in one
+ * place rather than hard-coding which facings exist.
+ *
+ * Legacy small runway pieces are no longer axis-locked: the base-set sprites
+ * are mirrored at runtime, so a small runway lies along either axis.
  */
 function AllowedRotations(grid)
 {
-	local small_runway = false;
-	foreach (c in grid.Ordered()) {
-		/* A small hangar has only the SE graphic. Rotating the layout would turn
-		 * its door to a direction it cannot be drawn facing, so a layout using one
-		 * stays put. Mirroring is still fine — that swaps NE and SW and leaves SE
-		 * alone — so these layouts are not all identical. */
-		if (c.piece == AIAirport.MP_SMALL_HANGAR) return [0];
-		/* A compound piece has one graphic per tile and joins up one way only. */
-		if (c.span > 1) return [0];
-		if (IsSmallRunwayPiece(c.piece)) small_runway = true;
+	/* Ordered() sorts, and this asks the same question of the same cells four
+	 * times, so walk the list once rather than rebuilding it per rotation. */
+	local cells = grid.Ordered();
+	local out = [];
+	for (local r = 0; r < 4; r++) {
+		local ok = true;
+		foreach (c in cells) {
+			if (c.span > 1 && r != 0 && r != 1) { ok = false; break; }
+			if (IsHangarPiece(c.piece)
+			 && !AIAirport.IsModularPieceAvailableInRotation(c.piece, (c.rot + r) & 3)) {
+				ok = false;
+				break;
+			}
+		}
+		if (ok) out.append(r);
 	}
-	/* Legacy small runway pieces are axis-locked: half-turns only. */
-	if (small_runway) return [0, 2];
-	return [0, 1, 2, 3];
+	/* Rotation 0 is the layout as authored, which the caller has already checked
+	 * is available; this only fires if that check is ever dropped. */
+	if (out.len() == 0) return [0];
+	return out;
 }
 
 /**
@@ -310,6 +328,9 @@ function SearchSites(town, scale, want_large_safe, variety, budget, blacklist, f
 		local rot = rotations[AIBase.RandRange(rotations.len())];
 		local turned = grid.Rotate(rot);
 		if (ValidateGrid(turned) != null) continue;
+		/* Turning moves each hangar's facing, so re-ask: AllowedRotations should
+		 * already have excluded a turn that lands on an unavailable one. */
+		if (!GridIsAvailable(turned)) continue;
 		candidates.append([family, turned, rot]);
 	}
 	if (candidates.len() == 0) return null;

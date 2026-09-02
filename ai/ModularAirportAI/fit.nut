@@ -99,9 +99,11 @@ function RepairHangars(grid)
 		local off = FaceOffset(c.rot);
 		local n = grid.Get(c.x + off[0], c.y + off[1]);
 		if (n != null && n.piece == AIAirport.MP_APRON) continue;
-		local rot_options = (c.piece == AIAirport.MP_SMALL_HANGAR)
-			? [FACE_SE] : [FACE_SE, FACE_NE, FACE_NW, FACE_SW];
-		foreach (r in rot_options) {
+		/* The small hangar used to be SE-only. It has all four views now, but two
+		 * of them are drawn from this fork's own bitmaps, so ask which facings may
+		 * actually be built rather than assuming either answer. */
+		foreach (r in [FACE_SE, FACE_NE, FACE_NW, FACE_SW]) {
+			if (!AIAirport.IsModularPieceAvailableInRotation(c.piece, r)) continue;
 			local d = FaceOffset(r);
 			local m = grid.Get(c.x + d[0], c.y + d[1]);
 			if (m == null || m.piece != AIAirport.MP_APRON) continue;

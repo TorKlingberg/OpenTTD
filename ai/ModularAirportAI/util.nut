@@ -15,6 +15,19 @@ const FACE_NE = 1;
 const FACE_NW = 2;
 const FACE_SW = 3;
 
+/**
+ * Which way a compound piece's tiles run: 0 along X, 1 along Y.
+ *
+ * A compound has one graphic per tile and the game expands it from its anchor,
+ * so its own rotation is not a facing but a choice of axis, and only the two
+ * values 0 and 1 mean anything to the build command. Layouts are authored along
+ * X; a quarter-turn is what produces the Y form.
+ */
+function CompoundAxis(cell)
+{
+	return cell.rot % 2;
+}
+
 /** Tile offset a hangar with the given facing exits onto. */
 function FaceOffset(face)
 {
@@ -138,6 +151,19 @@ function IsTerminalBuildingPiece(piece)
 	return false;
 }
 
+/**
+ * Pieces drawn two ways, chosen by the parity of their own rotation.
+ *
+ * Not a facing: nothing enters these, so the two forms are purely which way the
+ * building is turned to the viewer -- the fire station's appliance bay, the car
+ * park's entrance ramp. Worth rolling per tile so two of the same building in
+ * one airport do not read as a copy-paste.
+ */
+function PieceHasMirroredForm(piece)
+{
+	return piece == AIAirport.MP_FIRE_STATION || piece == AIAirport.MP_CAR_PARK;
+}
+
 /** Decorative pieces: no function, but they are what stops airports looking identical. */
 function IsCosmeticPiece(piece)
 {
@@ -150,6 +176,10 @@ function IsCosmeticPiece(piece)
 		case AIAirport.MP_LOW_TERMINAL:
 		case AIAirport.MP_SMALL_TERMINAL_3:
 		case AIAirport.MP_EMPTY:
+		case AIAirport.MP_FIRE_STATION:
+		case AIAirport.MP_CARGO_TERMINAL:
+		case AIAirport.MP_FUEL_FARM:
+		case AIAirport.MP_CAR_PARK:
 			return true;
 	}
 	return false;
@@ -238,6 +268,10 @@ function PieceChar(piece)
 		case AIAirport.MP_FLAG_GRASS:            return "f";
 		case AIAirport.MP_GRASS:                 return ",";
 		case AIAirport.MP_EMPTY:                 return "_";
+		case AIAirport.MP_FIRE_STATION:          return "F";
+		case AIAirport.MP_CARGO_TERMINAL:        return "C";
+		case AIAirport.MP_FUEL_FARM:             return "U";
+		case AIAirport.MP_CAR_PARK:              return "P";
 	}
 	return "?";
 }
@@ -296,6 +330,10 @@ class Grid
 	/**
 	 * Place a piece that occupies `span` tiles along X from (x, y).
 	 *
+	 * Layouts are authored along X only. A compound laid along Y is what a
+	 * quarter-turn in Rotate produces, and it is told apart by its own rotation
+	 * (see CompoundAxis) rather than by a separate field.
+	 *
 	 * The extra tiles become filler cells: they hold the ground so nothing else
 	 * is placed on top, and ToLayout skips them, because the game expands the
 	 * compound from its anchor itself. Nothing is placed at all unless the whole
@@ -329,6 +367,20 @@ class Grid
 	}
 
 	/**
+	 * Whether every compound here still runs along X, the axis layouts author.
+	 *
+	 * Rotate's one legal turn for a compound depends on this: it is the X run
+	 * that a quarter-turn carries onto Y with its tiles still in anchor order.
+	 */
+	function CompoundsOnAuthoringAxis()
+	{
+		foreach (_, c in this.cells) {
+			if (c.span > 1 && CompoundAxis(c) != 0) return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Remove a cell, and with it the rest of the compound it belongs to.
 	 *
 	 * Half a building is worse than none: the graphics only join up as a set, and
@@ -340,14 +392,19 @@ class Grid
 		if (c == null) return;
 		if (c.span <= 1) { this.Remove(x, y); return; }
 
-		/* Walk back to the anchor, then clear the whole run. */
-		local ax = x;
-		while (ax > 0) {
-			local prev = this.Get(ax - 1, y);
-			if (prev == null || prev.span != c.span || !this.Get(ax, y).filler) break;
-			ax--;
+		/* Walk back to the anchor, then clear the whole run. A rotated layout
+		 * holds its compounds along Y, so follow the run's own axis rather than
+		 * assuming the authoring one. */
+		local dx = (CompoundAxis(c) == 0) ? 1 : 0;
+		local dy = 1 - dx;
+		local ax = x, ay = y;
+		while (ax - dx >= 0 && ay - dy >= 0) {
+			local prev = this.Get(ax - dx, ay - dy);
+			if (prev == null || prev.span != c.span || !this.Get(ax, ay).filler) break;
+			ax -= dx;
+			ay -= dy;
 		}
-		for (local i = 0; i < c.span; i++) this.Remove(ax + i, y);
+		for (local i = 0; i < c.span; i++) this.Remove(ax + dx * i, ay + dy * i);
 	}
 
 	function SetTaxi(x, y, dir_mask, one_way)
@@ -450,9 +507,12 @@ class Grid
 		local g = Grid(this.w, this.h);
 		foreach (_, c in this.cells) {
 			/* A compound is not mirrored, only moved: its tiles have one graphic
-			 * each and only join up left to right. Its run [x, x+span-1] maps to
+			 * each and only join up in anchor order. Its run [x, x+span-1] maps to
 			 * [w-span-x, w-1-x], so the anchor lands at w-span-x and the filler
-			 * cells are rebuilt from there rather than mirrored individually. */
+			 * cells are rebuilt from there rather than mirrored individually.
+			 * Mirroring happens while the layout is still in the orientation it
+			 * was authored in, so every compound here runs along X; the Y form
+			 * only ever comes out of Rotate, which runs after this. */
 			if (c.filler) continue;
 			local nx = this.w - c.span - c.x;
 			local rot = c.rot;
@@ -510,11 +570,14 @@ class Grid
 		r = r & 3;
 		if (r == 0) return this.Clone();
 
-		/* A compound piece runs along X and has one graphic per tile, so there is
-		 * no such thing as a rotated one. AllowedRotations refuses to offer a
-		 * rotation for a layout holding one, so this is a guard rather than a
-		 * branch that runs. */
-		if (r != 0 && this.HasWidePiece()) return this.Clone();
+		/* A compound piece has one graphic per tile and the game expands it from
+		 * its anchor towards +X or +Y, so a turn is only expressible when the
+		 * tiles keep their order. For the X-axis run that layouts author, that is
+		 * the single quarter-turn onto Y: a half-turn or a three-quarter turn
+		 * would need the same three graphics in the opposite order, which there
+		 * is no form for. AllowedRotations offers only 0 and 1 for such a layout,
+		 * so this is a guard rather than a branch that runs. */
+		if (this.HasWidePiece() && (r != 1 || !this.CompoundsOnAuthoringAxis())) return this.Clone();
 
 		local out = Grid((r % 2 == 0) ? this.w : this.h, (r % 2 == 0) ? this.h : this.w);
 		foreach (_, c in this.cells) {
@@ -545,8 +608,12 @@ class Grid
 				}
 			}
 
+			/* A hangar's rotation is a facing and wraps at four; a compound's is an
+			 * axis and only 0 and 1 mean anything to the build command. */
+			local rot = (c.span > 1) ? ((c.rot + r) & 1) : ((c.rot + r) & 3);
+
 			out.cells[out.Key(nx, ny)] <- {
-				x = nx, y = ny, piece = piece, rot = (c.rot + r) & 3, rwy = rwy,
+				x = nx, y = ny, piece = piece, rot = rot, rwy = rwy,
 				one_way = c.one_way, taxi = RotateDirMask(c.taxi, r),
 				fence = RotateDirMask(c.fence, r), optional = c.optional,
 				span = c.span, filler = c.filler, infill = c.infill
@@ -621,18 +688,21 @@ function ValidateGrid(grid)
 	if (stands.len() > 0 && runway_ends.len() == 0) return "stands but no runway";
 
 	/* A compound piece is described to the game by its anchor alone, which the
-	 * game then expands along X. So the anchor must be at the west end of a
-	 * contiguous run of its own filler cells, or the tiles the game places and
-	 * the tiles this grid reserved are not the same tiles. Mirroring and trimming
-	 * both move these around, which is why it is checked rather than assumed. */
+	 * game then expands along the axis the anchor's own rotation names. So the
+	 * anchor must be at the low end of a contiguous run of its own filler cells
+	 * along that axis, or the tiles the game places and the tiles this grid
+	 * reserved are not the same tiles. Mirroring, rotation and trimming all move
+	 * these around, which is why it is checked rather than assumed. */
 	local wide_cells = 0, spanned = 0;
 	foreach (c in grid.Ordered()) {
 		if (c.span <= 1) continue;
 		wide_cells++;
 		if (c.filler) continue;
 		spanned += c.span;
+		local dx = (CompoundAxis(c) == 0) ? 1 : 0;
+		local dy = 1 - dx;
 		for (local i = 1; i < c.span; i++) {
-			local f = grid.Get(c.x + i, c.y);
+			local f = grid.Get(c.x + dx * i, c.y + dy * i);
 			if (f == null || !f.filler || f.piece != c.piece || f.span != c.span) {
 				return "compound piece broken at " + c.x + "," + c.y;
 			}

@@ -41,7 +41,9 @@ function RunSelfTest()
 	AILog.Info("year=" + AIDate.GetYear(AIDate.GetCurrentDate()));
 	AILog.Info("legend: = runway  E runway end  - < > small runway  + apron  S stand");
 	AILog.Info("        T stand+terminal  P stand+pier  H hangar  h small hangar");
-	AILog.Info("        X helipad  B terminal  b low terminal  W tower  r radar  f flag  , grass  _ empty");
+	AILog.Info("        X helipad  B terminal  b low terminal  t small terminal  W tower");
+	AILog.Info("        r radar  f flag  , grass  _ empty");
+	AILog.Info("        F fire station  C cargo terminal  U fuel farm  P car park");
 
 	/* Calibration: the modular upkeep figure is directly comparable with a stock
 	 * airport's, so print the stock ladder to give the generated numbers below a
@@ -105,6 +107,46 @@ function RunSelfTest()
 				if (!valid || !filled || !dist_ok) bad++;
 			}
 		}
+	}
+
+	/* Every rotation AllowedRotations offers has to survive Rotate and come back
+	 * a valid, buildable airport, because the site search takes whichever one it
+	 * rolls and never re-asks. This is the only offline cover for the two turns
+	 * that are not free: a compound piece, which only survives the quarter-turn
+	 * that carries its run from X onto Y, and a hangar, whose rotation is the
+	 * way it faces and which the small hangar cannot be drawn in for every value
+	 * unless the new airport graphics are on. So the counts below depend on that
+	 * setting, and both answers are correct. */
+	AILog.Info("");
+	AILog.Info("--- rotations ---");
+	foreach (family in families) {
+		local turns = 0, refused = 0;
+		for (local scale = 0; scale <= 3; scale++) {
+			local grid = GenerateLayout(family, RandomParams(family, scale));
+			if (ValidateGrid(grid) != null) continue;
+			foreach (r in AllowedRotations(grid)) {
+				local turned = grid.Rotate(r);
+				turns++;
+				/* Rotate hands back an unturned clone when it cannot express the
+				 * turn, so a layout that came back the wrong shape means
+				 * AllowedRotations offered something Rotate would not do. */
+				local want_w = (r % 2 == 0) ? grid.w : grid.h;
+				local problem = ValidateGrid(turned);
+				if (turned.w != want_w) problem = "rotation " + r + " not applied";
+				if (problem == null && !GridIsAvailable(turned)) {
+					problem = "rotation " + r + " is not buildable";
+				}
+				if (problem != null) {
+					total++;
+					bad++;
+					refused++;
+					AILog.Info(FamilyName(family) + " scale=" + scale + " rot=" + r
+					           + "  *** INVALID: " + problem + " ***");
+					foreach (row in turned.AsciiRows()) AILog.Info("    |" + row + "|");
+				}
+			}
+		}
+		AILog.Info(FamilyName(family) + ": " + turns + " rotations offered, " + refused + " bad");
 	}
 
 	/* The fitter is the part that has to work on cramped ground, so exercise it

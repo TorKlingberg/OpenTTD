@@ -49,14 +49,29 @@ function BigTerminalVariants()
 	        AIAirport.MP_TERMINAL_OTHER, AIAirport.MP_TERMINAL_ROUND];
 }
 
-/** Purely decorative pieces to scatter on tiles nothing else wants. */
+/**
+ * Purely decorative pieces to scatter on tiles nothing else wants.
+ *
+ * The whole pool, without regard to what may be built today. Callers filter it
+ * through AIAirport.IsModularPieceAvailable, which answers both gates at once:
+ * the introduction year, and -- for the pieces this fork draws from its own
+ * bitmaps -- the new airport graphics setting. So a game with that setting off
+ * simply never rolls the ground-side buildings, rather than rolling them and
+ * having every placement refused.
+ */
 function CosmeticVariants()
 {
 	/* Keep both radar surfaces in the pool. This deliberately gives radar two
 	 * looks without making the very tall radio mast the de-facto visual theme. */
 	return [AIAirport.MP_RADAR_GRASS, AIAirport.MP_RADAR,
 	        AIAirport.MP_FLAG_GRASS, AIAirport.MP_LOW_TERMINAL,
-	        AIAirport.MP_RADIO_TOWER, AIAirport.MP_GRASS];
+	        AIAirport.MP_RADIO_TOWER, AIAirport.MP_GRASS,
+	        /* The ground-side buildings. They read as an airport rather than an
+	         * airfield, so they are worth more of the decoration budget than a
+	         * windsock -- but they are also the pieces the graphics setting can
+	         * take away, which is why nothing here depends on them existing. */
+	        AIAirport.MP_FIRE_STATION, AIAirport.MP_CARGO_TERMINAL,
+	        AIAirport.MP_FUEL_FARM, AIAirport.MP_CAR_PARK];
 }
 
 /**
@@ -562,7 +577,11 @@ function DecorateGrid(grid, params)
 		 * mast to repeat several times while subtler windsocks and terminals lost
 		 * the coin toss. One airport now gets a genuinely mixed frontage. */
 		local kind_index = AIBase.RandRange(kinds.len());
-		grid.Set(s[0], s[1], kinds[kind_index], 0, 0, true);
+		local kind = kinds[kind_index];
+		/* Some of these are drawn two ways depending on the parity of their own
+		 * rotation, so roll it rather than always taking the first form. */
+		local kind_rot = PieceHasMirroredForm(kind) ? AIBase.RandRange(2) : 0;
+		grid.Set(s[0], s[1], kind, kind_rot, 0, true);
 		kinds.remove(kind_index);
 	}
 }
@@ -613,6 +632,9 @@ function EnsureHangarsWithinDistance(grid, max_dist = 10)
 							|| IsRunwayPiece(c.piece) || IsHelipadPiece(c.piece))) continue;
 
 					foreach (rot in [FACE_NW, FACE_SE, FACE_NE, FACE_SW]) {
+						/* Pick a facing that can actually be drawn, or GridIsAvailable
+						 * throws the whole layout away over one hangar's door. */
+						if (!AIAirport.IsModularPieceAvailableInRotation(AIAirport.MP_HANGAR, rot)) continue;
 						local off = FaceOffset(rot);
 						local n = grid.Get(x + off[0], y + off[1]);
 						if (n != null && n.piece == AIAirport.MP_APRON) {
@@ -797,7 +819,11 @@ function RandomParams(family, scale)
 function GridIsAvailable(grid)
 {
 	foreach (c in grid.Ordered()) {
-		if (!AIAirport.IsModularPieceAvailable(c.piece)) return false;
+		/* Ask about the rotation the cell actually holds. A hangar's rotation is
+		 * the way it faces, and the small hangar cannot be drawn facing every way
+		 * unless the new airport graphics are on, so the piece alone is not the
+		 * whole question. */
+		if (!AIAirport.IsModularPieceAvailableInRotation(c.piece, c.rot)) return false;
 	}
 	return true;
 }
