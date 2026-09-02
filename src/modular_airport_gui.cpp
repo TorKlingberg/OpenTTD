@@ -1433,18 +1433,23 @@ class BuildModularHangarPickerWindow : public PickerWindowBase {
 	/** Widget-to-rotation mapping: NW=2, NE=1, SW=3, SE=0 */
 	static constexpr uint8_t _widget_to_rot[4] = {2, 1, 3, 0}; // indexed by (widget - WID_MAHP_DIR_NW)
 
+	void RefreshAvailability()
+	{
+		const ModularAirportPieceID gfx = this->large_hangar ? APT_DEPOT_SE : APT_SMALL_DEPOT_SE;
+		if (IsModularPieceLocked(gfx, _modular_hangar_rotation)) _modular_hangar_rotation = 0;
+		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {
+			const uint8_t rotation = _widget_to_rot[w - WID_MAHP_DIR_NW];
+			this->SetWidgetDisabledState(w, IsModularPieceLocked(gfx, rotation));
+			this->SetWidgetLoweredState(w, rotation == _modular_hangar_rotation);
+		}
+	}
+
 public:
 	BuildModularHangarPickerWindow(WindowDesc &desc, Window *parent, bool large_hangar)
 		: PickerWindowBase(desc, parent), large_hangar(large_hangar)
 	{
 		this->InitNested(0);
-		/* Lower the button matching the current rotation */
-		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {
-			if (_widget_to_rot[w - WID_MAHP_DIR_NW] == _modular_hangar_rotation) {
-				this->LowerWidget(w);
-				break;
-			}
-		}
+		this->RefreshAvailability();
 	}
 
 	void Close([[maybe_unused]] int data = 0) override
@@ -1462,6 +1467,12 @@ public:
 	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, [[maybe_unused]] int window_number) override
 	{
 		return GetModularAirportChildWindowPosition(this->parent, sm_width, sm_height, false);
+	}
+
+	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
+	{
+		this->RefreshAvailability();
+		this->SetDirty();
 	}
 
 	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override
@@ -1495,6 +1506,7 @@ public:
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override
 	{
 		if (widget < WID_MAHP_DIR_NW || widget > WID_MAHP_DIR_SE) return;
+		if (this->IsWidgetDisabled(widget)) return;
 
 		/* Raise old selection */
 		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {

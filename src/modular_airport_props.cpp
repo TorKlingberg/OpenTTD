@@ -134,6 +134,9 @@ TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation)
 {
 	if (IsModularAirportDecorationPiece(piece_type)) return true;
+	/* The base sets have only the two open-front small-hangar views. The two
+	 * closed-back rotations come from this fork's fallback airport sprites. */
+	if (IsLegacySmallHangarPiece(piece_type)) return rotation == 1 || rotation == 2;
 	if ((rotation % 2) == 0) return false;
 
 	switch (piece_type) {

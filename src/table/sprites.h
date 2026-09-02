@@ -271,7 +271,9 @@ static const SpriteID SPR_AIRPORT_FUEL_FARM       = SPR_AIRPORTX_BASE + 17;
 static const SpriteID SPR_AIRPORT_CAR_PARK        = SPR_AIRPORTX_BASE + 18;
 static const SpriteID SPR_AIRPORT_CAR_PARK_OTHER  = SPR_AIRPORTX_BASE + 19;
 static const SpriteID SPR_AIRPORT_FIRE_STATION_OTHER = SPR_AIRPORTX_BASE + 20;
-static const uint16_t AIRPORTX_SPRITE_COUNT = 21;
+static const SpriteID SPR_SMALLHANGAR_N            = SPR_AIRPORTX_BASE + 21;
+static const SpriteID SPR_SMALLHANGAR_E            = SPR_AIRPORTX_BASE + 22;
+static const uint16_t AIRPORTX_SPRITE_COUNT = 23;
 /** @} */
 
 /** @{

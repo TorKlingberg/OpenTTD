@@ -776,9 +776,8 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	}
 
 	/* Pieces that exist only as this fork's own graphics follow the setting for them.
-	 * Rotation is not checked here: the mirrored orientation of a piece the base sets
-	 * draw for one axis only is what a rotated template has always produced, so the
-	 * setting governs which pieces the builder offers, not how a layout may be turned. */
+	 * This shared helper handles whole-piece gating. Command entry points separately
+	 * check the final rotation for pieces whose fallback dependency is directional. */
 	if (IsNewAirportGraphicsPiece(gfx) && !AreNewAirportGraphicsAvailable()) {
 		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
 	}
@@ -1079,6 +1078,10 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
+	if (IsNewAirportGraphicsPiece(gfx, rotation) && !AreNewAirportGraphicsAvailable()) {
+		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
+	}
+
 	Station *st = nullptr;
 	bool is_modular_replace = false;
 	bool is_noop_rebuild = false;

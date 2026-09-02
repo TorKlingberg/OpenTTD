@@ -151,15 +151,12 @@ inline bool IsLegacySmallHangarPiece(ModularAirportPieceID piece_type)
 	}
 }
 
-/**
- * Check if a piece is non-rotatable (e.g. 3-tile small terminal buildings or small hangars).
- */
+/** Check if a compound piece cannot be rotated as part of a template. */
 inline bool IsNonRotatableModularPiece(ModularAirportPieceID piece_type)
 {
 	return piece_type == APT_SMALL_BUILDING_1 ||
 	       piece_type == APT_SMALL_BUILDING_2 ||
-	       piece_type == APT_SMALL_BUILDING_3 ||
-	       IsLegacySmallHangarPiece(piece_type);
+	       piece_type == APT_SMALL_BUILDING_3;
 }
 
 /** Whether a piece is one of the metadata-only modular airport decorations. */

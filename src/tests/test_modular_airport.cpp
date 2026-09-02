@@ -737,8 +737,27 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	_settings_game.station.new_airport_graphics = false;
 	CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway).Failed());
 	CHECK(!IsTileType(runway_base, TileType::Station));
+	const TileIndex closed_hangar = TileXY(20, 20);
+	CHECK(CmdBuildModularAirportTile(DoCommandFlag::Execute, closed_hangar, APT_SMALL_DEPOT_SE,
+			NEW_STATION, false, 2, 0x0F, false, false).Failed());
+	CHECK(!IsTileType(closed_hangar, TileType::Station));
 
 	_settings_game.station.new_airport_graphics = true;
+	ModularTemplatePlacementData hangar;
+	hangar.width = 1;
+	hangar.height = 1;
+	hangar.rotation = 2;
+	hangar.tiles = {{0, 0, APT_SMALL_DEPOT_SE, 0}};
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, closed_hangar, StationID::Invalid(), false, hangar);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *hangar_station = Station::GetByTile(closed_hangar);
+	REQUIRE(hangar_station != nullptr);
+	const ModularAirportTileData *hangar_data = hangar_station->airport.GetModularTileData(closed_hangar);
+	REQUIRE(hangar_data != nullptr);
+	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
+	CHECK(hangar_data->rotation == 2);
+
 	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway);
 	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
 	REQUIRE(result.Succeeded());
@@ -1773,14 +1792,14 @@ TEST_CASE("ModularAirportSmallHangarDrawing")
 	static constexpr HangarCase cases[] = {
 		{0, {{{SPR_AIRFIELD_HANGAR_FRONT, {14, 0, 0}, {2, 17, 28}},
 		      {SPR_AIRFIELD_HANGAR_REAR,   { 0, 0, 0}, {2, 17, 28}}}}, 2},
-		{1, {{{SPR_MIRROR_AIRFIELD_HANGAR_FRONT, {0, 14, 0}, {16, 2, 28}}, {}}}, 1},
-		{2, {{{SPR_AIRFIELD_HANGAR_FRONT, {14, 0, 0}, {2, 16, 28}}, {}}}, 1},
+		{1, {{{SPR_SMALLHANGAR_E, {14, 0, 0}, {2, 16, 28}}, {}}}, 1},
+		{2, {{{SPR_SMALLHANGAR_N, {14, 0, 0}, {2, 16, 28}}, {}}}, 1},
 		{3, {{{SPR_MIRROR_AIRFIELD_HANGAR_FRONT, {0, 14, 0}, {17, 2, 28}},
 		      {SPR_MIRROR_AIRFIELD_HANGAR_REAR,  {0,  0, 0}, {17, 2, 28}}}}, 2},
 	};
 
-	/* The near doorway is a separate sprite in the base set. It is visible in the
-	 * two down-facing views and hidden behind the body in the two up-facing views. */
+	/* The base set provides the open body and side wall used by the two down-facing
+	 * views. The two up-facing views use dedicated closed-back sprites. */
 	for (const HangarCase &c : cases) {
 		CAPTURE(c.rotation);
 		const DrawTileSprites *layout = GetModularHangarTileLayout(c.rotation, true);
@@ -2135,6 +2154,10 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_NEAR_END, 1));
 		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 1));
 		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_FAR_END, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 1));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 2));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 3));
 
 		/* Everything the base sets draw for every rotation is untouched by the setting. */
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_APRON, 0));

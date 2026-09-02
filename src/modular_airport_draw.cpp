@@ -59,9 +59,9 @@ static const DrawTileSpriteSpan _station_display_modular_hangar_ne(
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_se(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_small_depot_se);
 
-/* The stock small-hangar composition splits the body from the near doorway. The
- * opposite direction uses the body alone, with the doorway on the hidden far face;
- * mirroring the selected base set's pixels supplies the other axis. */
+/* The stock small-hangar composition splits the open body from its side-wall
+ * fragment. Mirroring those base-set pixels supplies the other down-facing view.
+ * The base set has no closed-back rotations, so openttd.grf supplies those two. */
 static const DrawTileSeqStruct _station_display_modular_small_hangar_sw_seq[] = {
 	{ 0, 14, 0, 17,  2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
 	{ 0,  0, 0, 17,  2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_REAR  | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
@@ -70,13 +70,13 @@ static const DrawTileSpriteSpan _station_display_modular_small_hangar_sw(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_sw_seq);
 
 static const DrawTileSeqStruct _station_display_modular_small_hangar_nw_seq[] = {
-	{14, 0, 0, 2, 16, 28, {SPR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+	{14, 0, 0, 2, 16, 28, {SPR_SMALLHANGAR_N | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
 };
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_nw(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_nw_seq);
 
 static const DrawTileSeqStruct _station_display_modular_small_hangar_ne_seq[] = {
-	{0, 14, 0, 16, 2, 28, {SPR_MIRROR_AIRFIELD_HANGAR_FRONT | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
+	{14, 0, 0, 2, 16, 28, {SPR_SMALLHANGAR_E | (1U << PALETTE_MODIFIER_COLOUR), PAL_NONE}},
 };
 static const DrawTileSpriteSpan _station_display_modular_small_hangar_ne(
 	PalSpriteID{SPR_AIRPORT_APRON, PAL_NONE}, _station_display_modular_small_hangar_ne_seq);
