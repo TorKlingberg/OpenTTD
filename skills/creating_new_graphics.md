@@ -195,9 +195,12 @@ Update all linked counts and constants together:
 4. If the PNG is new rather than an edit to an existing sheet, add it to
    `media/baseset/openttd/CMakeLists.txt`.
 
-For example, the airport decoration work appended five entries at offsets `+15..+19` and raised
-`AIRPORTX_SPRITE_COUNT` from 15 to 20. Two entries represent the car park's two road-facing
-entrance orientations.
+For example, the airport decoration work appended eight entries at offsets `+15..+22` and raised
+`AIRPORTX_SPRITE_COUNT` from 15 to 23. Two of them represent the car park's two road-facing
+entrance orientations, one the fire station's second appliance-bay facing, and the last two the
+small hangar's closed-back views. Read the current end of the range out of `src/table/sprites.h`
+rather than trusting this example: appending at a stale offset silently overwrites a sprite that
+is already there.
 
 Use a sortable world-sprite layout for a structure with height, and give its bounding box the
 real occupied footprint and sufficient Z extent. A flat marking or light array still needs a
