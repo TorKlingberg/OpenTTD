@@ -151,6 +151,27 @@ inline bool IsLegacySmallHangarPiece(ModularAirportPieceID piece_type)
 	}
 }
 
+/**
+ * Resolve the direction a hangar is drawn in.
+ *
+ * Current callers use the canonical SE piece ID and carry direction in rotation.
+ * Older saves and templates may instead use a directional piece ID, which takes
+ * precedence for compatibility. Keep all drawing and availability checks on this
+ * helper so those encodings cannot disagree about which sprite is used.
+ */
+inline uint8_t GetModularHangarVisualRotation(ModularAirportPieceID piece_type, uint8_t rotation)
+{
+	switch (piece_type) {
+		case APT_DEPOT_SW:
+		case APT_SMALL_DEPOT_SW: return 3;
+		case APT_DEPOT_NW:
+		case APT_SMALL_DEPOT_NW: return 2;
+		case APT_DEPOT_NE:
+		case APT_SMALL_DEPOT_NE: return 1;
+		default: return rotation % 4;
+	}
+}
+
 /** Check if a compound piece cannot be rotated as part of a template. */
 inline bool IsNonRotatableModularPiece(ModularAirportPieceID piece_type)
 {
@@ -577,6 +598,7 @@ void EnsureModularHeliTilesValid(const Station *st);
 
 bool IsModernModularPiece(ModularAirportPieceID piece_type);
 TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type);
+/** Whether a piece/rotation uses a stored bitmap controlled by new_airport_graphics. */
 bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation = 0);
 bool AreNewAirportGraphicsAvailable();
 

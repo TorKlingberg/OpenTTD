@@ -316,13 +316,6 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 	}
 
-	/* Without the mirrored runway sprites, legacy (small) runway pieces only support
-	 * 0/180-degree template rotation. */
-	if ((data.rotation & 1) != 0 && !AreNewAirportGraphicsAvailable()) {
-		for (const auto &t : data.tiles) {
-			if (IsLegacySmallRunwayPiece(t.piece_type)) return CMD_ERROR;
-		}
-	}
 	if (data.tiles.empty() || data.tiles.size() > MAX_TEMPLATE_TILES) {
 		return CommandCost(STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE);
 	}

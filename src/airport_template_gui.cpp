@@ -656,12 +656,6 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr || !templ->is_available) return false;
 		if (templ->HasNonRotatablePieces()) return false;
-		if (templ->HasLegacySmallRunwayPieces() && !AreNewAirportGraphicsAvailable()) {
-			this->selected_rotation ^= 2;
-			this->UpdateLoadingPlacementPreview();
-			this->SetDirty();
-			return true;
-		}
 
 		this->selected_rotation = (this->selected_rotation + delta + 4) & 3;
 		this->UpdateLoadingPlacementPreview();
@@ -677,10 +671,6 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 		this->SetWidgetDisabledState(WID_TM_ROTATE_LEFT, disable);
 		this->SetWidgetDisabledState(WID_TM_ROTATE_RIGHT, disable);
 		if (disable) this->selected_rotation = 0;
-		if (!disable && templ != nullptr && templ->HasLegacySmallRunwayPieces() &&
-				!AreNewAirportGraphicsAvailable() && (this->selected_rotation & 1) != 0) {
-			this->selected_rotation &= 2;
-		}
 	}
 
 	void StartSavePickMode()

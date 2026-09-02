@@ -775,9 +775,9 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
 	}
 
-	/* Pieces that exist only as this fork's own graphics follow the setting for them.
+	/* Pieces backed by this fork's stored airport bitmaps follow the setting for them.
 	 * This shared helper handles whole-piece gating. Command entry points separately
-	 * check the final rotation for pieces whose fallback dependency is directional. */
+	 * check the final rotation for the small hangar's closed-back views. */
 	if (IsNewAirportGraphicsPiece(gfx) && !AreNewAirportGraphicsAvailable()) {
 		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
 	}

@@ -363,8 +363,9 @@ public:
 
 	/**
 	 * Checks whether a modular piece can be built right now.
-	 * Some pieces only become available once large airports do, and the decorative
-	 * pieces are only offered while the "new airport graphics" setting is on.
+	 * Some pieces only become available once large airports do. Decorative pieces
+	 * backed by stored bitmaps are only offered while the "new airport graphics"
+	 * setting is on; runtime mirrors of base-set sprites are unaffected.
 	 * @param piece The piece to check.
 	 * @return True if and only if the piece can be built now.
 	 */

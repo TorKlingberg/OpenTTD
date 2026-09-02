@@ -451,7 +451,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
 	if (gfx == UINT16_MAX) return false;
 
-	/* The decorations are only offered while the new airport graphics are on. */
+	/* Bitmap-backed decorations are only offered while their graphics are on. */
 	if (::IsNewAirportGraphicsPiece(gfx) && !::AreNewAirportGraphicsAvailable()) return false;
 
 	return !::IsModernModularPiece(gfx) || TimerGameCalendar::year >= ::GetModularPieceMinYear(gfx);

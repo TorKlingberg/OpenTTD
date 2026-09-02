@@ -206,7 +206,7 @@ static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PI
  * Whether a piece cannot be built right now, so its button is shown disabled.
  *
  * Two gates gather here: a modern piece is unavailable until the year the large
- * airport arrives, and a piece that only exists as this fork's own graphics is
+ * airport arrives, and a piece backed by a stored openttd.grf bitmap is
  * unavailable while the setting for those is off.
  *
  * @param gfx Piece to check.
@@ -1018,14 +1018,9 @@ public:
 		if (supports_drag) {
 			/* Enable drag-building */
 			if (is_runway) {
-				/* The legacy (small) runway along the other axis is one of the pieces the
-				 * new graphics add, so without them it drags on the stock axis only. */
-				if (this->selected_piece == 2 && !AreNewAirportGraphicsAvailable()) {
-					VpStartPlaceSizing(tile, VPM_FIX_Y, DDSP_BUILD_STATION);
-				} else {
-					/* Linear pieces: allow drag in X or Y direction only */
-					VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
-				}
+				/* Linear pieces: allow drag in X or Y direction only. The legacy runway's
+				 * other axis is produced by runtime mirrors of the selected base set. */
+				VpStartPlaceSizing(tile, VPM_X_OR_Y, DDSP_BUILD_STATION);
 			} else {
 				/* Rectangular pieces: allow drag in both X and Y */
 				VpStartPlaceSizing(tile, VPM_X_AND_Y, DDSP_BUILD_STATION);
@@ -1437,8 +1432,16 @@ class BuildModularHangarPickerWindow : public PickerWindowBase {
 	{
 		const ModularAirportPieceID gfx = this->large_hangar ? APT_DEPOT_SE : APT_SMALL_DEPOT_SE;
 		if (IsModularPieceLocked(gfx, _modular_hangar_rotation)) _modular_hangar_rotation = 0;
+
+		/* The closed-back small hangars are stored openttd.grf bitmaps. Hide their
+		 * whole row when disabled; the open-front stock view and runtime mirror remain. */
+		const bool show_bitmap_row = this->large_hangar || AreNewAirportGraphicsAvailable();
+		if (this->GetWidget<NWidgetStacked>(WID_MAHP_BITMAP_ROW)->SetDisplayedPlane(show_bitmap_row ? 0 : SZSP_NONE)) {
+			this->ReInit();
+		}
 		for (WidgetID w = WID_MAHP_DIR_NW; w <= WID_MAHP_DIR_SE; w++) {
 			const uint8_t rotation = _widget_to_rot[w - WID_MAHP_DIR_NW];
+			if (!show_bitmap_row && (rotation == 1 || rotation == 2)) continue;
 			this->SetWidgetDisabledState(w, IsModularPieceLocked(gfx, rotation));
 			this->SetWidgetLoweredState(w, rotation == _modular_hangar_rotation);
 		}
@@ -1529,13 +1532,15 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_hangar
 			SetStringTip(STR_STATION_BUILD_MODULAR_AIRPORT_HANGAR_PICKER_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS),
 	EndContainer(),
 	NWidget(WWT_PANEL, Colours::DarkGreen),
-		NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1), SetPadding(WidgetDimensions::unscaled.picker),
-			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
+		NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0), SetPIPRatio(1, 0, 1), SetPadding(WidgetDimensions::unscaled.picker),
+			NWidget(NWID_SELECTION, Colours::Invalid, WID_MAHP_BITMAP_ROW),
+				NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MAHP_DIR_NW), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MAHP_DIR_SW), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
-			EndContainer(),
-			NWidget(NWID_VERTICAL), SetPIP(0, WidgetDimensions::unscaled.vsep_normal, 0),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MAHP_DIR_NE), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
+				EndContainer(),
+			EndContainer(),
+			NWidget(NWID_HORIZONTAL_LTR), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MAHP_DIR_SW), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
 				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MAHP_DIR_SE), SetFill(0, 0), SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_HANGAR),
 			EndContainer(),
 		EndContainer(),
@@ -1560,14 +1565,26 @@ class BuildModularCosmeticPickerWindow : public PickerWindowBase {
 public:
 	void RefreshAvailability()
 	{
-		/* Disable pieces gated behind a future year or a switched-off graphics setting. */
+		/* Bitmap-backed decorations disappear entirely with their setting. The two
+		 * selection wrappers let the fixed nested layout contract around the remaining
+		 * base-set pieces and runtime-mirrored small terminal. */
+		const bool show_bitmap_pieces = AreNewAirportGraphicsAvailable();
+		bool reinit = this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_FIRE_GROUP)->SetDisplayedPlane(show_bitmap_pieces ? 0 : SZSP_NONE);
+		reinit |= this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_ROW)->SetDisplayedPlane(show_bitmap_pieces ? 0 : SZSP_NONE);
+		if (reinit) this->ReInit();
+
+		/* Disable visible pieces gated behind a future year. */
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+			if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 			this->SetWidgetDisabledState(WID_MACP_PIECE_0 + i,
 					IsModularPieceLocked(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation));
 		}
-		if (this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
-			/* Selected piece is locked; pick the first available one. */
+		const CosmeticPiece &selected = _cosmetic_pieces[_modular_cosmetic_piece];
+		if ((!show_bitmap_pieces && IsNewAirportGraphicsPiece(selected.apt_gfx, selected.rotation)) ||
+				this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
+			/* Selected piece is hidden or locked; pick the first visible, available one. */
 			for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+				if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 				if (!this->IsWidgetDisabled(WID_MACP_PIECE_0 + i)) {
 					_modular_cosmetic_piece = static_cast<uint8_t>(i);
 					break;
@@ -1577,6 +1594,7 @@ public:
 			UpdateModularCosmeticSelectSize();
 		}
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
+			if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 			this->RaiseWidget(WID_MACP_PIECE_0 + i);
 		}
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
@@ -1741,25 +1759,31 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
 			EndContainer(),
 			/* Four pieces per row, with each three-tile small terminal counting as two.
-			 * The mirrored terminal ends this row so that it sits directly below the
-			 * unmirrored one that ends the row above. */
+			 * The stored-bitmap fire stations disappear as a group when their setting is
+			 * off, leaving the runtime-mirrored terminal centred on this row. */
 			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_11), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_12), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(1, 0), SetMinimalSize(120, 0),
+				NWidget(NWID_SELECTION, Colours::Invalid, WID_MACP_BITMAP_FIRE_GROUP),
+					NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0),
+						NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_11), SetFill(0, 0),
+							SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
+						NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_12), SetFill(0, 0),
+							SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
+					EndContainer(),
+				EndContainer(),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(0, 0), SetMinimalSize(120, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
 			EndContainer(),
-			NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_14), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_15), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_16), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_17), SetFill(0, 0),
-					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
+			NWidget(NWID_SELECTION, Colours::Invalid, WID_MACP_BITMAP_ROW),
+				NWidget(NWID_HORIZONTAL), SetPIP(0, WidgetDimensions::unscaled.hsep_normal, 0), SetPIPRatio(1, 0, 1),
+					NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_14), SetFill(0, 0),
+						SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL),
+					NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_15), SetFill(0, 0),
+						SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM),
+					NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_16), SetFill(0, 0),
+						SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
+					NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_17), SetFill(0, 0),
+						SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK),
+				EndContainer(),
 			EndContainer(),
 		EndContainer(),
 	EndContainer(),

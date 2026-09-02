@@ -722,8 +722,8 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 		CHECK(GetStationGfx(base) == map_gfx);
 	}
 
-	/* A quarter-turned template needs the mirrored small-runway sprites. The
-	 * setting gates that turn, while 0/180-degree placement remains legacy-safe. */
+	/* A quarter-turned legacy runway uses runtime mirrors of the active base set,
+	 * so the stored-bitmap graphics setting must not gate it. */
 	ModularTemplatePlacementData runway;
 	runway.width = 3;
 	runway.height = 1;
@@ -735,29 +735,6 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	};
 	const TileIndex runway_base = TileXY(12, 12);
 	_settings_game.station.new_airport_graphics = false;
-	CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway).Failed());
-	CHECK(!IsTileType(runway_base, TileType::Station));
-	const TileIndex closed_hangar = TileXY(20, 20);
-	CHECK(CmdBuildModularAirportTile(DoCommandFlag::Execute, closed_hangar, APT_SMALL_DEPOT_SE,
-			NEW_STATION, false, 2, 0x0F, false, false).Failed());
-	CHECK(!IsTileType(closed_hangar, TileType::Station));
-
-	_settings_game.station.new_airport_graphics = true;
-	ModularTemplatePlacementData hangar;
-	hangar.width = 1;
-	hangar.height = 1;
-	hangar.rotation = 2;
-	hangar.tiles = {{0, 0, APT_SMALL_DEPOT_SE, 0}};
-	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, closed_hangar, StationID::Invalid(), false, hangar);
-	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
-	REQUIRE(result.Succeeded());
-	Station *hangar_station = Station::GetByTile(closed_hangar);
-	REQUIRE(hangar_station != nullptr);
-	const ModularAirportTileData *hangar_data = hangar_station->airport.GetModularTileData(closed_hangar);
-	REQUIRE(hangar_data != nullptr);
-	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
-	CHECK(hangar_data->rotation == 2);
-
 	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, runway_base, StationID::Invalid(), false, runway);
 	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
 	REQUIRE(result.Succeeded());
@@ -774,6 +751,46 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 		CHECK(runway_data->piece_type == expected_runway_pieces[y]);
 		CHECK(runway_data->rotation == 1);
 	}
+
+	/* The mirrored open-front small hangar is likewise available, while a
+	 * closed-back view stored in openttd.grf remains gated. */
+	const TileIndex mirrored_hangar = TileXY(18, 20);
+	result = CmdBuildModularAirportTile(DoCommandFlag::Execute, mirrored_hangar, APT_SMALL_DEPOT_SE,
+			NEW_STATION, false, 3, 0x0F, false, false);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *mirrored_hangar_station = Station::GetByTile(mirrored_hangar);
+	REQUIRE(mirrored_hangar_station != nullptr);
+	const ModularAirportTileData *mirrored_hangar_data = mirrored_hangar_station->airport.GetModularTileData(mirrored_hangar);
+	REQUIRE(mirrored_hangar_data != nullptr);
+	CHECK(mirrored_hangar_data->rotation == 3);
+
+	const TileIndex closed_hangar = TileXY(20, 20);
+	CHECK(CmdBuildModularAirportTile(DoCommandFlag::Execute, closed_hangar, APT_SMALL_DEPOT_SE,
+			NEW_STATION, false, 2, 0x0F, false, false).Failed());
+	CHECK(!IsTileType(closed_hangar, TileType::Station));
+	/* Directional compatibility IDs override their rotation field and must reach
+	 * the same bitmap gate as the equivalent canonical encoding. */
+	const TileIndex directional_closed_hangar = TileXY(22, 20);
+	CHECK(CmdBuildModularAirportTile(DoCommandFlag::Execute, directional_closed_hangar, APT_SMALL_DEPOT_NE,
+			NEW_STATION, false, 0, 0x0F, false, false).Failed());
+	CHECK(!IsTileType(directional_closed_hangar, TileType::Station));
+
+	_settings_game.station.new_airport_graphics = true;
+	ModularTemplatePlacementData hangar;
+	hangar.width = 1;
+	hangar.height = 1;
+	hangar.rotation = 2;
+	hangar.tiles = {{0, 0, APT_SMALL_DEPOT_SE, 0}};
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, closed_hangar, StationID::Invalid(), false, hangar);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *hangar_station = Station::GetByTile(closed_hangar);
+	REQUIRE(hangar_station != nullptr);
+	const ModularAirportTileData *hangar_data = hangar_station->airport.GetModularTileData(closed_hangar);
+	REQUIRE(hangar_data != nullptr);
+	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
+	CHECK(hangar_data->rotation == 2);
 
 	_current_company = saved_company;
 	_settings_game.station.distant_join_stations = saved_distant_join;
@@ -2136,7 +2153,7 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(GetModularPieceMinYear(APT_MODULAR_CAR_PARK) == AirportSpec::Get(AT_LARGE)->min_year);
 	}
 
-	SECTION("New Graphics Pieces") {
+	SECTION("Stored Bitmap Graphics Pieces") {
 		/* The decorations need the new graphics whichever way round they are placed. */
 		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FIRE_STATION, 0));
 		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FIRE_STATION, 1));
@@ -2144,20 +2161,22 @@ TEST_CASE("ModularAirportMetadata")
 		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_FUEL_FARM, 0));
 		CHECK(IsNewAirportGraphicsPiece(APT_MODULAR_CAR_PARK, 1));
 
-		/* The base sets draw these along one axis only, so only the mirrored
-		 * orientation of them is new. */
+		/* Runtime mirrors of base-set sprites are independent of the bitmap setting. */
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_2, 0));
-		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_1, 1));
-		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_2, 1));
-		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_3, 3));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_1, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_2, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_BUILDING_3, 3));
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 0));
-		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_NEAR_END, 1));
-		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 1));
-		CHECK(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_FAR_END, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_NEAR_END, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_MIDDLE, 1));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_RUNWAY_SMALL_FAR_END, 1));
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 0));
 		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 1));
 		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 2));
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SE, 3));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_NE, 0));
+		CHECK(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_NW, 0));
+		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_SMALL_DEPOT_SW, 0));
 
 		/* Everything the base sets draw for every rotation is untouched by the setting. */
 		CHECK_FALSE(IsNewAirportGraphicsPiece(APT_APRON, 0));

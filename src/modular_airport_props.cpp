@@ -120,12 +120,13 @@ TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 }
 
 /**
- * Whether a piece needs the graphics this fork adds on top of the base sets.
+ * Whether a piece needs one of the bitmap sprites added to openttd.grf.
  *
- * Two kinds do: the metadata-only decorations, which have sprites of their own,
- * and the pieces the base sets only draw along the X axis, whose other axis is
- * their own sprite mirrored. The latter are told apart by their rotation, so an
- * ordinary X-axis small terminal or small runway is not one of them.
+ * The metadata-only decorations have sprites of their own. The base sets also
+ * lack the two closed-back small-hangar views, so those rotations use bitmaps
+ * from openttd.grf. Runtime mirrors of base-set sprites are deliberately not
+ * included: they follow the selected base set and remain available regardless
+ * of this setting.
  *
  * @param piece_type Piece to check.
  * @param rotation Rotation the piece is placed in.
@@ -135,25 +136,17 @@ bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotatio
 {
 	if (IsModularAirportDecorationPiece(piece_type)) return true;
 	/* The base sets have only the two open-front small-hangar views. The two
-	 * closed-back rotations come from this fork's fallback airport sprites. */
-	if (IsLegacySmallHangarPiece(piece_type)) return rotation == 1 || rotation == 2;
-	if ((rotation % 2) == 0) return false;
-
-	switch (piece_type) {
-		case APT_SMALL_BUILDING_1:
-		case APT_SMALL_BUILDING_2:
-		case APT_SMALL_BUILDING_3:
-		case APT_RUNWAY_SMALL_NEAR_END:
-		case APT_RUNWAY_SMALL_MIDDLE:
-		case APT_RUNWAY_SMALL_FAR_END:
-			return true;
-		default:
-			return false;
+	 * closed-back rotations come from this fork's fallback airport sprites. Use
+	 * the renderer's compatibility mapping for old directional piece IDs. */
+	if (IsLegacySmallHangarPiece(piece_type)) {
+		const uint8_t visual_rotation = GetModularHangarVisualRotation(piece_type, rotation);
+		return visual_rotation == 1 || visual_rotation == 2;
 	}
+	return false;
 }
 
 /**
- * Whether the pieces that need this fork's own graphics may be built.
+ * Whether pieces backed by this fork's stored airport bitmaps may be built.
  *
  * Only the setting for them, deliberately: the modular airports setting has
  * never gated a command, and folding it in here would refuse those pieces with

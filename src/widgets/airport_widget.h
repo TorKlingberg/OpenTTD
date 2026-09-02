@@ -90,6 +90,7 @@ enum ModularAirportTemplateManagerWidgets : WidgetID {
 /** Widgets of the #BuildModularHangarPickerWindow class. */
 enum ModularAirportHangarPickerWidgets : WidgetID {
 	WID_MAHP_CAPTION,   ///< Caption.
+	WID_MAHP_BITMAP_ROW, ///< Row of hangar directions backed by stored bitmap sprites.
 	WID_MAHP_DIR_NW,    ///< NW hangar direction button.
 	WID_MAHP_DIR_NE,    ///< NE hangar direction button.
 	WID_MAHP_DIR_SW,    ///< SW hangar direction button.
@@ -99,6 +100,8 @@ enum ModularAirportHangarPickerWidgets : WidgetID {
 /** Widgets of the #BuildModularCosmeticPickerWindow class. */
 enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_CAPTION,
+	WID_MACP_BITMAP_FIRE_GROUP, ///< Stored-bitmap fire-station buttons, hidden with their setting.
+	WID_MACP_BITMAP_ROW,        ///< Stored-bitmap decoration row, hidden with its setting.
 	WID_MACP_PIECE_0,  ///< Terminal button.
 	WID_MACP_PIECE_1,  ///< Terminal (alternate orientation) button.
 	WID_MACP_PIECE_2,  ///< Terminal (other) button.
@@ -110,9 +113,9 @@ enum ModularAirportCosmeticPickerWidgets : WidgetID {
 	WID_MACP_PIECE_8,  ///< Radio tower button.
 	WID_MACP_PIECE_9,  ///< Flag on grass button.
 	WID_MACP_PIECE_10, ///< Small terminal (3-tile) button.
-	WID_MACP_PIECE_11, ///< Small terminal (3-tile) button, mirrored onto the other axis.
-	WID_MACP_PIECE_12, ///< Airport fire station button.
-	WID_MACP_PIECE_13, ///< Airport fire station button, mirrored.
+	WID_MACP_PIECE_11, ///< Airport fire station button.
+	WID_MACP_PIECE_12, ///< Airport fire station button, other orientation.
+	WID_MACP_PIECE_13, ///< Small terminal (3-tile) button, mirrored onto the other axis.
 	WID_MACP_PIECE_14, ///< Cargo terminal button.
 	WID_MACP_PIECE_15, ///< Fuel farm button.
 	WID_MACP_PIECE_16, ///< Multi-storey car park button.

@@ -73,14 +73,6 @@ bool AirportTemplate::HasNonRotatablePieces() const
 	return false;
 }
 
-bool AirportTemplate::HasLegacySmallRunwayPieces() const
-{
-	for (const auto &tile : this->tiles) {
-		if (IsLegacySmallRunwayPiece(tile.piece_type)) return true;
-	}
-	return false;
-}
-
 void AirportTemplate::CheckAvailability()
 {
 	this->is_available = true;
