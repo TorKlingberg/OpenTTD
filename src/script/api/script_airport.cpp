@@ -570,14 +570,30 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 
 	ModularTemplatePlacementData data;
 	EnforcePrecondition(false, ParseModularLayout(layout, data.tiles));
-	/* Checked here rather than in the parser: previewing a layout the current year
-	 * cannot build yet is a legitimate thing for a script to want. */
-	for (const ModularTemplatePlacementTile &t : data.tiles) {
-		EnforcePrecondition(false, IsModularPieceAvailable(GetModularPieceForGfx(t.piece_type)));
-	}
 	data.width = static_cast<uint16_t>(width);
 	data.height = static_cast<uint16_t>(height);
 	data.rotation = static_cast<uint8_t>(rotation);
+
+	/* Checked here rather than in the parser: previewing a layout the current year
+	 * cannot build yet is a legitimate thing for a script to want.
+	 *
+	 * The command rotates every tile before checking it, and rotating a tile adds
+	 * the layout's turn to the tile's own, so the rotation a piece is really placed
+	 * in is the sum of the two. Ask about that one, or a small hangar authored in a
+	 * view the base set draws would be refused for the view it is turned out of.
+	 * Rotation also swaps some piece types, so the command can carry a different
+	 * type into that check than the unrotated one asked about here. It answers the
+	 * same either way: the building 1/2 pair are both modern and every modern piece
+	 * shares one year, and the small runway's two ends are both legacy. The swap
+	 * that would not survive this is the directional hangars -- turning
+	 * APT_SMALL_DEPOT_SW gives the closed-back NW view, which the graphics setting
+	 * gates -- and it cannot arise because a script names only the canonical
+	 * hangars, whose facing rotation carries and which rotation therefore leaves
+	 * alone. A named piece pointing at a directional hangar would break that. */
+	for (const ModularTemplatePlacementTile &t : data.tiles) {
+		const uint8_t placed_rotation = (t.rotation + data.rotation) & 3;
+		EnforcePrecondition(false, ::IsModularPieceBuildable(t.piece_type, placed_rotation));
+	}
 
 	return ScriptObject::Command<Commands::PlaceModularAirportTemplate>::Do(tile,
 			(ScriptStation::IsValidStation(station_id) ? station_id : StationID::Invalid()),

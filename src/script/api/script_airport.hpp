@@ -528,6 +528,9 @@ public:
 	 * @pre layout.len() > 0 && layout.len() % MLF_STRIDE == 0.
 	 * @pre layout.len() / MLF_STRIDE <= 128.
 	 * @pre station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id).
+	 * @pre Every tile's piece is available in the rotation it is placed in, which
+	 *  is the tile's own rotation plus the layout's; see
+	 *  IsModularPieceAvailableInRotation.
 	 * @game @pre ScriptCompanyMode::IsValid().
 	 * @exception ScriptError::ERR_AREA_NOT_CLEAR
 	 * @exception ScriptError::ERR_FLAT_LAND_REQUIRED
@@ -540,10 +543,6 @@ public:
 	 *  layout's own rotation is a separate thing and turns every tile, which
 	 *  these three graphics have no form for, so a layout containing one must be
 	 *  placed with rotation 0. Both fail if you try.
-	 * @note A tile's availability is checked in rotation 0, so a piece that is
-	 *  available there but gated in the rotation the layout gives it -- today
-	 *  MP_SMALL_HANGAR in rotation 1 or 2 with the "new airport graphics" setting
-	 *  off -- is refused by the command rather than by a precondition.
 	 */
 	static bool PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout);
 
