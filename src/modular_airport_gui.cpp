@@ -1565,11 +1565,12 @@ class BuildModularCosmeticPickerWindow : public PickerWindowBase {
 public:
 	void RefreshAvailability()
 	{
-		/* Bitmap-backed decorations disappear entirely with their setting. The two
-		 * selection wrappers let the fixed nested layout contract around the remaining
-		 * base-set pieces and runtime-mirrored small terminal. */
+		/* Bitmap-backed decorations disappear entirely with their setting. Keep the
+		 * fire-station group's two-button footprint as an empty plane so the mirrored
+		 * small terminal stays directly below its unmirrored counterpart; the final
+		 * bitmap-only row still disappears so the window contracts vertically. */
 		const bool show_bitmap_pieces = AreNewAirportGraphicsAvailable();
-		bool reinit = this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_FIRE_GROUP)->SetDisplayedPlane(show_bitmap_pieces ? 0 : SZSP_NONE);
+		bool reinit = this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_FIRE_GROUP)->SetDisplayedPlane(show_bitmap_pieces ? 0 : 1);
 		reinit |= this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_ROW)->SetDisplayedPlane(show_bitmap_pieces ? 0 : SZSP_NONE);
 		if (reinit) this->ReInit();
 
@@ -1769,8 +1770,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_build_modular_cosmet
 						NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_12), SetFill(0, 0),
 							SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION),
 					EndContainer(),
+					NWidget(NWID_SPACER),
 				EndContainer(),
-				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(0, 0), SetMinimalSize(120, 0),
+				NWidget(WWT_TEXTBTN, Colours::Grey, WID_MACP_PIECE_13), SetFill(1, 0), SetMinimalSize(120, 0),
 					SetToolTip(STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3),
 			EndContainer(),
 			NWidget(NWID_SELECTION, Colours::Invalid, WID_MACP_BITMAP_ROW),
