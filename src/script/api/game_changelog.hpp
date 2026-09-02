@@ -30,6 +30,7 @@
  * \li GSAirport::GetModularPieceRotation
  * \li GSAirport::GetModularRunwayFlags
  * \li GSAirport::IsModularPieceAvailable
+ * \li GSAirport::IsModularPieceAvailableInRotation
  * \li GSAirport::GetModularPieceMinYear
  * \li GSAirport::GetModularAirportSafety
  * \li GSAirport::BuildModularAirportTile

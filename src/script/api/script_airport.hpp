@@ -535,8 +535,15 @@ public:
 	 * @exception ScriptError::ERR_STATION_TOO_SPREAD_OUT
 	 * @exception ScriptStation::ERR_STATION_TOO_CLOSE_TO_ANOTHER_STATION
 	 * @return Whether the layout has been/can be built or not.
-	 * @note Small runway pieces cannot be rotated by an odd number of quarter turns,
-	 *  compound pieces require a per-piece rotation of 0, and this fails if you try.
+	 * @note MP_SMALL_TERMINAL_3 covers three tiles that join up along one axis, so
+	 *  its own rotation field selects which axis and accepts 0 or 1 only. The
+	 *  layout's own rotation is a separate thing and turns every tile, which
+	 *  these three graphics have no form for, so a layout containing one must be
+	 *  placed with rotation 0. Both fail if you try.
+	 * @note A tile's availability is checked in rotation 0, so a piece that is
+	 *  available there but gated in the rotation the layout gives it -- today
+	 *  MP_SMALL_HANGAR in rotation 1 or 2 with the "new airport graphics" setting
+	 *  off -- is refused by the command rather than by a precondition.
 	 */
 	static bool PlaceModularAirportLayout(TileIndex tile, StationID station_id, SQInteger rotation, SQInteger width, SQInteger height, Array<SQInteger> &&layout);
 

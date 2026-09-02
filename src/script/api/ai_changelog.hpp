@@ -30,6 +30,7 @@
  * \li AIAirport::GetModularPieceRotation
  * \li AIAirport::GetModularRunwayFlags
  * \li AIAirport::IsModularPieceAvailable
+ * \li AIAirport::IsModularPieceAvailableInRotation
  * \li AIAirport::GetModularPieceMinYear
  * \li AIAirport::GetModularAirportSafety
  * \li AIAirport::BuildModularAirportTile
