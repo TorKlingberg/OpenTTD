@@ -161,8 +161,12 @@ struct CosmeticPiece {
 	ModularAirportPieceID apt_gfx; ///< AirportTiles/NewGRF ID or metadata-only piece for placement and preview.
 	int8_t preview_y_offset; ///< Vertical bias in picker preview; positive moves down. Unused by a multi-tile piece, whose preview is measured.
 	bool is_multi_tile = false; ///< True if this piece places multiple tiles at once.
-	bool use_layout_preview = false; ///< Draw the complete modular tile layout instead of a bare icon.
 	uint8_t rotation = 0; ///< Fixed orientation used by the picker and placement.
+
+	/** Whether the button previews the piece's whole tile layout instead of a bare icon.
+	 * Derived rather than stored, so a decoration added to the table below cannot be
+	 * given the wrong preview by leaving a flag at its default. */
+	bool UsesLayoutPreview() const { return IsModularAirportDecorationPiece(this->apt_gfx); }
 };
 
 struct HelipadPiece {
@@ -183,14 +187,14 @@ static constexpr CosmeticPiece _cosmetic_pieces[] = {
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FLAG_GRASS,       SPR_AIRFIELD_WIND_1,          SPR_FLAT_GRASS_TILE,  APT_GRASS_FENCE_NE_FLAG_2, 0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR,            SPR_AIRPORT_RADAR_5,          0,                    APT_RADAR_FENCE_NE,      0},
 	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_RADAR_GRASS,      SPR_AIRPORT_RADAR_5,          SPR_FLAT_GRASS_TILE,  APT_RADAR_GRASS_FENCE_SW, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_AIRFIELD_TERM_B,          0,                    APT_SMALL_BUILDING_2,     0, true,  false, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     SPR_AIRPORT_FIRE_STATION_OTHER, 0,                  APT_MODULAR_FIRE_STATION, 0, false, true,  1},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     SPR_AIRPORT_FIRE_STATION,     0,                    APT_MODULAR_FIRE_STATION, 0, false, true,  0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_MIRROR_AIRFIELD_TERM_B,   0,                    APT_SMALL_BUILDING_2,     0, true,  false, 1},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL,   SPR_AIRPORT_CARGO_TERMINAL,   0,                    APT_MODULAR_CARGO_TERMINAL, 0, false, true},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM,        SPR_AIRPORT_FUEL_FARM,        0,                    APT_MODULAR_FUEL_FARM, 0, false, true},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         SPR_AIRPORT_CAR_PARK,         0,                    APT_MODULAR_CAR_PARK, 0, false, true, 0},
-	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         SPR_AIRPORT_CAR_PARK_OTHER,   0,                    APT_MODULAR_CAR_PARK, 0, false, true, 1},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_AIRFIELD_TERM_B,          0,                    APT_SMALL_BUILDING_2,     0, true,  0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     0,                            0,                    APT_MODULAR_FIRE_STATION, 0, false, 1},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FIRE_STATION,     0,                            0,                    APT_MODULAR_FIRE_STATION, 0, false, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_SMALL_TERMINAL_3, SPR_MIRROR_AIRFIELD_TERM_B,   0,                    APT_SMALL_BUILDING_2,     0, true,  1},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CARGO_TERMINAL,   0,                            0,                    APT_MODULAR_CARGO_TERMINAL, 0, false, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_FUEL_FARM,        0,                            0,                    APT_MODULAR_FUEL_FARM,    0, false, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         0,                            0,                    APT_MODULAR_CAR_PARK,     0, false, 0},
+	{STR_STATION_BUILD_MODULAR_AIRPORT_PIECE_CAR_PARK,         0,                            0,                    APT_MODULAR_CAR_PARK,     0, false, 1},
 };
 
 static constexpr HelipadPiece _helipad_pieces[] = {
@@ -216,8 +220,7 @@ static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PI
  */
 static bool IsModularPieceLocked(ModularAirportPieceID gfx, uint8_t rotation = 0)
 {
-	if (IsNewAirportGraphicsPiece(gfx, rotation) && !AreNewAirportGraphicsAvailable()) return true;
-	return IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx);
+	return !IsModularPieceBuildable(gfx, rotation);
 }
 
 /**
@@ -1574,18 +1577,18 @@ public:
 		reinit |= this->GetWidget<NWidgetStacked>(WID_MACP_BITMAP_ROW)->SetDisplayedPlane(show_bitmap_pieces ? 0 : SZSP_NONE);
 		if (reinit) this->ReInit();
 
-		/* Disable visible pieces gated behind a future year. */
+		/* Disable every piece that cannot be built, hidden ones included: a piece is
+		 * hidden exactly when its stored bitmaps are switched off, which is also one
+		 * of the reasons it is locked. Marking a hidden button disabled costs nothing
+		 * and lets everything below ask one question instead of two. */
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
-			if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 			this->SetWidgetDisabledState(WID_MACP_PIECE_0 + i,
 					IsModularPieceLocked(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation));
 		}
-		const CosmeticPiece &selected = _cosmetic_pieces[_modular_cosmetic_piece];
-		if ((!show_bitmap_pieces && IsNewAirportGraphicsPiece(selected.apt_gfx, selected.rotation)) ||
-				this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
-			/* Selected piece is hidden or locked; pick the first visible, available one. */
+
+		if (this->IsWidgetDisabled(WID_MACP_PIECE_0 + _modular_cosmetic_piece)) {
+			/* Selected piece is hidden or locked; pick the first available one. */
 			for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
-				if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 				if (!this->IsWidgetDisabled(WID_MACP_PIECE_0 + i)) {
 					_modular_cosmetic_piece = static_cast<uint8_t>(i);
 					break;
@@ -1594,8 +1597,8 @@ public:
 			/* This window is only open while the cosmetic tool is the active one. */
 			UpdateModularCosmeticSelectSize();
 		}
+
 		for (uint i = 0; i < lengthof(_cosmetic_pieces); i++) {
-			if (!show_bitmap_pieces && IsNewAirportGraphicsPiece(_cosmetic_pieces[i].apt_gfx, _cosmetic_pieces[i].rotation)) continue;
 			this->RaiseWidget(WID_MACP_PIECE_0 + i);
 		}
 		this->LowerWidget(WID_MACP_PIECE_0 + _modular_cosmetic_piece);
@@ -1645,7 +1648,7 @@ public:
 			const ModularPiecePreviewBox box = GetModularCompoundPiecePreviewBox(piece.apt_gfx, piece.rotation, _gui_zoom);
 			size.width  = std::max<uint>(size.width,  box.Width()  + WidgetDimensions::scaled.fullbevel.Horizontal() + ScaleGUITrad(4));
 			size.height = std::max<uint>(size.height, box.Height() + WidgetDimensions::scaled.fullbevel.Vertical() + ScaleGUITrad(4));
-		} else if (piece.use_layout_preview) {
+		} else if (piece.UsesLayoutPreview()) {
 			const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(
 					GetModularAirportMapGfx(piece.apt_gfx), piece.apt_gfx, piece.rotation);
 			const ModularPiecePreviewBox box = GetModularTilePreviewBox(t, _gui_zoom);
@@ -1674,7 +1677,7 @@ public:
 			return;
 		}
 
-		if (piece.use_layout_preview) {
+		if (piece.UsesLayoutPreview()) {
 			const DrawTileSprites *t = GetAirportTileLayoutWithModularOverrides(
 					GetModularAirportMapGfx(piece.apt_gfx), piece.apt_gfx, piece.rotation);
 			const ModularPiecePreviewBox box = GetModularTilePreviewBox(t, icon_zoom);

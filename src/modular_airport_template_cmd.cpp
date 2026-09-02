@@ -540,15 +540,11 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	for (size_t i : placement_order) {
 		const ModularTemplatePlacementTile &rt = rotated_tiles[i];
 		TileIndex t = abs_tiles[i];
-		if (IsNewAirportGraphicsPiece(rt.piece_type, rt.rotation) && !AreNewAirportGraphicsAvailable()) {
-			return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
-		}
-
 		Station *tile_st = st;
 		bool tile_replace = false;
 		bool tile_noop = false;
 
-		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, station_to_join, allow_adjacent, tile_st, tile_replace, tile_noop, total, false);
+		ret = BuildModularAirportTile_Check(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, rt.piece_type, rt.rotation, station_to_join, allow_adjacent, tile_st, tile_replace, tile_noop, total, false);
 		if (ret.Failed()) return ret;
 		is_replace[i] = tile_replace;
 		is_noop[i] = tile_noop;

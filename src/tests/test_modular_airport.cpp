@@ -1765,6 +1765,104 @@ TEST_CASE("ModularAirportDecorationDrawing")
 	}
 }
 
+/*
+ * One gate, asked the same way everywhere.
+ *
+ * GetModularPieceUnavailableReason is what the build commands, the builder's greyed-out
+ * buttons and the script API all consult, so the thing worth pinning is that rotation is
+ * part of the question: the small hangar is refused in the two rotations whose sprites
+ * come from openttd.grf and allowed in the two the base set draws, while pieces that are
+ * merely mirrored at runtime are never refused at all.
+ */
+TEST_CASE("ModularAirportPieceAvailabilityGate")
+{
+	/* The year gate reads AirportSpec::Get(AT_LARGE)->min_year, and the spec table is
+	 * zero until this runs. Without it the sections below pass for the wrong reason
+	 * when the case is run on its own. */
+	AirportSpec::ResetAirports();
+
+	const bool saved_new_graphics = _settings_game.station.new_airport_graphics;
+
+	SECTION("The small hangar is gated per rotation")
+	{
+		_settings_game.station.new_airport_graphics = false;
+		/* Open-front views: the base set has these. */
+		CHECK(IsModularPieceBuildable(APT_SMALL_DEPOT_SE, 0));
+		CHECK(IsModularPieceBuildable(APT_SMALL_DEPOT_SE, 3));
+		/* Closed-back views: these are this fork's own bitmaps. */
+		CHECK_FALSE(IsModularPieceBuildable(APT_SMALL_DEPOT_SE, 1));
+		CHECK_FALSE(IsModularPieceBuildable(APT_SMALL_DEPOT_SE, 2));
+		CHECK(GetModularPieceUnavailableReason(APT_SMALL_DEPOT_SE, 1) == STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
+
+		/* A directional piece ID carries its own facing and overrides the rotation field,
+		 * so it must reach the same verdict as the canonical encoding above. */
+		CHECK_FALSE(IsModularPieceBuildable(APT_SMALL_DEPOT_NE, 0));
+		CHECK_FALSE(IsModularPieceBuildable(APT_SMALL_DEPOT_NW, 0));
+		CHECK(IsModularPieceBuildable(APT_SMALL_DEPOT_SW, 0));
+
+		_settings_game.station.new_airport_graphics = true;
+		for (uint8_t rotation = 0; rotation < 4; rotation++) {
+			CAPTURE(rotation);
+			CHECK(IsModularPieceBuildable(APT_SMALL_DEPOT_SE, rotation));
+		}
+	}
+
+	SECTION("Runtime mirrors of base-set sprites are never gated")
+	{
+		_settings_game.station.new_airport_graphics = false;
+		static constexpr ModularAirportPieceID mirrored_pieces[] = {
+			APT_RUNWAY_SMALL_NEAR_END, APT_RUNWAY_SMALL_MIDDLE, APT_RUNWAY_SMALL_FAR_END,
+			APT_SMALL_BUILDING_1, APT_SMALL_BUILDING_2, APT_SMALL_BUILDING_3,
+		};
+		for (const ModularAirportPieceID piece : mirrored_pieces) {
+			for (uint8_t rotation = 0; rotation < 4; rotation++) {
+				CAPTURE(piece, rotation);
+				CHECK(IsModularPieceBuildable(piece, rotation));
+			}
+		}
+	}
+
+	SECTION("Decorations are gated whatever their rotation")
+	{
+		/* A decoration is also a modern piece, so the year gate would answer first.
+		 * Move past it to see the graphics setting's own refusal. */
+		const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+		TimerGameCalendar::year = AirportSpec::Get(AT_LARGE)->min_year;
+
+		_settings_game.station.new_airport_graphics = false;
+		for (uint8_t rotation = 0; rotation < 4; rotation++) {
+			CAPTURE(rotation);
+			CHECK_FALSE(IsModularPieceBuildable(APT_MODULAR_CAR_PARK, rotation));
+			CHECK(GetModularPieceUnavailableReason(APT_MODULAR_CAR_PARK, rotation) == STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
+		}
+
+		_settings_game.station.new_airport_graphics = true;
+		for (uint8_t rotation = 0; rotation < 4; rotation++) {
+			CAPTURE(rotation);
+			CHECK(IsModularPieceBuildable(APT_MODULAR_CAR_PARK, rotation));
+		}
+
+		TimerGameCalendar::year = saved_year;
+	}
+
+	SECTION("The year gate answers before the graphics setting")
+	{
+		/* Both gates refuse a decoration before the large airport arrives. The year is
+		 * the one a player can do nothing about, so it is the more useful message. */
+		const TimerGameCalendar::Year saved_year = TimerGameCalendar::year;
+		TimerGameCalendar::year = CalendarTime::MIN_YEAR;
+
+		_settings_game.station.new_airport_graphics = false;
+		CHECK(GetModularPieceUnavailableReason(APT_MODULAR_CAR_PARK, 0) == STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
+		_settings_game.station.new_airport_graphics = true;
+		CHECK(GetModularPieceUnavailableReason(APT_MODULAR_CAR_PARK, 0) == STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
+
+		TimerGameCalendar::year = saved_year;
+	}
+
+	_settings_game.station.new_airport_graphics = saved_new_graphics;
+}
+
 TEST_CASE("MirroredSpriteXOffset")
 {
 	/* Offsets are in ZoomLevel::Min units, which are ScaleByZoom(1, ZoomLevel::Normal)

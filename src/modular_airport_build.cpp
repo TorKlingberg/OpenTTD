@@ -280,6 +280,10 @@ static Money GetModularAirportPieceBuildCost(ModularAirportPieceID piece_type)
 {
 	const Money base = _price[Price::BuildStationAirport];
 
+	/* One rate for every metadata-only decoration, so adding another needs no
+	 * edit here. They are one-tile buildings that serve no aircraft. */
+	if (IsModularAirportDecorationPiece(piece_type)) return ScaleModularAirportCost(base, 30);
+
 	switch (piece_type) {
 		case APT_RUNWAY_1:
 		case APT_RUNWAY_2:
@@ -355,11 +359,6 @@ static Money GetModularAirportPieceBuildCost(ModularAirportPieceID piece_type)
 		case APT_RADIO_TOWER_FENCE_NE:
 		case APT_GRASS_FENCE_NE_FLAG_2:
 			return ScaleModularAirportCost(base, 24);
-		case APT_MODULAR_FIRE_STATION:
-		case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_CAR_PARK:
-			return ScaleModularAirportCost(base, 30);
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
 		case APT_GRASS_FENCE_SW:
@@ -505,8 +504,8 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 		for (TileIndexDiff d : kAxis) {
 			TileIndex a = middle + d;
 			TileIndex b = middle - d;
-			uint8_t pa = get_terminal_piece(a);
-			uint8_t pb = get_terminal_piece(b);
+			ModularAirportPieceID pa = get_terminal_piece(a);
+			ModularAirportPieceID pb = get_terminal_piece(b);
 			if ((pa == APT_SMALL_BUILDING_1 && pb == APT_SMALL_BUILDING_3) ||
 					(pa == APT_SMALL_BUILDING_3 && pb == APT_SMALL_BUILDING_1)) {
 				tiles.clear();
@@ -748,6 +747,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
  * @param flags Command flags.
  * @param tile Tile to build on.
  * @param gfx Piece type.
+ * @param rotation Rotation the piece will be placed in; part of the availability check.
  * @param station_to_join Station to join, or INVALID_STATION.
  * @param allow_adjacent Whether to allow adjacent stations.
  * @param st [in/out] Reference to station pointer.
@@ -757,7 +757,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
  * @param cost [in/out] Accumulated construction cost.
  * @return Success or error code.
  */
-CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, bool &is_noop_rebuild, CommandCost &cost, bool check_noise)
+CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, uint16_t gfx, uint8_t rotation, StationID station_to_join, bool allow_adjacent, Station *&st, bool &is_modular_replace, bool &is_noop_rebuild, CommandCost &cost, bool check_noise)
 {
 	is_modular_replace = false;
 	is_noop_rebuild = false;
@@ -770,16 +770,12 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 
 	if (gfx >= NUM_AIRPORTTILES && !IsModularAirportDecorationPiece(gfx)) return CMD_ERROR;
 
-	/* Modern pieces are unavailable before the city airport introduction year. */
-	if (IsModernModularPiece(gfx) && TimerGameCalendar::year < GetModularPieceMinYear(gfx)) {
-		return CommandCost(STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE);
-	}
-
-	/* Pieces backed by this fork's stored airport bitmaps follow the setting for them.
-	 * This shared helper handles whole-piece gating. Command entry points separately
-	 * check the final rotation for the small hangar's closed-back views. */
-	if (IsNewAirportGraphicsPiece(gfx) && !AreNewAirportGraphicsAvailable()) {
-		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
+	/* Year gating and the stored-bitmap graphics setting both live in one place, so
+	 * that this check, the builder's greyed-out buttons and the script API's
+	 * availability query cannot drift apart. Rotation matters: it is what separates
+	 * the small hangar's closed-back views from the ones the base set draws. */
+	if (const StringID reason = GetModularPieceUnavailableReason(gfx, rotation); reason != STR_NULL) {
+		return CommandCost(reason);
 	}
 
 	int allowed_z = -1;
@@ -1078,16 +1074,12 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 
 CommandCost CmdBuildModularAirportTile(DoCommandFlags flags, TileIndex tile, uint16_t gfx, StationID station_to_join, bool allow_adjacent, uint8_t rotation, uint8_t taxi_dir_mask, bool one_way_taxi, bool auto_rotate_runway)
 {
-	if (IsNewAirportGraphicsPiece(gfx, rotation) && !AreNewAirportGraphicsAvailable()) {
-		return CommandCost(STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED);
-	}
-
 	Station *st = nullptr;
 	bool is_modular_replace = false;
 	bool is_noop_rebuild = false;
 	CommandCost cost(ExpensesType::Construction);
 
-	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, station_to_join, allow_adjacent, st, is_modular_replace, is_noop_rebuild, cost);
+	CommandCost ret = BuildModularAirportTile_Check(flags, tile, gfx, rotation, station_to_join, allow_adjacent, st, is_modular_replace, is_noop_rebuild, cost);
 	if (ret.Failed()) return ret;
 
 	/* The tile already is this piece. Leave it alone, at no charge. */

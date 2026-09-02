@@ -363,13 +363,29 @@ public:
 
 	/**
 	 * Checks whether a modular piece can be built right now.
-	 * Some pieces only become available once large airports do. Decorative pieces
-	 * backed by stored bitmaps are only offered while the "new airport graphics"
-	 * setting is on; runtime mirrors of base-set sprites are unaffected.
+	 * Some pieces only become available once large airports do. Pieces drawn from
+	 * stored bitmaps are only offered while the "new airport graphics" setting is
+	 * on; runtime mirrors of base-set sprites are unaffected.
 	 * @param piece The piece to check.
-	 * @return True if and only if the piece can be built now.
+	 * @return True if and only if the piece can be built now in rotation 0.
+	 * @note A piece that is available may still be refused in some rotations. Use
+	 *  IsModularPieceAvailableInRotation to ask about a particular one.
 	 */
 	static bool IsModularPieceAvailable(ModularPiece piece);
+
+	/**
+	 * Checks whether a modular piece can be built right now in a given rotation.
+	 * Same as IsModularPieceAvailable, but for one specific rotation: a piece can
+	 * be drawn from stored bitmaps in some rotations only, and is then unavailable
+	 * in exactly those while the "new airport graphics" setting is off. The small
+	 * hangar's closed-back views (rotations 1 and 2) are the case that exists
+	 * today, so with that setting off the same piece is available in rotations 0
+	 * and 3 and unavailable in 1 and 2.
+	 * @param piece The piece to check.
+	 * @param rotation The rotation to check, 0 to 3.
+	 * @return True if and only if the piece can be built now in that rotation.
+	 */
+	static bool IsModularPieceAvailableInRotation(ModularPiece piece, SQInteger rotation);
 
 	/**
 	 * Get the first year in which a modular piece can be built.
@@ -414,7 +430,7 @@ public:
 	 * @param station_id The station to join, ScriptStation::STATION_NEW or ScriptStation::STATION_JOIN_ADJACENT.
 	 * @pre ScriptMap::IsValidTile(tile).
 	 * @pre rotation >= 0 && rotation <= 3.
-	 * @pre IsModularPieceAvailable(piece).
+	 * @pre IsModularPieceAvailableInRotation(piece, rotation).
 	 * @pre station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id).
 	 * @game @pre ScriptCompanyMode::IsValid().
 	 * @exception ScriptError::ERR_AREA_NOT_CLEAR

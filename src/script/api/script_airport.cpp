@@ -448,13 +448,19 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 
 /* static */ bool ScriptAirport::IsModularPieceAvailable(ModularPiece piece)
 {
+	return IsModularPieceAvailableInRotation(piece, 0);
+}
+
+/* static */ bool ScriptAirport::IsModularPieceAvailableInRotation(ModularPiece piece, SQInteger rotation)
+{
 	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);
 	if (gfx == UINT16_MAX) return false;
+	if (rotation < 0 || rotation > 3) return false;
 
-	/* Bitmap-backed decorations are only offered while their graphics are on. */
-	if (::IsNewAirportGraphicsPiece(gfx) && !::AreNewAirportGraphicsAvailable()) return false;
-
-	return !::IsModernModularPiece(gfx) || TimerGameCalendar::year >= ::GetModularPieceMinYear(gfx);
+	/* The same gate the build command uses, rotation included: a piece whose
+	 * graphics for one rotation come from this fork's bitmaps is unavailable in
+	 * that rotation while their setting is off, and available in the others. */
+	return ::IsModularPieceBuildable(gfx, static_cast<uint8_t>(rotation));
 }
 
 /* static */ SQInteger ScriptAirport::GetModularPieceMinYear(ModularPiece piece)
@@ -477,7 +483,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforceCompanyModeValid(false);
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, rotation >= 0 && rotation <= 3);
-	EnforcePrecondition(false, IsModularPieceAvailable(piece));
+	EnforcePrecondition(false, IsModularPieceAvailableInRotation(piece, rotation));
 	EnforcePrecondition(false, station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id));
 
 	const ModularAirportPieceID gfx = GetGfxForModularPiece(piece);

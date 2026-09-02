@@ -15,6 +15,7 @@
 #include "airport_ground_pathfinder.h"
 #include "airport.h"
 #include "table/airporttile_ids.h"
+#include "strings_type.h"
 
 #include "core/enum_type.hpp"
 
@@ -203,16 +204,9 @@ inline bool IsModularAirportDecorationPiece(ModularAirportPieceID piece_type)
  */
 inline uint8_t GetModularAirportMapGfx(ModularAirportPieceID piece_type)
 {
-	switch (piece_type) {
-		case APT_MODULAR_FIRE_STATION:
-		case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_CAR_PARK:
-			return APT_APRON;
-		default:
-			assert(piece_type < NUM_AIRPORTTILES);
-			return static_cast<uint8_t>(piece_type);
-	}
+	if (IsModularAirportDecorationPiece(piece_type)) return APT_APRON;
+	assert(piece_type < NUM_AIRPORTTILES);
+	return static_cast<uint8_t>(piece_type);
 }
 
 /**
@@ -395,6 +389,7 @@ inline bool IsModularStandPiece(ModularAirportPieceID piece_type)
 
 inline bool IsModularBuildingPiece(ModularAirportPieceID piece_type)
 {
+	if (IsModularAirportDecorationPiece(piece_type)) return true;
 	switch (piece_type) {
 		case APT_STAND:
 		case APT_STAND_1:
@@ -413,10 +408,6 @@ inline bool IsModularBuildingPiece(ModularAirportPieceID piece_type)
 		case APT_RADAR_GRASS_FENCE_SW:
 		case APT_RADAR_FENCE_SW:
 		case APT_RADAR_FENCE_NE:
-		case APT_MODULAR_FIRE_STATION:
-		case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_CAR_PARK:
 			return true;
 		default:
 			return false;
@@ -601,6 +592,11 @@ TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 /** Whether a piece/rotation uses a stored bitmap controlled by new_airport_graphics. */
 bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation = 0);
 bool AreNewAirportGraphicsAvailable();
+/** The single answer to "may this piece be built now"; STR_NULL when it may. */
+StringID GetModularPieceUnavailableReason(ModularAirportPieceID piece_type, uint8_t rotation = 0);
+
+/** Convenience wrapper for callers that only need the yes/no. */
+bool IsModularPieceBuildable(ModularAirportPieceID piece_type, uint8_t rotation = 0);
 
 inline bool IsLargeRunwayFamily(ModularAirportPieceID piece_type)
 {

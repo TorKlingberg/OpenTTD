@@ -32,6 +32,7 @@
 #include "modular_airport_cmd.h"
 #include "settings_type.h"
 #include "table/airporttile_ids.h"
+#include "table/strings.h"
 #include <map>
 #include <span>
 #include <utility>
@@ -161,6 +162,44 @@ bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotatio
 bool AreNewAirportGraphicsAvailable()
 {
 	return _settings_game.station.new_airport_graphics;
+}
+
+/**
+ * Why a modular piece may not be built right now.
+ *
+ * Every gate on placing a piece gathers here, so that the builder's greyed-out
+ * buttons, the script API's availability query and the build commands cannot
+ * answer the question differently. Rotation is part of the question: it is what
+ * separates a view the base set draws from one only this fork's bitmaps do.
+ *
+ * @param piece_type Piece to check.
+ * @param rotation Rotation the piece would be placed in.
+ * @return The error explaining the refusal, or STR_NULL if the piece may be built.
+ */
+StringID GetModularPieceUnavailableReason(ModularAirportPieceID piece_type, uint8_t rotation)
+{
+	/* Modern pieces are unavailable before the city airport introduction year. */
+	if (IsModernModularPiece(piece_type) && TimerGameCalendar::year < GetModularPieceMinYear(piece_type)) {
+		return STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE;
+	}
+
+	/* Pieces backed by this fork's stored airport bitmaps follow the setting for them. */
+	if (IsNewAirportGraphicsPiece(piece_type, rotation) && !AreNewAirportGraphicsAvailable()) {
+		return STR_ERROR_NEW_AIRPORT_GRAPHICS_DISABLED;
+	}
+
+	return STR_NULL;
+}
+
+/**
+ * Whether a modular piece may be built right now.
+ * @param piece_type Piece to check.
+ * @param rotation Rotation the piece would be placed in.
+ * @return True if nothing currently refuses it.
+ */
+bool IsModularPieceBuildable(ModularAirportPieceID piece_type, uint8_t rotation)
+{
+	return GetModularPieceUnavailableReason(piece_type, rotation) == STR_NULL;
 }
 
 static bool IsBigTerminalPiece(ModularAirportPieceID piece_type)
@@ -447,6 +486,9 @@ TTDPAirportType GetModularAirportNewGRFType(const Station *st)
 
 static uint GetModularAirportPieceMaintenancePoints(ModularAirportPieceID piece_type)
 {
+	/* One rate for every metadata-only decoration; see the build cost. */
+	if (IsModularAirportDecorationPiece(piece_type)) return 4;
+
 	switch (piece_type) {
 		case APT_RUNWAY_1:
 		case APT_RUNWAY_2:
@@ -534,12 +576,6 @@ static uint GetModularAirportPieceMaintenancePoints(ModularAirportPieceID piece_
 		case APT_RADAR_FENCE_SW:
 		case APT_RADAR_FENCE_NE:
 		case APT_RADIO_TOWER_FENCE_NE:
-			return 4;
-
-		case APT_MODULAR_FIRE_STATION:
-		case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM:
-		case APT_MODULAR_CAR_PARK:
 			return 4;
 
 		case APT_GRASS_FENCE_NE_FLAG_2:
