@@ -752,16 +752,7 @@ Direction ModularAirportGetHangarExitDirection(const Airport &ap, TileIndex tile
 	const ModularAirportTileData *data = ap.GetModularTileData(tile);
 	if (data == nullptr) return Direction::SE; // Fallback
 
-	uint8_t hangar_rot = data->rotation % 4;
-	switch (data->piece_type) {
-		case APT_DEPOT_NE:
-		case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
-		case APT_DEPOT_NW:
-		case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-		case APT_DEPOT_SW:
-		case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
-		default: break;
-	}
+	const uint8_t hangar_rot = GetModularHangarVisualRotation(data->piece_type, data->rotation);
 
 	static constexpr Direction kHangarExitDirs[4] = {Direction::SE, Direction::NE, Direction::NW, Direction::SW};
 	return kHangarExitDirs[hangar_rot];

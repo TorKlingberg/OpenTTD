@@ -924,9 +924,14 @@ void IniSaveWindowSettings(IniFile &ini, std::string_view grpname, WindowDesc *d
  */
 static bool IsSettingEnabledByDependency(const SettingDesc &sd)
 {
+	/* Looked up once. IsEditable() runs for every setting the settings window
+	 * paints, so comparing names here would cost a string compare per setting
+	 * per repaint to answer for the one setting that can match. */
+	static const SettingDesc *const new_airport_graphics = GetSettingFromName("station.new_airport_graphics");
+
 	/* The new airport graphics are pieces of the modular airport builder, so
 	 * without that builder there is nothing for them to be offered in. */
-	if (sd.GetName() == "station.new_airport_graphics") return GetGameSettings().station.modular_airports;
+	if (&sd == new_airport_graphics) return GetGameSettings().station.modular_airports;
 	return true;
 }
 

@@ -530,6 +530,10 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
  */
 uint8_t GetModularTileFenceOpenMask(ModularAirportPieceID piece_type, uint8_t rotation)
 {
+	/* Every metadata-only decoration is a solid one-tile building, so no edge of
+	 * it carries a perimeter fence. */
+	if (IsModularAirportDecorationPiece(piece_type)) return 0x0F;
+
 	switch (piece_type) {
 		case APT_RUNWAY_1: case APT_RUNWAY_2: case APT_RUNWAY_3:
 		case APT_RUNWAY_4: case APT_RUNWAY_5: case APT_RUNWAY_END:
@@ -552,8 +556,6 @@ uint8_t GetModularTileFenceOpenMask(ModularAirportPieceID piece_type, uint8_t ro
 		case APT_LOW_BUILDING: case APT_LOW_BUILDING_FENCE_N: case APT_LOW_BUILDING_FENCE_NW:
 		case APT_SMALL_BUILDING_1: case APT_SMALL_BUILDING_2: case APT_SMALL_BUILDING_3:
 		case APT_TOWER: case APT_TOWER_FENCE_SW:
-		case APT_MODULAR_FIRE_STATION: case APT_MODULAR_CARGO_TERMINAL:
-		case APT_MODULAR_FUEL_FARM: case APT_MODULAR_CAR_PARK:
 			return 0x0F;
 		default:
 			return 0x00;

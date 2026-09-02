@@ -9,6 +9,7 @@
 
 #include "stdafx.h"
 #include "airport_pathfinder.h"
+#include "modular_airport_cmd.h"
 #include "table/airporttile_ids.h"
 
 #include "safeguards.h"
@@ -149,17 +150,10 @@ uint8_t CalculateAutoTaxiDirectionsForGfx(ModularAirportPieceID gfx, uint8_t rot
 		case APT_DEPOT_NE:
 		case APT_SMALL_DEPOT_NE: {
 			/* Convention: 0=SE, 1=NE, 2=NW, 3=SW (clockwise in world space).
-			 * Keep in sync with GetModularHangarExitDirection(). */
-			uint8_t hangar_rot = rotation % 4;
-			switch (gfx) {
-				case APT_DEPOT_NE:
-				case APT_SMALL_DEPOT_NE: hangar_rot = 1; break;
-				case APT_DEPOT_NW:
-				case APT_SMALL_DEPOT_NW: hangar_rot = 2; break;
-				case APT_DEPOT_SW:
-				case APT_SMALL_DEPOT_SW: hangar_rot = 3; break;
-				default: break;
-			}
+			 * Resolved by the one helper that reconciles a directional piece ID
+			 * with the rotation field, so drawing, gating, taxi openings and the
+			 * hangar exit direction cannot disagree about which way it faces. */
+			const uint8_t hangar_rot = GetModularHangarVisualRotation(gfx, rotation);
 			/* Single-direction opening, in the bit order of coords.md:
 			 * 0 = (0,-1), 1 = (+1,0), 2 = (0,+1), 3 = (-1,0).
 			 * hangar_rot 0=SE 1=NE 2=NW 3=SW means the door faces (0,+1), (-1,0),
