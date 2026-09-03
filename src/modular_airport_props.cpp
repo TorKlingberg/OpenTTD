@@ -117,6 +117,8 @@ bool IsModernModularPiece(ModularAirportPieceID piece_type)
 TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type)
 {
 	if (!IsModernModularPiece(piece_type)) return CalendarTime::MIN_YEAR;
+	/* The heliport is the first stock airport with a dedicated helicopter pad. */
+	if (IsModularHelipadPiece(piece_type)) return AirportSpec::Get(AT_HELIPORT)->min_year;
 	return AirportSpec::Get(AT_LARGE)->min_year;
 }
 
@@ -178,7 +180,7 @@ bool AreNewAirportGraphicsAvailable()
  */
 StringID GetModularPieceUnavailableReason(ModularAirportPieceID piece_type, uint8_t rotation)
 {
-	/* Modern pieces are unavailable before the city airport introduction year. */
+	/* Modern pieces are unavailable before their introduction year. */
 	if (IsModernModularPiece(piece_type) && TimerGameCalendar::year < GetModularPieceMinYear(piece_type)) {
 		return STR_ERROR_MODULAR_PIECE_NOT_YET_AVAILABLE;
 	}

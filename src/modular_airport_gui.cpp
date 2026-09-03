@@ -209,8 +209,8 @@ static_assert(lengthof(_helipad_pieces) == WID_MAHPAD_PIECE_LAST - WID_MAHPAD_PI
 /**
  * Whether a piece cannot be built right now, so its button is shown disabled.
  *
- * Two gates gather here: a modern piece is unavailable until the year the large
- * airport arrives, and a piece backed by a stored openttd.grf bitmap is
+ * Two gates gather here: a modern piece is unavailable until its introduction
+ * year, and a piece backed by a stored openttd.grf bitmap is
  * unavailable while the setting for those is off.
  *
  * @param gfx Piece to check.
