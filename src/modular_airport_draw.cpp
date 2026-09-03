@@ -316,7 +316,7 @@ void InitModularAirportHangarLayouts()
  */
 void DrawModularTileSeqInGUI(int x, int y, const DrawTileSprites *dts, PaletteID default_palette, ZoomLevel zoom)
 {
-	std::array<const DrawTileSeqStruct *, 8> order;
+	std::array<const DrawTileSeqStruct *, 16> order;
 	size_t count = 0;
 	for (const DrawTileSeqStruct &dtss : dts->GetSequence()) {
 		const SpriteID image = dtss.image.sprite;

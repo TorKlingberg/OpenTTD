@@ -563,6 +563,7 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforceCompanyModeValid(false);
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, rotation >= 0 && rotation <= 3);
+	EnforcePrecondition(false, layout.size() / MLF_STRIDE <= 128);
 	/* The command encodes offsets within the box in one byte each. */
 	EnforcePrecondition(false, width > 0 && width <= UINT8_MAX);
 	EnforcePrecondition(false, height > 0 && height <= UINT8_MAX);
