@@ -526,9 +526,9 @@ public:
 	 * @pre rotation >= 0 && rotation <= 3.
 	 * @pre width > 0 && height > 0.
 	 * @pre layout.len() > 0 && layout.len() % MLF_STRIDE == 0.
-	 * @pre layout.len() / MLF_STRIDE <= 4096, which is the largest station box
-	 *  station_spread allows (64 by 64) and so larger than any airport that can
-	 *  be built.
+	 * @pre layout.len() / MLF_STRIDE <= 4096, which is a filled 64 by 64 box --
+	 *  the largest station_spread allows -- and so no smaller than any airport
+	 *  that can be built.
 	 * @pre station_id == ScriptStation::STATION_NEW || station_id == ScriptStation::STATION_JOIN_ADJACENT || ScriptStation::IsValidStation(station_id).
 	 * @pre Every tile's piece is available in the rotation it is placed in, which
 	 *  is the tile's own rotation plus the layout's; see

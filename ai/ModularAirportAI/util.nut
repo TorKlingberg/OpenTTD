@@ -200,7 +200,8 @@ function IsNonEmptyAirportPiece(piece)
  * has", which is a count, and comparing a noise level against it rejects
  * everything bigger than a single helipad.
  *
- * @param town The authority to ask, which is the one nearest the airport.
+ * @param town The local authority to ask. Callers disagree about which town
+ *  that should be; see the comment in RevalidateSite.
  * @param layout The flat layout array the airport would be built from.
  */
 function TownToleratesLayout(town, layout)
