@@ -173,12 +173,17 @@ inline uint8_t GetModularHangarVisualRotation(ModularAirportPieceID piece_type, 
 	}
 }
 
+bool AreNewAirportGraphicsAvailable();
+
 /** Check if a compound piece cannot be rotated as part of a template. */
 inline bool IsNonRotatableModularPiece(ModularAirportPieceID piece_type)
 {
-	return piece_type == APT_SMALL_BUILDING_1 ||
-	       piece_type == APT_SMALL_BUILDING_2 ||
-	       piece_type == APT_SMALL_BUILDING_3;
+	if (!AreNewAirportGraphicsAvailable()) {
+		return piece_type == APT_SMALL_BUILDING_1 ||
+		       piece_type == APT_SMALL_BUILDING_2 ||
+		       piece_type == APT_SMALL_BUILDING_3;
+	}
+	return false;
 }
 
 /** Whether a piece is one of the metadata-only modular airport decorations. */
@@ -360,7 +365,8 @@ inline void RotateModularTemplateTile(TTile &tile, uint8_t r, uint16_t template_
 	tile.user_taxi_dir_mask = rotate_mask(tile.user_taxi_dir_mask);
 	tile.edge_block_mask = rotate_mask(tile.edge_block_mask);
 
-	/* Swap low/high when coordinate order along the original axis reverses. */
+	/* Swap runway low/high flags and small terminal end tiles (APT_SMALL_BUILDING_1/3)
+	 * when coordinate order along the original axis reverses. */
 	const bool original_x_axis = (old_rotation % 2) == 0;
 	const bool reverse = original_x_axis ? (r == 2 || r == 3) : (r == 1 || r == 2);
 	if (reverse) {
@@ -371,6 +377,12 @@ inline void RotateModularTemplateTile(TTile &tile, uint8_t r, uint16_t template_
 		if (low != 0) flags |= RUF_DIR_HIGH;
 		if (high != 0) flags |= RUF_DIR_LOW;
 		tile.runway_flags = flags;
+
+		if (tile.piece_type == APT_SMALL_BUILDING_1) {
+			tile.piece_type = APT_SMALL_BUILDING_3;
+		} else if (tile.piece_type == APT_SMALL_BUILDING_3) {
+			tile.piece_type = APT_SMALL_BUILDING_1;
+		}
 	}
 }
 
@@ -591,7 +603,6 @@ bool IsModernModularPiece(ModularAirportPieceID piece_type);
 TimerGameCalendar::Year GetModularPieceMinYear(ModularAirportPieceID piece_type);
 /** Whether a piece/rotation uses a stored bitmap controlled by new_airport_graphics. */
 bool IsNewAirportGraphicsPiece(ModularAirportPieceID piece_type, uint8_t rotation = 0);
-bool AreNewAirportGraphicsAvailable();
 /** The single answer to "may this piece be built now"; STR_NULL when it may. */
 StringID GetModularPieceUnavailableReason(ModularAirportPieceID piece_type, uint8_t rotation = 0);
 

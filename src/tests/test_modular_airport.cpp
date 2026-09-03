@@ -792,6 +792,43 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
 	CHECK(hangar_data->rotation == 2);
 
+	/* 3-tile small terminal rotation is gated by new_airport_graphics. */
+	const TileIndex small_term_base = TileXY(24, 20);
+	ModularTemplatePlacementData small_term_templ;
+	small_term_templ.width = 5;
+	small_term_templ.height = 5;
+	small_term_templ.rotation = 1;
+	small_term_templ.tiles = {
+		{1, 1, APT_SMALL_BUILDING_1, 0, 0},
+		{2, 1, APT_SMALL_BUILDING_2, 0, 0},
+		{3, 1, APT_SMALL_BUILDING_3, 0, 0},
+	};
+
+	_settings_game.station.new_airport_graphics = false;
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, small_term_base, StationID::Invalid(), false, small_term_templ);
+	CHECK(result.Failed());
+	CHECK(result.GetErrorMessage() == STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
+
+	_settings_game.station.new_airport_graphics = true;
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, small_term_base, StationID::Invalid(), false, small_term_templ);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *term_station = Station::GetByTile(small_term_base + TileDiffXY(3, 1));
+	REQUIRE(term_station != nullptr);
+
+	const ModularAirportTileData *td1 = term_station->airport.GetModularTileData(small_term_base + TileDiffXY(3, 1));
+	const ModularAirportTileData *td2 = term_station->airport.GetModularTileData(small_term_base + TileDiffXY(3, 2));
+	const ModularAirportTileData *td3 = term_station->airport.GetModularTileData(small_term_base + TileDiffXY(3, 3));
+	REQUIRE(td1 != nullptr);
+	REQUIRE(td2 != nullptr);
+	REQUIRE(td3 != nullptr);
+	CHECK(td1->piece_type == APT_SMALL_BUILDING_1);
+	CHECK(td1->rotation == 1);
+	CHECK(td2->piece_type == APT_SMALL_BUILDING_2);
+	CHECK(td2->rotation == 1);
+	CHECK(td3->piece_type == APT_SMALL_BUILDING_3);
+	CHECK(td3->rotation == 1);
+
 	_current_company = saved_company;
 	_settings_game.station.distant_join_stations = saved_distant_join;
 	_settings_game.station.never_expire_airports = saved_never_expire;
@@ -3926,6 +3963,133 @@ TEST_CASE("ModularAirportTemplateAvailabilityValidatesWidePieceIDs")
 	templ.tiles.front().piece_type = UINT16_MAX;
 	templ.CheckAvailability();
 	CHECK_FALSE(templ.is_available);
+}
+
+TEST_CASE("ModularAirportTemplateSmallTerminalRotationGatedByGraphicsSetting")
+{
+	const bool saved_new_graphics = _settings_game.station.new_airport_graphics;
+
+	AirportTemplate templ;
+	AirportTemplateTile t1{}; t1.dx = 1; t1.dy = 1; t1.piece_type = APT_SMALL_BUILDING_1;
+	AirportTemplateTile t2{}; t2.dx = 2; t2.dy = 1; t2.piece_type = APT_SMALL_BUILDING_2;
+	AirportTemplateTile t3{}; t3.dx = 3; t3.dy = 1; t3.piece_type = APT_SMALL_BUILDING_3;
+	templ.tiles = {t1, t2, t3};
+
+	_settings_game.station.new_airport_graphics = false;
+	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_1));
+	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_2));
+	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_3));
+	CHECK(templ.HasNonRotatablePieces());
+
+	_settings_game.station.new_airport_graphics = true;
+	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_1));
+	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_2));
+	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_3));
+	CHECK_FALSE(templ.HasNonRotatablePieces());
+
+	_settings_game.station.new_airport_graphics = saved_new_graphics;
+}
+
+TEST_CASE("ModularAirportTemplateSmallTerminalRotationTransforms")
+{
+	struct ExpectedTile {
+		uint16_t dx;
+		uint16_t dy;
+		ModularAirportPieceID piece_type;
+		uint8_t rotation;
+	};
+
+	auto test_rotation_from_x = [](uint8_t r, std::array<ExpectedTile, 3> expected) {
+		std::vector<AirportTemplateTile> tiles(3);
+		tiles[0].dx = 1; tiles[0].dy = 1; tiles[0].piece_type = APT_SMALL_BUILDING_1; tiles[0].rotation = 0;
+		tiles[1].dx = 2; tiles[1].dy = 1; tiles[1].piece_type = APT_SMALL_BUILDING_2; tiles[1].rotation = 0;
+		tiles[2].dx = 3; tiles[2].dy = 1; tiles[2].piece_type = APT_SMALL_BUILDING_3; tiles[2].rotation = 0;
+
+		for (auto &t : tiles) {
+			t.Rotate(r, 5, 5);
+		}
+		std::sort(tiles.begin(), tiles.end(), [](const auto &a, const auto &b) {
+			if (a.dy != b.dy) return a.dy < b.dy;
+			return a.dx < b.dx;
+		});
+		for (size_t i = 0; i < 3; i++) {
+			CHECK(tiles[i].dx == expected[i].dx);
+			CHECK(tiles[i].dy == expected[i].dy);
+			CHECK(tiles[i].piece_type == expected[i].piece_type);
+			CHECK(tiles[i].rotation == expected[i].rotation);
+		}
+	};
+
+	/* r=0: original */
+	test_rotation_from_x(0, {{
+		{1, 1, APT_SMALL_BUILDING_1, 0},
+		{2, 1, APT_SMALL_BUILDING_2, 0},
+		{3, 1, APT_SMALL_BUILDING_3, 0},
+	}});
+
+	/* r=1: 90 CW. dx = 5-1-1 = 3; dy = ox = 1,2,3; rot = 1; pieces remain in order */
+	test_rotation_from_x(1, {{
+		{3, 1, APT_SMALL_BUILDING_1, 1},
+		{3, 2, APT_SMALL_BUILDING_2, 1},
+		{3, 3, APT_SMALL_BUILDING_3, 1},
+	}});
+
+	/* r=2: 180. reverse=true, piece 1 and 3 swap; dy = 5-1-1 = 3; dx = 5-1-ox: 3,2,1 -> sorted: dx 1,2,3 */
+	test_rotation_from_x(2, {{
+		{1, 3, APT_SMALL_BUILDING_1, 2},
+		{2, 3, APT_SMALL_BUILDING_2, 2},
+		{3, 3, APT_SMALL_BUILDING_3, 2},
+	}});
+
+	/* r=3: 270 CW. reverse=true, piece 1 and 3 swap; dx = oy = 1; dy = 5-1-ox: 3,2,1 -> sorted: dy 1,2,3 */
+	test_rotation_from_x(3, {{
+		{1, 1, APT_SMALL_BUILDING_1, 3},
+		{1, 2, APT_SMALL_BUILDING_2, 3},
+		{1, 3, APT_SMALL_BUILDING_3, 3},
+	}});
+
+	/* 2. Rotating starting from Y-axis (dx=1, dy=1,2,3, rotation=1, w=5, h=5) */
+	auto test_rotation_from_y = [](uint8_t r, std::array<ExpectedTile, 3> expected) {
+		std::vector<AirportTemplateTile> tiles(3);
+		tiles[0].dx = 1; tiles[0].dy = 1; tiles[0].piece_type = APT_SMALL_BUILDING_1; tiles[0].rotation = 1;
+		tiles[1].dx = 1; tiles[1].dy = 2; tiles[1].piece_type = APT_SMALL_BUILDING_2; tiles[1].rotation = 1;
+		tiles[2].dx = 1; tiles[2].dy = 3; tiles[2].piece_type = APT_SMALL_BUILDING_3; tiles[2].rotation = 1;
+
+		for (auto &t : tiles) {
+			t.Rotate(r, 5, 5);
+		}
+		std::sort(tiles.begin(), tiles.end(), [](const auto &a, const auto &b) {
+			if (a.dy != b.dy) return a.dy < b.dy;
+			return a.dx < b.dx;
+		});
+		for (size_t i = 0; i < 3; i++) {
+			CHECK(tiles[i].dx == expected[i].dx);
+			CHECK(tiles[i].dy == expected[i].dy);
+			CHECK(tiles[i].piece_type == expected[i].piece_type);
+			CHECK(tiles[i].rotation == expected[i].rotation);
+		}
+	};
+
+	/* r=1: 90 CW from Y-axis. reverse=true, piece 1 and 3 swap; dx = 5-1-oy: 3,2,1 -> sorted: dx 1,2,3; dy = ox = 1 */
+	test_rotation_from_y(1, {{
+		{1, 1, APT_SMALL_BUILDING_1, 2},
+		{2, 1, APT_SMALL_BUILDING_2, 2},
+		{3, 1, APT_SMALL_BUILDING_3, 2},
+	}});
+
+	/* r=2: 180 from Y-axis. reverse=true, piece 1 and 3 swap; dx = 5-1-ox = 3; dy = 5-1-oy: 3,2,1 -> sorted: dy 1,2,3 */
+	test_rotation_from_y(2, {{
+		{3, 1, APT_SMALL_BUILDING_1, 3},
+		{3, 2, APT_SMALL_BUILDING_2, 3},
+		{3, 3, APT_SMALL_BUILDING_3, 3},
+	}});
+
+	/* r=3: 270 CW from Y-axis. reverse=false, pieces don't swap; dx = oy: 1,2,3; dy = 5-1-ox = 3 */
+	test_rotation_from_y(3, {{
+		{1, 3, APT_SMALL_BUILDING_1, 0},
+		{2, 3, APT_SMALL_BUILDING_2, 0},
+		{3, 3, APT_SMALL_BUILDING_3, 0},
+	}});
 }
 
 TEST_CASE("ModularAirportRunwayGoalCrossing")
