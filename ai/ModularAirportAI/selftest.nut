@@ -40,8 +40,8 @@ function RunSelfTest()
 	AILog.Info("=== ModularAirportAI layout self-test ===");
 	AILog.Info("year=" + AIDate.GetYear(AIDate.GetCurrentDate()));
 	AILog.Info("legend: = runway  E runway end  - < > small runway  + apron  S stand");
-	AILog.Info("        T stand+terminal  P stand+pier  H hangar  h small hangar");
-	AILog.Info("        X helipad  B terminal  b low terminal  t small terminal  W tower");
+	AILog.Info("        H hangar  h small hangar  X helipad  x plain helipad  O heliport");
+	AILog.Info("        B terminal  b low terminal  t small terminal  W tower  R radio tower");
 	AILog.Info("        r radar  f flag  , grass  _ empty");
 	AILog.Info("        F fire station  C cargo terminal  U fuel farm  P car park");
 

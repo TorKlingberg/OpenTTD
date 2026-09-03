@@ -35,9 +35,17 @@ function RevalidateSite(site)
 
 		/* Adjoining an existing station makes the command try to join it, which
 		 * fails for a new airport next to someone else's station. */
-		foreach (d in [1, -1, AIMap.GetMapSizeX(), -AIMap.GetMapSizeX()]) {
-			local n = t + d;
-			if (AIMap.IsValidTile(n) && AITile.IsStationTile(n)) return false;
+		local tx = AIMap.GetTileX(t);
+		local ty = AIMap.GetTileY(t);
+		local map_w = AIMap.GetMapSizeX();
+		local map_h = AIMap.GetMapSizeY();
+		foreach (offset in [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+			local nx = tx + offset[0];
+			local ny = ty + offset[1];
+			if (nx >= 0 && nx < map_w && ny >= 0 && ny < map_h) {
+				local n = AIMap.GetTileIndex(nx, ny);
+				if (AIMap.IsValidTile(n) && AITile.IsStationTile(n)) return false;
+			}
 		}
 	}
 
@@ -45,7 +53,14 @@ function RevalidateSite(site)
 	 * is not always the town the search started from. A town takes two airports
 	 * and no more, so asking the wrong one lets a doomed build through. */
 	local town = AITile.GetClosestTown(site.tile);
-	if (AITown.IsValidTown(town) && AITown.GetAllowedNoise(town) < 1) return false;
+	if (AITown.IsValidTown(town)) {
+		if (AIGameSettings.GetValue("station_noise_level") != 0) {
+			local layout = site.grid.ToLayout();
+			if (AIAirport.GetModularLayoutNoiseLevel(layout) > AITown.GetAllowedNoise(town)) return false;
+		} else {
+			if (AITown.GetAllowedNoise(town) < 1) return false;
+		}
+	}
 
 	return true;
 }

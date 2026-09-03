@@ -116,8 +116,10 @@ function MaxTileDistanceToAnyHangar(station)
 	local hangars = [], airport_tiles = [];
 	foreach (t, _ in tiles) {
 		if (!AIAirport.IsModularAirportTile(t)) continue;
+		local piece = AIAirport.GetModularPiece(t);
+		if (IsCosmeticPiece(piece)) continue;
 		airport_tiles.append(t);
-		if (IsHangarPiece(AIAirport.GetModularPiece(t))) hangars.append(t);
+		if (IsHangarPiece(piece)) hangars.append(t);
 	}
 	if (hangars.len() == 0) return 999;
 	local max_d = 0;
@@ -735,7 +737,10 @@ function TryAddRunway(station)
 				}
 				if (built < run.len()) {
 					AILog.Warning("extra runway stopped after " + built + " of " + run.len() + " tiles");
-					return (built > 0) ? "added a partial extra runway" : null;
+					for (local i = 0; i < built; i++) {
+						AIAirport.RemoveAirport(run[i]);
+					}
+					return null;
 				}
 				AIAirport.SetModularRunwayFlags(run[0],
 					AIAirport.MRF_LANDING | AIAirport.MRF_TAKEOFF | AIAirport.MRF_DIR_LOW);
