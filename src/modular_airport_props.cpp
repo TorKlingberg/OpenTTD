@@ -96,14 +96,10 @@ bool IsModernModularPiece(ModularAirportPieceID piece_type)
 		case APT_GRASS_FENCE_NE_FLAG_2:
 		case APT_EMPTY:
 		case APT_EMPTY_FENCE_NE:
-		case APT_LOW_BUILDING:
-		case APT_LOW_BUILDING_FENCE_N:
-		case APT_LOW_BUILDING_FENCE_NW:
 		case APT_SMALL_BUILDING_1:
 		case APT_SMALL_BUILDING_2:
 		case APT_SMALL_BUILDING_3:
 		case APT_STAND_1:
-		case APT_RADIO_TOWER_FENCE_NE:
 			return false;
 		/* The metadata-only decorations depict modern airport infrastructure -- a
 		 * multi-storey car park, a cargo warehouse, a fuel farm -- so they fall
