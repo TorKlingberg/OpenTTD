@@ -15,6 +15,7 @@
 #include "../../town.h"
 #include "../../landscape_cmd.h"
 #include "../../station_cmd.h"
+#include "../../airport_template.h"
 #include "../../modular_airport_cmd.h"
 /* For the builder's own piece vocabulary, which this API is held equal to. */
 #include "../../modular_airport_gui.h"
@@ -563,7 +564,9 @@ static bool ParseModularLayoutPieces(const Array<SQInteger> &layout, std::vector
 	EnforceCompanyModeValid(false);
 	EnforcePrecondition(false, ::IsValidTile(tile));
 	EnforcePrecondition(false, rotation >= 0 && rotation <= 3);
-	EnforcePrecondition(false, layout.size() / MLF_STRIDE <= 128);
+	/* The command refuses more than this, so refuse it here where the script gets a
+	 * precondition error naming the argument rather than a bare command failure. */
+	EnforcePrecondition(false, layout.size() / MLF_STRIDE <= MAX_TEMPLATE_TILES);
 	/* The command encodes offsets within the box in one byte each. */
 	EnforcePrecondition(false, width > 0 && width <= UINT8_MAX);
 	EnforcePrecondition(false, height > 0 && height <= UINT8_MAX);
