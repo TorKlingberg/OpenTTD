@@ -256,7 +256,9 @@ static constexpr struct { uint8_t dir_bit; SpriteID spr; int8_t fx, fy; } _previ
 };
 
 /**
- * Walk every sprite of a tile layout as it would be drawn at a GUI zoom level.
+ * Walk the ground-level sprites of a tile layout as they would be drawn at a GUI zoom level:
+ * the ground sprite itself plus any perimeter fences, but none of the buildings on top of it.
+ * This is the preview's equivalent of the viewport's first rendering phase.
  * @param x,y Screen position of the tile origin.
  * @param layout Tile layout to walk.
  * @param pal Company palette for recolourable sprites.
@@ -278,6 +280,17 @@ static void ForEachTileGroundInGUIZoom(int x, int y, const DrawTileSprites *layo
 	}
 }
 
+/**
+ * Walk the building sprites of a tile layout as they would be drawn at a GUI zoom level,
+ * without the ground underneath them. This is the preview's equivalent of the viewport's
+ * second rendering phase, so a sprite reaching past its own tile is not clipped by the
+ * neighbouring tile's ground.
+ * @param x,y Screen position of the tile origin.
+ * @param layout Tile layout to walk.
+ * @param pal Company palette for recolourable sprites.
+ * @param zoom Zoom level to lay the sprites out for.
+ * @param fn Called as fn(image, pal, x, y) for each sprite, in draw order.
+ */
 template <typename F>
 static void ForEachTileBuildingInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, F fn)
 {
@@ -313,6 +326,17 @@ static void ForEachTileBuildingInGUIZoom(int x, int y, const DrawTileSprites *la
 	}
 }
 
+/**
+ * Walk every sprite of a tile layout as it would be drawn at a GUI zoom level, ground first
+ * and buildings after. Only for callers that need the complete sprite set of a single tile,
+ * such as measuring its extent; drawing splits the two phases across all tiles instead.
+ * @param x,y Screen position of the tile origin.
+ * @param layout Tile layout to walk.
+ * @param pal Company palette for recolourable sprites.
+ * @param zoom Zoom level to lay the sprites out for.
+ * @param fence_mask Edges to draw a perimeter fence along.
+ * @param fn Called as fn(image, pal, x, y) for each sprite, in draw order.
+ */
 template <typename F>
 static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask, F fn)
 {
