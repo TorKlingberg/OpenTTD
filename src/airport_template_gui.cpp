@@ -265,11 +265,8 @@ static constexpr struct { uint8_t dir_bit; SpriteID spr; int8_t fx, fy; } _previ
  * @param fn Called as fn(image, pal, x, y) for each sprite, in draw order.
  */
 template <typename F>
-static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask, F fn)
+static void ForEachTileGroundInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask, F fn)
 {
-	Point child_offset = {0, 0};
-	bool skip_childs = false;
-
 	fn(layout->ground.sprite, HasBit(layout->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);
 
 	/* Fences are ground sprites, so they go on top of the ground but below
@@ -279,6 +276,13 @@ static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites
 		Point pt = RemapCoords(e.fx, e.fy, 0);
 		fn(e.spr | (1U << PALETTE_MODIFIER_COLOUR), pal, x + UnScaleByZoom(pt.x, zoom), y + UnScaleByZoom(pt.y, zoom));
 	}
+}
+
+template <typename F>
+static void ForEachTileBuildingInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, F fn)
+{
+	Point child_offset = {0, 0};
+	bool skip_childs = false;
 
 	for (const DrawTileSeqStruct &dtss : layout->GetSequence()) {
 		SpriteID image = dtss.image.sprite;
@@ -309,9 +313,23 @@ static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites
 	}
 }
 
-static void DrawTileLayoutInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask)
+template <typename F>
+static void ForEachTileLayoutSpriteInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask, F fn)
 {
-	ForEachTileLayoutSpriteInGUIZoom(x, y, layout, pal, zoom, fence_mask, [zoom](SpriteID image, PaletteID sprite_pal, int sx, int sy) {
+	ForEachTileGroundInGUIZoom(x, y, layout, pal, zoom, fence_mask, fn);
+	ForEachTileBuildingInGUIZoom(x, y, layout, pal, zoom, fn);
+}
+
+static void DrawTileGroundInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom, uint8_t fence_mask)
+{
+	ForEachTileGroundInGUIZoom(x, y, layout, pal, zoom, fence_mask, [zoom](SpriteID image, PaletteID sprite_pal, int sx, int sy) {
+		DrawSprite(image, sprite_pal, sx, sy, nullptr, zoom);
+	});
+}
+
+static void DrawTileBuildingInGUIZoom(int x, int y, const DrawTileSprites *layout, PaletteID pal, ZoomLevel zoom)
+{
+	ForEachTileBuildingInGUIZoom(x, y, layout, pal, zoom, [zoom](SpriteID image, PaletteID sprite_pal, int sx, int sy) {
 		DrawSprite(image, sprite_pal, sx, sy, nullptr, zoom);
 	});
 }
@@ -499,14 +517,24 @@ void DrawModularAirportLayoutPreview(const Rect &r, std::span<const AirportTempl
 		return a.depth < b.depth;
 	});
 
-	/* Draw each tile. */
+	/* Match the viewport's two-phase pipeline: draw all ground and perimeter fences first,
+	 * then draw buildings and structures back-to-front on top. This ensures that pieces
+	 * reaching across tile boundaries (like a fire engine outside a station or hangar eaves)
+	 * are not painted over by an adjacent tile's ground sprite. */
 	PaletteID pal = GetCompanyPalette(_local_company);
 	for (const IsoTile &it : iso_tiles) {
 		const AirportTemplateTile &t = tiles[it.idx];
 		const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
 		int x = it.iso_x + off_x;
 		int y = it.iso_y + off_y;
-		DrawTileLayoutInGUIZoom(x, y, layout, pal, preview_zoom, fence_masks[it.idx]);
+		DrawTileGroundInGUIZoom(x, y, layout, pal, preview_zoom, fence_masks[it.idx]);
+	}
+	for (const IsoTile &it : iso_tiles) {
+		const AirportTemplateTile &t = tiles[it.idx];
+		const DrawTileSprites *layout = GetTileLayoutForTemplateTile(t);
+		int x = it.iso_x + off_x;
+		int y = it.iso_y + off_y;
+		DrawTileBuildingInGUIZoom(x, y, layout, pal, preview_zoom);
 	}
 }
 
