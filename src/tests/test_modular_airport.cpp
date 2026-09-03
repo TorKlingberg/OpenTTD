@@ -792,7 +792,8 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
 	CHECK(hangar_data->rotation == 2);
 
-	/* 3-tile small terminal rotation is gated by new_airport_graphics. */
+	/* A quarter-turned 3-tile small terminal draws from the same runtime mirrors as the
+	 * legacy runway above, so the stored-bitmap graphics setting must not gate it either. */
 	const TileIndex small_term_base = TileXY(24, 20);
 	ModularTemplatePlacementData small_term_templ;
 	small_term_templ.width = 5;
@@ -805,11 +806,6 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	};
 
 	_settings_game.station.new_airport_graphics = false;
-	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, small_term_base, StationID::Invalid(), false, small_term_templ);
-	CHECK(result.Failed());
-	CHECK(result.GetErrorMessage() == STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
-
-	_settings_game.station.new_airport_graphics = true;
 	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, small_term_base, StationID::Invalid(), false, small_term_templ);
 	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
 	REQUIRE(result.Succeeded());
@@ -828,6 +824,26 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	CHECK(td2->rotation == 1);
 	CHECK(td3->piece_type == APT_SMALL_BUILDING_3);
 	CHECK(td3->rotation == 1);
+
+	/* And the setting does not gate it in the other direction either. */
+	const TileIndex small_term_base_on = TileXY(30, 20);
+	_settings_game.station.new_airport_graphics = true;
+	result = CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, small_term_base_on, StationID::Invalid(), false, small_term_templ);
+	CAPTURE(result.GetErrorMessage(), result.GetExtraErrorMessage());
+	REQUIRE(result.Succeeded());
+	Station *term_station_on = Station::GetByTile(small_term_base_on + TileDiffXY(3, 1));
+	REQUIRE(term_station_on != nullptr);
+	static constexpr ModularAirportPieceID expected_term_pieces[] = {
+		APT_SMALL_BUILDING_1,
+		APT_SMALL_BUILDING_2,
+		APT_SMALL_BUILDING_3,
+	};
+	for (uint y = 0; y < lengthof(expected_term_pieces); y++) {
+		const ModularAirportTileData *term_data = term_station_on->airport.GetModularTileData(small_term_base_on + TileDiffXY(3, 1 + y));
+		REQUIRE(term_data != nullptr);
+		CHECK(term_data->piece_type == expected_term_pieces[y]);
+		CHECK(term_data->rotation == 1);
+	}
 
 	_current_company = saved_company;
 	_settings_game.station.distant_join_stations = saved_distant_join;
@@ -3963,31 +3979,6 @@ TEST_CASE("ModularAirportTemplateAvailabilityValidatesWidePieceIDs")
 	templ.tiles.front().piece_type = UINT16_MAX;
 	templ.CheckAvailability();
 	CHECK_FALSE(templ.is_available);
-}
-
-TEST_CASE("ModularAirportTemplateSmallTerminalRotationGatedByGraphicsSetting")
-{
-	const bool saved_new_graphics = _settings_game.station.new_airport_graphics;
-
-	AirportTemplate templ;
-	AirportTemplateTile t1{}; t1.dx = 1; t1.dy = 1; t1.piece_type = APT_SMALL_BUILDING_1;
-	AirportTemplateTile t2{}; t2.dx = 2; t2.dy = 1; t2.piece_type = APT_SMALL_BUILDING_2;
-	AirportTemplateTile t3{}; t3.dx = 3; t3.dy = 1; t3.piece_type = APT_SMALL_BUILDING_3;
-	templ.tiles = {t1, t2, t3};
-
-	_settings_game.station.new_airport_graphics = false;
-	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_1));
-	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_2));
-	CHECK(IsNonRotatableModularPiece(APT_SMALL_BUILDING_3));
-	CHECK(templ.HasNonRotatablePieces());
-
-	_settings_game.station.new_airport_graphics = true;
-	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_1));
-	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_2));
-	CHECK_FALSE(IsNonRotatableModularPiece(APT_SMALL_BUILDING_3));
-	CHECK_FALSE(templ.HasNonRotatablePieces());
-
-	_settings_game.station.new_airport_graphics = saved_new_graphics;
 }
 
 TEST_CASE("ModularAirportTemplateSmallTerminalRotationTransforms")

@@ -377,10 +377,15 @@ Overlay drawing entry points: `DrawModularHoldingOverlay`, `DrawModularTaxiReser
 
 Limits: `MAX_TEMPLATE_TILES = 64 * 64` (station spread tops out at 64, so no buildable airport is too large) and `MAX_TEMPLATE_DIM = 255` (placement encodes each offset in one byte). A `static_assert` against `MAX_COMMAND_PAYLOAD_SIZE` in `modular_airport_template_cmd.cpp` checks the whole layout fits one command payload. The caps exist to stop a corrupt or hostile template file from requesting an unbounded allocation.
 
-Rotation is restricted by content:
-
-- `HasNonRotatablePieces()` — compound pieces (e.g. the 3-tile small terminal) lock rotation entirely.
-- `HasLegacySmallRunwayPieces()` — legacy small runways are axis-locked, so only 0°/180° are allowed.
+Rotation is not restricted by content: every template turns through all four quarter
+turns. `RotateModularTemplateTile()` (`src/modular_airport_cmd.h`) carries the pieces that
+encode orientation in their type across the turn -- directional hangars, the
+`APT_BUILDING_1`/`APT_BUILDING_2` pair, legacy small-runway near/far ends, and the small
+terminal's two end slices. Pieces the base sets draw for one axis only are covered by the
+`SPR_MIRROR_*` runtime mirrors, which follow whichever base set is loaded and are therefore
+not gated by `station.new_airport_graphics`. Some pieces have fewer than four distinct
+appearances and so repeat one on a half turn; see the comment on the reverse branch in
+`RotateModularTemplateTile()`.
 
 `src/airport_template_gui.cpp` provides save-from-selected-airport, load and rotated placement, an in-window isometric preview with zoom-down for large templates, preview runway-end normalization for legacy small runway segments, and a map coverage overlay showing the catchment the placed airport would have (`AirportTemplate::GetCatchmentRadius`, which is rotation-independent).
 

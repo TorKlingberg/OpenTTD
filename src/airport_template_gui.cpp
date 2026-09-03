@@ -624,7 +624,6 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 			this->ClampSelection();
 		}
 
-		this->UpdateRotationButtons();
 		if (this->mode == TemplateManagerMode::LoadingPlace) this->UpdateLoadingPlacementPreview();
 		this->SetDirty();
 	}
@@ -707,22 +706,11 @@ class BuildModularTemplateManagerWindow : public PickerWindowBase {
 	{
 		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
 		if (templ == nullptr || !templ->is_available) return false;
-		if (templ->HasNonRotatablePieces()) return false;
 
 		this->selected_rotation = (this->selected_rotation + delta + 4) & 3;
 		this->UpdateLoadingPlacementPreview();
 		this->SetDirty();
 		return true;
-	}
-
-	/** Update disabled state of rotation arrow buttons based on selected template. */
-	void UpdateRotationButtons()
-	{
-		const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
-		bool disable = (templ != nullptr && templ->HasNonRotatablePieces());
-		this->SetWidgetDisabledState(WID_TM_ROTATE_LEFT, disable);
-		this->SetWidgetDisabledState(WID_TM_ROTATE_RIGHT, disable);
-		if (disable) this->selected_rotation = 0;
 	}
 
 	void StartSavePickMode()
@@ -806,7 +794,6 @@ public:
 	void OnInvalidateData([[maybe_unused]] int data = 0, bool gui_scope = true) override
 	{
 		if (!gui_scope) return;
-		this->UpdateRotationButtons();
 		if (this->mode == TemplateManagerMode::LoadingPlace) this->UpdateLoadingPlacementPreview();
 		this->SetDirty();
 	}
@@ -843,7 +830,6 @@ public:
 
 			case WID_TM_ROTATION:
 				size = maxdim(size, GetStringBoundingBox(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LABEL, 270)));
-				size = maxdim(size, GetStringBoundingBox(GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LOCKED)));
 				size.width += padding.width + 20;
 				size.height += padding.height;
 				break;
@@ -860,13 +846,8 @@ public:
 	std::string GetWidgetString(WidgetID widget, StringID stringid) const override
 	{
 		switch (widget) {
-			case WID_TM_ROTATION: {
-				const AirportTemplate *templ = GetAirportTemplateByIndex(this->selected_template_index);
-				if (templ != nullptr && templ->HasNonRotatablePieces()) {
-					return GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LOCKED);
-				}
+			case WID_TM_ROTATION:
 				return GetString(STR_STATION_BUILD_MODULAR_AIRPORT_TEMPLATE_ROTATION_LABEL, static_cast<uint>(this->selected_rotation) * 90);
-			}
 
 			default:
 				return this->Window::GetWidgetString(widget, stringid);
@@ -975,7 +956,6 @@ public:
 				if (num_clicked == INT32_MAX) break;
 				if (num_clicked < 0 || static_cast<size_t>(num_clicked) >= AirportTemplateManager::GetTemplates().size()) break;
 				this->selected_template_index = num_clicked;
-				this->UpdateRotationButtons();
 				if (this->mode == TemplateManagerMode::LoadingPlace) this->UpdateLoadingPlacementPreview();
 				this->SetDirty();
 				break;

@@ -306,16 +306,6 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 	if (data.width > MAX_TEMPLATE_DIM || data.height > MAX_TEMPLATE_DIM) return CMD_ERROR;
 	if (data.rotation > 3) return CMD_ERROR;
 
-	/* Templates containing non-rotatable compound pieces (e.g. 3-tile small terminal)
-	 * must be placed without rotation. */
-	if (data.rotation != 0) {
-		for (const auto &t : data.tiles) {
-			if (IsNonRotatableModularPiece(t.piece_type)) {
-				return CommandCost(STR_ERROR_TEMPLATE_CONTAINS_NON_ROTATABLE);
-			}
-		}
-	}
-
 	if (data.tiles.empty() || data.tiles.size() > MAX_TEMPLATE_TILES) {
 		return CommandCost(STR_ERROR_AIRPORT_TEMPLATE_TOO_LARGE);
 	}
