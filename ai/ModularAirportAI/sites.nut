@@ -398,18 +398,8 @@ function AcceptableSite(site, want_large_safe, budget)
 	if (stands > 0 && !AIAirport.GetModularLayoutAcceptsPlanes(layout)) return false;
 	if (want_large_safe && AIAirport.GetModularLayoutSafety(layout) != AIAirport.MS_OK) return false;
 
-	/* The town has to tolerate the airport, or the build fails at the last step.
-	 *
-	 * GetAllowedNoise means two different things depending on a setting. With
-	 * station_noise_level on it is a noise budget to compare the layout against;
-	 * with it off — the default — it is "2 minus the airports this town already
-	 * has", which is a count, and comparing a noise level against it rejects
-	 * everything bigger than a single helipad. */
-	if (AIGameSettings.GetValue("station_noise_level") != 0) {
-		if (AIAirport.GetModularLayoutNoiseLevel(layout) > AITown.GetAllowedNoise(site.town)) return false;
-	} else {
-		if (AITown.GetAllowedNoise(site.town) < 1) return false;
-	}
+	/* The town has to tolerate the airport, or the build fails at the last step. */
+	if (!TownToleratesLayout(site.town, layout)) return false;
 
 	/* Upkeep has to be payable while the route gets going. Half a year of it is
 	 * the right order: an airport that cannot pay for itself before its first

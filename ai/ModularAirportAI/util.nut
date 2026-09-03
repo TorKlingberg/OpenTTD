@@ -192,6 +192,26 @@ function IsNonEmptyAirportPiece(piece)
 }
 
 /**
+ * Whether the town's local authority would tolerate this layout's airport.
+ *
+ * GetAllowedNoise means two different things depending on a setting. With
+ * station_noise_level on it is a noise budget to compare the layout against;
+ * with it off - the default - it is "2 minus the airports this town already
+ * has", which is a count, and comparing a noise level against it rejects
+ * everything bigger than a single helipad.
+ *
+ * @param town The authority to ask, which is the one nearest the airport.
+ * @param layout The flat layout array the airport would be built from.
+ */
+function TownToleratesLayout(town, layout)
+{
+	if (AIGameSettings.GetValue("station_noise_level") != 0) {
+		return AIAirport.GetModularLayoutNoiseLevel(layout) <= AITown.GetAllowedNoise(town);
+	}
+	return AITown.GetAllowedNoise(town) >= 1;
+}
+
+/**
  * The piece that closes a hole in the bounding rectangle, or null if this
  * climate/date offers neither kind of bare ground.
  */

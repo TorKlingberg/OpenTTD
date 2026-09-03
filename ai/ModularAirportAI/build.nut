@@ -53,14 +53,7 @@ function RevalidateSite(site)
 	 * is not always the town the search started from. A town takes two airports
 	 * and no more, so asking the wrong one lets a doomed build through. */
 	local town = AITile.GetClosestTown(site.tile);
-	if (AITown.IsValidTown(town)) {
-		if (AIGameSettings.GetValue("station_noise_level") != 0) {
-			local layout = site.grid.ToLayout();
-			if (AIAirport.GetModularLayoutNoiseLevel(layout) > AITown.GetAllowedNoise(town)) return false;
-		} else {
-			if (AITown.GetAllowedNoise(town) < 1) return false;
-		}
-	}
+	if (AITown.IsValidTown(town) && !TownToleratesLayout(town, site.grid.ToLayout())) return false;
 
 	return true;
 }
@@ -131,7 +124,7 @@ function DescribeBuildFailure(site)
 	if (blocked > 0) reasons.append(blocked + " tiles not buildable");
 	if (wrong_height > 0) reasons.append(wrong_height + " tiles at another height");
 	if (neighbour) reasons.append("overlaps a station");
-	if (AITown.GetAllowedNoise(site.town) < 1) reasons.append("town will take no more airports");
+	if (!TownToleratesLayout(site.town, site.grid.ToLayout())) reasons.append("town refuses the airport");
 	if (site.grid.w > AIGameSettings.GetValue("station_spread")
 	 || site.grid.h > AIGameSettings.GetValue("station_spread")) {
 		reasons.append("wider than station_spread");
