@@ -53,8 +53,28 @@ The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked 
 python3 .github/file-descriptions.py <(git diff --cached --name-only) &&
 python3 .github/script-missing-mode-enforcement.py &&
 cmake --build build --target openttd_test -j8 &&
-./build/openttd_test
+./build/openttd_test &&
+cmake --build build --target regression -j8
 ```
+
+The last line is the NoAI script regression, and it is **not** covered by `openttd_test`.
+It replays `regression/regression/main.nut` and diffs the output against the committed
+`regression/regression/result.txt`, so any change to script-visible behaviour -- a piece's
+availability year, whether a rotation may be built, a noise or catchment number, a new API
+answer -- makes that file stale and turns every CI job red on every platform at once. The
+whole diff is in test data, so nothing fails locally until this target runs. Regenerate
+rather than hand-edit: a failing run writes the actual output to
+`build/regression_regression_output.txt`, and the fix is to `diff` that against the
+committed file, confirm every changed line is an intended behaviour change, then copy it
+over.
+
+**Use the `regression` target, not bare `ctest`.** The ctest entry runs the comparison
+script directly, while the copy of `result.txt` it reads is staged into `build/regression/`
+by a separate `regression_files` target that only the build target depends on
+(`cmake/CreateRegression.cmake`). So `ctest -R regression_regression` after editing
+`result.txt` re-reads the *previous* copy and reports the same failure -- which reads
+exactly like the edit not having worked. CI is unaffected because it builds before it
+tests.
 
 ## Git Worktrees
 
