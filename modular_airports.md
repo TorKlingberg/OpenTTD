@@ -356,7 +356,7 @@ It is used by normal tile drawing (`ApplyModularAirportTileLayoutOverrides`), th
 - upgrade tool (`WID_MA_UPGRADE_TOOL`) — click or drag a `DDSP_UPGRADE_AIRPORT` area
 - info-overlay sub-window (`WID_MA_INFO_OVERLAY`) with three independent toggles: taxi arrows (`_show_runway_direction_overlay`), holding loop (`_show_holding_overlay`), and live aircraft taxi reservations (`_show_taxi_reservation_overlay`)
 - template manager launch
-- year-gated piece availability refresh while the builder is open, including external year jumps (Sandbox options)
+- year-gated piece availability refresh while the builder is open, including external year jumps (Sandbox options) — the gating rules themselves are in `skills/modular_editor.md`
 
 Overlay drawing entry points: `DrawModularHoldingOverlay`, `DrawModularTaxiReservationOverlay` (`modular_airport_gui.h`), `DrawModularAirportDirectionOverlays` (`modular_airport_draw.h`).
 
@@ -368,6 +368,7 @@ Overlay drawing entry points: `DrawModularHoldingOverlay`, `DrawModularTaxiReser
 - `CloseWindowByClass` can trigger `ResetObjectToPlace` chains via a `PickerWindowBase`'s `Close()`. Guard with `updating_cursor` or override `Close()`.
 - Sub-tile click position comes from `_tile_fract_coords.x/.y` (0–15 in world X/Y), set by the viewport on every click — not `InverseRemapCoords`.
 - `SetPIPRatio(left, mid, right)`: `(0,0,1)` left-aligned, `(1,0,1)` centered, `(1,0,0)` right-aligned.
+- If the year changes while the builder or a picker is open (a Sandbox year jump, say), re-run the gating and invalidate the picker windows, or disabled states stay as they were.
 
 ## Templates
 
@@ -417,7 +418,7 @@ Note that `MS_OK` means the layout meets the large-aircraft safety requirements 
 
 - A savegame written here sets `SAVEGAME_VERSION_EXT` (`0x8000`) in the header version word on top of an ordinary upstream version, so upstream rejects it with a plain "savegame too new" rather than misreading map bits. The bit is stripped on load.
 - The `XVER` chunk carries one `{name, uint16 version, flags}` row per `SlxFeature` — currently `UpstreamVersion` and `ModularAirport`. It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved `SlxFeatureFlag` says it may be dropped.
-- Gate on the feature, not on a version: `IsModularAirportSaveFeaturePresent()`. Bump `MODULAR_AIRPORT_SL_VERSION` and pass a `min_version` for a format change within the feature.
+- Gate on the feature, not on a version: `IsModularAirportSaveFeaturePresent()` (the JGRPP equivalent, if this is ever ported there, is `SlXvIsFeaturePresent(XSLFI_MODULAR_AIRPORT, n)`). Bump `MODULAR_AIRPORT_SL_VERSION` and pass a `min_version` for a format change within the feature.
 - Per-field conditions are usually unnecessary. `VEHS` and `STNN` are table chunks, so a savegame lists the fields it holds and one written without ours simply does not load them — which is why the modular fields in `vehicle_sl.cpp` and `station_sl.cpp` carry no version condition: plain `SLE_VAR`, `SLEG_STRUCT` for the classified paths, or `SLE_CONDVECTOR` over the full version range for the two reservation vectors, there being no unconditional `SLE_VECTOR` for struct members.
 - Savegames stamped 367-375 — written by the fork before this scheme, when it still appended to `SaveLoadVersion` — are no longer loadable. The temporary shim that translated them was removed; they now fail with the ordinary "savegame too new" error, since those numbers are ahead of the upstream version this build knows.
 
@@ -455,7 +456,7 @@ Unit tests: `src/tests/test_modular_airport.cpp` covers classification, rotation
 /Users/tor/ttd/OpenTTD/build/openttd_test "ModularAirport*"
 ```
 
-Regression: `scripts/regression_test.sh` runs headless 5-year simulations and compares total airport movements against the committed floors in `scripts/testdata/*.expected`. A bare run is `T5j2`, `mass7-inair`, and `helis2` concurrently (well under a minute), which is the normal check; `--full` adds `T7d` (~13 min total) and is worth it when a change could break ground/taxi pathfinding — always for routing work, since only `T7d` has route diversity. Per-commit attribution is `scripts/airport_stats_history.sh`. See `CLAUDE.md` for the fixture-by-fixture detail and the caveats about paused saves and log paths.
+Regression: `scripts/regression_test.sh` runs headless 5-year simulations and compares total airport movements against the committed floors in `scripts/testdata/*.expected`. A bare run is `T5j2`, `mass7-inair`, and `helis2` concurrently (well under a minute), which is the normal check; `--full` adds `T7d` (~13 min total) and is worth it when a change could break ground/taxi pathfinding — always for routing work, since only `T7d` has route diversity. Per-commit attribution is `scripts/airport_stats_history.sh`. See `skills/regression_testing.md` for the fixture-by-fixture detail and the caveats about paused saves and log paths.
 
 ## Debugging
 

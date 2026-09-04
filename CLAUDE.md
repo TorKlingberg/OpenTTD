@@ -108,7 +108,10 @@ In prose prefer screen-relative terms (up/down/left/right) over compass names, s
 
 # Modular Airports
 
-The modular airport system lets players build airports tile-by-tile. The reservation design is in `skills/reservations-design.md`.
+The modular airport system lets players build airports tile-by-tile. `modular_airports.md` is
+the implementation guide — data model, aircraft flow, commands, routing, save/load, rotation
+invariants — and `skills/reservations-design.md` is the authoritative reservation design. This
+file carries only what governs day-to-day work.
 
 ## Regression Testing
 
@@ -184,7 +187,7 @@ Run only modular airport tests:
 - `skills/regression_testing.md` — the airport throughput suite in full: fixture coverage, comparing two runs, floor history, plus the NoAI script regression and its `ctest` trap.
 - `skills/performance_profiling.md` — macOS `sample` profiling + `quick_test.sh`/`regression_test.sh` validation.
 - `skills/desync.md` — multiplayer desync checklist for game logic, save/load, caches, and movement changes.
-- `skills/modular_editor.md` — builder UI and stock-to-modular conversion notes.
+- `skills/modular_editor.md` — builder UI, stock-to-modular conversion, and piece availability gating.
 - `skills/savegame_fixture_resave.md` — `scripts/resave.sh`: migrate savegames to the current format without advancing the sim.
 - `skills/reservations-design.md` — segment types, safe-stop invariant, reservation lifecycle, and entry-contract pitfalls.
 
@@ -215,17 +218,18 @@ Notes:
 
 ## Saveload
 
-Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/station_sl.cpp`. Aircraft reservation vectors (`taxi_reserved_tiles`, `modular_runway_reservation`) are saved because map-level reservation bits affect multiplayer game state; the crossing-required ground-path cache is saved via the `MACP` chunk because it changes path choices; `modular_holding_wp_index` is saved because it affects aircraft movement. `taxi_path` and `landing_chain_path` are saved as structured fields in the `VEHS` table chunk by `SlVehicleAircraftPath` in `src/saveload/vehicle_sl.cpp`. The handler serializes the path validity, tiles, and classified segments and reconstructs each `unique_ptr` on load; it does not serialize the pointer value itself. Preserving the exact selected routes is required for multiplayer joins because recomputing them against newer reservation state can choose a different route from the server. Saves predating these fields omit them; the transient `modular_paths_loaded_from_save` and `rollout_restored_from_save` flags identify that legacy case and provide its one-shot mid-landing invariant exemption.
+Per-tile modular metadata is primary state and is saved as such. Everything derived is saved
+too when it can change what the simulation does: the reservation vectors and the `MACP`
+crossing cache because map-level reservations are multiplayer game state,
+`modular_holding_wp_index` because it moves the aircraft, and both cached paths (`taxi_path`,
+`landing_chain_path`) because recomputing a route against newer reservation state can pick a
+different one than the server did.
 
-### Fork savegame versioning
-
-**Nothing of this fork's goes into `SaveLoadVersion`.** That enum is upstream's and is merged verbatim; appending to it renumbers on every upstream merge and puts fork savegames on upstream's ordering axis, where they claim to be newer than upstream features they were written without. Fork features are versioned on their own axis instead (`src/saveload/extended_version_sl.h`), following the shape of JGRPP's SLXI chunk so that porting a feature there is mechanical:
-
-- Savegames written here set `SAVEGAME_VERSION_EXT` (`0x8000`) in the header version word on top of an ordinary upstream version. Upstream rejects them with a plain "savegame too new" instead of misreading map bits; the bit is stripped on load.
-- The `XVER` chunk holds one `{name, uint16 version, flags}` row per fork feature (`upstream_version`, `modular_airport`). It is registered **first**, so it is written first and known before any chunk that depends on it. An unknown or too-new feature aborts the load unless its saved flags say it may be dropped.
-- Gate on the feature, not the version: `IsModularAirportSaveFeaturePresent()` (→ `SlXvIsFeaturePresent(XSLFI_MODULAR_AIRPORT, n)` in a JGRPP port). Bump `MODULAR_AIRPORT_SL_VERSION` and test `min_version` for a format change within the feature.
-- Per-field conditions are usually unnecessary: `VEHS` and `STNN` are table chunks, so the savegame lists the fields it holds and a savegame written without ours simply does not load them.
-- Savegames stamped 367-375, from before this scheme, are no longer loadable — the temporary shim for them has been removed, so they now hit the ordinary "savegame too new" error.
+**Nothing of this fork's goes into `SaveLoadVersion`** — that enum is upstream's and is merged
+verbatim. Fork features are versioned on their own axis in the `XVER` chunk
+(`src/saveload/extended_version_sl.h`) and gated by feature, not by version:
+`IsModularAirportSaveFeaturePresent()`. Full detail, including the field-by-field list, is in
+`modular_airports.md` (Save/Load).
 
 ## Modular Airport Invariants
 
@@ -238,8 +242,8 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 ## Common Pitfalls
 
 - `GetModularTileData(tile)` returns `nullptr` if the tile isn't in the modular layout — always null-check.
-- The pieces drawn from this fork's own stored bitmaps -- the decorations (`APT_MODULAR_*`) and the small hangar's two closed-back views (visual rotations 1 and 2) -- are gated by the `station.new_airport_graphics` setting. `IsNewAirportGraphicsPiece(piece, rotation)` says which piece/rotation pairs it covers and `AreNewAirportGraphicsAvailable()` is the setting. **Runtime mirrors of base-set sprites are deliberately not gated**: the mirrored small terminal and the quarter-turned legacy small runway follow whichever base set is selected, so they stay available with the setting off, and a small-runway template rotates freely on either axis. Both gates on *building* a piece -- that setting and the year gate -- live in `GetModularPieceUnavailableReason(piece, rotation)`, which answers with the year first; `BuildModularAirportTile_Check` is its only command-side caller (`CmdUpgradeModularAirportTile` keeps its own year check, because it skips an ungated tile rather than failing), and the builder's greyed-out buttons (`IsModularPieceLocked`) and the script API (`ScriptAirport::IsModularPieceAvailable`) go through the same helper so they cannot disagree. Rotation is part of the question, so never call it without one. The settings window greys the setting out while `station.modular_airports` is off, but that dependency lives only in `SettingDesc::IsEditable` -- no command consults `modular_airports`. `_settings_game` is all-false in the unit tests, so a test that builds a decoration must set the flag itself.
-- Layout-derived answers (catchment, noise, hangar presence, accepted aircraft types, large-safe runways, holding loop, heli tiles) are cached in `mutable` fields on `Airport` and invalidated by `MarkLayoutDirty()` — the only route any layout mutation should use. (The helicopter landing path in `aircraft_cmd.cpp` also forces `modular_heli_tiles_dirty` when the cached landing tile has fallen out of the layout; that is a safety net for a mutation that missed `MarkLayoutDirty()`, not a pattern to copy.) Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or the cached answer silently stays stale. Retyping a tile counts as a layout change: mark dirty *after* the retype, since callers that mark before it leave a window where a read caches a pre-normalization answer.
+- Building a piece is gated twice — the availability year, then `station.new_airport_graphics` for the pieces drawn from this fork's own bitmaps (decorations, the small hangar's closed-back views). Ask `GetModularPieceUnavailableReason(piece, rotation)`, never without a rotation and never by re-deriving it: `BuildModularAirportTile_Check`, the builder's greyed-out buttons and the script API all go through it so they cannot disagree. `CmdUpgradeModularAirportTile` is the one exception — its own inline check is year-only. Runtime mirrors of base-set sprites are deliberately not gated. `_settings_game` is all-false in the unit tests, so a test that builds a decoration must set the flag itself. See `skills/modular_editor.md`.
+- Layout-derived answers (catchment, noise, hangar presence, accepted aircraft types, large-safe runways, holding loop, heli tiles) are cached on `Airport`, and `MarkLayoutDirty()` is the only route a layout mutation may use. Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or the cached answer silently stays stale; when retyping a tile, mark dirty *after* the retype, since marking before it leaves a window where a read caches a pre-normalization answer. See `modular_airports.md` (per-airport modular state).
 - `FindAirportGroundPath` with `v=nullptr` ignores stand occupancy (topology only); with `v=aircraft` avoids occupied stands that aren't the goal.
 - Path cost has a non-goal stand/parking penalty (`+5`), so routes may prefer slightly longer taxiways over cutting through stands.
 - Runway flags (`RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`) propagate to all tiles in a contiguous runway via `CmdSetRunwayFlags`.
@@ -252,14 +256,10 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 
 ## GUI Pitfalls
 
-- **`PickerWindowBase::Close()` calls `ResetObjectToPlace()`** — child picker windows (hangar, cosmetic, helipad) must override `Close()` with `this->Window::Close()` to avoid stealing the parent's placement cursor.
-- **Picker close behavior**: when child pickers close, parent builder should clear active placement for picker-backed tools (hangar/cosmetic/helipad) so main button state/cursor don't stay latched.
-- **`SetObjectToPlace` triggers `OnPlaceObjectAbort` on the current cursor owner** — when changing cursor ownership from within the same window (e.g. fence tool activation), wrap the call in `this->updating_cursor = true/false` to suppress the abort callback.
-- **`CloseWindowByClass` can trigger `ResetObjectToPlace` chains** — closing a `PickerWindowBase` sub-window triggers its `Close()` → `ResetObjectToPlace()` → `OnPlaceObjectAbort` on whoever owns the cursor. Guard with `updating_cursor` or override `Close()`.
-- **Year-gated picker availability**: if year changes while builder/pickers are open (e.g. Sandbox year change), re-run gating and invalidate picker windows so disabled states update immediately.
-- **Sub-tile click position**: use `_tile_fract_coords.x/.y` (0–15 in world X/Y), set by the viewport on every click. Same mechanism as the autoroad tool. Do NOT use `InverseRemapCoords` — it doesn't give tile-relative positions.
-- **Widget `SetPIPRatio(left, mid, right)`**: controls how extra space is distributed. `(0,0,1)` = left-aligned, `(1,0,1)` = centered, `(1,0,0)` = right-aligned.
-- **Helicopter landing commit**: `AircraftEventHandler_Flying` in `aircraft_cmd.cpp` picks the modular landing target and sets `VehicleAirFlag::HelicopterDirectDescent` when `state == HELILANDING`. Helipad-specific overrides (like skipping the FAF approach) belong here at landing commit, not in the movement code (`AirportMoveModularLanding`).
+The builder's cursor-ownership traps (`PickerWindowBase::Close` resetting the parent's
+placement, `SetObjectToPlace` firing `OnPlaceObjectAbort`, `CloseWindowByClass` chains) and
+sub-tile click positions via `_tile_fract_coords` are in `modular_airports.md` (GUI pitfalls);
+piece availability gating is in `skills/modular_editor.md`.
 
 ## Holding Loop Pitfalls
 
@@ -267,3 +267,4 @@ Modular tile data is saved via `SlModularAirportTileData` in `src/saveload/stati
 - Movement must be unconditional — don't guard `UpdateAircraftSpeed` inside `if (dist > 0)`.
 - Use ghost for movement, nearest-waypoint only for gate checks.
 - Reset `modular_holding_wp_index` to `UINT32_MAX` on landing commit.
+- `AircraftEventHandler_Flying` (`aircraft_cmd.cpp`) picks the modular landing target and sets `VehicleAirFlag::HelicopterDirectDescent` when `state == HELILANDING`. Helipad-specific overrides (like skipping the FAF approach) belong there at landing commit, not in the movement code (`AirportMoveModularLanding`).

@@ -19,8 +19,8 @@
  * abstract layout (a saved template, or one a script proposes, laid out on a
  * ModularPieceGrid) and a Station overload that measures a placed airport and
  * memoises the answer in the mutable cache on Airport. Those caches are
- * invalidated only by Airport::MarkLayoutDirty; see the pitfalls section of
- * CLAUDE.md before adding another one.
+ * invalidated only by Airport::MarkLayoutDirty; see the per-airport modular
+ * state section of modular_airports.md before adding another one.
  */
 
 #include "stdafx.h"
