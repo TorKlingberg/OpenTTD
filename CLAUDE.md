@@ -184,7 +184,7 @@ Run only modular airport tests:
 - `skills/stuck_plane_debugging.md` — detailed stuck-plane diagnosis playbook.
 - `skills/crash_debugging.md` — crash log and stacktrace triage steps.
 - `skills/airport_template_analysis.md` — template JSON analysis/visualization workflow.
-- `skills/regression_testing.md` — the airport throughput suite in full: fixture coverage, comparing two runs, floor history, plus the NoAI script regression and its `ctest` trap.
+- `skills/regression_testing.md` — the airport throughput suite in full: fixture coverage, comparing two runs, floor history and what the A* heuristic swap really cost, plus the NoAI script regression and its `ctest` trap.
 - `skills/performance_profiling.md` — macOS `sample` profiling + `quick_test.sh`/`regression_test.sh` validation.
 - `skills/desync.md` — multiplayer desync checklist for game logic, save/load, caches, and movement changes.
 - `skills/modular_editor.md` — builder UI, stock-to-modular conversion, and piece availability gating.
@@ -246,6 +246,7 @@ verbatim. Fork features are versioned on their own axis in the `XVER` chunk
 - Layout-derived answers (catchment, noise, hangar presence, accepted aircraft types, large-safe runways, holding loop, heli tiles) are cached on `Airport`, and `MarkLayoutDirty()` is the only route a layout mutation may use. Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or the cached answer silently stays stale; when retyping a tile, mark dirty *after* the retype, since marking before it leaves a window where a read caches a pre-normalization answer. See `modular_airports.md` (per-airport modular state).
 - `FindAirportGroundPath` with `v=nullptr` ignores stand occupancy (topology only); with `v=aircraft` avoids occupied stands that aren't the goal.
 - Path cost has a non-goal stand/parking penalty (`+5`), so routes may prefer slightly longer taxiways over cutting through stands.
+- Ground routes are riddled with cost ties, and the A* expansion order silently decides which one wins — on at least 43% of routable queries there is an equal-cost, equal-length alternative. That choice is a throughput lever worth ~18% of `mass7-inair` between its best and worst setting, and nothing pulls it deliberately — see `skills/regression_testing.md`.
 - Runway flags (`RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`) propagate to all tiles in a contiguous runway via `CmdSetRunwayFlags`.
 - `AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are treated as NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata.
 - Depot windows can outlive tile deletion. Guard depot UI reads with a valid depot tile check.

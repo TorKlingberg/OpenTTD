@@ -66,8 +66,9 @@ provide.
 **`T7d.sav` is the route-diversity fixture**, and the reference for what a quiet fixture looks
 like: it already had `plane_crashes = 0` when it was captured, so it was crash-free before the
 other three were, and turning off crashes left its total bit-for-bit unchanged (27033 both
-ways). Its four counted years are 6699 / 6796 / 6793 / 6745 -- a 1.4% spread, with the dip in
-the first counted year, so compare totals rather than reading one year against another. It is
+ways, measured 2026-08-23; it reads 26974 at `1dbcc94756`). Its four counted years were
+6699 / 6796 / 6793 / 6745 -- a 1.4% spread, with the dip in the first counted year, so compare
+totals rather than reading one year against another. It is
 the only fixture with genuine route diversity -- two or more routes between the same endpoints
 -- so it is the one that can detect alternate-exit routing work at all. It also mixes large and
 small runways without ever reaching the overrun path, because the strict large-runway
@@ -166,26 +167,95 @@ Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mas
 
 ## Floor history
 
-`T5j2`'s floor has more headroom than the others on purpose. Migrating that save to version
-375 shifted it by 26 movements (6283 before the re-save, 6309 after) while `mass7-inair` and
-`helis2` both round-tripped to identical totals. Whatever state does not survive `T5j2`'s
-save/load is worth about half a percent there, so a 30-movement margin of the kind the other
-fixtures use would sit inside the noise.
+Every floor sits 50-200 movements under its fixture's current total: `mass7-inair` 110,
+`helis2` 115, `T5j2` 140, `T7d` 174. That is the margin to aim for when bumping one. `T5j2`
+wants the wider end of it: migrating that save to version 375 shifted it by 26 movements (6283
+before the re-save, 6309 after) while `mass7-inair` and `helis2` both round-tripped to
+identical totals, so whatever state does not survive `T5j2`'s save/load is worth about half a
+percent there and a 30-movement margin would sit inside the noise.
 
 `mass7-inair` (9100) and `helis2` (14000) were lowered to 8400 and 13400 on
 2026-08-29. `cd876d1b676162e60ed80454a9db935332d8edda` ("Refactor: Simplify ground pathfinder
 and holding pattern calculations", 2026-08-24) swapped the ground-pathfinder A* heuristic from
-a locally-defined `CalculateHeuristic()` to the shared `DistanceManhattan()` -- a correctness
-fix, since the old function silently underflowed (`TileX`/`TileY` return `uint`) and returned
-negative heuristic values for any goal up/right of the start tile. The corrected heuristic
-still guarantees optimal-cost paths for any single aircraft (an admissible heuristic, even a
-broken-weak one, never breaks A* optimality), but it dropped `mass7-inair`/`helis2` throughput
-~8% (9229 -> 8500, 14127 -> 13505) -- every other change in that commit was verified inert by
-reverting each individually and rebuilding. The mechanism is not fully understood: the working
-theory is that the two heuristics break cost-ties between equal-length alternate routes
-differently, and that shift creates emergent reservation contention across aircraft even though
-no single aircraft's path got worse. The floors were lowered to match rather than reverting the
-correctness fix; the throughput loss itself is still open.
+a locally-defined `CalculateHeuristic()` to the shared `DistanceManhattan()`, which dropped
+`mass7-inair`/`helis2` throughput ~8% (9229 -> 8500, 14127 -> 13505) -- every other change in
+that commit was verified inert by reverting each individually and rebuilding. The floors were
+lowered to match rather than reverting the swap. See the next section for what the old
+heuristic actually was and where the throughput went.
+
+They were raised again to 8850 and 13900 on 2026-09-05, once the loss stopped being
+attributable to the heuristic. Throughput did not recover -- 8960 and 14015 are still under the
+pre-swap 9229 and 14127 -- but floors of 8400 and 13400 left 560 and 615 movements of slack, so
+the two default-run fixtures that were widened for this loss could no longer have caught a
+repeat of it. Both totals were measured at `1dbcc94756` and reproduced exactly by a bare
+`scripts/regression_test.sh` run at `292c1384ec`, which is where the new floors were set.
+
+## What the A* heuristic swap actually did
+
+`CalculateHeuristic()` did **not** compute Manhattan distance and was not merely "weak". Its
+`abs()` resolved to OpenTTD's own `abs<T>` template (`src/core/math_func.hpp`), not `std::abs`;
+with `T = uint` from `TileX`/`TileY` the `a < 0` test can never fire, so it returned the wrapped
+value unchanged and assigning that to `int` recovered the *signed* difference. The function was
+
+    h_old(n) = (TileX(n) - TileX(goal)) + (TileY(n) - TileY(goal))
+
+-- a signed potential phi(n) - phi(goal) with phi = x + y, not a distance. `h_old(goal) = 0` and
+each step changes it by exactly +/-1 (moves are 4-orthogonal) against a minimum edge cost of 1,
+so it is **consistent** -- which makes plain A* under it cost-optimal. The `avoid_tiles` path is
+not plain A*, since `current_path_contains` prunes on the route built so far, so treat the
+measured "never a different cost" below as the real evidence rather than the proof. Under the
+effective edge reweighting w' = w + h(v) - h(u) it is Dijkstra with a fixed pull toward the
+low-x/low-y (screen-up) corner, with no reference to where the goal is. As of 2026-09-04 this
+was the only place the fork tripped over that template: a `static_assert(!std::is_unsigned_v<T>)`
+inside `abs<T>` compiled the whole tree clean.
+
+So the swap could not change path *quality*. Measured directly, by running both heuristics on
+every identical query inside one simulation (~1.25M paired queries on `mass7-inair`):
+
+- the two **never** return a different cost, and neither ever finds a route the other misses;
+- `caphits = 0` throughout, so `MAX_PATHFINDER_ITERATIONS` is not involved either;
+- of the queries where both find a route (~95% of them; the rest are refused by both), 52-57%
+  return the identical route and **43-48% return a different route of identical cost and
+  identical tile count**, with a same-cost different-length result under 0.15%;
+- first-safe-stop position, i.e. reservation-horizon length, differs by 0.17% in aggregate.
+
+The only thing the heuristic changes is **which of several equal-cost routes wins**, via node
+expansion order. That choice is worth far more than 8%. Isolate it by scaling the whole f-cost
+and hanging a sub-unit tie-break term underneath: `f = 64*(g + |dx| + |dy|) +/- phi`. Scaling `g`
+by the same 64 is what keeps this cost-optimal -- scaling only the heuristic would be weighted A*
+at weight 64, i.e. greedy -- and phi stays under 64 because both tiles are inside one airport.
+That gives (5 counted years, `T7d` 4, measured 2026-09-04 at `1dbcc94756`):
+
+| tie-break | mass7-inair | helis2 | T5j2 | T7d |
+|---|---|---|---|---|
+| none (`DistanceManhattan`, current) | 8960 | 14015 | 6340 | 26974 |
+| `h_old` (pre-cd876d1b) | 8990 | 14428 | 6343 | 26648 |
+| prefer small x+y | **9558** | **14526** | 6247 | **27127** |
+| prefer large x+y | 7973 | 13007 | 6301 | -- |
+| prefer small x-y | 8880 | 13996 | -- | -- |
+| prefer large x-y | 8061 | 13209 | -- | -- |
+| prefer reaching a safe stop sooner | 8953 | 13915 | -- | -- |
+| h = 0 (Dijkstra) | 8425 | -- | -- | -- |
+
+`stuck(reserve)` on `mass7-inair` tracks it monotonically and inversely -- 30161 / 35964 / 38288 /
+57036 for small-x+y / `h_old` / current / large-x+y -- so the channel is ground contention, as the
+old working theory guessed. Three things that theory got wrong or left open are now settled:
+the effect is not about heuristic strength (Dijkstra is 6% *worse*, so goal-direction still pays),
+it is not about the reservation horizon (deliberately minimising it is a wash), and the accidental
+bias in `h_old` was a weak version of a much larger effect. Restoring `h_old` at `1dbcc94756`
+gains +0.3%/+2.9%/+0.05% on `mass7-inair`/`helis2`/`T5j2` and *loses* 1.2% on `T7d`, so there is
+no live regression to revert -- keep `DistanceManhattan`.
+
+Read the rest as headroom, not as a fix to apply. The winning bias is an arbitrary geometric
+preference with no reason to generalise: it gains 6.7%/3.6%/0.6% on `mass7-inair`/`helis2`/`T7d`
+but loses 1.5% on `T5j2`, and on `mass7-inair` 88% of its gain is two airports (Drefingbridge
++301, Harhill East +229). What it establishes is that A* tie-breaking silently picks the traffic
+pattern, that nothing in the code picks it deliberately, and that the best and worst arbitrary
+choice are 1585 movements apart on `mass7-inair` -- 18% of the current baseline. A principled
+rule that separates opposing flows would be the real fix. The measurements used an
+`OPENTTD_PF_HEURISTIC` selector and an `OPENTTD_PF_SHADOW` paired-query comparison bolted onto
+`src/airport_ground_pathfinder.cpp`; that scaffolding was never committed, so reproducing this
+means writing it again.
 
 That regression went unseen for five days because the bare run was `T5j2` alone until
 2026-08-29. `T5j2`, `mass7-inair` and `helis2` all run by default now, so the same kind of
