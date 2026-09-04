@@ -15,9 +15,6 @@ Equivalent manual command (if needed):
 make -j8 -C /Users/tor/ttd/OpenTTD/build && codesign -s - --deep --force --entitlements /Users/tor/ttd/OpenTTD/scripts/debug.entitlements /Users/tor/ttd/OpenTTD/build/openttd
 ```
 
-Keep the `--entitlements` flag: it grants `get-task-allow`, without which `lldb -p <pid>`
-attaches to a running game but cannot pause it, and the failed attach kills the game.
-
 If you need to reconfigure (e.g. after cmake file changes):
 ```bash
 cd /Users/tor/ttd/OpenTTD/build
@@ -37,17 +34,17 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug \
 
 **Common build failures:**
 - `algorithm file not found` — missing `-DCMAKE_CXX_FLAGS` above
-- `cannot find libatomic` — apply fix to `cmake/3rdparty/llvm/CheckAtomic.cmake`: change `if(MSVC)` to `if(MSVC OR APPLE)` at lines 52 and 75
 
 ## Before Committing
 
 Do go ahead and commit if you are confident about a change. No need to wait for my approval.
 
-Run `scripts/regression_test.sh` after changes to modular airport reservation, pathfinder, or movement code. That is the bare run — `T5j2`, `mass7-inair`, and `helis2` concurrently, under a minute apiece, and the right check for almost everything. Save `--full` (adds `T7d`, ~13 min) for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
+Run `scripts/regression_test.sh`
+That is the bare run — `T5j2`, `mass7-inair`, and `helis2` concurrently, under a minute apiece, and the right check for almost everything. Save `--full` (adds `T7d`, ~13 min) for changes with a real risk of breaking ground/taxi pathfinding; it is not a per-commit gate. Also run `scripts/multiplayer_desync_test.sh` after changes affecting modular path serialization, network joins, or save/load state.
 
 Also ask a subagent to review your change before comitting. Run this in parallel with the regression test.
 
-The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; the `pre-commit` hook checks the staged diff automatically. The `commit-msg` hook that enforced the `<keyword>: <Details>` subject format is disabled (renamed to `.git/hooks/commit-msg.disabled`); rename it back to re-enable. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
+The official `OpenTTD-git-hooks` are installed in `../openttd_hooks` and linked into `.git/hooks`; the `pre-commit` hook checks the staged diff automatically. (Committing from a worktree needs `HOOKS_DIR` — see Git Worktrees.) After staging the intended changes, run the remaining checks:
 
 ```bash
 python3 .github/file-descriptions.py <(git diff --cached --name-only) &&
@@ -59,10 +56,7 @@ cmake --build build --target regression -j8
 
 The last line is the NoAI script regression, and it is **not** covered by `openttd_test`.
 It replays `regression/regression/main.nut` and diffs the output against the committed
-`regression/regression/result.txt`, so any change to script-visible behaviour -- a piece's
-availability year, whether a rotation may be built, a noise or catchment number, a new API
-answer -- makes that file stale and turns every CI job red on every platform at once. The
-whole diff is in test data, so nothing fails locally until this target runs. Regenerate
+`regression/regression/result.txt`. Regenerate
 rather than hand-edit: a failing run writes the actual output to
 `build/regression_regression_output.txt`, and the fix is to `diff` that against the
 committed file, confirm every changed line is an intended behaviour change, then copy it
@@ -96,24 +90,13 @@ cp -n /Users/tor/ttd/OpenTTD/build/baseset/*.GRF /Users/tor/ttd/OpenTTD/build/ba
 HOOKS_DIR=/Users/tor/ttd/OpenTTD/.git/hooks git commit -F <message-file>
 ```
 
-**Merging back to master:** always fast-forward (`--ff-only`), never a merge commit — this is a standing preference, not just a worktree workaround. A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from the main checkout:
-
-```bash
-cd /Users/tor/ttd/OpenTTD && git merge --ff-only claude/<branch>
-```
+**Merging back to master:** always fast-forward (`--ff-only`), never a merge commit. A branch checked out in another worktree (e.g. `master`) can't be merged into from here — commit in this worktree, then run the merge from the main checkout:
 
 `--ff-only` fails if master has moved since the branch was cut — rebase the branch onto master first, then fast-forward.
 
 ## Debugging
 
 The main runtime log is `/tmp/openttd.log`.
-
-`scripts/build_and_run*.sh` also run `scripts/make_dsym.sh`, which gives the game
-self-contained symbols so `lldb -p` still works after the build directory has moved
-on. Without it a rebuild makes every pool walk return zero rows, which reads as an
-empty game rather than a failed attach.
-
-Debugger/logging workflows are documented in the skills list below.
 
 ## Coordinate System
 
@@ -150,41 +133,6 @@ The log check exists because throughput hides small correctness faults: a few ai
 broken path cost a handful of movements out of thousands, well inside the floor's headroom.
 Fixtures run at `-d misc=2` so the `[FALLBACK]` markers are visible; that costs ~2.7x the log
 volume and does not change any total.
-
-| Invocation | Fixtures |
-|---|---|
-| `scripts/regression_test.sh` | `T5j2`, `mass7-inair`, `helis2` concurrently, ~40s — the normal check, including before a commit |
-| `scripts/regression_test.sh --full` | adds `T7d`, ~13 min total — only when a change could break taxi pathfinding |
-
-Other flags: `--no-build` reuses whatever `./build/openttd` already is, `--sequential` runs the
-fixtures one at a time, and `--log-dir DIR` moves the per-fixture logs off their default `/tmp`
-paths.
-
-**The default run holds back only `T7d`**, at ~784s versus ~30-40s apiece for the other three
-— running it every commit would make the bare check as slow as `--full` is today. `T5j2`,
-`mass7-inair`, and `helis2` together already cover sustained reservation contention, fixed-wing
-throughput, and helicopters. What the default run still cannot see, because only `T7d` has it:
-
-- **Alternate routing.** `T7d` is the only fixture with genuine route diversity — two or more
-  routes between the same endpoints — so route-selection work is invisible to the default run.
-- **The wait-don't-downgrade tier.** Also `T7d` only.
-
-So reach for `--full` when a change has a real chance of breaking ground/taxi pathfinding, and
-always for routing work. It is not a per-commit gate; for ordinary changes the bare run is the
-check.
-
-Before 2026-08-29 the bare run was `T5j2` alone, and it missed a real ~8% throughput regression
-on `mass7-inair`/`helis2` (see the floor-history note below) for five days because neither
-fixture ran by default. Broadening the default run is the direct fix for that gap.
-
-Note also that `T5j2` has the loosest floor of the four on purpose (see the save/load note
-below), so it is the least sensitive fixture to a small regression as well as the fastest.
-
-**Fixtures run concurrently.** The sim is single-threaded and the fixtures share no writable
-state, so `--full` costs roughly one fixture's wall time on a multi-core machine rather than
-four — and since `T7d` is ~7x the others (784s vs 108/110/129s, measured 2026-08-23), `--full`
-is essentially the cost of `T7d` alone. Each fixture's output is buffered and replayed in
-fixture order after everything finishes, so the report never interleaves.
 
 **Two concurrent *suite* runs still collide**, because the log path is derived from the fixture
 name: the second run truncates the first one's log out from under it and both sets of
