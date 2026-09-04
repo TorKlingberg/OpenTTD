@@ -2498,7 +2498,7 @@ function Regression::ModularAirportLayoutPreview()
 	print("    short stride:             " + AIAirport.GetModularLayoutNoiseLevel([0, 0, AIAirport.MP_APRON]));
 	print("    bad piece:                " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, 999)));
 	print("    bad rotation:             " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 7)));
-	print("    rotated small hangar:     " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_SMALL_HANGAR, 2)));
+	print("    negative rotation:        " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(0, 0, AIAirport.MP_APRON, -1)));
 	print("    negative offset:          " + AIAirport.GetModularLayoutNoiseLevel(ModularLayoutTile(-1, 0, AIAirport.MP_APRON)));
 	print("    bad runway flags:         " + AIAirport.GetModularLayoutCatchmentRadius(ModularLayoutTile(0, 0, AIAirport.MP_APRON, 0, 99)));
 	print("    duplicate tile:           " + AIAirport.GetModularLayoutNoiseLevel(ModularLayout([
@@ -2550,9 +2550,16 @@ function Regression::ModularAirportBuild()
 	print("  Build(NEAR_END):                          " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 0), AIAirport.MP_RUNWAY_SMALL_NEAR_END, 0, station));
 	print("  Build(APRON):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(0, 1), AIAirport.MP_APRON, 0, station));
 	print("  Build(STAND):                             " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(1, 1), AIAirport.MP_STAND, 0, station));
+	/* A small hangar faces any of the four ways, and a placement gives back the
+	 * rotation it was asked for. */
 	print("  Build(SMALL_HANGAR rot 2):                " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 2, station));
-	print("    error:                                  " + AIError.GetLastErrorString());
-	print("  Build(SMALL_HANGAR rot 0):                " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 0, station));
+	print("    rotation after placement:               " + AIAirport.GetModularPieceRotation(site + AIMap.GetTileIndex(2, 1)));
+	/* A hangar built onto a hangar refaces the one already there rather than
+	 * refusing an occupied tile, and that is the only way this command reaches its
+	 * replace path: it keeps the piece and skips the clear-land and authority
+	 * checks a placement onto bare ground has to pass. */
+	print("  Build(SMALL_HANGAR rot 0) onto it:        " + AIAirport.BuildModularAirportTile(site + AIMap.GetTileIndex(2, 1), AIAirport.MP_SMALL_HANGAR, 0, station));
+	print("    rotation after replace:                 " + AIAirport.GetModularPieceRotation(site + AIMap.GetTileIndex(2, 1)));
 
 	print("  IsModularAirportTile() after:             " + AIAirport.IsModularAirportTile(site));
 	print("  GetAirportType() == AT_MODULAR:           " + (AIAirport.GetAirportType(site) == AIAirport.AT_MODULAR));
