@@ -10942,7 +10942,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
   MP_RUNWAY_SMALL_FAR_END: available true, min year 0
   MP_HANGAR: available false, min year 1955
   MP_SMALL_HANGAR: available true, min year 0
-  MP_HELIPAD: available false, min year 1955
+  MP_HELIPAD: available false, min year 1963
   MP_TOWER: available false, min year 1955
   MP_TERMINAL: available false, min year 1955
   MP_SMALL_TERMINAL_3: available true, min year 0
@@ -11006,7 +11006,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
     short stride:             -1
     bad piece:                -1
     bad rotation:             -1
-    rotated small hangar:     -1
+    rotated small hangar:     0
     negative offset:          -1
     bad runway flags:         -1
     duplicate tile:           -1
@@ -11034,8 +11034,8 @@ ERROR: IsEnd() is invalid as Begin() is never called
   Build(NEAR_END):                          true
   Build(APRON):                             true
   Build(STAND):                             true
-  Build(SMALL_HANGAR rot 2):                false
-    error:                                  ERR_PRECONDITION_FAILED
+  Build(SMALL_HANGAR rot 2):                true
+    error:                                  ERR_NONE
   Build(SMALL_HANGAR rot 0):                true
   IsModularAirportTile() after:             true
   GetAirportType() == AT_MODULAR:           true
