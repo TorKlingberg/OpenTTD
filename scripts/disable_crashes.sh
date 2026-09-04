@@ -5,7 +5,7 @@
 # Crashes are the remaining noise source in the regression fixtures: any change
 # that shifts timing consumes the synced Random() differently, so a different set
 # of aircraft dies, and an airport served by three aircraft loses ~22% of its
-# movements when one of them goes. See "Comparing two runs" in CLAUDE.md.
+# movements when one of them goes. See "Comparing two runs" in skills/regression_testing.md.
 #
 # 'vehicle.plane_crashes' is a game setting (saved with the savegame), 0 = none.
 # It gates the general per-brake-tick roll in RollAirplaneCrashCheck(). It does

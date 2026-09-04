@@ -5,7 +5,7 @@
 # AI companies are a noise source in the regression fixtures: which airports an
 # AI decides to build shifts with any change that consumes the synced Random()
 # differently, which moves fixture totals by a percent or two with no routing
-# cause. See "Comparing two runs" in CLAUDE.md.
+# cause. See "Comparing two runs" in skills/regression_testing.md.
 #
 # Uses the same scripts/game_start.scr hook as resave.sh, so the state written
 # is the loaded state with the AI companies deleted and zero ticks simulated.
@@ -13,9 +13,9 @@
 # it; 'difficulty.max_no_competitors = 0' keeps MaybeStartNewCompany() from
 # spawning replacements during the run.
 #
-# Never run this on scripts/testdata/helis2.sav. It has no AI companies anyway,
-# and re-saving it destroys the stale-descent-flag coverage it exists for -- see
-# the Regression Testing notes in CLAUDE.md.
+# No need to run this on scripts/testdata/helis2.sav or mass7-inair.sav: neither
+# ever had AI companies. (A re-save does not cost helis2 its stale-descent-flag
+# coverage -- Aircraft::flags round-trips; see skills/regression_testing.md.)
 #
 # Usage: scripts/strip_ai.sh <savegame> [<savegame> ...]
 # Files are rewritten in place.

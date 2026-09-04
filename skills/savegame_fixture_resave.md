@@ -32,7 +32,7 @@ writes the loaded state converted to `SAVEGAME_VERSION` with zero ticks elapsed,
 - **`save` cannot take a path.** `ConSave` always writes to `<personal dir>/save/<name>.sav`. The script saves under a scratch name there and moves the result into place — it does not save next to the source file.
 - **`game_start.scr` is found on the search path**, which includes the current working directory *and* the repo root. The script runs from a private `mktemp -d` so its hook shadows nothing in the repo, the build dir, or `~/Documents/OpenTTD`.
 - **Pass `-x`** or the run rewrites `openttd.cfg` from whatever the fixture's settings were.
-- **Check the pause state.** Fixtures must stay unpaused (see the Regression Testing notes in `CLAUDE.md`). `_pause_mode` is saved (`misc_sl.cpp`) and is restored from the fixture, so an unpaused save re-saves unpaused — but the `PauseMode::SaveLoad` handling around `SM_LOAD_GAME` is close enough to this path to be worth re-checking if a fixture starts simulating nothing.
+- **Check the pause state.** Fixtures must stay unpaused (see `skills/regression_testing.md`). `_pause_mode` is saved (`misc_sl.cpp`) and is restored from the fixture, so an unpaused save re-saves unpaused — but the `PauseMode::SaveLoad` handling around `SM_LOAD_GAME` is close enough to this path to be worth re-checking if a fixture starts simulating nothing.
 - **A re-save keeps `Aircraft::flags`.** ~52 of `helis2.sav`'s 90 helicopters carry a stale
   `VehicleAirFlag::HelicopterDirectDescent` from a build predating the modular touchdown clear,
   and an earlier note here claimed re-saving would destroy that coverage. It does not: the
