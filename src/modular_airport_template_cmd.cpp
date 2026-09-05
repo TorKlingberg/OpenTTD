@@ -558,11 +558,12 @@ CommandCost CmdPlaceModularAirportTemplate(DoCommandFlags flags, TileIndex tile,
 		}
 	}
 
-	/* NoTest commands do not get the command framework's normal aggregate funds
-	 * check. Do it here, after the complete cost is known and before any mutation. */
-	if (!CheckCompanyHasMoney(total)) return total;
-
 	if (flags.Test(DoCommandFlag::Execute)) {
+		/* NoTest commands do not get the command framework's aggregate funds check.
+		 * Check before any mutation, but let test passes return the price even when
+		 * the company cannot afford it, so cost estimates remain available. */
+		if (!CheckCompanyHasMoney(total)) return total;
+
 		const ModularAirportNoiseSnapshot execute_noise_before = st != nullptr ? GetModularAirportNoiseSnapshot(st) : ModularAirportNoiseSnapshot{};
 		/* Apply station creation/joining now that validation is complete. */
 		ret = BuildStationPart(&st, flags, reuse, union_area, naming);

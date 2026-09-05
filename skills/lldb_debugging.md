@@ -50,8 +50,9 @@ and never consults a `.o` again, so the build directory can move on freely:
 scripts/make_dsym.sh   # ~10s, ~190MB, only needed once per link
 ```
 
-Bundles are archived under `build/dsyms/<UUID>.dSYM` (three most recent kept) and
-`build/openttd.dSYM` symlinks to the current one, which is what LLDB finds on its
+Bundles are archived under `build/dsyms/<UUID>.dSYM` and retained until manually removed. Delete
+unneeded archives only after their games and debugger sessions have closed. The
+`build/openttd.dSYM` symlink points to the current one, which is what LLDB finds on its
 own. Archiving by UUID is what makes a *mid-session* rebuild survivable: the
 running game keeps its own symbols even after `build/openttd` is relinked. If
 LLDB ever fails to find them, name the bundle explicitly -- it is matched by UUID,

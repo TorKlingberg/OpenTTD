@@ -41,10 +41,7 @@ fi
 # What LLDB finds without being told anything.
 ln -sfn "$archive" "$binary.dSYM"
 
-# Keep the three most recent builds' symbols; older ones can only belong to
-# games that are no longer running.
-ls -dt "$build_dir/dsyms"/*.dSYM 2>/dev/null | tail -n +4 | while read -r stale; do
-  [[ "$stale" == "$archive" ]] || rm -rf "$stale"
-done
+# Retain older archives: a game can stay running across any number of rebuilds.
+# Remove unneeded bundles manually once their games and debugger sessions close.
 
 echo "make_dsym: symbols at $archive"

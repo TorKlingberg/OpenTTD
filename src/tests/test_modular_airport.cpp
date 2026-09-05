@@ -955,7 +955,7 @@ TEST_CASE("ModularAirportAtomicDragPreservesInteractiveBuildSemantics")
 		CHECK(Station::GetByTile(TileAddXY(base, 1, 0)) == st);
 	}
 
-	SECTION("the full drag cost is checked before construction")
+	SECTION("unaffordable layouts can be priced but cannot be built")
 	{
 		Company *company = reset_world(TileXY(32, 32)).first;
 		company->money = 0;
@@ -963,9 +963,21 @@ TEST_CASE("ModularAirportAtomicDragPreservesInteractiveBuildSemantics")
 		ModularTemplatePlacementData data;
 		data.width = 2;
 		data.height = 1;
-		data.is_drag_build = true;
 		data.tiles = {{0, 0, APT_EMPTY}, {1, 0, APT_EMPTY}};
-		CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data).Failed());
+		for (bool drag_build : {false, true}) {
+			data.is_drag_build = drag_build;
+			/* Explicit cost queries go through the command framework; Shift estimates
+			 * invoke the handler's test pass without the Execute flag. */
+			const CommandCost query = Command<Commands::PlaceModularAirportTemplate>::Do(DoCommandFlag::QueryCost,
+					base, StationID::Invalid(), false, data);
+			REQUIRE(query.Succeeded());
+			CHECK(query.GetCost() > 0);
+			const CommandCost estimate = CmdPlaceModularAirportTemplate({}, base, StationID::Invalid(), false, data);
+			CHECK(estimate.Succeeded());
+			CHECK(estimate.GetCost() == query.GetCost());
+			CHECK(CmdPlaceModularAirportTemplate(DoCommandFlag::Execute, base, StationID::Invalid(), false, data).Failed());
+		}
+		CHECK(company->money == 0);
 		CHECK(!IsTileType(base, TileType::Station));
 		CHECK(!IsTileType(TileAddXY(base, 1, 0), TileType::Station));
 	}
