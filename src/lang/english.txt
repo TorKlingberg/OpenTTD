@@ -4038,10 +4038,8 @@ STR_STATION_AIRPORT_STATS_NEED_RADARS                           :{BLACK}- {NUM} 
 STR_STATION_AIRPORT_STATS_NEED_TERMINALS                        :{BLACK}- {NUM} more large terminal {P building buildings}
 STR_STATION_AIRPORT_STATS_NOISE                                 :{BLACK}Airport noise level: {NUM}
 STR_STATION_AIRPORT_STATS_TOWN_NOISE                            :{BLACK}Noise contributed to {TOWN}: {NUM}
-STR_STATION_AIRPORT_STATS_NOISE_DISABLED                        :{BLACK}Town noise limits disabled
 STR_STATION_AIRPORT_STATS_MAINTENANCE_MONTH                     :{BLACK}Airport upkeep per month: {CURRENCY_LONG}
 STR_STATION_AIRPORT_STATS_MAINTENANCE_MINUTE                    :{BLACK}Airport upkeep per minute: {CURRENCY_LONG}
-STR_STATION_AIRPORT_STATS_MAINTENANCE_DISABLED                  :{BLACK}Infrastructure maintenance disabled
 
 STR_STATION_VIEW_GROUP                                          :{BLACK}Group by
 STR_STATION_VIEW_WAITING_STATION                                :Station: Waiting

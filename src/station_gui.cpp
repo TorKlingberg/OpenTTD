@@ -2055,22 +2055,18 @@ struct StationViewWindow : public Window {
 				if (info.missing_terminals != 0) line(GetString(STR_STATION_AIRPORT_STATS_NEED_TERMINALS, info.missing_terminals));
 			}
 		}
-		gap();
+		if (_settings_game.economy.station_noise_level || _settings_game.economy.infrastructure_maintenance) gap();
 
-		line(GetString(STR_STATION_AIRPORT_STATS_NOISE, GetModularAirportNoiseLevel(st)));
 		if (_settings_game.economy.station_noise_level) {
+			line(GetString(STR_STATION_AIRPORT_STATS_NOISE, GetModularAirportNoiseLevel(st)));
 			if (Town::GetNumItems() != 0) {
 				const auto noise = GetModularAirportNoiseSnapshot(st);
 				if (noise.town != nullptr) line(GetString(STR_STATION_AIRPORT_STATS_TOWN_NOISE, noise.town->index, noise.level));
 			}
-		} else {
-			line(GetString(STR_STATION_AIRPORT_STATS_NOISE_DISABLED));
 		}
 		if (_settings_game.economy.infrastructure_maintenance) {
 			line(GetString(TimerGameEconomy::UsingWallclockUnits() ? STR_STATION_AIRPORT_STATS_MAINTENANCE_MINUTE : STR_STATION_AIRPORT_STATS_MAINTENANCE_MONTH,
 					ScaleAirportMaintenanceCost(_price[Price::InfrastructureAirport], GetModularAirportMaintenancePoints(st))));
-		} else {
-			line(GetString(STR_STATION_AIRPORT_STATS_MAINTENANCE_DISABLED));
 		}
 		return CeilDiv(tr.top - top, GetCharacterHeight(FontSize::Normal));
 	}

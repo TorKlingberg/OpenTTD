@@ -367,8 +367,9 @@ modular airports; other stations retain the two-view cycle. The button names the
 view. Stats contains last economy month's arrivals, departures and total movements,
 large-aircraft safety (combining missing landing and takeoff runways into one warning),
 catchment radius and next-tier deficits, airport and town noise, and airport upkeep.
-Time labels use minutes in wallclock mode. Disabled catchment, noise and maintenance
-settings are explained in the panel. Cargo remains visible above it.
+Time labels use minutes in wallclock mode. Fixed catchment is explained in the panel.
+Noise and upkeep rows are hidden when their respective settings are disabled. Cargo
+remains visible above it.
 
 `GetModularAirportCatchmentInfoFromPieces` returns both the radius and next-tier deficits;
 the radius-only callers use this same calculation. The Stats panel wraps text to the
