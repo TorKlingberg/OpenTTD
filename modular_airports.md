@@ -360,6 +360,21 @@ It is used by normal tile drawing (`ApplyModularAirportTileLayoutOverrides`), th
 
 Overlay drawing entry points: `DrawModularHoldingOverlay`, `DrawModularTaxiReservationOverlay` (`modular_airport_gui.h`), `DrawModularAirportDirectionOverlays` (`modular_airport_draw.h`).
 
+### Station statistics
+
+The station window's existing button cycles Accepts → Ratings → Stats → Accepts for
+modular airports; other stations retain the two-view cycle. The button names the next
+view. Stats contains last economy month's arrivals, departures and total movements,
+large-aircraft safety (combining missing landing and takeoff runways into one warning),
+catchment radius and next-tier deficits, airport and town noise, and airport upkeep.
+Time labels use minutes in wallclock mode. Disabled catchment, noise and maintenance
+settings are explained in the panel. Cargo remains visible above it.
+
+`GetModularAirportCatchmentInfoFromPieces` returns both the radius and next-tier deficits;
+the radius-only callers use this same calculation. The Stats panel wraps text to the
+window width and adjusts its height; it adds no saved or movement state. If the airport
+is removed while Stats is open, the panel returns to Accepts.
+
 ### GUI pitfalls
 
 - `PickerWindowBase::Close()` calls `ResetObjectToPlace()` — child pickers must override `Close()` with `this->Window::Close()` to avoid stealing the parent's placement cursor.

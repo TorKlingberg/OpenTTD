@@ -736,10 +736,10 @@ static bool IsRadarPiece(ModularAirportPieceID piece_type)
  * This works on an abstract grid so a saved template can be measured before it
  * is placed; @see GetModularAirportCatchmentRadius for the built-airport entry.
  */
-uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchmentPiece> pieces)
+ModularAirportCatchmentInfo GetModularAirportCatchmentInfoFromPieces(std::span<const ModularCatchmentPiece> pieces)
 {
-	constexpr uint CATCH_MIN = 4;
-	if (pieces.empty()) return CATCH_MIN;
+	ModularAirportCatchmentInfo info;
+	if (pieces.empty()) return info;
 
 	const ModularPieceGrid grid(pieces);
 
@@ -764,7 +764,7 @@ uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchment
 
 	/* Tier 5: large-aircraft safe (tower + big terminal + safe landing & takeoff
 	 * runway). Shared with the built-airport path so the two cannot drift. */
-	if (GetModularAirportSafetyStatusFromPieces(pieces) != MASR_NONE) return CATCH_MIN;
+	if (GetModularAirportSafetyStatusFromPieces(pieces) != MASR_NONE) return info;
 
 	/* Gather the tile lengths of each distinct fully-paved runway. */
 	std::vector<size_t> paved_runways;
@@ -783,16 +783,51 @@ uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchment
 		return n;
 	};
 
-	/* Tier 6: two paved runways of >= 6 tiles. */
-	if (paved_at_least(6) < 2) return 5;
+	/* Report exactly the first unmet tier; the radius and checklist share these gates. */
+	info.radius = 5;
+	info.next_radius = 6;
+	info.runway_length = 6;
+	info.missing_runways = 2 - std::min(2U, paved_at_least(6));
+	if (info.missing_runways != 0) return info;
 
-	/* Tier 8: two paved >= 7 tiles, plus a helipad, a radar and three big terminals. */
-	if (paved_at_least(7) >= 2 && helipads >= 1 && radars >= 1 && big_terminals >= 3) {
-		/* Tier 10: four paved runways of >= 8 tiles. */
-		if (paved_at_least(8) >= 4) return 10;
-		return 8;
+	info.radius = 6;
+	info.next_radius = 8;
+	info.runway_length = 7;
+	info.missing_runways = 2 - std::min(2U, paved_at_least(7));
+	info.missing_helipads = 1 - std::min(1U, helipads);
+	info.missing_radars = 1 - std::min(1U, radars);
+	info.missing_terminals = 3 - std::min(3U, big_terminals);
+	if (info.missing_runways != 0 || info.missing_helipads != 0 || info.missing_radars != 0 || info.missing_terminals != 0) return info;
+
+	info.radius = 8;
+	info.next_radius = 10;
+	info.runway_length = 8;
+	info.missing_runways = 4 - std::min(4U, paved_at_least(8));
+	if (info.missing_runways != 0) return info;
+
+	info.radius = 10;
+	info.next_radius = 0;
+	info.runway_length = 0;
+	return info;
+}
+
+/** Catchment radius for both template previews and built airports. */
+uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchmentPiece> pieces)
+{
+	return GetModularAirportCatchmentInfoFromPieces(pieces).radius;
+}
+
+/** Describe a built airport using the same tier calculation as template previews. */
+ModularAirportCatchmentInfo GetModularAirportCatchmentInfo(const Station *st)
+{
+	std::vector<ModularCatchmentPiece> pieces;
+	if (st->airport.modular_tile_data != nullptr) {
+		pieces.reserve(st->airport.modular_tile_data->size());
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			pieces.push_back({static_cast<int>(TileX(data.tile)), static_cast<int>(TileY(data.tile)), data.piece_type, data.rotation, data.runway_flags});
+		}
 	}
-	return 6;
+	return GetModularAirportCatchmentInfoFromPieces(pieces);
 }
 
 /**
@@ -802,14 +837,7 @@ uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchment
 uint GetModularAirportCatchmentRadius(const Station *st)
 {
 	if (st->airport.modular_catchment_dirty) {
-		std::vector<ModularCatchmentPiece> pieces;
-		if (st->airport.modular_tile_data != nullptr) {
-			pieces.reserve(st->airport.modular_tile_data->size());
-			for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-				pieces.push_back({static_cast<int>(TileX(data.tile)), static_cast<int>(TileY(data.tile)), data.piece_type, data.rotation, data.runway_flags});
-			}
-		}
-		st->airport.modular_catchment_cache = static_cast<uint8_t>(GetModularAirportCatchmentRadiusFromPieces(pieces));
+		st->airport.modular_catchment_cache = static_cast<uint8_t>(GetModularAirportCatchmentInfo(st).radius);
 		st->airport.modular_catchment_dirty = false;
 	}
 	return st->airport.modular_catchment_cache;

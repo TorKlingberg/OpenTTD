@@ -3901,6 +3901,76 @@ TEST_CASE("ModularAirportCatchment")
 	}
 }
 
+TEST_CASE("ModularAirportCatchmentRequirements")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(2, 2);
+	Station *st = SetupModularAirport(base, 30, 30);
+	REQUIRE(st != nullptr);
+
+	auto info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == 4);
+	CHECK(info.next_radius == 5);
+
+	AddModularTile(st, base, APT_TOWER, 0);
+	AddModularTile(st, base + TileDiffXY(1, 0), APT_ROUND_TERMINAL, 0);
+	AddLargeRunway(st, base + TileDiffXY(0, 3), 6);
+	info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == 5);
+	CHECK(info.next_radius == 6);
+	CHECK(info.missing_runways == 1);
+	CHECK(info.runway_length == 6);
+	CHECK(info.missing_radars == 0); // Only the next tier is reported.
+
+	AddLargeRunway(st, base + TileDiffXY(0, 5), 7);
+	info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == 6);
+	CHECK(info.next_radius == 8);
+	CHECK(info.missing_runways == 1); // The 6-tile runway needs extending.
+	CHECK(info.runway_length == 7);
+	CHECK(info.missing_helipads == 1);
+	CHECK(info.missing_radars == 1);
+	CHECK(info.missing_terminals == 2);
+
+	/* Extending existing runways satisfies the count without building new ones. */
+	st->airport.GetModularTileData(base + TileDiffXY(5, 3))->piece_type = APT_RUNWAY_5;
+	AddModularTile(st, base + TileDiffXY(6, 3), APT_RUNWAY_5, 0);
+	AddModularTile(st, base + TileDiffXY(7, 3), APT_RUNWAY_END, 0);
+	st->airport.GetModularTileData(base + TileDiffXY(6, 5))->piece_type = APT_RUNWAY_5;
+	AddModularTile(st, base + TileDiffXY(7, 5), APT_RUNWAY_END, 0);
+	st->airport.MarkLayoutDirty();
+	AddModularTile(st, base + TileDiffXY(2, 0), APT_BUILDING_1, 0);
+	AddModularTile(st, base + TileDiffXY(3, 0), APT_BUILDING_2, 0);
+	AddModularTile(st, base + TileDiffXY(4, 0), APT_HELIPAD_1, 0);
+	AddModularTile(st, base + TileDiffXY(5, 0), APT_RADAR_FENCE_NE, 0);
+	AddModularTile(st, base + TileDiffXY(6, 0), APT_RADAR_FENCE_SW, 0);
+	info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == 8);
+	CHECK(info.next_radius == 10);
+	CHECK(info.missing_runways == 2);
+	CHECK(info.runway_length == 8);
+	CHECK(info.missing_helipads == 0);
+	CHECK(info.missing_radars == 0); // Surplus pieces must not underflow.
+	CHECK(info.missing_terminals == 0);
+
+	AddLargeRunway(st, base + TileDiffXY(0, 7), 8);
+	AddLargeRunway(st, base + TileDiffXY(0, 9), 8);
+	info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == GetModularAirportCatchmentRadius(st));
+	CHECK(info.radius == 10);
+	CHECK(info.next_radius == 0);
+	CHECK(info.missing_runways == 0);
+	CHECK(info.runway_length == 0);
+
+	/* Higher-tier infrastructure cannot bypass missing large-aircraft safety. */
+	st->airport.GetModularTileData(base)->piece_type = APT_EMPTY;
+	st->airport.MarkLayoutDirty();
+	info = GetModularAirportCatchmentInfo(st);
+	CHECK(info.radius == 4);
+	CHECK(info.next_radius == 5);
+	CHECK(info.missing_runways == 0);
+}
+
 /**
  * The template manager shows the catchment of a template before it is placed, so
  * a template must report exactly what the airport it was saved from reports.

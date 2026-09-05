@@ -36,6 +36,9 @@
 #include "zoom_func.h"
 #include "station_cmd.h"
 #include "modular_airport_cmd.h"
+#include "modular_airport_build.h"
+#include "station_func.h"
+#include "economy_func.h"
 
 #include "widgets/station_widget.h"
 #include "widgets/misc_widget.h"
@@ -1310,6 +1313,44 @@ struct StationViewWindow : public Window {
 	uint expand_shrink_width = 0; ///< The width allocated to the expand/shrink 'button'
 	int rating_lines = RATING_LINES; ///< Number of lines in the cargo ratings view.
 	int accepts_lines = ACCEPTS_LINES; ///< Number of lines in the accepted cargo view.
+	int stats_lines = ACCEPTS_LINES; ///< Number of wrapped lines in the airport stats view.
+
+	/** Contents of the lower station panel. The button names the next view. */
+	enum class InfoView : uint8_t { Accepts, Ratings, Stats };
+	InfoView info_view = InfoView::Accepts;
+
+	bool HasAirportStats() const
+	{
+		const Station *st = Station::Get(this->window_number);
+		return st->facilities.Test(StationFacility::Airport) && st->airport.blocks.Test(AirportBlock::Modular);
+	}
+
+	int &GetInfoLines()
+	{
+		switch (this->info_view) {
+			case InfoView::Accepts: return this->accepts_lines;
+			case InfoView::Ratings: return this->rating_lines;
+			case InfoView::Stats: return this->stats_lines;
+			default: NOT_REACHED();
+		}
+	}
+
+	void UpdateInfoButton()
+	{
+		auto *button = this->GetWidget<NWidgetCore>(WID_SV_ACCEPTS_RATINGS);
+		switch (this->info_view) {
+			case InfoView::Accepts:
+				button->SetStringTip(STR_STATION_VIEW_RATINGS_BUTTON, STR_STATION_VIEW_RATINGS_TOOLTIP);
+				break;
+			case InfoView::Ratings:
+				button->SetStringTip(this->HasAirportStats() ? STR_STATION_VIEW_STATS_BUTTON : STR_STATION_VIEW_ACCEPTS_BUTTON,
+						this->HasAirportStats() ? STR_STATION_VIEW_STATS_TOOLTIP : STR_STATION_VIEW_ACCEPTS_TOOLTIP);
+				break;
+			case InfoView::Stats:
+				button->SetStringTip(STR_STATION_VIEW_ACCEPTS_BUTTON, STR_STATION_VIEW_ACCEPTS_TOOLTIP);
+				break;
+		}
+	}
 	int line_height = 0; ///< Height of a cargo line.
 	Dimension cargo_icon_size{}; ///< Size of largest cargo icon.
 	Scrollbar *vscroll = nullptr;
@@ -1444,8 +1485,12 @@ struct StationViewWindow : public Window {
 				size.height = 4 * resize.height + padding.height;
 				break;
 
+			case WID_SV_ACCEPTS_RATINGS:
+				size.width = std::max(size.width, GetStringListBoundingBox(std::array{STR_STATION_VIEW_ACCEPTS_BUTTON, STR_STATION_VIEW_RATINGS_BUTTON, STR_STATION_VIEW_STATS_BUTTON}).width + padding.width);
+				break;
+
 			case WID_SV_ACCEPT_RATING_LIST:
-				size.height = ((this->GetWidget<NWidgetCore>(WID_SV_ACCEPTS_RATINGS)->GetString() == STR_STATION_VIEW_RATINGS_BUTTON) ? this->accepts_lines : this->rating_lines) * GetCharacterHeight(FontSize::Normal) + padding.height;
+				size.height = this->GetInfoLines() * GetCharacterHeight(FontSize::Normal) + padding.height;
 				break;
 		}
 	}
@@ -1453,6 +1498,15 @@ struct StationViewWindow : public Window {
 	void OnPaint() override
 	{
 		const Station *st = Station::Get(this->window_number);
+		/* Removing the airport while Stats is open restores the normal station view. */
+		if (this->info_view == InfoView::Stats && !this->HasAirportStats()) {
+			int old_lines = this->GetInfoLines();
+			this->info_view = InfoView::Accepts;
+			this->UpdateInfoButton();
+			this->ReInit(0, (this->GetInfoLines() - old_lines) * GetCharacterHeight(FontSize::Normal));
+			return;
+		}
+		this->UpdateInfoButton();
 		CargoDataEntry cargo;
 		BuildCargoList(&cargo, st);
 
@@ -1474,23 +1528,19 @@ struct StationViewWindow : public Window {
 		this->DrawWidgets();
 
 		if (!this->IsShaded()) {
-			/* Draw 'accepted cargo' or 'cargo ratings'. */
-			const NWidgetBase *wid = this->GetWidget<NWidgetBase>(WID_SV_ACCEPT_RATING_LIST);
-			const Rect r = wid->GetCurrentRect();
-			if (this->GetWidget<NWidgetCore>(WID_SV_ACCEPTS_RATINGS)->GetString() == STR_STATION_VIEW_RATINGS_BUTTON) {
-				int lines = this->DrawAcceptedCargo(r);
-				if (lines > this->accepts_lines) { // Resize the widget, and perform re-initialization of the window.
-					this->accepts_lines = lines;
-					this->ReInit();
-					return;
-				}
-			} else {
-				int lines = this->DrawCargoRatings(r);
-				if (lines > this->rating_lines) { // Resize the widget, and perform re-initialization of the window.
-					this->rating_lines = lines;
-					this->ReInit();
-					return;
-				}
+			const Rect r = this->GetWidget<NWidgetBase>(WID_SV_ACCEPT_RATING_LIST)->GetCurrentRect();
+			int lines = 0;
+			switch (this->info_view) {
+				case InfoView::Accepts: lines = this->DrawAcceptedCargo(r); break;
+				case InfoView::Ratings: lines = this->DrawCargoRatings(r); break;
+				case InfoView::Stats: lines = this->DrawAirportStats(r); break;
+			}
+			int &stored_lines = this->GetInfoLines();
+			if (lines > stored_lines || (this->info_view == InfoView::Stats && lines != stored_lines)) {
+				int height_change = lines - stored_lines;
+				stored_lines = lines;
+				this->ReInit(0, height_change * GetCharacterHeight(FontSize::Normal));
+				return;
 			}
 
 			/* Draw arrow pointing up/down for ascending/descending sorting */
@@ -1947,40 +1997,82 @@ struct StationViewWindow : public Window {
 					ToPercent8(ge->rating)));
 			tr.top += GetCharacterHeight(FontSize::Normal);
 		}
-		if (st->facilities.Test(StationFacility::Airport)) {
+		/* Classic airports keep their existing throughput line in Ratings. */
+		if (st->facilities.Test(StationFacility::Airport) && !this->HasAirportStats()) {
 			tr.top += WidgetDimensions::scaled.vsep_wide;
-			DrawString(tr, GetString(STR_STATION_AIRPORT_THROUGHPUT, st->airport_arrivals_last_month, st->airport_departures_last_month));
+			DrawString(tr, GetString(TimerGameEconomy::UsingWallclockUnits() ? STR_STATION_AIRPORT_THROUGHPUT_MINUTE : STR_STATION_AIRPORT_THROUGHPUT,
+					st->airport_arrivals_last_month, st->airport_departures_last_month));
 			tr.top += GetCharacterHeight(FontSize::Normal);
-
-			/* Show modular safety status if applicable. */
-			if (st->airport.blocks.Test(AirportBlock::Modular) && TimerGameCalendar::year >= 1955) {
-				ModularAirportSafetyRequirement missing = GetModularAirportSafetyStatus(st);
-				if (missing != MASR_NONE) {
-					DrawString(tr, STR_STATION_MODULAR_AIRPORT_UNSAFE_HEADER);
-					tr.top += GetCharacterHeight(FontSize::Normal);
-
-					Rect ir = tr.Indent(WidgetDimensions::scaled.hsep_indent, rtl);
-					if (missing & MASR_TOWER) {
-						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TOWER);
-						ir.top += GetCharacterHeight(FontSize::Normal);
-					}
-					if (missing & MASR_BIG_TERMINAL) {
-						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TERMINAL);
-						ir.top += GetCharacterHeight(FontSize::Normal);
-					}
-					if (missing & MASR_LANDING_RUNWAY) {
-						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_LANDING);
-						ir.top += GetCharacterHeight(FontSize::Normal);
-					}
-					if (missing & MASR_TAKEOFF_RUNWAY) {
-						DrawString(ir, STR_STATION_MODULAR_AIRPORT_MISSING_TAKEOFF);
-						ir.top += GetCharacterHeight(FontSize::Normal);
-					}
-					tr.top = ir.top;
-				}
-			}
 		}
 		return CeilDiv(tr.top - r.top - WidgetDimensions::scaled.framerect.top, GetCharacterHeight(FontSize::Normal));
+	}
+
+	/** Draw wrapped airport information, returning its full height even when clipped. */
+	int DrawAirportStats(const Rect &r) const
+	{
+		const Station *st = Station::Get(this->window_number);
+		Rect tr = r.Shrink(WidgetDimensions::scaled.framerect);
+		const int top = tr.top;
+		auto line = [&tr](const std::string &text) {
+			const int height = GetStringHeight(text, tr.Width());
+			DrawStringMultiLine(tr, text);
+			tr.top += height;
+		};
+		auto gap = [&tr]() { tr.top += WidgetDimensions::scaled.vsep_wide; };
+
+		line(GetString(TimerGameEconomy::UsingWallclockUnits() ? STR_STATION_AIRPORT_STATS_THROUGHPUT_MINUTE : STR_STATION_AIRPORT_STATS_THROUGHPUT_MONTH,
+				st->airport_arrivals_last_month, st->airport_departures_last_month,
+				uint(st->airport_arrivals_last_month) + st->airport_departures_last_month));
+		gap();
+
+		const auto missing = GetModularAirportSafetyStatus(st);
+		line(GetString(missing == MASR_NONE ? STR_STATION_MODULAR_AIRPORT_SAFE : STR_STATION_MODULAR_AIRPORT_UNSAFE_HEADER));
+		if (missing & MASR_TOWER) line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_TOWER));
+		if (missing & MASR_BIG_TERMINAL) line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_TERMINAL));
+		if ((missing & (MASR_LANDING_RUNWAY | MASR_TAKEOFF_RUNWAY)) == (MASR_LANDING_RUNWAY | MASR_TAKEOFF_RUNWAY)) {
+			line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_RUNWAY));
+		} else {
+			if (missing & MASR_LANDING_RUNWAY) line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_LANDING));
+			if (missing & MASR_TAKEOFF_RUNWAY) line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_TAKEOFF));
+		}
+		gap();
+
+		if (!_settings_game.station.modified_catchment) {
+			line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT, st->GetCatchmentRadius()));
+			line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT_DISABLED));
+		} else {
+			const auto info = GetModularAirportCatchmentInfo(st);
+			line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT, info.radius));
+			if (st->GetCatchmentRadius() != info.radius) line(GetString(STR_STATION_AIRPORT_STATS_STATION_CATCHMENT, st->GetCatchmentRadius()));
+			if (info.next_radius == 0) {
+				line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT_MAX));
+			} else {
+				line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT_NEXT, info.next_radius));
+				if (info.radius == 4) line(GetString(STR_STATION_AIRPORT_STATS_CATCHMENT_SAFETY));
+				if (info.missing_runways != 0) line(GetString(STR_STATION_AIRPORT_STATS_NEED_RUNWAYS, info.missing_runways, info.runway_length));
+				if (info.missing_helipads != 0) line(GetString(STR_STATION_AIRPORT_STATS_NEED_HELIPADS, info.missing_helipads));
+				if (info.missing_radars != 0) line(GetString(STR_STATION_AIRPORT_STATS_NEED_RADARS, info.missing_radars));
+				if (info.missing_terminals != 0) line(GetString(STR_STATION_AIRPORT_STATS_NEED_TERMINALS, info.missing_terminals));
+			}
+		}
+		gap();
+
+		line(GetString(STR_STATION_AIRPORT_STATS_NOISE, GetModularAirportNoiseLevel(st)));
+		if (_settings_game.economy.station_noise_level) {
+			if (Town::GetNumItems() != 0) {
+				const auto noise = GetModularAirportNoiseSnapshot(st);
+				if (noise.town != nullptr) line(GetString(STR_STATION_AIRPORT_STATS_TOWN_NOISE, noise.town->index, noise.level));
+			}
+		} else {
+			line(GetString(STR_STATION_AIRPORT_STATS_NOISE_DISABLED));
+		}
+		if (_settings_game.economy.infrastructure_maintenance) {
+			line(GetString(TimerGameEconomy::UsingWallclockUnits() ? STR_STATION_AIRPORT_STATS_MAINTENANCE_MINUTE : STR_STATION_AIRPORT_STATS_MAINTENANCE_MONTH,
+					ScaleAirportMaintenanceCost(_price[Price::InfrastructureAirport], GetModularAirportMaintenancePoints(st))));
+		} else {
+			line(GetString(STR_STATION_AIRPORT_STATS_MAINTENANCE_DISABLED));
+		}
+		return CeilDiv(tr.top - top, GetCharacterHeight(FontSize::Normal));
 	}
 
 	/**
@@ -2046,17 +2138,14 @@ struct StationViewWindow : public Window {
 				break;
 
 			case WID_SV_ACCEPTS_RATINGS: {
-				/* Swap between 'accepts' and 'ratings' view. */
-				int height_change;
-				NWidgetCore *nwi = this->GetWidget<NWidgetCore>(WID_SV_ACCEPTS_RATINGS);
-				if (this->GetWidget<NWidgetCore>(WID_SV_ACCEPTS_RATINGS)->GetString() == STR_STATION_VIEW_RATINGS_BUTTON) {
-					nwi->SetStringTip(STR_STATION_VIEW_ACCEPTS_BUTTON, STR_STATION_VIEW_ACCEPTS_TOOLTIP); // Switch to accepts view.
-					height_change = this->rating_lines - this->accepts_lines;
-				} else {
-					nwi->SetStringTip(STR_STATION_VIEW_RATINGS_BUTTON, STR_STATION_VIEW_RATINGS_TOOLTIP); // Switch to ratings view.
-					height_change = this->accepts_lines - this->rating_lines;
+				const int old_lines = this->GetInfoLines();
+				switch (this->info_view) {
+					case InfoView::Accepts: this->info_view = InfoView::Ratings; break;
+					case InfoView::Ratings: this->info_view = this->HasAirportStats() ? InfoView::Stats : InfoView::Accepts; break;
+					case InfoView::Stats: this->info_view = InfoView::Accepts; break;
 				}
-				this->ReInit(0, height_change * GetCharacterHeight(FontSize::Normal));
+				this->UpdateInfoButton();
+				this->ReInit(0, (this->GetInfoLines() - old_lines) * GetCharacterHeight(FontSize::Normal));
 				break;
 			}
 

@@ -4019,6 +4019,30 @@ STR_STATION_MODULAR_AIRPORT_MISSING_TERMINAL                    :{BLACK}- Missin
 STR_STATION_MODULAR_AIRPORT_MISSING_LANDING                     :{BLACK}- No 6-tile landing runway
 STR_STATION_MODULAR_AIRPORT_MISSING_TAKEOFF                     :{BLACK}- No 6-tile takeoff runway
 
+STR_STATION_VIEW_STATS_BUTTON                                   :{BLACK}Stats
+STR_STATION_VIEW_STATS_TOOLTIP                                  :{BLACK}Show airport statistics and catchment requirements
+STR_STATION_AIRPORT_THROUGHPUT_MINUTE                           :{BLACK}Aircraft last minute: {NUM} arr / {NUM} dep
+STR_STATION_AIRPORT_STATS_THROUGHPUT_MONTH                      :{BLACK}Aircraft last month: {NUM} arrivals / {NUM} departures ({NUM} movements)
+STR_STATION_AIRPORT_STATS_THROUGHPUT_MINUTE                     :{BLACK}Aircraft last minute: {NUM} arrivals / {NUM} departures ({NUM} movements)
+STR_STATION_MODULAR_AIRPORT_SAFE                                :{BLACK}Large-aircraft safety requirements met
+STR_STATION_MODULAR_AIRPORT_MISSING_RUNWAY                      :{BLACK}- No 6-tile runway
+STR_STATION_AIRPORT_STATS_CATCHMENT                             :{BLACK}Airport catchment radius: {NUM} tiles
+STR_STATION_AIRPORT_STATS_STATION_CATCHMENT                     :{BLACK}Combined station radius: {NUM} tiles
+STR_STATION_AIRPORT_STATS_CATCHMENT_DISABLED                    :{BLACK}Fixed catchment: infrastructure upgrades do not increase the radius
+STR_STATION_AIRPORT_STATS_CATCHMENT_MAX                         :{BLACK}Maximum catchment tier reached
+STR_STATION_AIRPORT_STATS_CATCHMENT_NEXT                        :{BLACK}For radius {NUM}, still needed:
+STR_STATION_AIRPORT_STATS_CATCHMENT_SAFETY                      :{BLACK}- Meet the large-aircraft requirements above
+STR_STATION_AIRPORT_STATS_NEED_RUNWAYS                          :{BLACK}- {NUM} more paved {P runway runways} of at least {NUM} tiles (build or extend)
+STR_STATION_AIRPORT_STATS_NEED_HELIPADS                         :{BLACK}- {NUM} more {P helipad helipads}
+STR_STATION_AIRPORT_STATS_NEED_RADARS                           :{BLACK}- {NUM} more {P radar radars}
+STR_STATION_AIRPORT_STATS_NEED_TERMINALS                        :{BLACK}- {NUM} more large terminal {P building buildings}
+STR_STATION_AIRPORT_STATS_NOISE                                 :{BLACK}Airport noise level: {NUM}
+STR_STATION_AIRPORT_STATS_TOWN_NOISE                            :{BLACK}Noise contributed to {TOWN}: {NUM}
+STR_STATION_AIRPORT_STATS_NOISE_DISABLED                        :{BLACK}Town noise limits disabled
+STR_STATION_AIRPORT_STATS_MAINTENANCE_MONTH                     :{BLACK}Airport upkeep per month: {CURRENCY_LONG}
+STR_STATION_AIRPORT_STATS_MAINTENANCE_MINUTE                    :{BLACK}Airport upkeep per minute: {CURRENCY_LONG}
+STR_STATION_AIRPORT_STATS_MAINTENANCE_DISABLED                  :{BLACK}Infrastructure maintenance disabled
+
 STR_STATION_VIEW_GROUP                                          :{BLACK}Group by
 STR_STATION_VIEW_WAITING_STATION                                :Station: Waiting
 STR_STATION_VIEW_WAITING_AMOUNT                                 :Amount: Waiting

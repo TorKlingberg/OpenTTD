@@ -676,6 +676,20 @@ struct ModularCatchmentPiece {
 
 uint GetModularAirportCatchmentRadiusFromPieces(std::span<const ModularCatchmentPiece> pieces);
 
+/** Current catchment tier and the infrastructure still needed for the next tier. */
+struct ModularAirportCatchmentInfo {
+	uint radius = 4; ///< Current layout-derived radius.
+	uint next_radius = 5; ///< Next radius, or zero at the maximum tier.
+	uint missing_runways = 0; ///< Additional qualifying paved runways needed (existing ones may be extended).
+	uint runway_length = 0; ///< Minimum tile length of those runways.
+	uint missing_helipads = 0; ///< Additional helipads needed.
+	uint missing_radars = 0; ///< Additional radar pieces needed.
+	uint missing_terminals = 0; ///< Additional large terminal buildings needed.
+};
+
+ModularAirportCatchmentInfo GetModularAirportCatchmentInfoFromPieces(std::span<const ModularCatchmentPiece> pieces);
+ModularAirportCatchmentInfo GetModularAirportCatchmentInfo(const Station *st);
+
 /* Defined in aircraft_cmd.cpp; mirrors stock MaybeCrashAirplane for a plane
  * braking on a modular runway (short-strip overrun + the general "Plane crashes"
  * setting). Pass the airport the plane is physically rolling out on. True if it
