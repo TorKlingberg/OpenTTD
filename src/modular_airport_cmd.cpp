@@ -3263,8 +3263,10 @@ bool MaybeSwitchModularDepartureToHangar(Aircraft *v, const Station *st)
 	if (!v->modular_runway_reservation.empty()) return false;
 	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) return false;
 	if (!IsModularSafeStopTile(st, v->tile)) return false;
-	if (v->x_pos != TileX(v->tile) * TILE_SIZE + TILE_SIZE / 2) return false;
-	if (v->y_pos != TileY(v->tile) * TILE_SIZE + TILE_SIZE / 2) return false;
+	const int centre_x = TileX(v->tile) * TILE_SIZE + TILE_SIZE / 2;
+	const int centre_y = TileY(v->tile) * TILE_SIZE + TILE_SIZE / 2;
+	if (v->x_pos != centre_x) return false;
+	if (v->y_pos != centre_y) return false;
 
 	/* Probe on one tick in 64, staggered by vehicle so an airport's aircraft never pathfind
 	 * on the same one. An aircraft whose hangar is unreachable stays eligible for as long as

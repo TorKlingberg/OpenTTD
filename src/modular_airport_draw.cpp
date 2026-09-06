@@ -504,7 +504,8 @@ void ApplyModularAirportTileLayoutOverrides(const TileInfo *ti, StationGfx &gfx,
 			TileIndex nb = ti->tile + diff;
 			if (!IsValidTile(nb) || !airport_st->TileBelongsToAirport(nb)) return APT_EMPTY;
 			const ModularAirportTileData *nd = airport_st->airport.GetModularTileData(nb);
-			return nd != nullptr ? nd->piece_type : APT_EMPTY;
+			if (nd == nullptr) return APT_EMPTY;
+			return nd->piece_type;
 		};
 
 		if (NeighborPiece(TileDiffXY(0, 1)) == APT_ROUND_TERMINAL) {
