@@ -104,7 +104,7 @@ jobs:
     - macos
     - windows
 
-    if: always() && github.event_name == 'pull_request'
+    if: always()
 
     runs-on: ubuntu-latest
 
