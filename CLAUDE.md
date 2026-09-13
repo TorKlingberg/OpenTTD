@@ -18,19 +18,26 @@ make -j8 -C /Users/tor/ttd/OpenTTD/build && codesign -s - --deep --force --entit
 If you need to reconfigure (e.g. after cmake file changes):
 ```bash
 cd /Users/tor/ttd/OpenTTD/build
+sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
 cmake .. \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
-  -DCMAKE_CXX_FLAGS="-I/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1" \
-  -DCMAKE_OBJCXX_FLAGS="-I/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1"
+  -DCMAKE_OSX_SYSROOT="${sdk_path}" \
+  -DCMAKE_CXX_FLAGS="-I${sdk_path}/usr/include/c++/v1" \
+  -DCMAKE_OBJCXX_FLAGS="-I${sdk_path}/usr/include/c++/v1"
 ```
 
 For a debug build (slower, full symbols, unoptimised):
 ```bash
+sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
 cmake .. -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_CXX_FLAGS="-I/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1" \
-  -DCMAKE_OBJCXX_FLAGS="-I/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1"
+  -DCMAKE_OSX_SYSROOT="${sdk_path}" \
+  -DCMAKE_CXX_FLAGS="-I${sdk_path}/usr/include/c++/v1" \
+  -DCMAKE_OBJCXX_FLAGS="-I${sdk_path}/usr/include/c++/v1"
 ```
+
+After an Xcode or Command Line Tools upgrade, rerun configuration with the current SDK.
+If CMake still references a removed SDK in cached library or include paths, add
+`-U '*_LIBRARY*' -U '*_INCLUDE_DIR*' -U '*_INCLUDE_PATH*' -U 'pkgcfg_lib_*'` to the configure command to rediscover them.
 
 **Common build failures:**
 - `algorithm file not found` — missing `-DCMAKE_CXX_FLAGS` above
