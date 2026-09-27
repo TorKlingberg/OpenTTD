@@ -1887,9 +1887,21 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 		 * opens. No relocation is needed here -- a landed aircraft is always parked
 		 * on a safe stop (the landing chain reserves runway -> an adjacent one-way
 		 * buffer or the goal stand, and the rollout-completion handler taxis it
-		 * there), which is a legal place to wait indefinitely. */
+		 * there), which is a legal place to wait indefinitely.
+		 *
+		 * The poll is an A* per candidate stand, so it is paced rather than run on every
+		 * call. Paced on the aircraft's own wait counter rather than the tick counter:
+		 * this handler runs twice per tick (Aircraft::Tick calls the event handler
+		 * twice), and both calls see the same tick, so a tick-based gate would poll
+		 * twice on its tick. The counter starts at zero whenever a path is cleared, so
+		 * the first call after arriving polls at once; a stand that frees up later is
+		 * noticed within the interval, which is a fraction of the taxi to it. Aircraft
+		 * arrive at different moments, which is what spreads the polls out. Saved
+		 * state throughout, so every client polls on the same calls. */
 		if (v->ground_path_goal == INVALID_TILE && v->taxi_path == nullptr) {
-			TryRetargetModularGroundGoal(v, st);
+			const bool poll_now = (v->taxi_wait_counter % (2 * MODULAR_IDLE_RETARGET_INTERVAL_TICKS)) == 0;
+			v->taxi_wait_counter++;
+			if (poll_now) TryRetargetModularGroundGoal(v, st);
 		}
 		return;
 	}
