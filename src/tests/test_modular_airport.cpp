@@ -6120,3 +6120,111 @@ TEST_CASE("ModularAirportLayoutEditDropsBrokenRoutes")
 
 	_settings_game.vehicle.plane_speed = saved_plane_speed;
 }
+
+/*
+ * The takeoff roll follows whatever heading the aircraft has when it starts, and nothing
+ * steers it afterwards, so the heading has to be the runway's before the first pixel.
+ * An aircraft reaches its takeoff point across the runway from a perpendicular taxiway,
+ * or against it after back-taxiing to a mid-runway start.
+ */
+TEST_CASE("ModularAirportTakeoffAlignsWithRunway")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 20, 20);
+	REQUIRE(st != nullptr);
+
+	const uint8_t saved_plane_speed = _settings_game.vehicle.plane_speed;
+	_settings_game.vehicle.plane_speed = 4; // the game default
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraftWithShadow(VehicleID(10), VehicleID(11));
+	v->engine_type = prop_engine;
+	v->targetairport = st->index;
+	v->state = TAKEOFF;
+	v->modular_takeoff_progress = 0;
+
+	auto start_takeoff = [&](TileIndex from, Direction arrival) {
+		PlaceAircraftOnTile(v, from, arrival);
+		/* Subpixel progress carried over from taxiing: with this much, the first tick
+		 * already moves a pixel, which used to freeze whatever heading it had. */
+		v->progress = 200;
+		v->modular_takeoff_tile = from;
+		REQUIRE(GetContiguousModularRunwayTiles(st, from, v->modular_runway_reservation));
+		for (TileIndex t : v->modular_runway_reservation) SetModularAirportTileReservationOwner(t, v->index);
+	};
+
+	auto roll = [&]() {
+		for (int i = 0; i < 400 && v->state == TAKEOFF; i++) AirportMoveModularTakeoff(v, st);
+	};
+
+	SECTION("X-axis runway, rolling toward +X") {
+		const TileIndex low_end = base + TileDiffXY(0, 2);
+		AddLargeRunway(st, low_end, 8, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+		/* Across (from either side), along, and straight against the runway. */
+		const Direction arrival = GENERATE(Direction::NW, Direction::SE, Direction::SW, Direction::NE);
+		start_takeoff(low_end, arrival);
+		const int start_x = v->x_pos;
+		const int start_y = v->y_pos;
+
+		roll();
+
+		INFO("arrival heading " << static_cast<int>(arrival));
+		CHECK(v->direction == Direction::SW);
+		CHECK(v->y_pos == start_y);
+		CHECK(v->x_pos > start_x);
+		CHECK(v->modular_takeoff_progress > 0);
+	}
+
+	SECTION("A mid-runway start after back-taxiing rolls the runway's way, not the way it came") {
+		/* Selected end is the low end, so the roll is +X; the aircraft reached a tile
+		 * three in from it by taxiing along the runway from the far end, heading -X. */
+		const TileIndex low_end = base + TileDiffXY(0, 2);
+		AddLargeRunway(st, low_end, 8, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+		start_takeoff(low_end, Direction::NE);
+		PlaceAircraftOnTile(v, low_end + TileDiffXY(3, 0), Direction::NE);
+		v->progress = 200;
+		const int start_x = v->x_pos;
+		const int start_y = v->y_pos;
+
+		roll();
+
+		CHECK(v->direction == Direction::SW);
+		CHECK(v->y_pos == start_y);
+		CHECK(v->x_pos > start_x);
+	}
+
+	SECTION("Y-axis runway, rolling toward -Y from the high end") {
+		const TileIndex low_end = base + TileDiffXY(2, 0);
+		AddLargeRunway(st, low_end, 8, 1, RUF_TAKEOFF | RUF_DIR_LOW);
+		const TileIndex high_end = low_end + TileDiffXY(0, 7);
+		start_takeoff(high_end, Direction::SW);
+		const int start_x = v->x_pos;
+		const int start_y = v->y_pos;
+
+		roll();
+
+		CHECK(v->direction == Direction::NW);
+		CHECK(v->x_pos == start_x);
+		CHECK(v->y_pos < start_y);
+	}
+
+	SECTION("An aligned aircraft rolls at once") {
+		const TileIndex low_end = base + TileDiffXY(0, 2);
+		AddLargeRunway(st, low_end, 8, 0, RUF_TAKEOFF | RUF_DIR_HIGH);
+		start_takeoff(low_end, Direction::SW);
+		const int start_x = v->x_pos;
+		const uint16_t speed_before = v->cur_speed;
+
+		/* No turn, so no halving of the speed, and the roll begins within a few ticks. */
+		for (int i = 0; i < 10; i++) AirportMoveModularTakeoff(v, st);
+
+		CHECK(v->cur_speed >= speed_before);
+		CHECK(v->x_pos > start_x);
+	}
+
+	_settings_game.vehicle.plane_speed = saved_plane_speed;
+}

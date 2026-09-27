@@ -2102,26 +2102,38 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st)
 	int liftoff_progress = std::min(runway_length_tiles, (int)ModularTakeoffRunTiles(v)) * TILE_SIZE * 2 / 3;
 
 	if (v->modular_takeoff_progress == 0) {
-		/* Determine takeoff direction by finding the other end of the runway */
-		TileIndex end_tile = GetRunwayOtherEnd(st, v->modular_takeoff_tile);
-		int end_x = TileX(end_tile) * TILE_SIZE + TILE_SIZE / 2;
-		int end_y = TileY(end_tile) * TILE_SIZE + TILE_SIZE / 2;
+		/* The roll runs from the selected end toward the other end of the runway. The
+		 * aircraft arrives here heading wherever its last taxi step pointed -- across the
+		 * runway from a perpendicular taxiway, or straight against it after back-taxiing
+		 * to a mid-runway start -- and nothing steers it again once it is rolling. So
+		 * turn on the spot first, one 45-degree step per tick and without moving, exactly
+		 * as the classic AircraftController does for a ground turn, and only start the
+		 * roll once the heading is the runway's. Halving the speed per step is stock too;
+		 * a roll that begins from a standstill is what the acceleration is tuned for. */
+		const TileIndex end_tile = GetRunwayOtherEnd(st, v->modular_takeoff_tile);
+		const DiagDirection roll_diagdir = DiagdirBetweenTiles(v->modular_takeoff_tile, end_tile);
+		/* A single-tile runway has no other end to point at; roll along its axis. Not
+		 * reachable through runway selection (MIN_RUNWAY_LENGTH_TILES), kept for safety. */
+		const Direction roll_dir = roll_diagdir == DiagDirection::Invalid ?
+				(horizontal ? Direction::SW : Direction::SE) : DiagDirToDir(roll_diagdir);
 
-		/* If single tile runway, end_tile == start_tile.
-		   Fallback to rotation-based direction if we can't determine direction from length. */
-		if (end_tile == v->modular_takeoff_tile) {
-			Direction dir = horizontal ? Direction::SE : Direction::SW;
-			v->direction = dir;
-		} else {
-			v->direction = GetDirectionTowards(v, end_x, end_y);
+		if (v->direction != roll_dir) {
+			v->cur_speed >>= 1;
+			v->last_direction = v->direction;
+			v->direction = ChangeDir(v->direction, LimitDirDiff(DirDifference(roll_dir, v->direction)));
+			v->turn_counter = 0;
+			v->number_consecutive_turns = 0;
+			SetAircraftPosition(v, v->x_pos, v->y_pos, v->z_pos);
+			return false;
 		}
-
-		PlayAircraftSound(v);
 	}
 
 	/* Accelerate and move */
 	int count = UpdateAircraftSpeed(v, SPEED_LIMIT_NONE);
 	for (int i = 0; i < count; i++) {
+		/* The first pixel of the roll is when the takeoff begins to be heard. */
+		if (v->modular_takeoff_progress == 0) PlayAircraftSound(v);
+
 		/* Move forward along runway */
 		GetNewVehiclePosResult gp = GetNewVehiclePos(v);
 
