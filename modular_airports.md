@@ -166,7 +166,7 @@ In `Aircraft` (`src/aircraft.h`), under the `Modular airport ground pathfinding`
 - Ground taxi: `AirportMoveModular` walks the classified taxi path. While the aircraft is still braking on the runway it also rolls `MaybeCrashModularAircraft` on every tick, mirroring the classic FTA.
 - Ground targets after touchdown: `MGT_ROLLOUT` first (rollout and runway egress), then `TryRetargetModularGroundGoal` retargets to `MGT_TERMINAL` / `MGT_HELIPAD` / `MGT_HANGAR`.
 - Parked: `HandleModularGroundArrival`, then waits on orders.
-- Departure: `FindModularRunwayTileForTakeoff` + `FindModularTakeoffQueueTile`, then `AirportMoveModularTakeoff` (or `AirportMoveModularHeliTakeoff`) back to `FLYING`.
+- Departure: `FindModularRunwayTileForTakeoff` picks the runway end and the aircraft taxis to it (or to the first tile with enough runway ahead, see `ModularTakeoffRunFitsFrom`), then `AirportMoveModularTakeoff` (or `AirportMoveModularHeliTakeoff`) back to `FLYING`.
 
 `CanUseModularGroundRouting(st, v)` gates ground routing on the aircraft actually standing on a tile of that airport.
 

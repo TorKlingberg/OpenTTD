@@ -160,7 +160,7 @@ while standing on that runway, then taxied behind a chokepoint, kept an
 unreachable goal forever. A permanent `stuck(no-path)` with `tgt=4` and no
 `retarget failed` line alongside it is the signature.
 
-`FindModularRunwayTileForTakeoff` found a runway end but `FindModularTakeoffQueueTile` can't path to it. Common causes:
+`FindModularRunwayTileForTakeoff` found a runway end but the route rebuild in `AirportMoveModular` (`FindReservableRoute`) can't path to it. Common causes:
 - **Unreachable fallback runway**: The only runway returned was the Manhattan-distance fallback, which may be across an intervening runway with no ground path. Check `takeoff-fallback-runway` logs.
 - **Direction/size filter eliminated reachable runways**: All topologically reachable runway ends were filtered out by direction flags or large-aircraft checks, leaving only the unreachable fallback.
 - **All paths temporarily blocked**: Every reachable runway has traffic blocking the first segment.

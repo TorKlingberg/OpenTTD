@@ -1280,16 +1280,13 @@ void ReconcileAircraftReservations(Aircraft *v, const Station *st, std::span<con
 	}
 }
 
-bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile, bool append_to_existing)
+bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex runway_tile)
 {
 	std::vector<TileIndex> runway_tiles;
 	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) return false;
 	SortAndUniqueTiles(runway_tiles);
 
 	const auto clear_if_stale = [&]() {
-		/* In append mode (e.g. landing chain acquiring rollout + transit runways),
-		 * the caller owns rollback so we must not touch pre-existing tracking. */
-		if (append_to_existing) return;
 		if (v->modular_runway_reservation.empty()) return;
 		std::vector<TileIndex> tracked = v->modular_runway_reservation;
 		SortAndUniqueTiles(tracked);
@@ -1338,9 +1335,7 @@ bool TryReserveContiguousModularRunway(Aircraft *v, const Station *st, TileIndex
 	}
 
 	const bool reservation_changed = (v->modular_runway_reservation != runway_tiles);
-	if (reservation_changed && !append_to_existing) {
-		ClearModularRunwayReservation(v);
-	}
+	if (reservation_changed) ClearModularRunwayReservation(v);
 
 	for (TileIndex tile : runway_tiles) {
 		Tile t(tile);
@@ -1363,19 +1358,6 @@ bool IsContiguousModularRunwayReservedByOther(const Aircraft *v, const Station *
 		Tile t(tile);
 		if (!IsAirportTile(t)) continue;
 		if (HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index) return true;
-	}
-
-	return false;
-}
-
-bool IsContiguousModularRunwayBusyByOther(const Aircraft *v, const Station *st, TileIndex runway_tile)
-{
-	std::vector<TileIndex> runway_tiles;
-	if (!GetContiguousModularRunwayTiles(st, runway_tile, runway_tiles)) return false;
-
-	for (TileIndex tile : runway_tiles) {
-		if (IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) return true;
-		if (IsTaxiTileReservedByOther(st, tile, v->index)) return true;
 	}
 
 	return false;
@@ -2925,67 +2907,6 @@ TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v)
 		/* If strict pass found nothing, try again with crossing allowed. */
 	}
 	return INVALID_TILE;
-}
-
-/**
- * Find a queue tile just before entering the selected takeoff runway end.
- * Returns runway_end when no non-runway queue point exists.
- */
-TileIndex FindModularTakeoffQueueTile(const Station *st, const Aircraft *v, TileIndex runway_end)
-{
-	if (runway_end == INVALID_TILE || v == nullptr) return runway_end;
-	if (!CanUseModularGroundRouting(st, v)) return runway_end;
-
-	/* Runway already selected -- allow crossing if needed. */
-	AirportGroundPath path = FindAirportGroundPath(st, v->tile, runway_end, v, true);
-	if (!path.found || path.tiles.empty()) return INVALID_TILE;
-
-	/* Allow queueing and progress along the selected takeoff runway.
-	 * Some layouts can only reach the chosen runway end by entering that runway
-	 * at the opposite end and taxiing along it. */
-	std::vector<TileIndex> target_runway_tiles;
-	if (!GetContiguousModularRunwayTiles(st, runway_end, target_runway_tiles)) return INVALID_TILE;
-	auto is_on_target_runway = [&](TileIndex tile) {
-		return std::find(target_runway_tiles.begin(), target_runway_tiles.end(), tile) != target_runway_tiles.end();
-	};
-	TileIndex best_queue_tile = INVALID_TILE;
-	for (TileIndex tile : path.tiles) {
-		const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
-		const bool is_runway_tile = (td != nullptr && IsModularRunwayPiece(td->piece_type));
-		if (is_runway_tile && !is_on_target_runway(tile)) {
-			/* Don't queue onto unrelated runways while routing to takeoff. */
-			break;
-		}
-
-		/* Queueing for takeoff should happen on taxi/apron tiles, not stands/hangars/helipads,
-		 * and only on currently free tiles to avoid hard blocking by parked aircraft.
-		 * Target-runway tiles are explicitly allowed above. */
-		const bool service_tile = (td != nullptr) &&
-				(td->piece_type == APT_STAND || td->piece_type == APT_STAND_1 ||
-				 IsModularHangarPiece(td->piece_type) ||
-				 IsModularHelipadPiece(td->piece_type));
-		if (service_tile) {
-			continue;
-		}
-
-		const bool blocked_by_reservation =
-				HasModularAirportTileReservation(tile) && GetModularAirportTileReservationOwner(tile) != v->index;
-		if (blocked_by_reservation || IsModularTileOccupiedByOtherAircraft(st, tile, v->index)) {
-			continue;
-		}
-
-		best_queue_tile = tile;
-	}
-
-	if (best_queue_tile != INVALID_TILE) return best_queue_tile;
-
-	/* If no safe queue tile exists, only use runway end if it's currently clear. */
-	if (!HasModularAirportTileReservation(runway_end) || GetModularAirportTileReservationOwner(runway_end) == v->index) {
-		if (!IsModularTileOccupiedByOtherAircraft(st, runway_end, v->index)) return runway_end;
-	}
-
-	return INVALID_TILE;
-
 }
 
 bool CanUseModularGroundRouting(const Station *st, const Aircraft *v)
