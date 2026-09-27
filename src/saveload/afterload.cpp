@@ -3472,11 +3472,13 @@ bool AfterLoadGame()
 	RestoreModularAircraftPathSegments();
 
 	/* Saves predating the classified modular path fields cannot restore a
-	 * landing_chain_path. Mark an already committed landing so its first rollout
-	 * does not report that expected compatibility loss as a live invariant
-	 * failure. New saves carry the path and must not receive this exemption. */
+	 * landing_chain_path, and a save whose path data was invalid has had it thrown
+	 * away. Mark an already committed landing so its first rollout does not report
+	 * that expected loss as a live invariant failure. New saves carry the path and
+	 * must not receive this exemption. */
 	for (Aircraft *v : Aircraft::Iterate()) {
-		v->rollout_restored_from_save = !v->modular_paths_loaded_from_save &&
+		const bool paths_restored = v->modular_paths_loaded_from_save && !v->modular_path_discarded_on_load;
+		v->rollout_restored_from_save = !paths_restored &&
 				(v->modular_ground_target == MGT_ROLLOUT || v->modular_landing_tile != INVALID_TILE);
 	}
 

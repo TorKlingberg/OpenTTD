@@ -1034,9 +1034,13 @@ public:
 
 		std::unique_ptr<TaxiPath> &path = v->*TPath;
 		path.reset();
+		/* Both paths run through here, in description order, so the two markers are kept
+		 * one-way: "loaded" is only ever set, "discarded" is only ever set, and afterload
+		 * combines them. Writing a single flag from both handlers would let whichever
+		 * ran last overrule the other. */
 		if (!ValidatePathData()) {
 			Debug(sl, 1, "Found Aircraft {} with invalid modular-airport path, ignoring.", v->index);
-			v->modular_paths_loaded_from_save = false;
+			v->modular_path_discarded_on_load = true;
 			ClearTemporaryState();
 			return;
 		}
