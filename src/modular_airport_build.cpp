@@ -916,8 +916,8 @@ CommandCost BuildModularAirportTile_Check(DoCommandFlags flags, TileIndex tile, 
 	 * The apply step is skipped rather than run for free, because rebuilding a tile is
 	 * not the no-op the equal piece type suggests: it pushes a fresh
 	 * ModularAirportTileData, which drops the tile's edge_block_mask (its fences), and
-	 * MakeAirport clears the reservation-present bit and re-rolls the tile's random
-	 * bits. Grass is taxiable, so that reservation can be one an aircraft is holding. */
+	 * MakeAirport re-rolls the tile's random bits. (A reservation an aircraft holds on
+	 * the tile is carried across by the apply step, so that one is safe either way.) */
 	is_noop_rebuild = same_ground_piece && st != nullptr && st->index == existing_at_tile;
 	if (is_noop_rebuild) return CommandCost();
 
@@ -956,10 +956,26 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
 
 	Tile t(tile);
+
+	/* A replaced grass or empty tile is taxiable, so an aircraft may hold it inside its
+	 * forward reservation horizon at this very moment (EnsureNoVehicleOnGround only
+	 * rules out an aircraft standing on it). MakeAirport clears the reservation-present
+	 * bit and the metadata is rebuilt below, so without carrying both across the tile
+	 * would read as free to every other aircraft until its owner re-asserted the claim
+	 * on its next step -- a window in which two aircraft can believe they own it, with
+	 * only the physical occupancy gate keeping them apart. The owner's own bookkeeping
+	 * still lists the tile, so it releases the claim through the reconciler as usual. */
+	uint32_t preserved_reservation_owner = VehicleID::Invalid().base();
+	if (is_modular_replace && HasAirportTileReservation(t)) {
+		const ModularAirportTileData *previous = st->airport.GetModularTileData(tile);
+		if (previous != nullptr) preserved_reservation_owner = previous->reservation_owner;
+	}
+
 	const ModularAirportPieceID piece_type = gfx;
 	const uint8_t map_gfx = GetModularAirportMapGfx(piece_type);
 	MakeAirport(t, st->owner, st->index, map_gfx, WaterClass::Invalid);
 	SetStationTileRandomBits(t, GB(Random(), 0, 4));
+	if (preserved_reservation_owner != VehicleID::Invalid().base()) SetAirportTileReservation(t, true);
 	st->airport.Add(tile);
 
 	if (AirportTileSpec::Get(GetTranslatedAirportTileID(map_gfx))->animation.status != AnimationStatus::NoAnimation) AddAnimatedTile(t);
@@ -980,6 +996,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	/* Create and store new tile data */
 	ModularAirportTileData tile_data;
 	tile_data.tile = tile;
+	tile_data.reservation_owner = preserved_reservation_owner;
 
 	/* Convert canonical SE hangars to directional variants based on rotation.
 	 * Only canonical forms (APT_DEPOT_SE / APT_SMALL_DEPOT_SE) are rotated here;
