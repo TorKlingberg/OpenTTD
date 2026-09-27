@@ -5956,3 +5956,167 @@ TEST_CASE("ModularAirportRebuiltInPlaceKeepsItsStation")
 	RebuildTownKdtree();
 	RebuildViewportKdtree();
 }
+
+/* Aircraft with the shadow SetAircraftPosition expects, for tests that move one. */
+static Aircraft *CreateAircraftWithShadow(VehicleID index, VehicleID shadow_index)
+{
+	Aircraft *v = CreateAircraft(index);
+	Aircraft *u = Aircraft::CreateAtIndex(shadow_index);
+	u->subtype = AIR_SHADOW;
+	u->vehstatus.Set(VehState::Shadow);
+	v->SetNext(u);
+	return v;
+}
+
+/* Put a bare-shell aircraft on the centre of a tile at taxi speed. */
+static void PlaceAircraftOnTile(Aircraft *v, TileIndex tile, Direction direction)
+{
+	v->tile = tile;
+	v->x_pos = TileX(tile) * TILE_SIZE + TILE_SIZE / 2;
+	v->y_pos = TileY(tile) * TILE_SIZE + TILE_SIZE / 2;
+	v->z_pos = GetTileMaxPixelZ(tile);
+	v->direction = direction;
+	v->cur_speed = 50 * _settings_game.vehicle.plane_speed;
+}
+
+/* What RemoveModularAirportTile leaves behind for one tile, without the command's
+ * ownership and cost machinery. */
+static void DemolishModularTile(Station *st, TileIndex tile)
+{
+	std::erase_if(*st->airport.modular_tile_data, [&](const ModularAirportTileData &d) { return d.tile == tile; });
+	st->airport.modular_tile_index_dirty = true;
+	st->airport.MarkLayoutDirty();
+	MakeClear(tile, ClearGround::Grass, 0);
+	RefreshModularAircraftPathSegments(st);
+}
+
+/*
+ * A stored route is a layout-derived cache the reservation contract cannot police: a
+ * tile demolished ahead of an aircraft is neither reserved nor occupied, so without
+ * these guards the aircraft drove onto the grass and could never move again.
+ */
+TEST_CASE("ModularAirportLayoutEditDropsBrokenRoutes")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 8, 5);
+	REQUIRE(st != nullptr);
+
+	const uint8_t saved_plane_speed = _settings_game.vehicle.plane_speed;
+	_settings_game.vehicle.plane_speed = 1;
+
+	/* Row 1: APRON(0,1) APRON(1,1) APRON(2,1) STAND(3,1) -- the direct route.
+	 * Row 2:            APRON(1,2) APRON(2,2) APRON(3,2) -- the detour. */
+	for (uint x = 0; x < 3; x++) AddModularTile(st, base + TileDiffXY(x, 1), APT_APRON);
+	for (uint x = 1; x < 4; x++) AddModularTile(st, base + TileDiffXY(x, 2), APT_APRON);
+	const TileIndex start = base + TileDiffXY(0, 1);
+	const TileIndex second = base + TileDiffXY(1, 1);
+	const TileIndex removed = base + TileDiffXY(2, 1);
+	const TileIndex goal = base + TileDiffXY(3, 1);
+	AddModularTile(st, goal, APT_STAND);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraftWithShadow(VehicleID(10), VehicleID(11));
+	v->engine_type = prop_engine;
+	v->Next()->engine_type = prop_engine;
+	v->targetairport = st->index;
+	v->state = TERM1;
+	PlaceAircraftOnTile(v, start, Direction::SW);
+	v->ground_path_goal = goal;
+	v->modular_ground_target = MGT_TERMINAL;
+
+	auto step_until = [&](auto &&done) {
+		for (int i = 0; i < 5000 && !done(); i++) {
+			AirportMoveModular(v, st);
+			REQUIRE(st->TileBelongsToAirport(v->tile));
+		}
+		return done();
+	};
+
+	SECTION("Demolishing a tile ahead drops the route and the aircraft takes the detour") {
+		REQUIRE(step_until([&]() { return v->tile == second; }));
+		REQUIRE(v->taxi_path != nullptr);
+		CHECK(std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), removed) != v->taxi_path->tiles.end());
+
+		DemolishModularTile(st, removed);
+		CHECK(v->taxi_path == nullptr);
+
+		REQUIRE(step_until([&]() { return v->tile == goal; }));
+		CHECK(v->modular_ground_target == MGT_NONE);
+	}
+
+	SECTION("A route the layout still supports keeps its reservations and its segments") {
+		REQUIRE(step_until([&]() { return v->tile == second; }));
+		REQUIRE(v->taxi_path != nullptr);
+		const size_t reserved_before = v->taxi_reserved_tiles.size();
+
+		/* An edit elsewhere on the airport touches nothing this route uses. */
+		DemolishModularTile(st, base + TileDiffXY(1, 2));
+		REQUIRE(v->taxi_path != nullptr);
+		CHECK_FALSE(v->taxi_path->segments.empty());
+		CHECK(v->taxi_reserved_tiles.size() == reserved_before);
+	}
+
+	SECTION("A fence across the route drops it too") {
+		REQUIRE(step_until([&]() { return v->tile == second; }));
+		REQUIRE(v->taxi_path != nullptr);
+
+		st->airport.GetModularTileData(second)->edge_block_mask |= 0x02;  // +X edge
+		st->airport.GetModularTileData(removed)->edge_block_mask |= 0x08; // its -X edge
+		st->airport.MarkLayoutDirty();
+		RefreshModularAircraftPathSegments(st);
+		CHECK(v->taxi_path == nullptr);
+
+		REQUIRE(step_until([&]() { return v->tile == goal; }));
+	}
+
+	SECTION("A landing chain through a demolished tile is dropped, one beside it is kept") {
+		v->landing_chain_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, start, goal, nullptr, false, GroundPathRestriction::FixedWing));
+		REQUIRE(v->landing_chain_path->valid);
+		DemolishModularTile(st, base + TileDiffXY(1, 2));
+		REQUIRE(v->landing_chain_path != nullptr);
+		DemolishModularTile(st, removed);
+		CHECK(v->landing_chain_path == nullptr);
+	}
+
+	SECTION("The movement loop refuses to step onto a tile the layout lost even without the edit hook") {
+		REQUIRE(step_until([&]() { return v->tile == second; }));
+		REQUIRE(v->taxi_path != nullptr);
+
+		/* No RefreshModularAircraftPathSegments: the path is left pointing through the gap. */
+		std::erase_if(*st->airport.modular_tile_data, [&](const ModularAirportTileData &d) { return d.tile == removed; });
+		st->airport.modular_tile_index_dirty = true;
+		st->airport.MarkLayoutDirty();
+		MakeClear(removed, ClearGround::Grass, 0);
+
+		REQUIRE(step_until([&]() { return v->tile == goal; }));
+	}
+
+	SECTION("An aircraft already off the airport goes to a hangar, or leaves") {
+		const TileIndex outside = TileXY(30, 30);
+		PlaceAircraftOnTile(v, outside, Direction::SW);
+		REQUIRE_FALSE(st->TileBelongsToAirport(outside));
+
+		SECTION("no hangar: it lifts off") {
+			CHECK(AirportMoveModular(v, st));
+			CHECK(v->state == FLYING);
+			CHECK(v->ground_path_goal == INVALID_TILE);
+			CHECK(v->modular_ground_target == MGT_NONE);
+			CHECK(v->taxi_path == nullptr);
+		}
+
+		SECTION("a hangar exists: it is put there") {
+			const TileIndex hangar = base + TileDiffXY(5, 3);
+			AddModularTile(st, hangar, APT_DEPOT_SE);
+			CHECK(AirportMoveModular(v, st));
+			CHECK(v->state == HANGAR);
+			CHECK(v->tile == hangar);
+			CHECK(v->ground_path_goal == INVALID_TILE);
+		}
+	}
+
+	_settings_game.vehicle.plane_speed = saved_plane_speed;
+}

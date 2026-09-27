@@ -243,6 +243,23 @@ It preflights the whole area (ownership, modular membership, year gate, `EnsureN
 - updates modular indices and invalidates layout caches
 - tears down the airport facility if no modular tiles remain
 
+### Layout edits under a moving aircraft
+
+Every mutating command ends with `RefreshModularAircraftPathSegments(st)`. Besides
+reclassifying segment types, it drops any stored route (`taxi_path` or
+`landing_chain_path`) that the edited layout can no longer carry -- a demolished or retyped
+tile ahead, or a fence across a step -- as judged by `IsAirportGroundRouteTraversable`. Only
+the path object goes; the reservations stay with the aircraft. For a taxi path the rebuild
+on the next step re-plans while still owning its way to a safe stop. A dropped landing chain
+keeps its runway and its reserved safe stop through the rollout, but the plain taxi tiles
+between them are released at the first post-touchdown reconcile and re-claimed when the
+aircraft plans its exit. The reservation contract cannot catch any of this by itself: a tile
+that has left the layout is neither reserved nor occupied, so a forward plan through it
+validates. `AirportMoveModular` runs the same traversability test before trusting a route
+(and logs when it fires, since that means an edit path skipped the refresh), and an
+aircraft found standing off the airport altogether is teleported to a hangar (or lifts off
+when there is none) rather than left there for good.
+
 ### Compound pieces
 
 Some buildings span several tiles and only make sense whole. `GetModularCompoundPieceTiles(gfx)` (`modular_airport_gui.h`) returns the tiles a compound piece places relative to the clicked anchor; `GetModularCompoundPieceSize(gfx)` gives the footprint. Compound footprints are **fixed and unrotatable** — each tile has its own graphic drawn to join up in one orientation only. `GetModularAirportBuilderPieceGfx()` is the definition of what a modular airport may be built from; anything placing modular tiles outside the builder (the script API above all) must place only graphics from that set.

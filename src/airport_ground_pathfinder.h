@@ -97,6 +97,18 @@ struct TaxiPath {
 AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
 
 /**
+ * Whether a stored route can still be driven on the layout as it is now: every tile from
+ * @p from onward is still part of the airport and every step is still a connection the
+ * pathfinder would make. Layout only; occupancy and reservations are not consulted.
+ * @param st The station the route runs through.
+ * @param tiles The route.
+ * @param from Index of the first tile not yet traversed.
+ * @param v The aircraft walking the route (type restriction only), or nullptr.
+ * @return True if the route from @p from onward is still walkable.
+ */
+bool IsAirportGroundRouteTraversable(const Station *st, std::span<const TileIndex> tiles, size_t from, const Aircraft *v);
+
+/**
  * Check if a tile is a one-way taxiway tile.
  * @param st The station.
  * @param tile The tile to check.

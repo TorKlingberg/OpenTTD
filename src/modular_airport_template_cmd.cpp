@@ -271,8 +271,10 @@ static void SetEdgeFence_Apply(TileIndex tile, uint8_t edge_bit, bool set, Stati
 	}
 
 	/* Edge fences change which tiles can reach which, so every layout-derived cache
-	 * (heli pads, holding loop, catchment) may now be wrong. */
+	 * (heli pads, holding loop, catchment) may now be wrong -- including the routes
+	 * aircraft are already walking, which may now cross the fence. */
 	st->airport.MarkLayoutDirty();
+	RefreshModularAircraftPathSegments(st);
 }
 
 CommandCost CmdSetModularAirportEdgeFence(DoCommandFlags flags, TileIndex tile, uint8_t edge_bit, bool set)

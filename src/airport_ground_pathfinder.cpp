@@ -544,6 +544,45 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 }
 
 /**
+ * Whether a stored route can still be driven on the layout as it is now.
+ *
+ * A route is computed once and then walked for many ticks, and the player may edit the
+ * airport in between: demolish a tile ahead, retype it into a building, or fence an
+ * edge it crosses. Nothing in the reservation contract catches that -- a tile that has
+ * left the layout is neither reserved nor occupied, so a forward plan through it
+ * validates -- which is why the movement code asks this before trusting a route.
+ *
+ * Deliberately a layout question only: every tile from @p from onward must still be a
+ * tile of @p st's layout, and every step must still be a connection the pathfinder would
+ * make in its most permissive (crossing-allowed) mode. Occupancy and reservations are
+ * left to the reservation code, so @p v contributes only its type restriction.
+ *
+ * @param st The station the route runs through.
+ * @param tiles The route.
+ * @param from Index of the first tile not yet traversed; tiles before it are not checked.
+ * @param v The aircraft walking the route, or nullptr for no type restriction.
+ * @return True if the route from @p from onward is still walkable.
+ */
+bool IsAirportGroundRouteTraversable(const Station *st, std::span<const TileIndex> tiles, size_t from, const Aircraft *v)
+{
+	if (st == nullptr || from >= tiles.size()) return false;
+
+	const GroundPathRestriction restriction = GetGroundPathRestriction(v);
+	const TileIndex goal = tiles.back();
+
+	const ModularAirportTileData *prev_data = nullptr;
+	for (size_t i = from; i < tiles.size(); ++i) {
+		const TileIndex tile = tiles[i];
+		if (!IsValidTile(tile) || !st->TileBelongsToAirport(tile)) return false;
+		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+		if (data == nullptr) return false;
+		if (i > from && !CanTilesConnect(st, tiles[i - 1], tile, prev_data, data, nullptr, restriction, goal, true)) return false;
+		prev_data = data;
+	}
+	return true;
+}
+
+/**
  * Check if a tile is a one-way taxiway tile.
  * @param st The station.
  * @param tile The tile to check.

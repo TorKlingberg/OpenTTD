@@ -595,6 +595,8 @@ bool AirportMoveModularTakeoff(Aircraft *v, const Station *st);
 void AirportMoveModularFlying(Aircraft *v, const Station *st);
 
 bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute);
+TileIndex FindAnyModularHangarTile(const Station *st, TileIndex except = INVALID_TILE);
+void TeleportModularAircraftToHangar(Aircraft *v, const Station *st, TileIndex hangar);
 void ResetModularAirportStaticState();
 
 void EnsureModularHeliTilesValid(const Station *st);

@@ -549,6 +549,99 @@ void ClearModularAirportReservationsByVehicle(const Station *st, VehicleID vid, 
 }
 
 /**
+ * Any hangar tile of @p st other than @p except, or INVALID_TILE when it has none.
+ * @param st The station.
+ * @param except A tile not to return; the one being removed, typically.
+ */
+TileIndex FindAnyModularHangarTile(const Station *st, TileIndex except)
+{
+	if (st == nullptr || st->airport.modular_tile_data == nullptr) return INVALID_TILE;
+	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+		if (data.tile == except) continue;
+		if (IsModularHangarPiece(data.piece_type)) return data.tile;
+	}
+	return INVALID_TILE;
+}
+
+/**
+ * Discard everything an aircraft holds and intends on the ground and on approach at
+ * @p st: every reservation, both stored routes, and every goal. What remains is an
+ * aircraft with no claims anywhere, ready to be put somewhere else.
+ *
+ * Reservations are force-cleared through the aircraft's own bookkeeping first, so the
+ * tracking vectors and the map bits go together; the airport-wide sweep after that only
+ * catches a bit the vectors had lost track of. Clearing the map first and the vectors
+ * later would leave entries with no bit behind them, and two readers -- the rollout
+ * arrival's owns-safe-stop test and the on-runway retention in the keep set -- take a
+ * vector entry as ownership without checking the map.
+ * @param v The aircraft.
+ * @param st The modular airport the aircraft's claims are on.
+ */
+static void DiscardModularAircraftGroundState(Aircraft *v, const Station *st)
+{
+	ClearTaxiPathReservation(v, INVALID_TILE, true, false);
+	ClearTaxiPathState(v);
+	ClearModularRunwayReservation(v);
+	ClearModularAirportReservationsByVehicle(st, v->index);
+	v->landing_chain_path.reset();
+
+	v->ground_path_goal = INVALID_TILE;
+	v->modular_ground_target = MGT_NONE;
+	v->modular_landing_tile = INVALID_TILE;
+	v->modular_landing_goal = INVALID_TILE;
+	v->modular_takeoff_tile = INVALID_TILE;
+	v->modular_takeoff_progress = 0;
+	v->modular_holding_wp_index = UINT32_MAX;
+
+	/* Clear airborne-transient flags: wherever the aircraft goes next, it is not on the
+	 * approach it was on. HelicopterDirectDescent matters most -- CmdStartStopVehicle
+	 * reads it as a second "is in flight" condition independent of state, so a
+	 * helicopter parked mid-descent would be left permanently impossible to start.
+	 * DestinationTooFar is deliberately left alone: it describes the order rather than
+	 * the position, and is re-evaluated with its news item. */
+	v->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
+	v->flags.Reset(VehicleAirFlag::InMaximumHeightCorrection);
+	v->flags.Reset(VehicleAirFlag::InMinimumHeightCorrection);
+}
+
+/**
+ * Put an aircraft into a hangar of @p st from wherever it is, discarding all of its
+ * ground and approach state. Used where an aircraft has to be moved off a tile it can
+ * no longer stand on: one being demolished, or one that is no longer part of any airport.
+ * @param v The aircraft.
+ * @param st The station whose hangar it goes into.
+ * @param hangar The hangar tile; must be a hangar of @p st.
+ */
+void TeleportModularAircraftToHangar(Aircraft *v, const Station *st, TileIndex hangar)
+{
+	const TileIndex from = v->tile;
+
+	DiscardModularAircraftGroundState(v, st);
+
+	/* Move to hangar tile. */
+	int hx = TileX(hangar) * TILE_SIZE + TILE_SIZE / 2;
+	int hy = TileY(hangar) * TILE_SIZE + TILE_SIZE / 2;
+	int hz = GetTileMaxPixelZ(hangar);
+
+	v->tile = hangar;
+	v->targetairport = st->index;
+	v->state = HANGAR;
+	v->pos = v->previous_pos = 0;
+	SetAircraftPosition(v, hx, hy, hz);
+	VehicleEnterDepot(v);
+
+	/* Tell the owner where their aircraft went: it is now parked in a hangar it never
+	 * asked for, somewhere other than the tile they were watching. News is client-local
+	 * state, so the _local_company guard cannot desync a network game. */
+	if (v->owner == _local_company) {
+		AddVehicleAdviceNewsItem(AdviceType::AircraftMovedToHangar, GetEncodedString(STR_NEWS_AIRCRAFT_MOVED_TO_HANGAR, v->index), v->index);
+	}
+
+	Debug(misc, 1, "[ModAp] Teleported vehicle {} from tile {} to hangar {}, state reset to HANGAR",
+		v->index, IsValidTile(from) ? from.base() : 0, hangar.base());
+}
+
+/**
  * Teleport all ground aircraft on a modular airport tile to the nearest hangar.
  * Used when a tile is being removed from under an aircraft.
  * @param tile The tile being removed.
@@ -569,67 +662,12 @@ bool TeleportAircraftOnModularTile(TileIndex tile, Station *st, bool execute)
 	if (to_teleport.empty()) return true;
 
 	/* Find a hangar to teleport to (must not be the tile being removed). */
-	TileIndex hangar = INVALID_TILE;
-	if (st->airport.modular_tile_data != nullptr) {
-		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
-			if (data.tile == tile) continue;
-			if (!IsModularHangarPiece(data.piece_type)) continue;
-			hangar = data.tile;
-			break;
-		}
-	}
-
+	const TileIndex hangar = FindAnyModularHangarTile(st, tile);
 	if (hangar == INVALID_TILE) return false;
 
 	if (!execute) return true;
 
-	/* Actually teleport each aircraft to the hangar. */
-	for (Aircraft *v : to_teleport) {
-		ClearTaxiPathState(v);
-		ClearModularRunwayReservation(v);
-		ClearModularAirportReservationsByVehicle(st, v->index);
-		v->landing_chain_path.reset();
-
-		v->ground_path_goal = INVALID_TILE;
-		v->modular_ground_target = MGT_NONE;
-		v->modular_landing_tile = INVALID_TILE;
-		v->modular_landing_goal = INVALID_TILE;
-		v->modular_takeoff_tile = INVALID_TILE;
-		v->modular_takeoff_progress = 0;
-		v->modular_holding_wp_index = UINT32_MAX;
-
-		/* Clear airborne-transient flags: the aircraft is parked in a hangar now.
-		 * HelicopterDirectDescent matters most -- CmdStartStopVehicle reads it as a
-		 * second "is in flight" condition independent of state, so a helicopter
-		 * teleported mid-descent would be left permanently impossible to start.
-		 * DestinationTooFar is deliberately left alone: it describes the order
-		 * rather than the position, and is re-evaluated with its news item. */
-		v->flags.Reset(VehicleAirFlag::HelicopterDirectDescent);
-		v->flags.Reset(VehicleAirFlag::InMaximumHeightCorrection);
-		v->flags.Reset(VehicleAirFlag::InMinimumHeightCorrection);
-
-		/* Move to hangar tile. */
-		int hx = TileX(hangar) * TILE_SIZE + TILE_SIZE / 2;
-		int hy = TileY(hangar) * TILE_SIZE + TILE_SIZE / 2;
-		int hz = GetTileMaxPixelZ(hangar);
-
-		v->tile = hangar;
-		v->targetairport = st->index;
-		v->state = HANGAR;
-		v->pos = v->previous_pos = 0;
-		SetAircraftPosition(v, hx, hy, hz);
-		VehicleEnterDepot(v);
-
-		/* Tell the owner where their aircraft went: it is now parked in a hangar it never
-		 * asked for, somewhere other than the tile they were watching. News is client-local
-		 * state, so the _local_company guard cannot desync a network game. */
-		if (v->owner == _local_company) {
-			AddVehicleAdviceNewsItem(AdviceType::AircraftMovedToHangar, GetEncodedString(STR_NEWS_AIRCRAFT_MOVED_TO_HANGAR, v->index), v->index);
-		}
-
-		Debug(misc, 1, "[ModAp] Teleported vehicle {} from removed tile {} to hangar {}, state reset to HANGAR",
-			v->index, tile.base(), hangar.base());
-	}
+	for (Aircraft *v : to_teleport) TeleportModularAircraftToHangar(v, st, hangar);
 
 	return true;
 }
@@ -1078,7 +1116,8 @@ static const Station *GetModularPathStation(const TaxiPath *path, size_t from)
 }
 
 /**
- * Re-derive the segment classification of every path that runs through @p st.
+ * Re-derive the segment classification of every path that runs through @p st, and drop
+ * every path the edited layout can no longer carry.
  *
  * Segment types are a layout-derived cache that happens to live on the aircraft rather
  * than on the Airport, so a layout change that alters what a tile classifies as leaves
@@ -1086,8 +1125,18 @@ static const Station *GetModularPathStation(const TaxiPath *path, size_t from)
  * A stale type reaches real decisions -- notably whether the aircraft is still on a runway
  * it must clear -- so it has to be refreshed at the moment of the edit.
  *
- * The routes themselves are deliberately left alone. Rerouting an aircraft mid-taxi is a
- * reservation decision with its own contract; these tiles are the ones it currently holds.
+ * A route is a layout-derived cache too, and one the reservation contract cannot police:
+ * a tile demolished from under a route ahead of the aircraft is neither reserved nor
+ * occupied, so the forward plan through it validates and the aircraft drives onto
+ * grass -- where, no longer standing on the airport, it can never move again. So a route
+ * the layout no longer supports is dropped here, at the edit. Only the path object goes;
+ * the reservations it justified stay with the aircraft. For a taxi path that means the
+ * rebuild on the next step (see AirportMoveModular) re-plans while still owning its way
+ * to a safe stop, and the reconciler releases whatever the new route does not need. A
+ * dropped landing chain keeps less: the runway and the reserved safe stop survive the
+ * rollout (the keep set retains both without a chain object), but the ordinary taxi
+ * tiles between them lose their justification at the first post-touchdown reconcile and
+ * are re-claimed, possibly after a wait, once the aircraft plans its exit.
  * @param st The station whose layout just changed.
  */
 void RefreshModularAircraftPathSegments(const Station *st)
@@ -1097,8 +1146,15 @@ void RefreshModularAircraftPathSegments(const Station *st)
 	for (Aircraft *v : Aircraft::Iterate()) {
 		if (!v->IsNormalAircraft()) continue;
 		for (auto member : _modular_stored_paths) {
-			const std::unique_ptr<TaxiPath> &path = v->*member;
-			if (GetModularPathStation(path.get(), ModularPathStartIndex(v, member)) != st) continue;
+			std::unique_ptr<TaxiPath> &path = v->*member;
+			const size_t from = ModularPathStartIndex(v, member);
+			if (GetModularPathStation(path.get(), from) != st) continue;
+			if (!IsAirportGroundRouteTraversable(st, path->tiles, from, v)) {
+				Debug(misc, 2, "[ModAp] V{} unit#{} route dropped: layout edit at st={} broke the {} ahead of index {}",
+					v->index, v->unitnumber, st->index, member == &Aircraft::taxi_path ? "taxi path" : "landing chain", from);
+				path.reset();
+				continue;
+			}
 			path->segments = ClassifyTaxiSegments(st, path->tiles);
 		}
 	}
@@ -3807,8 +3863,27 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 
 	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
-		ClearTaxiPathState(v);
-		return false;
+		/* Standing on a tile that is not part of the airport, so ground movement has
+		 * nothing to move along: no route can start here, and no rebuild will ever
+		 * produce one. Left alone the aircraft would sit here for the rest of the game.
+		 * A layout edit that demolished the tile under a stored route is how it used
+		 * to get here (RefreshModularAircraftPathSegments now drops such routes, and
+		 * the rebuild test below refuses to step off the layout), but a savegame from
+		 * before that can still carry one. Recover the way tile removal moves an
+		 * aircraft it has to displace: into a hangar. With no hangar to go to, an
+		 * aircraft on open ground can simply leave; it is not holding anything. */
+		Debug(misc, 1, "[ModAp] V{} unit#{} off-airport recovery: tile={} st={} goal={} tgt={}",
+			v->index, v->unitnumber, IsValidTile(v->tile) ? v->tile.base() : 0, st->index,
+			IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0, v->modular_ground_target);
+		const TileIndex hangar = FindAnyModularHangarTile(st);
+		if (hangar != INVALID_TILE) {
+			TeleportModularAircraftToHangar(v, st, hangar);
+			return true;
+		}
+		DiscardModularAircraftGroundState(v, st);
+		v->tile = TileIndex{};
+		v->state = FLYING;
+		return true;
 	}
 
 	const ModularAirportTileData *goal_data = st->airport.GetModularTileData(v->ground_path_goal);
@@ -3850,13 +3925,26 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		return true;
 	}
 
-	const bool needs_rebuild =
+	const bool path_out_of_sync =
 			v->taxi_path == nullptr ||
 			!v->taxi_path->valid ||
 			v->taxi_path->tiles.empty() ||
 			v->taxi_path_index >= v->taxi_path->tiles.size() ||
 			v->taxi_path->tiles[v->taxi_path_index] != v->tile ||
 			v->taxi_path->tiles.back() != v->ground_path_goal;
+	/* The movement-side guard against a route the layout no longer supports. Every
+	 * layout edit drops such routes at the edit (RefreshModularAircraftPathSegments),
+	 * so this should catch only a mutation path that forgot to -- which is why it is
+	 * logged: a silent guard would keep such a path invisible. It is cheap, and the
+	 * alternative is stepping off the airport onto a tile nothing can move an aircraft
+	 * off again. */
+	const bool path_broken = !path_out_of_sync &&
+			!IsAirportGroundRouteTraversable(st, v->taxi_path->tiles, v->taxi_path_index, v);
+	if (path_broken && ShouldLogModularRateLimited(v->index, 63, 128)) {
+		Debug(misc, 1, "[ModAp] V{} unit#{} route no longer traversable at st={} tile={} goal={}: a layout edit did not drop it",
+			v->index, v->unitnumber, st->index, v->tile.base(), v->ground_path_goal.base());
+	}
+	const bool needs_rebuild = path_out_of_sync || path_broken;
 	if (needs_rebuild) {
 		const uint16_t saved_wait = v->taxi_wait_counter;
 		ClearTaxiPathState(v, v->tile);
