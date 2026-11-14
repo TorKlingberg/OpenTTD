@@ -33,15 +33,6 @@ inline constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 inline constexpr uint8_t MGT_ROLLOUT = 5;
 inline constexpr uint8_t MGT_HELI_TAKEOFF_TILE = 6;
 
-/**
- * Ticks between polls for a free stand by an aircraft idling with a modular ground target
- * and nothing to taxi to. Each poll is an A* per candidate stand, so this bounds the cost
- * of a saturated airport's queue; it also bounds how long a freed stand goes unnoticed,
- * which at this value is well under the taxi to it. The terminal handler runs twice per
- * tick, which HandleModularTerminal accounts for.
- */
-inline constexpr uint8_t MODULAR_IDLE_RETARGET_INTERVAL_TICKS = 8;
-
 inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this are not usable for landing or takeoff
 inline constexpr int LARGE_RUNWAY_LENGTH_TILES = 6; ///< Runway length a fast jet needs; shorter ones are not large-safe
 
