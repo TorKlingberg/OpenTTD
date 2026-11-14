@@ -142,11 +142,14 @@ changes:
   similarly-sized one with a different name appears -- that is one airport rebuilt elsewhere,
   not a loss.
 
-With both gone, no fixture has a known noise source left, so read a total delta as a result of
-the code under test, and treat two different builds as comparable as long as `[AircraftLost]`
-is still absent from both runs. The one direct measurement of the re-save itself is `T7d`,
-which already had crashes off: rewriting the file changed its total by 0 movements. Keep the
-floors' headroom regardless -- it costs nothing and covers whatever has not been found yet.
+With both gone, no fixture has an external noise source left -- but the simulation itself is
+chaotic, so a total delta of a few percent between two builds is still mostly not a result of
+the code under test. Any timing shift reshuffles every later event, and identical code spans
+about 5% of `mass7-inair` across RNG perturbations (see Floor history). Comparing two builds
+takes several perturbed trajectories each, and `[AircraftLost]` must still be absent from all.
+The one direct measurement of the re-save itself is `T7d`, which already had crashes off:
+rewriting the file changed its total by 0 movements. Keep the floors' headroom regardless --
+it costs nothing and covers whatever has not been found yet.
 
 To attribute a delta:
 
@@ -167,12 +170,11 @@ Underlying runner: `scripts/n_years_plus2.sh <years> [save]` (default save = mas
 
 ## Floor history
 
-Every floor sits 50-200 movements under its fixture's current total: `mass7-inair` 110,
-`helis2` 115, `T5j2` 140, `T7d` 174. That is the margin to aim for when bumping one. `T5j2`
-wants the wider end of it: migrating that save to version 375 shifted it by 26 movements (6283
-before the re-save, 6309 after) while `mass7-inair` and `helis2` both round-tripped to
-identical totals, so whatever state does not survive `T5j2`'s save/load is worth about half a
-percent there and a 30-movement margin would sit inside the noise.
+Every floor sits about 100 movements (`T7d` 161) under the lowest total its fixture reached
+over several RNG-perturbed runs of the current code (see the 2026-11-14 entry for the method),
+not under one run's total: a single run of identical code can land anywhere in a spread of
+about 5%, so a floor set 100 under one trajectory fails on the next unlucky one. Bump a floor
+the same way -- from the low end of several seeded runs.
 
 `mass7-inair` (9100) and `helis2` (14000) were lowered to 8400 and 13400 on
 2026-08-29. `cd876d1b676162e60ed80454a9db935332d8edda` ("Refactor: Simplify ground pathfinder
@@ -189,6 +191,30 @@ pre-swap 9229 and 14127 -- but floors of 8400 and 13400 left 560 and 615 movemen
 the two default-run fixtures that were widened for this loss could no longer have caught a
 repeat of it. Both totals were measured at `1dbcc94756` and reproduced exactly by a bare
 `scripts/regression_test.sh` run at `292c1384ec`, which is where the new floors were set.
+
+On 2026-11-14 the floors were reset from seeded runs of the commit that fixed the goal-less
+landing-chain deadlock: `T5j2` 6150, `mass7-inair` 8350 and `helis2` 13350, with `T7d` left at
+26550. None of it is a measured loss. The fixtures are chaotic: burning k `Random()` calls at
+the first game tick (a temporary patch; k=0 reproduces the normal run exactly) changes nothing
+but the RNG state, yet over six seeds of the fixed code `T5j2` spans 6254-6368, `mass7-inair`
+8440-8876 and `helis2` 13456-13778, and over three seeds `T7d` spans 26711-26851. A change that
+fired twice in a whole run once moved `mass7-inair` by 314. Each new floor is about 100 under
+the low end of its range; `T7d`'s is 161 under, kept rather than raised on three seeds. Against
+those spreads:
+
+- The takeoff turn (`ca7c6011c2`) halves speed per 45-degree step, as the stock controller
+  does. That costs about 5.5 ticks per takeoff and was blamed for single-run drops of 82 and
+  162, but six seeds each with and without the halving give the same means (`mass7-inair` 8786
+  vs 8790, `helis2` 13671 vs 13696).
+- Six seeds each before and after the deadlock fix moved the means by `T5j2` +56 (6240 -> 6296;
+  sd 134 -> 38, as the deadlocks went), `mass7-inair` -116 (sd 176 and 173) and `helis2` -84
+  (sd 260 and 143) -- about 1.0, 1.2 and 0.7 standard errors of the difference, so none is
+  distinguishable from noise. Over three seeds `T7d` went 26763 -> 26800.
+  `runway-rest-invariant` meanwhile fell from 205-827 per fixture to 0-6.
+- Before the fix `T5j2` ranged 5971-6326 over six seeds; that width was the deadlock, not
+  ordinary chaos.
+
+So read a delta of a few percent from one run as noise until several seeds agree.
 
 ## What the A* heuristic swap actually did
 
