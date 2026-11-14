@@ -93,7 +93,7 @@ Per-step movement uses `TryReserveTaxiSegment` to acquire forward, then a determ
 - Current tile (`v->tile`).
 - The taxi tiles and operation runway produced by the same forward plan used for acquisition.
 - Landing-chain continuity (every tile in `v->landing_chain_path`, until the rollout transition discards it) and its committed operation runway.
-- A committed safe-stop claim while a just-landed aircraft is still standing on a runway without an active saved path.
+- Every committed safe-stop claim while the aircraft is standing on a runway (Pitfall 3).
 - Full `modular_runway_reservation` when `ShouldRetainRunwayReservation(v, st)` confirms an active takeoff operation on the intended runway.
 
 Transit-runway claims are **not** expanded during retention; they remain ordinary
@@ -113,7 +113,14 @@ If any operation or taxi claim is unavailable, nothing in the landing transactio
 is acquired. This prevents an aircraft from landing with a reserved touchdown
 runway but no reserved route through an adjacent runway or apron to safety.
 
-The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway.
+The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway, and the chain is stored only as far as that buffer: the route to it may be a diversion round a held exit, and it stays held through the approach and rollout like any other chain.
+
+At the rollout end (`HandleModularGroundArrival`, `MGT_ROLLOUT`), a chain that does not lead to the stand chosen there is never simply dropped. In order:
+
+1. **Switch atomically.** Find a route to the new stand and claim its whole forward horizon with `TryCommitForwardReservationPlan` *before* installing it. Tiles on both routes stay reserved throughout (claiming a tile the aircraft already owns is a no-op). Nothing is released by the switch itself: the reconcile after each step drops chain-only tiles, except that the chain's buffer, like any safe stop, is kept while the aircraft is still on a runway (Pitfall 3) and goes once it steps off. Holding it that much longer is harmless, as the new horizon is already claimed.
+2. **Otherwise follow the chain** to its safe stop and choose a stand again from there.
+
+Taking a route that could not be claimed, while still holding the buffer, deadlocked: the buffer was where an aircraft already queued on the usual exit was going next, and the new route queued behind that aircraft.
 
 ## 6. Path rebuilding and retargeting
 
@@ -173,12 +180,13 @@ Two smells to watch for when touching this area:
 ### Pitfall 3: A reservation off a safe stop is not the reconciler's to reclaim
 
 Retention is normally justified by a path — the active `taxi_path` or the stored
-`landing_chain_path`. A landing committed through the **no-ground-goal** branch
-of `TryReserveLandingChain` has neither: it reserves the runway plus a one-way
-buffer to queue on, then deliberately resets the path. Nothing justified the
-buffer, so the next reconcile released it, and the aircraft reached the rollout
-end owning nothing — standing on a runway with the guarantee that permitted its
-landing already thrown away.
+`landing_chain_path`. Neither covers a landing's buffer when the chain is gone: a
+save written before goal-less chains were kept carries none, and a layout edit can
+drop one (`RefreshModularAircraftPathSegments`). The no-ground-goal branch of
+`TryReserveLandingChain` used to reset the path deliberately, and the next
+reconcile then released the buffer, so the aircraft reached the rollout end owning
+nothing — standing on a runway with the guarantee that permitted its landing
+already thrown away.
 
 `BuildReservationKeepSet` therefore keeps reserved **safe-stop** tiles whenever
 the aircraft is standing on a runway. Landing is only allowed against a reserved

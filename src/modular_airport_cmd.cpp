@@ -1202,11 +1202,12 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 	/* An aircraft standing somewhere it may not wait keeps everything it holds.
 	 *
 	 * Retention is otherwise justified by a path -- the active taxi_path or the stored
-	 * landing_chain_path. A landing committed through the no-ground-goal branch has
-	 * neither: it reserves a runway plus a one-way buffer to queue on and deliberately
-	 * resets the path. Nothing then justified the buffer, so the very next reconcile
-	 * released it, and the aircraft arrived at the rollout end owning nothing -- on a
-	 * runway, with the guarantee that permitted the landing already thrown away.
+	 * landing_chain_path. Neither covers the buffer a landing was admitted against once
+	 * the chain is gone: a save written before goal-less landing chains were kept
+	 * carries none, and a layout edit can drop one (RefreshModularAircraftPathSegments).
+	 * Before this rule the very next reconcile released the buffer while the aircraft
+	 * still stood on the runway, with the guarantee that permitted the landing already
+	 * thrown away.
 	 *
 	 * Landing is only allowed against a reserved route to a safe stop, so until the
 	 * aircraft is actually standing on one, that route is what makes its position
@@ -1562,7 +1563,24 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 		v->landing_chain_path = std::make_unique<TaxiPath>(std::move(route.path));
 		v->rollout_restored_from_save = false;
 	} else {
-		v->landing_chain_path.reset();
+		/* With no stand to aim at, the route only means anything as far as the one-way
+		 * buffer that admitted the landing; past it the path heads for an arbitrary
+		 * stand. Keep it to there rather than dropping it. The reservation was made along
+		 * this route -- possibly a diversion round an exit somebody else holds -- and the
+		 * stored path is what keeps that whole route held through the rollout, and what
+		 * the rollout end can fall back on when the route to the stand it then picks
+		 * cannot be claimed. Without it the aircraft kept only the buffer, set off on the
+		 * shortest route instead, and could wait on the runway for a tile held by the
+		 * aircraft queued in front of its own buffer: a deadlock. */
+		const auto stop = std::find(route.path.tiles.begin(), route.path.tiles.end(), route.plan.safe_stop);
+		if (route.path.valid && stop != route.path.tiles.end() && stop != route.path.tiles.begin()) {
+			route.path.tiles.erase(std::next(stop), route.path.tiles.end());
+			route.path.segments = ClassifyTaxiSegments(st, route.path.tiles);
+			v->landing_chain_path = std::make_unique<TaxiPath>(std::move(route.path));
+			v->rollout_restored_from_save = false;
+		} else {
+			v->landing_chain_path.reset();
+		}
 	}
 
 	if (ShouldLogModularRateLimited(v->index, 44, 16)) {
@@ -3384,6 +3402,68 @@ void HandleModularGroundArrival(Aircraft *v)
 				TileIndex goal = INVALID_TILE;
 				uint8_t target = MGT_NONE;
 
+				/* Taxi the route the landing chain reserved, as far as its first safe stop, and
+				 * choose a stand again from there. This is the route the landing was admitted
+				 * against: its tiles have been held since before touchdown, so it can always be
+				 * taken -- unlike a fresh route to a stand picked only now, which may need a
+				 * tile somebody else holds. Waiting for such a tile here, on the runway, while
+				 * still holding the buffer the chain reserved, can close a cycle with the
+				 * aircraft queued in front of that buffer. */
+				const auto follow_landing_chain_to_safe_stop = [&]() -> bool {
+					if (v->landing_chain_path == nullptr || !v->landing_chain_path->valid) return false;
+					std::vector<TileIndex> &tiles = v->landing_chain_path->tiles;
+					if (tiles.size() < 2 || tiles.front() != v->tile) return false;
+					const TileIndex chain_goal = tiles.back();
+					size_t stop = 1;
+					while (stop < tiles.size() && !IsModularSafeStopTile(st, tiles[stop], chain_goal)) stop++;
+					if (stop >= tiles.size()) return false;
+					tiles.erase(tiles.begin() + stop + 1, tiles.end());
+					v->landing_chain_path->segments = ClassifyTaxiSegments(st, tiles);
+
+					v->ground_path_goal = tiles.back();
+					v->modular_ground_target = MGT_ROLLOUT;
+					v->state = TERM1;
+					v->taxi_path = std::move(v->landing_chain_path);
+					v->taxi_path_index = 0;
+					v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
+					v->taxi_wait_counter = 0;
+					SetTaxiReservationUnlessOperationRunway(v, v->tile);
+					Debug(misc, 2, "[ModAp] V{} rollout: following the reserved landing chain to safe stop {}",
+						v->index, v->ground_path_goal.base());
+					return true;
+				};
+
+				/* Switch from the landing chain to a route to @p new_goal, but only as one
+				 * transaction: the new route's forward horizon is claimed first, in full,
+				 * and only then is the route installed. Nothing is released here: the
+				 * reconcile after each step drops whatever the new horizon does not cover,
+				 * except that the chain's queue tile, like any safe stop, is kept for as
+				 * long as the aircraft stands on a runway (BuildReservationKeepSet). That is
+				 * harmless, as the new horizon is already held and the aircraft does not
+				 * wait for it. If the horizon cannot be claimed nothing changes, and the
+				 * caller falls back to the chain it still holds. Only ever replaces a chain:
+				 * with no chain there is nothing to switch from, and the flow below is
+				 * unchanged. */
+				const auto switch_to_route_to_goal = [&](TileIndex new_goal) -> bool {
+					if (v->landing_chain_path == nullptr || !v->landing_chain_path->valid ||
+							v->landing_chain_path->tiles.empty() || v->landing_chain_path->tiles.front() != v->tile) {
+						return false;
+					}
+					ReservableRoute route = FindReservableRoute(v, st, v->tile, new_goal, GetGroundOperationRunwayTile(v, st),
+							true, GroundPathRestriction::FromAircraft, v);
+					if (!route.found || route.path.tiles.size() < 2 || route.path.segments.empty()) return false;
+					TaxiReserveResult result;
+					if (!TryCommitForwardReservationPlan(v, st, route.plan, &result, false)) return false;
+
+					v->taxi_path = std::make_unique<TaxiPath>(std::move(route.path));
+					v->taxi_path_index = 0;
+					v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
+					v->taxi_wait_counter = 0;
+					SetTaxiReservationUnlessOperationRunway(v, v->tile);
+					v->landing_chain_path.reset();
+					return true;
+				};
+
 				/* Prefer the preselected landing goal used during landing-chain reservation. */
 				if (v->modular_landing_goal != INVALID_TILE) {
 					const ModularAirportTileData *goal_data = st->airport.GetModularTileData(v->modular_landing_goal);
@@ -3438,14 +3518,21 @@ void HandleModularGroundArrival(Aircraft *v)
 						v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 						v->taxi_wait_counter = 0;
 						SetTaxiReservationUnlessOperationRunway(v, v->tile);
+					} else if (!IsModularSafeStopTile(st, v->tile, goal) &&
+							(switch_to_route_to_goal(goal) || follow_landing_chain_to_safe_stop())) {
+						/* The stand chosen now is not where the landing chain leads, because the
+						 * landing was admitted towards a one-way buffer. Either a route to the
+						 * new stand was claimed outright, or the runway is cleared along the
+						 * reserved route and the stand chosen again at its safe stop. Never
+						 * wait here for a route that cannot be claimed. */
 					} else if (!IsModularSafeStopTile(st, v->tile, goal)) {
 						/* The precomputed path could not be installed and the aircraft is
 						 * standing where it may not wait -- in practice the rollout end, on the
 						 * runway. That is only a contract violation if it also no longer owns
 						 * a reserved route to somewhere it *can* wait. A missing path object
-						 * is not itself the test: the no-ground-goal landing branch reserves
-						 * a runway plus a one-way buffer and resets the path deliberately, and
-						 * that aircraft is perfectly safe -- it owns its queueing tile. */
+						 * is not itself the test: a restored save may carry no landing chain
+						 * path while the aircraft still owns its queueing tile, and that
+						 * aircraft is perfectly safe. */
 						const bool owns_safe_stop = std::any_of(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(),
 							[&](TileIndex t) { return IsValidTile(t) && (t == goal || IsModularSafeStopTile(st, t, goal)); });
 						if (!owns_safe_stop && !restored_from_save) {
@@ -3457,6 +3544,9 @@ void HandleModularGroundArrival(Aircraft *v)
 								v->taxi_reserved_tiles.size());
 						}
 					}
+				} else if (!IsModularSafeStopTile(st, v->tile, goal) && follow_landing_chain_to_safe_stop()) {
+					/* No service tile free yet: clear the runway along the route the landing
+					 * chain reserved, and re-poll for a stand at its safe stop. */
 				} else if (!IsModularSafeStopTile(st, v->tile, goal)) {
 					/* No service tile free yet and we are not on a safe stop (still on
 					 * the runway): vacate to the nearest reachable safe stop. The landing

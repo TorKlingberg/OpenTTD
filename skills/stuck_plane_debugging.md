@@ -453,8 +453,14 @@ Check each tile along the expected path for:
    for a stop on the route to the *cheapest* service tile — a different route — and
    gave up when that route's safe stops were held, stranding the aircraft on the
    runway at landing speed with no goal. Signature: `rollout fallback failed`
-   immediately followed by `invalid ground state ... at speed`. It now falls back to
-   the reserved queue tile the landing was admitted against.
+   immediately followed by `invalid ground state ... at speed`. The goal-less landing
+   chain is now kept as far as its queue tile. With no stand free at the rollout end,
+   the aircraft follows that chain; with one free, it switches to a route to the stand
+   if it can claim one, and follows the chain if not (see `reservations-design.md`
+   section 5). `FindModularRolloutHoldingTile` (which also falls back to the reserved
+   queue tile) is reached with no stand free only when the chain cannot be followed --
+   it is missing, e.g. dropped by a layout edit, or does not start where the aircraft
+   stands.
 
 6. **Runway sandwiching stands**: Airports with runways on both sides of the stands can create situations where aircraft can only reach one runway (the one they landed on) but need to take off from the other. Ensure at least one runway end reachable from each stand has `RUF_TAKEOFF` with correct direction flags.
 

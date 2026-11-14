@@ -6326,3 +6326,127 @@ TEST_CASE("ModularAirportReplacingATileKeepsItsReservation")
 	RebuildTownKdtree();
 	RebuildViewportKdtree();
 }
+
+/*
+ * A landing admitted with no stand to aim at reserves the runway plus a one-way queue
+ * tile, and the route there may be a diversion because the usual exit is held (not
+ * modelled here: the chain below is the direct route to exit B). At the rollout end a
+ * stand may have come free that the reserved route does not lead to. The
+ * aircraft must then either claim a route to that stand outright, as one transaction, or
+ * follow the route it already holds -- never set off on a route it cannot claim while
+ * keeping the queue tile, which deadlocked against an aircraft queued for that same tile.
+ *
+ *          x=0    x=1    x=2         x=3     x=4
+ *   y=1                  A_oneway -> apron   STAND_A
+ *   y=2    RWY    RWY    RWY_END
+ *   y=3                  B_oneway
+ *   y=4                  STAND_B
+ */
+TEST_CASE("ModularAirportRolloutSwitchesFromLandingChainAtomically")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	Station *st = SetupModularAirport(base, 16, 16);
+	REQUIRE(st != nullptr);
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+
+	const auto one_way = [&](TileIndex tile, uint8_t dir_mask) {
+		ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
+		data->one_way_taxi = true;
+		data->user_taxi_dir_mask = dir_mask;
+	};
+
+	const TileIndex runway_start = base + TileDiffXY(0, 2);
+	const TileIndex exit_a = base + TileDiffXY(2, 1);
+	const TileIndex exit_b = base + TileDiffXY(2, 3);
+	const TileIndex stand_a = base + TileDiffXY(4, 1);
+	const TileIndex stand_b = base + TileDiffXY(2, 4);
+
+	AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
+	/* Stand B first: a goal-less landing plans towards the first stand in the layout. */
+	one_way(exit_b, 0x04); // South
+	AddModularTile(st, stand_b, APT_STAND, 0);
+	one_way(exit_a, 0x02); // East
+	AddModularTile(st, base + TileDiffXY(3, 1), APT_APRON, 0);
+	AddModularTile(st, stand_a, APT_STAND, 0);
+	st->airport.MarkLayoutDirty();
+
+	SetupAircraftPool();
+	Aircraft *v = CreateAircraft(VehicleID(10));
+	v->engine_type = prop_engine;
+	v->targetairport = st->index;
+
+	REQUIRE(TryReserveLandingChain(v, st, runway_start, INVALID_TILE));
+	REQUIRE(IsModularAirportTileReservedBy(exit_b, v->index));
+
+	/* Regression: the goal-less chain used to be dropped here, which released every tile
+	 * of its route but the queue tile. It is kept, as far as the queue tile. */
+	REQUIRE(v->landing_chain_path != nullptr);
+	CHECK(v->landing_chain_path->tiles.back() == exit_b);
+	const TileIndex rollout_end = v->landing_chain_path->tiles.front();
+
+	/* Touchdown and rollout done: stand B has been taken meanwhile, stand A is free. */
+	CreateBlockerOnTile(st, VehicleID(12), stand_b);
+	v->tile = rollout_end;
+	v->modular_landing_tile = INVALID_TILE;
+	v->modular_landing_goal = INVALID_TILE;
+	v->modular_ground_target = MGT_ROLLOUT;
+	v->ground_path_goal = INVALID_TILE;
+
+	SECTION("A claimable route to the new stand is switched to") {
+		HandleModularGroundArrival(v);
+
+		CHECK(v->ground_path_goal == stand_a);
+		REQUIRE(v->taxi_path != nullptr);
+		CHECK(v->taxi_path->tiles.back() == stand_a);
+		CHECK(v->landing_chain_path == nullptr);
+		/* The new horizon was claimed before the route was installed. */
+		CHECK(IsModularAirportTileReservedBy(exit_a, v->index));
+		/* The old claims are left to the reconcile after the first step, not dropped here. */
+		CHECK(IsModularAirportTileReservedBy(exit_b, v->index));
+
+		const auto reconcile = [&]() {
+			std::vector<TileIndex> keep_set;
+			BuildReservationKeepSet(v, st, keep_set);
+			ReconcileAircraftReservations(v, st, keep_set, "test");
+		};
+
+		/* Still on the runway: the runway stays claimed whole alongside the new horizon,
+		 * and the old queue tile is still kept, as every safe stop is while on a runway. */
+		reconcile();
+		for (int i = 0; i < 3; i++) {
+			CHECK(IsModularAirportTileReservedBy(runway_start + TileDiffXY(i, 0), v->index));
+		}
+		CHECK(IsModularAirportTileReservedBy(exit_a, v->index));
+		CHECK(IsModularAirportTileReservedBy(exit_b, v->index));
+
+		/* One step on, off the runway: the old route is released, the new one is kept. */
+		REQUIRE(v->taxi_path->tiles[1] == exit_a);
+		v->tile = exit_a;
+		v->taxi_path_index = 1;
+		reconcile();
+		CHECK(IsModularAirportTileReservedBy(exit_a, v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(exit_b, v->index));
+	}
+
+	SECTION("An unclaimable route leaves the aircraft on the route it holds") {
+		CreateBlockerOnTile(st, VehicleID(11), exit_a);
+		/* Stand A is still the stand chosen, so this goes through the refused switch and
+		 * not through the no-stand-free branch. */
+		REQUIRE(FindFreeModularTerminal(st, v) == stand_a);
+
+		HandleModularGroundArrival(v);
+
+		/* Regression: it used to take the route through exit A anyway and wait for it on
+		 * the runway, still holding exit B. */
+		CHECK(v->ground_path_goal == exit_b);
+		CHECK(v->modular_ground_target == MGT_ROLLOUT);
+		REQUIRE(v->taxi_path != nullptr);
+		CHECK(v->taxi_path->tiles.front() == rollout_end);
+		CHECK(v->taxi_path->tiles.back() == exit_b);
+		CHECK(IsModularAirportTileReservedBy(exit_b, v->index));
+		CHECK_FALSE(IsModularAirportTileReservedBy(exit_a, v->index));
+	}
+}
