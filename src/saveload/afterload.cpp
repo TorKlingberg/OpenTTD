@@ -821,7 +821,11 @@ bool AfterLoadGame()
 
 	/* A modular tile's map graphic is derived from its metadata. Older saves stored the
 	 * rotated hangars under their own IDs, which lie in the NewGRF airport tile range;
-	 * rewriting every modular tile from its metadata is idempotent, so no version gate. */
+	 * rewriting every modular tile from its metadata is idempotent, so no version gate.
+	 * TODO: Remove once the saves that matter have been re-saved; compatibility with older
+	 * modular airport saves is not a goal. First re-save the regression fixtures
+	 * (scripts/resave.sh): T7d still stores its rotated hangars under the old IDs, and
+	 * DrawTile_Station asserts on those without this rewrite. */
 	for (Station *st : Station::Iterate()) {
 		if (!st->facilities.Test(StationFacility::Airport)) continue;
 		if (!st->airport.blocks.Test(AirportBlock::Modular) || st->airport.modular_tile_data == nullptr) continue;
