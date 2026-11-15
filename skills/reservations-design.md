@@ -53,6 +53,10 @@ The plan partitions that horizon into two kinds of claim:
   acquired while the horizon still ends at an upstream one-way queue; it joins
   the plan when the horizon actually reaches that runway.
 
+- **Parking goal:** the stand or helipad the aircraft is going to park on, when the
+  horizon ends on a queue tile with a runway still ahead. See "Queues ahead of a
+  runway" below.
+
 Landing supplies its touchdown runway explicitly. Ground movement identifies a
 takeoff operation from `MGT_RUNWAY_TAKEOFF` and `modular_takeoff_tile`; after
 touchdown, the aircraft's tracked whole-runway claim identifies the landing
@@ -69,6 +73,42 @@ active operation. A denied transaction leaves existing ownership unchanged.
 an aircraft never enters runway or apron transit without already owning a path to
 a place where it may wait, but it also never reacquires a runway or other tile that
 has fallen behind its current path index.
+
+#### Queues ahead of a runway
+
+A queue tile whose way on lies over a runway is a takeoff queue, or shares its tiles
+with one. The safe-stop rule says an aircraft may wait there without pinning a
+shared resource, and that is not true of an aircraft that is not departing: the
+queue itself is what the departures behind it need, and they are standing on the
+stands it wants. Measured on `mass7-inair` and `helis2` before these rules, a
+stand-bound arrival sat at the head of a departure lane for about half of every
+year, once for 49,000 ticks with a departure behind it throughout. The airport
+recovered only because it has a second lane. Three rules keep such an aircraft out:
+
+1. **No diversion into one.** `FindReservableRoute` judges an alternative only as far
+   as its first safe stop, so an alternative may not leave more runway beyond that
+   stop than the direct route does. A runway crossed inside the hop is fine: the
+   aircraft does not rest before it. This is the rule that does the work on the
+   fixtures (non-departures waiting in a takeoff queue: about 2,400 logged waits per
+   run before, none after).
+2. **Not without a stand.** When a hop does end on such a tile -- the direct route
+   may lead there -- the forward plan claims the goal stand or helipad along with
+   it, and `BuildReservationKeepSet` keeps that claim until the aircraft parks. All
+   it waits for from then on is a gap on the runway. An aircraft holding a stand
+   normally keeps aiming at it, as `FindFreeModularTerminal` hands back a stand the
+   asker already owns. The claim is made on entering a hop, not demanded part-way
+   through one. It is the one place an aircraft holds something while it waits that
+   is not the tile it stands on: a layout where another aircraft can only leave
+   *through* that stand can jam on it. Hangars are multi-capacity and are never claimed.
+3. **No stand-less landing against one.** A landing admitted against a queue tile
+   alone (section 5) is refused when the route on from that tile crosses a runway.
+
+Claiming the stand with *every* hop, wherever it ends, was tried first and costs
+throughput: -9% on `mass7-inair` and -4% on `helis2` over six seeds. Aircraft waiting
+near the stands for the next one to empty are what keeps the stands busy, so the
+claim is limited to where waiting does harm. Rule 1 was likewise first written as
+"an alternative may not add a runway crossing at all", which costs 1% on `T5j2`:
+crossing a runway inside one hop is an ordinary, useful diversion.
 
 #### Termination invariant
 
@@ -113,7 +153,7 @@ If any operation or taxi claim is unavailable, nothing in the landing transactio
 is acquired. This prevents an aircraft from landing with a reserved touchdown
 runway but no reserved route through an adjacent runway or apron to safety.
 
-The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway, and the chain is stored only as far as that buffer: the route to it may be a diversion round a held exit, and it stays held through the approach and rollout like any other chain.
+The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway, and the chain is stored only as far as that buffer: the route to it may be a diversion round a held exit, and it stays held through the approach and rollout like any other chain. Such a landing is refused when the route on from the buffer crosses a runway: the buffer would be a takeoff queue (section 3, "Queues ahead of a runway").
 
 At the rollout end (`HandleModularGroundArrival`, `MGT_ROLLOUT`), a chain that does not lead to the stand chosen there is never simply dropped. In order:
 

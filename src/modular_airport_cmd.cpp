@@ -732,6 +732,12 @@ static bool IsServiceStyleGroundPiece(ModularAirportPieceID piece_type)
 			IsModularHangarPiece(piece_type) || IsModularHelipadPiece(piece_type);
 }
 
+/** Whether @p piece_type holds exactly one aircraft: a stand or a helipad, but not a hangar. */
+static bool IsExclusiveParkingPiece(ModularAirportPieceID piece_type)
+{
+	return piece_type == APT_STAND || piece_type == APT_STAND_1 || IsModularHelipadPiece(piece_type);
+}
+
 /* A "safe stop" is a tile an aircraft may wait on indefinitely without pinning a
  * shared transit resource: a stand/hangar/helipad or a one-way taxiway queue tile.
  * Free-move apron/grass and runways are transit-only and are never safe stops.
@@ -751,9 +757,7 @@ bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal)
 	const ModularAirportTileData *td = st->airport.GetModularTileData(tile);
 	if (td == nullptr) return false;
 	if (IsServiceStyleGroundPiece(td->piece_type)) {
-		const bool is_parking = td->piece_type == APT_STAND || td->piece_type == APT_STAND_1 ||
-				IsModularHelipadPiece(td->piece_type);
-		return !is_parking || !IsValidTile(goal) || tile == goal;
+		return !IsExclusiveParkingPiece(td->piece_type) || !IsValidTile(goal) || tile == goal;
 	}
 	if (IsTaxiwayPiece(td->piece_type) && td->one_way_taxi) return true;
 	return false;
@@ -812,10 +816,27 @@ static TileIndex GetGroundOperationRunwayTile(const Aircraft *v, const Station *
  * Build the claims needed from @p start_index through the first future safe stop.
  * The current tile is part of the plan, but cannot terminate it merely by already
  * being a safe stop. The path goal always terminates, including a runway goal.
+ *
+ * A hop that ends on a queue tile with a runway still between it and the stand or helipad
+ * the aircraft is going to park on claims that stand as well. A queue whose way on lies
+ * over a runway is a takeoff queue, or shares its tiles with one. An aircraft that came to
+ * rest there without a stand of its own waited for one to come free while the departures
+ * that would free it queued behind it. Owning the stand, all it waits for is a gap on the
+ * runway. Elsewhere the stand stays unclaimed until the last hop, as aircraft waiting near
+ * the stands for the next one to empty are what keeps the stands busy.
+ *
+ * The claim is made where a hop is entered: from a safe stop, or from the start of a
+ * route. It is not demanded of an aircraft already part-way through a hop, which can
+ * only be one that set off before this rule existed (an older savegame). Refusing its
+ * next step would stop it on a tile it may not wait on.
+ *
+ * @param claim_parking_goal False only when @p goal is a direction to plan towards rather
+ *                           than where this aircraft will park (a landing admitted against
+ *                           a queue tile, with no stand chosen yet).
  */
 static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const Station *st,
 		const TaxiPath *path, uint16_t start_index, TileIndex goal, TileIndex operation_runway,
-		ForwardReservationPlan &out)
+		ForwardReservationPlan &out, bool claim_parking_goal = true)
 {
 	out = ForwardReservationPlan{};
 	if (v == nullptr || st == nullptr || path == nullptr || !path->valid ||
@@ -856,6 +877,16 @@ static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const St
 		 * plan without advancing. Every later safe stop is a valid horizon. */
 		if (i > start_index && IsModularSafeStopTile(st, tile, goal)) {
 			out.safe_stop = tile;
+			if (claim_parking_goal && IsValidTile(goal)) {
+				const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
+				const bool entering_hop = start_index == 0 ||
+						IsModularSafeStopTile(st, path->tiles[start_index], goal);
+				if (entering_hop && goal_data != nullptr && IsExclusiveParkingPiece(goal_data->piece_type) &&
+						std::any_of(path->tiles.begin() + i + 1, path->tiles.end(),
+								[&](TileIndex t) { return IsPathTileRunwayPiece(st, t); })) {
+					out.taxi_tiles.push_back(goal);
+				}
+			}
 			SortAndUniqueTiles(out.taxi_tiles);
 			return ForwardPlanStatus::Ok;
 		}
@@ -946,22 +977,33 @@ struct ReservableRoute {
  * @param restriction  Aircraft-type routing restriction.
  * @param path_v       Aircraft passed to the pathfinder for stand avoidance; deliberately
  *                     nullptr where occupancy must be ignored (pre-touchdown planning).
+ * @param claim_parking_goal Passed to BuildForwardReservationPlan.
  * @return The route; check @c found.
  */
 static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		TileIndex origin, TileIndex goal, TileIndex operation_runway,
 		bool allow_runway_goal_crossing, GroundPathRestriction restriction,
-		const Aircraft *path_v, uint8_t max_attempts = MODULAR_MAX_ROUTE_ATTEMPTS)
+		const Aircraft *path_v, bool claim_parking_goal = true)
 {
+	const uint8_t max_attempts = MODULAR_MAX_ROUTE_ATTEMPTS;
 	ReservableRoute out;
 	if (v == nullptr || st == nullptr || !IsValidTile(origin) || !IsValidTile(goal)) {
 		out.deny = TaxiReserveResult{TaxiReserveFailure::NoPath, goal};
 		return out;
 	}
 
+	/* Runway tiles a route drives over after its first safe stop, i.e. the ones the
+	 * aircraft would have to wait for while standing in a queue. */
+	const auto runway_tiles_past_stop = [&](const TaxiPath &path, TileIndex safe_stop) {
+		const auto stop = std::find(path.tiles.begin(), path.tiles.end(), safe_stop);
+		return std::count_if(stop, path.tiles.end(),
+				[&](TileIndex t) { return IsPathTileRunwayPiece(st, t); });
+	};
+
 	std::vector<TileIndex> avoid;
 	TaxiPath shortest;
 	int shortest_length = INT_MAX;
+	std::ptrdiff_t shortest_runway_tiles = 0;
 	for (uint8_t attempt = 0; attempt < max_attempts; ++attempt) {
 		TaxiPath candidate = BuildTaxiPath(st, origin, goal, path_v, allow_runway_goal_crossing, restriction, avoid);
 		if (!candidate.valid || candidate.tiles.empty()) {
@@ -975,7 +1017,7 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		out.path = std::move(candidate);
 
 		ForwardReservationPlan plan;
-		switch (BuildForwardReservationPlan(v, st, &out.path, 0, goal, operation_runway, plan)) {
+		switch (BuildForwardReservationPlan(v, st, &out.path, 0, goal, operation_runway, plan, claim_parking_goal)) {
 			case ForwardPlanStatus::Ok:
 				break;
 			case ForwardPlanStatus::ResourceError:
@@ -990,6 +1032,22 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		const int this_length = static_cast<int>(out.path.tiles.size());
 		if (attempt == 0) {
 			shortest_length = this_length;
+			shortest_runway_tiles = runway_tiles_past_stop(out.path, plan.safe_stop);
+		} else if (runway_tiles_past_stop(out.path, plan.safe_stop) > shortest_runway_tiles) {
+			/* An alternative is judged only as far as its first safe stop, so it must not
+			 * leave more runway beyond that stop than the direct route does, whatever the
+			 * aircraft is doing. A queue with
+			 * a runway ahead of it is a takeoff queue: an aircraft bound for a stand that
+			 * was diverted into one ended up at the head of the departures, waiting for a
+			 * gap on the runway and a clear run to its stand at once, with the departures
+			 * behind it. A runway crossed within the hop is no such trap, as the aircraft
+			 * does not rest before it. Longer alternatives only add more of the same, so
+			 * stop looking. */
+			if (ShouldLogModularRateLimited(v->index, 48, 128)) {
+				Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} detour-refused: attempt={} origin={} goal={} leaves a runway beyond its queue tile",
+						v->index, static_cast<int>(attempt), origin.base(), goal.base());
+			}
+			break;
 		} else if (this_length > shortest_length + MAX_ROUTE_DETOUR_TILES) {
 			/* Every further ban only makes the route longer, so stop rather than keep looking.
 			 *
@@ -1235,6 +1293,15 @@ void BuildReservationKeepSet(const Aircraft *v, const Station *st, std::vector<T
 
 	if (ShouldRetainRunwayReservation(v, st)) {
 		for (TileIndex tile : v->modular_runway_reservation) keep_set.push_back(tile);
+	}
+
+	/* A stand claimed ahead of the horizon (BuildForwardReservationPlan) stays claimed
+	 * until the aircraft is on it, also once the runway that made it necessary is behind. */
+	const TileIndex goal = v->ground_path_goal;
+	if (v->taxi_path != nullptr && IsValidTile(goal) &&
+			std::find(v->taxi_reserved_tiles.begin(), v->taxi_reserved_tiles.end(), goal) != v->taxi_reserved_tiles.end()) {
+		const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
+		if (goal_data != nullptr && IsExclusiveParkingPiece(goal_data->piece_type)) keep_set.push_back(goal);
 	}
 
 	if (v->landing_chain_path != nullptr && v->landing_chain_path->valid &&
@@ -1495,13 +1562,30 @@ bool TryReserveLandingChain(Aircraft *v, const Station *st, TileIndex runway_til
 	 * rather than refuse the landing and fly a whole extra lap. */
 	const TileIndex operation_runway = touchdown_on_runway ? runway_tile : INVALID_TILE;
 	ReservableRoute route = FindReservableRoute(v, st, chain_origin, path_goal, operation_runway,
-			false, GetGroundPathRestriction(v), nullptr);
+			false, GetGroundPathRestriction(v), nullptr, IsValidTile(ground_goal));
 	if (!route.found) {
 		return log_chain_fail(TaxiReserveFailureName(route.deny.reason), route.deny.tile);
 	}
 
 	if (!IsValidTile(ground_goal) && !IsOneWayTaxiTile(st, route.plan.safe_stop)) {
 		return log_chain_fail("no_goal_no_one_way_buffer", route.plan.safe_stop);
+	}
+	if (!IsValidTile(ground_goal)) {
+		/* The aircraft will wait on this queue tile until a stand comes free, so it must
+		 * not be a tile the stands empty through. A queue whose way on to the stands lies
+		 * over a runway is a takeoff queue, or shares its tiles with one: an aircraft
+		 * parked there with no stand to go to holds up the departures behind it, and they
+		 * are standing on the stands it is waiting for.
+		 *
+		 * The route judged is the one to path_goal, which is merely the first stand in
+		 * the layout. Where stands lie on both sides of a runway this can refuse a buffer
+		 * that reaches some other stand without crossing; that errs on the safe side, and
+		 * the aircraft lands as soon as a stand is free to aim at. */
+		const auto &tiles = route.path.tiles;
+		const auto stop = std::find(tiles.begin(), tiles.end(), route.plan.safe_stop);
+		if (std::any_of(stop, tiles.end(), [&](TileIndex t) { return IsPathTileRunwayPiece(st, t); })) {
+			return log_chain_fail("no_goal_buffer_before_runway", route.plan.safe_stop);
+		}
 	}
 
 	TaxiReserveResult reserve_result;

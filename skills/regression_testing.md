@@ -214,6 +214,19 @@ those spreads:
 - Before the fix `T5j2` ranged 5971-6326 over six seeds; that width was the deadlock, not
   ordinary chaos.
 
+On 2026-11-15 `mass7-inair` and `helis2` were raised to 8750 and 13700, by the same method,
+with the change that keeps stand-bound aircraft out of takeoff queues (see "Queues ahead of a
+runway" in `skills/reservations-design.md`). Over six seeds each, before and after:
+`mass7-inair` 8440-8876 (mean 8670) -> 8864-8960 (8916), `helis2` 13456-13778 (13587) ->
+13822-13922 (13867), `T5j2` 6254-6368 (6296) -> 6246-6361 (6308), so `T5j2` stays at 6150. The
+gain is not the point of the change, and it is the narrowing that matters for the floors: the
+sd fell from 158 to 36 and from 130 to 37, as the multi-year waits behind an arrival parked in
+a departure lane went. The longest single wait on those two fixtures fell from 34,000-85,000
+ticks to 5,500-8,500. Two cruder versions are recorded there too, because both look right and
+are not: claiming the stand with every hop costs 9% on `mass7-inair`, and refusing every
+alternative that adds a runway crossing, rather than only runway left beyond the first safe
+stop, costs 1% on `T5j2`.
+
 So read a delta of a few percent from one run as noise until several seeds agree.
 
 ## What the A* heuristic swap actually did

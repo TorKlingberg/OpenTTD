@@ -2784,8 +2784,138 @@ TEST_CASE("ModularAirportLandingChain")
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 1), v->index));
 		/* (2,2) OneWay entry reserved -- the safe stop. */
 		CHECK(IsModularAirportTileReservedBy(base + TileDiffXY(2, 2), v->index));
-		/* (2,3) goal NOT reserved -- walk stopped at OneWay. */
-		CHECK_FALSE(IsModularAirportTileReservedBy(base + TileDiffXY(2, 3), v->index));
+		/* (2,3) goal NOT reserved -- walk stopped at OneWay, and nothing but apron lies
+		 * between the two, so the stand is left for whoever gets to it first. */
+		CHECK_FALSE(HasModularAirportTileReservation(goal));
+	}
+
+	/* Layout for the two sections below: the queue tile has a runway between it and the stand.
+	 *   Row 0: RWY_END RWY_5 RWY_END         (rollout runway)
+	 *   Row 1:               APRON_ONEWAY    (queue tile at (2,1))
+	 *   Row 2: RWY_END RWY_5 RWY_END         (second runway, crossed at (2,2))
+	 *   Row 3:               STAND_GOAL */
+	const TileIndex queue_tile = base + TileDiffXY(2, 1);
+	const TileIndex far_stand = base + TileDiffXY(2, 3);
+	const auto build_queue_before_runway = [&]() {
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		ModularAirportTileData *one_way = AddModularTileWithData(st, queue_tile, APT_APRON, 0);
+		one_way->one_way_taxi = true;
+		one_way->user_taxi_dir_mask = 0x04;
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		AddModularTile(st, far_stand, APT_STAND, 0);
+	};
+
+	SECTION("A queue tile short of a runway claims the stand beyond it") {
+		build_queue_before_runway();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		REQUIRE(TryReserveLandingChain(v, st, base, far_stand));
+		CHECK(IsModularAirportTileReservedBy(queue_tile, v->index));
+		/* The horizon ends at the queue tile: the crossing is not claimed, the stand is. */
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(2, 2)));
+		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
+
+		/* Nobody else is offered it. */
+		Aircraft *other = CreateAircraft(VehicleID(11));
+		other->engine_type = prop_engine;
+		other->targetairport = st->index;
+		CHECK(FindFreeModularTerminal(st, other, base + TileDiffXY(2, 0)) == INVALID_TILE);
+
+		/* Waiting on the queue tile, it still owns the stand. */
+		v->taxi_path = std::move(v->landing_chain_path);
+		v->ground_path_goal = far_stand;
+		v->modular_ground_target = MGT_TERMINAL;
+		const auto at = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), queue_tile);
+		REQUIRE(at != v->taxi_path->tiles.end());
+		v->tile = queue_tile;
+		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), at));
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+		ReconcileAircraftReservations(v, st, keep_set, "test");
+		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
+
+		/* And still does once the runway is behind it, with one apron-free hop to go. */
+		v->tile = base + TileDiffXY(2, 2);
+		v->taxi_path_index++;
+		REQUIRE(v->taxi_path->tiles[v->taxi_path_index] == v->tile);
+		BuildReservationKeepSet(v, st, keep_set);
+		ReconcileAircraftReservations(v, st, keep_set, "test");
+		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
+	}
+
+	SECTION("A stand claimed ahead is kept past the runway that required it") {
+		/* A second queue tile between the runway and the stand:
+		 *   (2,1) queue, (2,2) runway crossing, (2,3) queue, (2,4) stand.
+		 * From the first queue tile the next hop ends at the second one, with no runway
+		 * beyond it, so the forward plan no longer names the stand. Only the keep rule
+		 * holds on to it. */
+		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
+		const auto one_way_south = [&](TileIndex tile) {
+			ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
+			data->one_way_taxi = true;
+			data->user_taxi_dir_mask = 0x04;
+		};
+		one_way_south(queue_tile);
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
+		const TileIndex second_queue = base + TileDiffXY(2, 3);
+		const TileIndex stand = base + TileDiffXY(2, 4);
+		one_way_south(second_queue);
+		AddModularTile(st, stand, APT_STAND, 0);
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		REQUIRE(TryReserveLandingChain(v, st, base, stand));
+		REQUIRE(IsModularAirportTileReservedBy(stand, v->index));
+
+		v->taxi_path = std::move(v->landing_chain_path);
+		v->ground_path_goal = stand;
+		v->modular_ground_target = MGT_TERMINAL;
+		v->modular_runway_reservation.clear();
+		const auto at = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), queue_tile);
+		REQUIRE(at != v->taxi_path->tiles.end());
+		v->tile = queue_tile;
+		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), at));
+
+		std::vector<TileIndex> keep_set;
+		BuildReservationKeepSet(v, st, keep_set);
+		ReconcileAircraftReservations(v, st, keep_set, "test");
+		CHECK(IsModularAirportTileReservedBy(stand, v->index));
+
+		/* It is kept as the goal, not unconditionally: aim elsewhere and it is let go. */
+		v->ground_path_goal = second_queue;
+		BuildReservationKeepSet(v, st, keep_set);
+		ReconcileAircraftReservations(v, st, keep_set, "test");
+		CHECK_FALSE(HasModularAirportTileReservation(stand));
+	}
+
+	SECTION("A queue tile short of a runway is no place to wait for a stand") {
+		build_queue_before_runway();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		Aircraft *holder = CreateAircraft(VehicleID(11));
+		holder->targetairport = st->index;
+		SetModularAirportTileReservationOwner(far_stand, holder->index);
+		holder->taxi_reserved_tiles.push_back(far_stand);
+		holder->ground_path_goal = far_stand;
+		holder->modular_ground_target = MGT_TERMINAL;
+
+		/* The route as far as the queue tile is free, which used to be enough. */
+		CHECK_FALSE(TryReserveLandingChain(v, st, base, far_stand));
+		/* Nor may it land with no stand in mind and wait there for one. */
+		CHECK_FALSE(TryReserveLandingChain(v, st, base, INVALID_TILE));
+		CHECK(v->modular_runway_reservation.empty());
+		CHECK_FALSE(HasModularAirportTileReservation(queue_tile));
+		CHECK(IsModularAirportTileReservedBy(far_stand, holder->index));
 	}
 }
 
@@ -3217,6 +3347,40 @@ TEST_CASE("ModularAirportAlternateRoutes")
 		for (int i = 0; i < 3; i++) {
 			CHECK(IsModularAirportTileReservedBy(runway_start + TileDiffXY(i, 0), v->index));
 		}
+	}
+
+	SECTION("An alternative that leaves a runway beyond its queue tile is refused") {
+		/* As above, but the long way round runs along a second runway at y=4. Exit B is
+		 * then a queue with a runway ahead of it -- the shape of a takeoff queue -- and an
+		 * aircraft bound for the stand must not be diverted into it to wait there for a
+		 * gap on that runway. */
+		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
+		AddLargeRunway(st, runway_start, 3, 0, RUF_DEFAULT);
+		one_way(exit_a, 0x02);
+		AddModularTile(st, base + TileDiffXY(3, 1), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 1), APT_APRON, 0);
+		AddModularTile(st, stand, APT_STAND, 0);
+		one_way(exit_b, 0x04);
+		AddLargeRunway(st, base + TileDiffXY(2, 4), 3, 0, RUF_DEFAULT);
+		AddModularTile(st, base + TileDiffXY(4, 3), APT_APRON, 0);
+		st->airport.MarkLayoutDirty();
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		CreateBlockerOnTile(st, VehicleID(11), exit_a);
+
+		/* The alternative exists; it is the diversion that is refused, not the search. */
+		const std::array<TileIndex, 1> avoid{exit_a};
+		const TaxiPath round = BuildTaxiPath(st, rollout, stand, nullptr, false,
+				GroundPathRestriction::FixedWing, avoid);
+		REQUIRE(round.valid);
+		REQUIRE(std::find(round.tiles.begin(), round.tiles.end(), exit_b) != round.tiles.end());
+
+		CHECK_FALSE(TryReserveLandingChain(v, st, runway_start, stand));
+		CHECK(v->modular_runway_reservation.empty());
+		CHECK_FALSE(HasModularAirportTileReservation(exit_b));
 	}
 
 	SECTION("Sole exit blocked is still refused") {
@@ -6408,6 +6572,9 @@ TEST_CASE("ModularAirportRolloutSwitchesFromLandingChainAtomically")
 
 	REQUIRE(TryReserveLandingChain(v, st, runway_start, INVALID_TILE));
 	REQUIRE(IsModularAirportTileReservedBy(exit_b, v->index));
+	/* Landing against a queue tile claims no stand: none has been chosen. */
+	CHECK_FALSE(HasModularAirportTileReservation(stand_a));
+	CHECK_FALSE(HasModularAirportTileReservation(stand_b));
 
 	/* Regression: the goal-less chain used to be dropped here, which released every tile
 	 * of its route but the queue tile. It is kept, as far as the queue tile. */
@@ -6476,5 +6643,7 @@ TEST_CASE("ModularAirportRolloutSwitchesFromLandingChainAtomically")
 		CHECK(v->taxi_path->tiles.back() == exit_b);
 		CHECK(IsModularAirportTileReservedBy(exit_b, v->index));
 		CHECK_FALSE(IsModularAirportTileReservedBy(exit_a, v->index));
+		/* The refused switch claimed nothing, the stand included. */
+		CHECK_FALSE(HasModularAirportTileReservation(stand_a));
 	}
 }
