@@ -96,10 +96,17 @@ recovered only because it has a second lane. Three rules keep such an aircraft o
    it, and `BuildReservationKeepSet` keeps that claim until the aircraft parks. All
    it waits for from then on is a gap on the runway. An aircraft holding a stand
    normally keeps aiming at it, as `FindFreeModularTerminal` hands back a stand the
-   asker already owns. The claim is made on entering a hop, not demanded part-way
-   through one. It is the one place an aircraft holds something while it waits that
-   is not the tile it stands on: a layout where another aircraft can only leave
-   *through* that stand can jam on it. Hangars are multi-capacity and are never claimed.
+   asker already owns. The claim is made on entering a hop: setting off from a safe
+   stop or from the stand or hangar a route starts on, or landing (or the route taken
+   on from the rollout point). It is not demanded of an aircraft between safe stops,
+   such as one whose route is rebuilt there after a layout edit or a new goal: that
+   one moves on to the next safe stop and claims the stand when it sets off from
+   there, as refusing its next step would stop it where it may not wait. A stand it
+   had already claimed is kept across the rebuild. (A rebuild on a stand the aircraft
+   is only passing over counts as starting from it.) It is the one place an aircraft
+   holds something while it waits that is not the tile it stands on: a layout where
+   another aircraft can only leave *through* that stand can jam on it. Hangars are
+   multi-capacity and are never claimed.
 3. **No stand-less landing against one.** A landing admitted against a queue tile
    alone (section 5) is refused when the route on from that tile crosses a runway.
 

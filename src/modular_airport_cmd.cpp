@@ -825,18 +825,26 @@ static TileIndex GetGroundOperationRunwayTile(const Aircraft *v, const Station *
  * runway. Elsewhere the stand stays unclaimed until the last hop, as aircraft waiting near
  * the stands for the next one to empty are what keeps the stands busy.
  *
- * The claim is made where a hop is entered: from a safe stop, or from the start of a
- * route. It is not demanded of an aircraft already part-way through a hop, which can
- * only be one that set off before this rule existed (an older savegame). Refusing its
- * next step would stop it on a tile it may not wait on.
+ * The claim is made where a hop is entered: setting off from a safe stop, from the stand
+ * or hangar a route starts on, or at the start of a trip (@p route_start). It is not
+ * demanded of an aircraft between safe stops, which happens when its route is rebuilt
+ * there (a layout edit, a new goal) or when it set off before this rule existed (an older
+ * savegame). Refusing its next step would stop it on a tile it may not wait on; it claims
+ * the stand when it sets off from the next safe stop instead. A stand it had already
+ * claimed is kept across the rebuild. A route rebuilt on a stand the aircraft is only
+ * passing over counts as starting from that stand, as nothing here tells the two apart;
+ * waiting there holds up only that stand, which the aircraft is standing on anyway.
  *
  * @param claim_parking_goal False only when @p goal is a direction to plan towards rather
  *                           than where this aircraft will park (a landing admitted against
  *                           a queue tile, with no stand chosen yet).
+ * @param route_start True when the plan is for a trip that begins at @p start_index: a
+ *                    landing, or the route taken on from the rollout point. Not for a
+ *                    route rebuilt where the aircraft happens to be.
  */
 static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const Station *st,
 		const TaxiPath *path, uint16_t start_index, TileIndex goal, TileIndex operation_runway,
-		ForwardReservationPlan &out, bool claim_parking_goal = true)
+		ForwardReservationPlan &out, bool claim_parking_goal = true, bool route_start = false)
 {
 	out = ForwardReservationPlan{};
 	if (v == nullptr || st == nullptr || path == nullptr || !path->valid ||
@@ -879,8 +887,10 @@ static ForwardPlanStatus BuildForwardReservationPlan(const Aircraft *v, const St
 			out.safe_stop = tile;
 			if (claim_parking_goal && IsValidTile(goal)) {
 				const ModularAirportTileData *goal_data = st->airport.GetModularTileData(goal);
-				const bool entering_hop = start_index == 0 ||
-						IsModularSafeStopTile(st, path->tiles[start_index], goal);
+				const ModularAirportTileData *start_data = st->airport.GetModularTileData(path->tiles[start_index]);
+				const bool entering_hop = route_start ||
+						IsModularSafeStopTile(st, path->tiles[start_index], goal) ||
+						(start_index == 0 && start_data != nullptr && IsServiceStyleGroundPiece(start_data->piece_type));
 				if (entering_hop && goal_data != nullptr && IsExclusiveParkingPiece(goal_data->piece_type) &&
 						std::any_of(path->tiles.begin() + i + 1, path->tiles.end(),
 								[&](TileIndex t) { return IsPathTileRunwayPiece(st, t); })) {
@@ -935,12 +945,14 @@ struct ReservableRoute {
  * @param path_v       Aircraft passed to the pathfinder for stand avoidance; deliberately
  *                     nullptr where occupancy must be ignored (pre-touchdown planning).
  * @param claim_parking_goal Passed to BuildForwardReservationPlan.
+ * @param route_start  Passed to BuildForwardReservationPlan: false when @p origin is where
+ *                     the aircraft stands part-way along a route being rebuilt.
  * @return The route; check @c found.
  */
 static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		TileIndex origin, TileIndex goal, TileIndex operation_runway,
 		bool allow_runway_goal_crossing, GroundPathRestriction restriction,
-		const Aircraft *path_v, bool claim_parking_goal = true)
+		const Aircraft *path_v, bool claim_parking_goal = true, bool route_start = true)
 {
 	const uint8_t max_attempts = MODULAR_MAX_ROUTE_ATTEMPTS;
 	ReservableRoute out;
@@ -974,7 +986,7 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		out.path = std::move(candidate);
 
 		ForwardReservationPlan plan;
-		switch (BuildForwardReservationPlan(v, st, &out.path, 0, goal, operation_runway, plan, claim_parking_goal)) {
+		switch (BuildForwardReservationPlan(v, st, &out.path, 0, goal, operation_runway, plan, claim_parking_goal, route_start)) {
 			case ForwardPlanStatus::Ok:
 				break;
 			case ForwardPlanStatus::ResourceError:
@@ -4034,6 +4046,15 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 	}
 	const bool needs_rebuild = path_out_of_sync || path_broken;
 	if (needs_rebuild) {
+		/* A stand already claimed for this goal stays claimed once the new route is in
+		 * place: that route is planned from where the aircraft is, which need not be a
+		 * place a hop starts, so its plan does not claim the stand again
+		 * (BuildForwardReservationPlan). With no new route it is let go, so that a
+		 * retarget can pick another goal. */
+		const TileIndex goal = v->ground_path_goal;
+		const ModularAirportTileData *goal_data = IsValidTile(goal) ? st->airport.GetModularTileData(goal) : nullptr;
+		const bool keep_goal_stand = goal_data != nullptr && IsExclusiveParkingPiece(goal_data->piece_type) &&
+				IsModularAirportTileReservedBy(goal, v->index);
 		const uint16_t saved_wait = v->taxi_wait_counter;
 		ClearTaxiPathState(v, v->tile);
 		v->taxi_wait_counter = saved_wait;
@@ -4045,7 +4066,7 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		 * the last attempt preserves the old behaviour when no reservable route exists:
 		 * the aircraft still has a path to walk and waits on the reservation instead. */
 		ReservableRoute rebuild = FindReservableRoute(v, st, v->tile, v->ground_path_goal,
-				GetGroundOperationRunwayTile(v, st), true, GroundPathRestriction::FromAircraft, v);
+				GetGroundOperationRunwayTile(v, st), true, GroundPathRestriction::FromAircraft, v, true, false);
 		TaxiPath new_path = std::move(rebuild.path);
 		if (!new_path.valid || new_path.tiles.size() < 2 || new_path.segments.empty()) {
 			v->taxi_wait_counter++;
@@ -4076,6 +4097,8 @@ bool AirportMoveModular(Aircraft *v, const Station *st)
 		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
 		v->taxi_wait_counter = 0;
 		SetTaxiReservationUnlessOperationRunway(v, v->tile);
+		/* Nothing has run since the stand was released, so it is still free. */
+		if (keep_goal_stand) SetTaxiReservation(v, goal);
 	}
 
 	if (v->taxi_path == nullptr || static_cast<size_t>(v->taxi_path_index) + 1 >= v->taxi_path->tiles.size()) {
