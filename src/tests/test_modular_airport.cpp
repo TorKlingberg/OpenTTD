@@ -6762,6 +6762,45 @@ TEST_CASE("ModularAirportLayoutCheck")
 		});
 	}
 
+	SECTION("A shared queue tile departures can get round") {
+		/* The same airport with a way out below the stands. The near stand's departures
+		 * still pass the shared tile when it is free, but when an arrival holds it they
+		 * are rerouted along the bottom, two tiles further, so the arrivals never wait
+		 * on a departure that has to come through. */
+		CHECK(check({
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S.S.",
+			"   ...",
+		}).empty());
+
+		/* A departure that rests on a queue tile first does not look for another route
+		 * from there, so the way round has to start before the shared tile's queue. Here
+		 * the near stand's departures stop on the tile left of it first. That one is
+		 * shared too, but leaving the stand it can be got round. */
+		CHECK(check({
+			"RRRRRR",
+			"v    ^",
+			".>>>..",
+			"  S.S.",
+			"   ...",
+		}) == Issues{
+			{ModularLayoutProblem::SharedQueue, at(3, 2)},
+		});
+
+		/* Without the bottom row the only other way out is across the far stand, which
+		 * may be parked on: that is no way round. */
+		CHECK(check({
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S.S.",
+		}) == Issues{
+			{ModularLayoutProblem::SharedQueue, at(3, 2)},
+		});
+	}
+
 	SECTION("A one-way ring with an exit is not a loop") {
 		/* Everything that enters the ring leaves it again for the runway before coming
 		 * back round: the left side's aircraft are all on their way out. */

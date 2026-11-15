@@ -293,11 +293,23 @@ What can be said is narrower. A layout is *sound* when all four of these hold, a
 | `Unreachable`, `NoWayOut` | A stand or hangar has no taxi route from any landing end, or to any takeoff end. | Not a deadlock, just dead: nothing parks there, or what does never leaves. |
 | `BehindStand` | The only way to or from a stand or hangar crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
 | `QueueLoop` | Queue (one-way) tiles follow each other round in a circle on the routes aircraft take. | A queue tile is a safe stop, so the loop can fill: one aircraft per tile, each waiting for the tile ahead. |
-| `SharedQueue` | One queue tile is on a route from a runway to parking and on a route from parking to a runway. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+| `SharedQueue` | One queue tile is on a route from a runway to parking and on a route from parking to a runway, and some departure that uses it has no way round it. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+
+A *way round* is the route the game itself would divert to when an arrival holds the
+tile (`FindReservableRoute`, section 3), judged strictly: every shared tile banned at
+once (arrivals may be waiting on all of them) and avoided for the whole route, no other
+stand crossed, no more runway beyond the first safe stop than the direct route, and at
+most `MAX_ROUTE_DETOUR_TILES` longer. The game only retries when choosing the route
+from where the aircraft rests, so it counts only when the shared tile is the departure's
+first safe stop; an aircraft already resting on an earlier queue tile goes on through.
+A departure with a way round never waits behind an arrival there, so the ring cannot
+close through that tile. A departure parked on it waiting for
+the takeoff queue ahead still holds the arrivals up, but that queue drains on its own:
+a delay, not a deadlock.
 
 The first three are certainties about the layout. `SharedQueue` is a risk that grows
-with traffic: the four `T7d` airports that have one run for years without jamming.
-It is still reported, because it is where the starvation that
+with traffic: Mindinghead Docks, the one `T7d` airport that still has one, runs for
+years without jamming. It is still reported, because it is where the starvation that
 the stand claim fixed came from.
 
 What the check does **not** prove: it follows the routes the pathfinder returns on

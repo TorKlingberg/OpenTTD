@@ -568,6 +568,51 @@ struct TaxiReserveResult {
  */
 inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 4;
 
+/**
+ * How much longer an alternative route may be than the shortest one, in tiles. Only
+ * consulted when MODULAR_MAX_ROUTE_ATTEMPTS allows a second route at all.
+ *
+ * This caps the *whole* route, not just the reservation horizon. The horizon ends at the
+ * first safe stop, so capping it only bounds the distance to the next queue tile and lets
+ * everything past it grow without limit -- which is not what "go a couple of tiles out of
+ * your way" means. Rerouting costs the aircraft the extra taxi distance and costs everyone
+ * else the shared tiles it holds while covering it, so the budget stays small: take a
+ * genuinely parallel route, never a scenic one.
+ *
+ * The layout check uses it too: a detour longer than this is one the game will not take.
+ *
+ * Detours change length in even steps, so this is a budget of three steps rather than six.
+ * One step is not enough. Excluding a busy transit runway takes the whole contiguous strip
+ * out of the search -- crossing the same runway two tiles along is refused for the same
+ * reason -- so the alternative has to reach the far side by another runway entirely, which
+ * is rarely within one step. At a budget of one step those routes were found and then
+ * discarded unvalidated, and the aircraft waited as though nothing had been tried: T7d
+ * measured 0 detours longer than one step, over 3656 in two years. Two steps admits them
+ * and they stay rare (103 of 3803, 2.7%), which is what the second step bought.
+ *
+ * The third step buys reach around a blocked runway exit. A four-exit runway whose nearer
+ * exits are occupied can leave the only usable one six tiles out; at two steps that route
+ * was built and thrown away unvalidated, so the airport refused every arrival while an
+ * empty exit stood open. Reaching it is worth a measurable but small cost, and a player
+ * who wants the shorter routing back can fence the long way round.
+ *
+ * Measured on T7d over five years, 2026-08-29: 27001 movements at a budget of 4, 26974 at
+ * 6, 26413 at 8, while diverts rise 8109 -> 8253 -> 8554. So the third step is nearly free
+ * (-27, -0.1%) and the fourth is not (-2.2%). The extra length is spent rather than
+ * ignored, and past a point throughput falls as it is: no single aircraft's route gets
+ * worse, but more of them hold shared tiles for longer, which is the same emergent
+ * contention that cost 8% when the ground-pathfinder heuristic changed. Do not read the
+ * gentle step from 4 to 6 as a licence to keep going -- 8 is where it turns.
+ *
+ * Loosening this for landings alone was tried and is worse than loosening it for
+ * everything: -554 on T7d against -27, for 4% fewer refusals at the airport that prompted
+ * it. The landing case is not special enough to justify its own budget.
+ *
+ * This is a busy decision, not a rare one -- the same run logs 14136 rate-limited
+ * detour-capped fires -- so treat a change here as a throughput change and measure T7d.
+ */
+inline constexpr int MAX_ROUTE_DETOUR_TILES = 6;
+
 std::string_view TaxiReserveFailureName(TaxiReserveFailure reason);
 bool TryReserveTaxiSegment(Aircraft *v, const Station *st, uint8_t segment_idx, TaxiReserveResult *out = nullptr);
 TileIndex FindModularLandingGroundGoal(const Station *st, const Aircraft *v, uint8_t *target = nullptr, TileIndex rollout_tile = INVALID_TILE);
