@@ -293,7 +293,16 @@ What can be said is narrower. A layout is *sound* when all four of these hold, a
 | `Unreachable`, `NoWayOut` | A stand or hangar has no taxi route from any landing end, or to any takeoff end. | Not a deadlock, just dead: nothing parks there, or what does never leaves. |
 | `BehindStand` | The only way to or from a stand or hangar crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
 | `QueueLoop` | Queue (one-way) tiles follow each other round in a circle on the routes aircraft take. | A queue tile is a safe stop, so the loop can fill: one aircraft per tile, each waiting for the tile ahead. |
-| `SharedQueue` | One queue tile is on a route from a runway to parking and on a route from parking to a runway, and some departure that uses it has no way round it. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+| `SharedQueue` | One queue tile is on a route from a runway to parking or from a hangar to a stand, and on a route from a stand to a runway, and some departure from a stand that uses it has no way round it. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+
+Departures from a hangar do not count. A hangar takes any number of aircraft, so an
+aircraft leaving one frees nothing anyone waits for, and while it waits in the hangar it
+is in nobody's way. Once out, it may rest on a queue tile that a stand's departure
+needs, but that departure goes on from the tile by the same shortest route, so it
+passes any shared tile further on itself and is counted in its own right. Aircraft
+going from a hangar to a stand rest on queue tiles waiting for the stand like runway
+arrivals, so they count as arrivals. So do arrivals for a hangar: whatever an aircraft
+is bound for, while it rests on the tile it holds it.
 
 A *way round* is the route the game itself would divert to when an arrival holds the
 tile (`FindReservableRoute`, section 3), judged strictly: every shared tile banned at
@@ -308,9 +317,8 @@ the takeoff queue ahead still holds the arrivals up, but that queue drains on it
 a delay, not a deadlock.
 
 The first three are certainties about the layout. `SharedQueue` is a risk that grows
-with traffic: Mindinghead Docks, the one `T7d` airport that still has one, runs for
-years without jamming. It is still reported, because it is where the starvation that
-the stand claim fixed came from.
+with traffic. It is reported because it is where the starvation that the stand claim
+fixed came from.
 
 What the check does **not** prove: it follows the routes the pathfinder returns on
 an empty airport, starting an arrival at the landing end rather than where it

@@ -261,12 +261,18 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 
 		bool leaves = false;
 		bool leaves_clear = false;
+		/* Only a departure from a stand frees a stand. A hangar holds any number of
+		 * aircraft, so nothing ever waits for one to leave it. One that has left and
+		 * rests on a queue tile on its way could hold up a stand's departure there,
+		 * but that departure goes on from the tile the same way, so it is counted
+		 * in its own right. */
+		const bool from_stand = Contains(stands, tile);
 		for (TakeoffRoute &route : FindTakeoffRoutes(st, tile, takeoff_ends)) {
 			const AirportGroundPath &path = route.path;
 			leaves = true;
-			queues.AddRoute(st, path, &queues.departures);
+			queues.AddRoute(st, path, from_stand ? &queues.departures : nullptr);
 			leaves_clear = leaves_clear || ReachesAvoiding(st, tile, path.tiles.back(), stands);
-			departures.push_back({tile, std::move(route)});
+			if (from_stand) departures.push_back({tile, std::move(route)});
 		}
 
 		if (!reached) issues.push_back({ModularLayoutProblem::Unreachable, tile});
@@ -279,13 +285,14 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	}
 
 	/* Aircraft also taxi between stands and hangars, and those routes can close a loop
-	 * the runway routes leave open. They are neither arrivals nor departures. */
+	 * the runway routes leave open. One bound from a hangar for a stand waits for that
+	 * stand just as an arrival from a runway does, so it queues like one. */
 	for (TileIndex stand : stands) {
 		for (TileIndex hangar : hangars) {
 			const AirportGroundPath to_hangar = FindRoute(st, stand, hangar);
 			if (to_hangar.found) queues.AddRoute(st, to_hangar, nullptr);
 			const AirportGroundPath from_hangar = FindRoute(st, hangar, stand);
-			if (from_hangar.found) queues.AddRoute(st, from_hangar, nullptr);
+			if (from_hangar.found) queues.AddRoute(st, from_hangar, &queues.arrivals);
 		}
 	}
 

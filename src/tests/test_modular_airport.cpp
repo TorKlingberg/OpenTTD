@@ -6762,6 +6762,55 @@ TEST_CASE("ModularAirportLayoutCheck")
 		});
 	}
 
+	SECTION("A queue tile arrivals share only with a hangar's departures") {
+		/* The near stand of the airport above is a hangar now. Its departures still pass
+		 * the tile the far stand's arrivals queue on, but a hangar takes any number of
+		 * aircraft, so the arrivals never wait for one to leave it. (The one-way tiles
+		 * do form a loop: the stand's aircraft can only get to the hangar round by the
+		 * runway.) */
+		const Issues issues = check({
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  N S",
+		});
+		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
+			return i.problem == ModularLayoutProblem::SharedQueue;
+		}));
+	}
+
+	SECTION("A hangar's departures waiting before a shared queue tile") {
+		/* The hangar is at the far left now. Its departures rest on the first one-way
+		 * tile before they need the second, where the arrivals for the stand queue. The
+		 * arrivals there wait only for the stand, whose aircraft leave without passing
+		 * either tile. (The stand's aircraft get to the hangar round by the runway
+		 * again.) */
+		const Issues issues = check({
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"N   S",
+		});
+		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
+			return i.problem == ModularLayoutProblem::SharedQueue;
+		}));
+	}
+
+	SECTION("A queue tile shared with aircraft from a hangar") {
+		/* Arrivals from the runway come down the right-hand one-way tile, so none passes
+		 * the left-hand one. The hangar's aircraft bound for the stand on the right do,
+		 * and the bottom stand's departures have to pass it on their way out. */
+		CHECK(check({
+			"RRRRRR",
+			"v    ^",
+			"......",
+			"  ^v S",
+			" S..W",
+		}) == Issues{
+			{ModularLayoutProblem::SharedQueue, at(2, 3)},
+		});
+	}
+
 	SECTION("A shared queue tile departures can get round") {
 		/* The same airport with a way out below the stands. The near stand's departures
 		 * still pass the shared tile when it is free, but when an arrival holds it they
