@@ -1201,6 +1201,10 @@ void RefreshModularAircraftPathSegments(const Station *st)
 {
 	if (st == nullptr || st->airport.modular_tile_data == nullptr) return;
 
+	/* Every command that changes how tiles connect ends here, and the layout problems
+	 * listed in the station window's airport stats can change with it. */
+	SetWindowDirty(WindowClass::StationView, st->index);
+
 	for (Aircraft *v : Aircraft::Iterate()) {
 		if (!v->IsNormalAircraft()) continue;
 		for (auto member : _modular_stored_paths) {
@@ -2890,6 +2894,26 @@ static ModularTakeoffEndStatus ClassifyModularTakeoffEnd(const Station *st, Tile
 	if (is_low && (flags & RUF_DIR_HIGH) == 0) return ModularTakeoffEndStatus::WrongDir;
 	if (!is_low && (flags & RUF_DIR_LOW) == 0) return ModularTakeoffEndStatus::WrongDir;
 	return ModularTakeoffEndStatus::Ok;
+}
+
+bool IsModularTakeoffEnd(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	return data != nullptr && ClassifyModularTakeoffEnd(st, tile, data->piece_type) == ModularTakeoffEndStatus::Ok;
+}
+
+bool IsModularLandingEnd(const Station *st, TileIndex tile)
+{
+	const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+	if (data == nullptr || !IsModularRunwayEndPiece(data->piece_type)) return false;
+
+	std::vector<TileIndex> rwy;
+	if (!GetContiguousModularRunwayTiles(st, tile, rwy) || (int)rwy.size() < MIN_RUNWAY_LENGTH_TILES) return false;
+
+	/* Landing at the low end rolls toward the high end, and vice versa. */
+	const uint8_t flags = GetRunwayFlags(st, tile);
+	if ((flags & RUF_LANDING) == 0) return false;
+	return (flags & (IsRunwayEndLow(st, tile) ? RUF_DIR_HIGH : RUF_DIR_LOW)) != 0;
 }
 
 /**

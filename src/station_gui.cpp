@@ -2027,6 +2027,42 @@ struct StationViewWindow : public Window {
 				uint(st->airport_arrivals_last_month) + st->airport_departures_last_month));
 		gap();
 
+		/* Problems that stop aircraft come before the ones that only limit which can use the airport. */
+		const std::vector<ModularLayoutIssue> &issues = GetModularAirportLayoutIssues(st);
+		if (!issues.empty()) {
+			/* One line per kind of problem and kind of tile, without counts. A stand or hangar
+			 * cut off from both runways gets one line instead of two. */
+			auto has = [&issues, st](ModularLayoutProblem problem, bool hangar) {
+				return std::ranges::any_of(issues, [&](const ModularLayoutIssue &issue) {
+					if (issue.problem != problem) return false;
+					const ModularAirportTileData *data = st->airport.GetModularTileData(issue.tile);
+					return data != nullptr && IsModularHangarPiece(data->piece_type) == hangar;
+				});
+			};
+			line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_PROBLEMS));
+			for (bool hangar : {false, true}) {
+				const StringID what = hangar ? STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR : STR_STATION_MODULAR_AIRPORT_LAYOUT_STAND;
+				const bool unreachable = has(ModularLayoutProblem::Unreachable, hangar);
+				const bool no_way_out = has(ModularLayoutProblem::NoWayOut, hangar);
+				if (unreachable && no_way_out) {
+					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY, what));
+				} else if (unreachable) {
+					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_UNREACHABLE, what));
+				} else if (no_way_out) {
+					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT, what));
+				}
+				if (has(ModularLayoutProblem::BehindStand, hangar)) {
+					line(GetString(hangar ? STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR_BEHIND_STAND : STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND));
+				}
+			}
+			auto any = [&issues](ModularLayoutProblem problem) {
+				return std::ranges::any_of(issues, [problem](const ModularLayoutIssue &issue) { return issue.problem == problem; });
+			};
+			if (any(ModularLayoutProblem::QueueLoop)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_QUEUE_LOOP));
+			if (any(ModularLayoutProblem::SharedQueue)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_SHARED_QUEUE));
+			gap();
+		}
+
 		const auto missing = GetModularAirportSafetyStatus(st);
 		line(GetString(missing == MASR_NONE ? STR_STATION_MODULAR_AIRPORT_SAFE : STR_STATION_MODULAR_AIRPORT_UNSAFE_HEADER));
 		if (missing & MASR_TOWER) line(GetString(STR_STATION_MODULAR_AIRPORT_MISSING_TOWER));

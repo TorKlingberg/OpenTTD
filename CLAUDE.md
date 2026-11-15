@@ -161,6 +161,7 @@ Run only modular airport tests:
 |------|---------|
 | `src/modular_airport_cmd.cpp` | Modular movement, reservation, landing/takeoff selection, and layout-derived properties (noise, catchment, maintenance, safety). ~3900 lines. |
 | `src/modular_airport_holding.cpp` | Dubins holding loop, approach geometry, computed helicopter landing/takeoff/service tiles. |
+| `src/modular_airport_layout_check.cpp` | `CheckModularAirportLayout`: flags layouts that strand or can deadlock aircraft (station window airport stats only, never game logic). See `skills/reservations-design.md` section 9. |
 | `src/modular_airport_build.cpp` | `CmdBuildModularAirportTile`, `CmdBuildModularAirportFromStock`, `CmdUpgradeModularAirportTile`, `RemoveModularAirportTile`. |
 | `src/modular_airport_template_cmd.cpp` | `CmdSetRunwayFlags`, `CmdSetTaxiwayFlags`, `CmdSetModularAirportEdgeFence`, `CmdPlaceModularAirportTemplate`. |
 | `src/modular_airport_draw.cpp` | Sprite layout overrides, hangar layouts, perimeter fences, direction overlays. |

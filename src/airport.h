@@ -53,6 +53,24 @@ static constexpr int MODULAR_HOLDING_OVERSHOOT_TILES   = 10; ///< tiles past gat
 static constexpr int MODULAR_HOLDING_TURN_RADIUS_TILES = 6;  ///< Dubins min turn radius
 static constexpr int MODULAR_HOLDING_SAMPLE_INTERVAL_PX = 48; ///< ~3 tiles per waypoint
 
+/** A way a modular airport layout can leave aircraft waiting for each other for good. */
+enum class ModularLayoutProblem : uint8_t {
+	Unreachable,  ///< No landing runway has a taxi route to this stand or hangar.
+	NoWayOut,     ///< This stand or hangar has no taxi route to a takeoff runway end.
+	BehindStand,  ///< Reaching or leaving this stand or hangar means taxiing across another stand.
+	QueueLoop,    ///< One-way queue tiles that aircraft pass in a circle, or in both orders.
+	SharedQueue,  ///< A one-way queue tile used both by arrivals and by departures.
+	End,
+};
+
+/** One finding of CheckModularAirportLayout. */
+struct ModularLayoutIssue {
+	ModularLayoutProblem problem; ///< What is wrong.
+	TileIndex tile;               ///< The tile it is wrong with.
+
+	bool operator==(const ModularLayoutIssue &) const = default;
+};
+
 struct ModularHoldingLoop {
 	struct Waypoint {
 		int x;

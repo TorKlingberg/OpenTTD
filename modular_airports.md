@@ -29,6 +29,7 @@ Grouped by role. Modular code was split out of `station_cmd.cpp`; the split is t
 | `src/modular_airport_cmd.cpp` | Movement, reservation, landing/takeoff selection, ground goals, derived layout properties (noise, catchment, maintenance, safety). |
 | `src/modular_airport_cmd.h` | Declarations plus inline predicates (`IsModularRunwayPiece`, `IsTaxiwayPiece`, `IsLargeRunwayFamily`, `SwapBuildingPieceForRotation`, `MGT_*`, `MASR_*`). |
 | `src/modular_airport_holding.cpp` | Dubins-curve holding loop, approach geometry, computed helicopter landing/takeoff/service tiles. |
+| `src/modular_airport_layout_check.cpp` | `CheckModularAirportLayout`: flags layouts that strand or can deadlock aircraft, listed under "Layout problems" in the station window's airport stats. |
 | `src/airport_ground_pathfinder.cpp` / `.h` | A* ground pathfinder, segment classification, crossing-required path cache. |
 | `src/airport_pathfinder.cpp` / `.h` | `CalculateAutoTaxiDirectionsForGfx` — per-piece connectivity. |
 | `src/aircraft_cmd.cpp` | Classic FTA state machine, shared mechanics, and the modular hooks (`MaybeCrashModularAircraft`, landing commit, helicopter handling). |
@@ -136,6 +137,7 @@ Everything else is a `mutable` lazily-computed cache with its own dirty bit:
 - `modular_catchment_cache`
 - `modular_noise_cache`
 - `modular_accepts_planes`, `modular_accepts_helicopters`
+- `modular_layout_issues` — what `CheckModularAirportLayout` found; read only by the station window's airport stats, never by game logic
 
 **`Airport::MarkLayoutDirty()` invalidates all of them, and every layout mutation is expected to go through it.** Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or a cached answer silently stays stale. Retyping a tile is a layout change: mark dirty *after* the retype, or a read in the window before normalization caches the wrong answer.
 

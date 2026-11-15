@@ -4025,6 +4025,16 @@ STR_STATION_VIEW_STATS_TOOLTIP                                  :{BLACK}Show air
 STR_STATION_AIRPORT_THROUGHPUT_MINUTE                           :{BLACK}Aircraft last minute: {NUM} arr / {NUM} dep
 STR_STATION_AIRPORT_STATS_THROUGHPUT_MONTH                      :{BLACK}Aircraft last month: {NUM} arrivals / {NUM} departures ({NUM} movements)
 STR_STATION_AIRPORT_STATS_THROUGHPUT_MINUTE                     :{BLACK}Aircraft last minute: {NUM} arrivals / {NUM} departures ({NUM} movements)
+STR_STATION_MODULAR_AIRPORT_LAYOUT_PROBLEMS                     :{RED}Layout problems
+STR_STATION_MODULAR_AIRPORT_LAYOUT_STAND                        :Stand
+STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR                       :Hangar
+STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY                    :{BLACK}- {STRING} cannot be reached from a runway
+STR_STATION_MODULAR_AIRPORT_LAYOUT_UNREACHABLE                  :{BLACK}- {STRING} cannot be reached from a landing runway
+STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT                   :{BLACK}- {STRING} cannot reach a takeoff runway
+STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND                 :{BLACK}- Stand can only be reached or left through another stand
+STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR_BEHIND_STAND          :{BLACK}- Hangar can only be reached or left through a stand
+STR_STATION_MODULAR_AIRPORT_LAYOUT_QUEUE_LOOP                   :{BLACK}- One-way taxiways form a loop that can jam
+STR_STATION_MODULAR_AIRPORT_LAYOUT_SHARED_QUEUE                 :{BLACK}- Arrivals and departures queue on the same one-way taxiway
 STR_STATION_MODULAR_AIRPORT_SAFE                                :{BLACK}Large-aircraft safety requirements met
 STR_STATION_MODULAR_AIRPORT_MISSING_RUNWAY                      :{BLACK}- No 6-tile runway
 STR_STATION_AIRPORT_STATS_CATCHMENT                             :{BLACK}Airport catchment radius: {NUM} tiles

@@ -275,7 +275,46 @@ Note when touching that heuristic: making its building-adjacency filter a soft
 penalty (to get a central pad instead of a runway-end fallback) costs ~500
 movements on `helis2.sav`. Tried and reverted; re-measure before retrying.
 
-## 9. Debugging policy
+## 9. Layouts that can deadlock
+
+The rules above keep aircraft apart and keep them off tiles they may not wait on.
+None of them promises that a waiting aircraft moves again. A waiting aircraft holds
+the safe stop it stands on, so a deadlock is a ring of aircraft each standing where
+the next one needs to go, and whether a ring can form is decided by where the safe
+stops lie on the routes aircraft take. Modular airports are **not** deadlock-free
+for every layout a player can build, and no reservation rule can make them so: two
+aircraft that each need the other's stand have no legal move.
+
+What can be said is narrower. A layout is *sound* when all four of these hold, and
+`CheckModularAirportLayout` (`src/modular_airport_layout_check.cpp`) tests each one:
+
+| Finding | What is wrong | Why it jams |
+|---|---|---|
+| `Unreachable`, `NoWayOut` | A stand or hangar has no taxi route from any landing end, or to any takeoff end. | Not a deadlock, just dead: nothing parks there, or what does never leaves. |
+| `BehindStand` | The only way to or from a stand or hangar crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
+| `QueueLoop` | Queue (one-way) tiles follow each other round in a circle on the routes aircraft take. | A queue tile is a safe stop, so the loop can fill: one aircraft per tile, each waiting for the tile ahead. |
+| `SharedQueue` | One queue tile is on a route from a runway to parking and on a route from parking to a runway. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+
+The first three are certainties about the layout. `SharedQueue` is a risk that grows
+with traffic: the four `T7d` airports that have one run for years without jamming.
+It is still reported, because it is where the starvation that
+the stand claim fixed came from.
+
+What the check does **not** prove: it follows the routes the pathfinder returns on
+an empty airport, starting an arrival at the landing end rather than where it
+actually rolls out. Alternate routes taken round a blocked tile, helicopters, and
+aircraft that cannot use any runway of the airport are outside it, and so is plain
+overload -- more aircraft ordered to an airport than it has safe stops. A layout
+with no findings has not been shown to be deadlock-free, only to be free of the
+shapes known to deadlock.
+
+It reports nothing for an airport with no landing end, no takeoff end or nowhere to
+park: half an airport is not a broken one. The result is cached on `Airport` and
+dropped by `MarkLayoutDirty()`. Game logic never reads it -- it feeds only the
+"Layout problems" lines of the station window's airport stats -- so it is not saved and is free to differ
+between clients.
+
+## 10. Debugging policy
 
 When evaluating proposed fixes for stuck aircraft:
 

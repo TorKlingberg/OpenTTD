@@ -23,6 +23,7 @@
 #include "tile_map.h"
 #include "town.h"
 #include "viewport_func.h"
+#include "window_func.h"
 
 #include "table/strings.h"
 
@@ -134,6 +135,8 @@ static void SetRunwayFlags_Apply(TileIndex tile, uint8_t runway_flags, Station *
 	 * catchment radius may change; MarkLayoutDirty invalidates it and we recompute. */
 	st->airport.MarkLayoutDirty();
 	st->RecomputeCatchment();
+	/* Which ends aircraft land on and take off from also decides the layout problems. */
+	SetWindowDirty(WindowClass::StationView, st->index);
 	if (_show_holding_overlay) MarkWholeScreenDirty();
 }
 

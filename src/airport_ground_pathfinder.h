@@ -109,6 +109,20 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 bool IsAirportGroundRouteTraversable(const Station *st, std::span<const TileIndex> tiles, size_t from, const Aircraft *v);
 
 /**
+ * The tiles an aircraft may taxi to from @p tile in one step, by layout alone: occupancy
+ * and reservations are not consulted. This is the pathfinder's own connection rule, for
+ * callers that need to walk the taxi graph themselves.
+ * @param st The station.
+ * @param tile The tile to step from.
+ * @param restriction Aircraft-type restriction; FromAircraft means none here.
+ * @param goal Where the walk is headed. A runway may only be joined along its length when
+ *             it is the goal's runway.
+ * @param allow_runway_crossing Whether other runways may be crossed.
+ * @return The connected neighbours.
+ */
+std::vector<TileIndex> GetAirportGroundNeighbours(const Station *st, TileIndex tile, GroundPathRestriction restriction, TileIndex goal, bool allow_runway_crossing);
+
+/**
  * Check if a tile is a one-way taxiway tile.
  * @param st The station.
  * @param tile The tile to check.

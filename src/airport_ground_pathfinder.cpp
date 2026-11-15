@@ -312,6 +312,16 @@ static std::vector<std::pair<TileIndex, const ModularAirportTileData *>> GetReac
 	return neighbors;
 }
 
+std::vector<TileIndex> GetAirportGroundNeighbours(const Station *st, TileIndex tile, GroundPathRestriction restriction, TileIndex goal, bool allow_runway_crossing)
+{
+	std::vector<TileIndex> tiles;
+	if (st->airport.GetModularTileData(tile) == nullptr) return tiles;
+	for (const auto &[neighbour, data] : GetReachableNeighbors(st, tile, nullptr, restriction, goal, allow_runway_crossing)) {
+		tiles.push_back(neighbour);
+	}
+	return tiles;
+}
+
 /**
  * Reconstruct path from goal to start using parent pointers.
  * @param parents Map of tile -> parent tile.

@@ -6647,3 +6647,190 @@ TEST_CASE("ModularAirportRolloutSwitchesFromLandingChainAtomically")
 		CHECK_FALSE(HasModularAirportTileReservation(stand_a));
 	}
 }
+
+/**
+ * Lay out an airport from a picture. One character per tile:
+ *   R runway (a horizontal run of them is one runway)   . apron   S stand
+ *   ^ > v < one-way apron   N W hangar with its door up / to the left   space: nothing
+ */
+static Station *BuildAirportFromPicture(TileIndex base, std::initializer_list<std::string_view> rows)
+{
+	uint width = 0;
+	for (std::string_view row : rows) width = std::max<uint>(width, static_cast<uint>(row.size()));
+	Station *st = SetupModularAirport(base, width, static_cast<uint>(rows.size()));
+	if (st == nullptr) return nullptr;
+
+	uint y = 0;
+	for (std::string_view row : rows) {
+		for (uint x = 0; x < row.size(); x++) {
+			const TileIndex tile = base + TileDiffXY(x, y);
+			const auto one_way = [&](uint8_t dir_mask) {
+				ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
+				data->one_way_taxi = true;
+				data->user_taxi_dir_mask = dir_mask;
+			};
+			switch (row[x]) {
+				case 'R': {
+					uint end = x;
+					while (end < row.size() && row[end] == 'R') end++;
+					AddLargeRunway(st, tile, end - x, 0, RUF_DEFAULT);
+					x = end - 1;
+					break;
+				}
+				case '.': AddModularTile(st, tile, APT_APRON, 0); break;
+				case 'S': AddModularTile(st, tile, APT_STAND, 0); break;
+				case '^': one_way(0x01); break;
+				case '>': one_way(0x02); break;
+				case 'v': one_way(0x04); break;
+				case '<': one_way(0x08); break;
+				case 'N': AddModularTile(st, tile, APT_DEPOT_NW, 0); break;
+				case 'W': AddModularTile(st, tile, APT_DEPOT_NE, 0); break;
+				default: break;
+			}
+		}
+		y++;
+	}
+	st->airport.MarkLayoutDirty();
+	return st;
+}
+
+TEST_CASE("ModularAirportLayoutCheck")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	const auto at = [&](uint x, uint y) { return base + TileDiffXY(x, y); };
+	using Issues = std::vector<ModularLayoutIssue>;
+
+	const auto check = [&](std::initializer_list<std::string_view> rows) {
+		Station *st = BuildAirportFromPicture(base, rows);
+		REQUIRE(st != nullptr);
+		return CheckModularAirportLayout(st);
+	};
+
+	SECTION("Stands off an open apron are sound") {
+		CHECK(check({
+			"RRRRRR",
+			"......",
+			".S.S..",
+		}).empty());
+	}
+
+	SECTION("Half an airport reports nothing") {
+		/* No runway, and a runway with nowhere to park. */
+		CHECK(check({"......", ".S.S.."}).empty());
+		CHECK(check({"RRRRRR", "......"}).empty());
+	}
+
+	SECTION("A stand nothing connects to") {
+		CHECK(check({
+			"RRRRRR",
+			"..    ",
+			".S   S",
+		}) == Issues{
+			{ModularLayoutProblem::Unreachable, at(5, 2)},
+			{ModularLayoutProblem::NoWayOut, at(5, 2)},
+		});
+	}
+
+	SECTION("A row of stands as the only way to the hangar") {
+		/* The aircraft on the first stand wants the hangar and must cross the second;
+		 * the one on the second wants the runway and must cross the first. The first
+		 * stand itself is fine: nothing stands between it and the runway. */
+		CHECK(check({
+			"RRRRRR",
+			".",
+			"S",
+			"S",
+			"N",
+		}) == Issues{
+			{ModularLayoutProblem::BehindStand, at(0, 3)},
+			{ModularLayoutProblem::BehindStand, at(0, 4)},
+		});
+	}
+
+	SECTION("A queue tile arrivals and departures both pass") {
+		/* In at the left, along the bottom, out at the right. The second one-way tile
+		 * of the bottom row is on the way to the far stand and on the way out of the
+		 * near one. Nothing goes round, so there is no loop. */
+		CHECK(check({
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S S",
+		}) == Issues{
+			{ModularLayoutProblem::SharedQueue, at(3, 2)},
+		});
+	}
+
+	SECTION("A one-way ring with an exit is not a loop") {
+		/* Everything that enters the ring leaves it again for the runway before coming
+		 * back round: the left side's aircraft are all on their way out. */
+		const Issues issues = check({
+			"RRRRRR",
+			"     .>.",
+			"     ^ v",
+			"    S.<.S",
+		});
+		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
+			return i.problem == ModularLayoutProblem::QueueLoop;
+		}));
+	}
+
+	SECTION("A one-way ring that traffic goes all the way round") {
+		/* The same ring with a hangar on its far corner. A stand-to-hangar trip from
+		 * the left stand now carries on past the exit, which closes the circle: four
+		 * aircraft, one per side, each waiting for the side ahead. */
+		Issues loop;
+		for (const ModularLayoutIssue &i : check({
+			"RRRRRR",
+			"     .>.W",
+			"     ^ v",
+			"    S.<.S",
+		})) {
+			if (i.problem == ModularLayoutProblem::QueueLoop) loop.push_back(i);
+		}
+		CHECK(loop == Issues{
+			{ModularLayoutProblem::QueueLoop, at(6, 1)},
+			{ModularLayoutProblem::QueueLoop, at(5, 2)},
+			{ModularLayoutProblem::QueueLoop, at(7, 2)},
+			{ModularLayoutProblem::QueueLoop, at(6, 3)},
+		});
+	}
+
+	SECTION("A hangar counts as somewhere to park") {
+		CHECK(check({
+			"RRRRRR",
+			".     ",
+			"N     ",
+		}).empty());
+		/* Its door is on the far side from the apron: nothing gets in or out. */
+		CHECK(check({
+			"RRRRRR",
+			".     ",
+			"W     ",
+		}) == Issues{
+			{ModularLayoutProblem::Unreachable, at(0, 2)},
+			{ModularLayoutProblem::NoWayOut, at(0, 2)},
+		});
+	}
+
+	SECTION("The cached answer follows the layout") {
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"..    ",
+			".S   S",
+		});
+		REQUIRE(st != nullptr);
+		CHECK(GetModularAirportLayoutIssues(st).size() == 2);
+		AddModularTile(st, at(5, 1), APT_APRON, 0);
+		CHECK(GetModularAirportLayoutIssues(st).empty());
+
+		/* A direct edit of the tile data shows up once the layout is marked dirty. */
+		ModularAirportTileData *link = st->airport.GetModularTileData(at(5, 1));
+		REQUIRE(link != nullptr);
+		link->piece_type = APT_STAND;
+		CHECK(GetModularAirportLayoutIssues(st).empty());
+		st->airport.MarkLayoutDirty();
+		CHECK_FALSE(GetModularAirportLayoutIssues(st).empty());
+	}
+}

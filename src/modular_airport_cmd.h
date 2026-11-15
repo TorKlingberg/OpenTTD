@@ -662,6 +662,37 @@ inline uint8_t GetCanonicalRunwaySegmentPiece(bool large_family, size_t segment_
 
 bool IsRunwaySafeForLarge(const Station *st, TileIndex runway_end);
 bool ModularAirportHasSafeRunwayFor(const Station *st, bool landing);
+
+/**
+ * Whether @p tile is a runway end an aircraft may start a takeoff roll from, by layout and
+ * runway flags alone.
+ */
+bool IsModularTakeoffEnd(const Station *st, TileIndex tile);
+
+/**
+ * Whether @p tile is a runway end an aircraft may touch down on, by layout and runway
+ * flags alone.
+ */
+bool IsModularLandingEnd(const Station *st, TileIndex tile);
+
+/**
+ * Check a modular airport's layout for shapes that can leave aircraft waiting for each
+ * other for good. Purely a function of the layout: no aircraft, reservation or map
+ * reservation bit is consulted.
+ *
+ * An airport that is not finished -- no runway to land on or none to take off from, or
+ * nowhere to park -- yields nothing, as do helipads, which are flown to and from.
+ * @param st The station.
+ * @return The findings, sorted by tile then problem, without duplicates.
+ */
+std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st);
+
+/**
+ * Cached CheckModularAirportLayout, invalidated by Airport::MarkLayoutDirty.
+ * @param st The station.
+ * @return The findings.
+ */
+const std::vector<ModularLayoutIssue> &GetModularAirportLayoutIssues(const Station *st);
 bool ModularAirportSupportsLargeAircraft(const Station *st);
 
 /* What a modular airport's layout can take instead of the generic AT_MODULAR FTA

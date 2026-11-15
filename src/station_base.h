@@ -430,6 +430,8 @@ struct Airport : public TileArea {
 	mutable bool modular_accepts_planes = false; ///< Whether the layout can take fixed-wing aircraft; only meaningful while !modular_capability_dirty
 	mutable bool modular_accepts_helicopters = false; ///< Whether the layout can take helicopters; only meaningful while !modular_capability_dirty
 	mutable bool modular_capability_dirty = true; ///< Whether the accepts-planes/helicopters answers need recompute
+	mutable std::vector<ModularLayoutIssue> modular_layout_issues; ///< Cached layout check findings; only meaningful while !modular_layout_issues_dirty
+	mutable bool modular_layout_issues_dirty = true; ///< Whether modular_layout_issues needs recompute
 
 	/**
 	 * Invalidate every cache derived from the modular tile layout. Call this from
@@ -452,6 +454,7 @@ struct Airport : public TileArea {
 		this->modular_has_hangar_dirty = true;
 		this->modular_capability_dirty = true;
 		this->modular_large_safe_runway_dirty = true;
+		this->modular_layout_issues_dirty = true;
 	}
 
 	/**
