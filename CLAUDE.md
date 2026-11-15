@@ -248,6 +248,8 @@ verbatim. Fork features are versioned on their own axis in the `XVER` chunk
 
 ## Common Pitfalls
 
+- Mark the fork's own to-dos `TODO(modular):` so `git grep 'TODO(modular)'` separates them from upstream's untagged ones.
+
 - `GetModularTileData(tile)` returns `nullptr` if the tile isn't in the modular layout — always null-check.
 - Every command that changes what a tile is or how tiles connect (build, remove, upgrade, template, taxiway flags, edge fences) must end with `RefreshModularAircraftPathSegments(st)`: it reclassifies segments *and* drops stored routes the edit broke. A route through a demolished tile still passes reservation validation (the tile is neither reserved nor occupied), so without it an aircraft taxis off the airport and is stuck for good. See `modular_airports.md` (layout edits under a moving aircraft).
 - Building a piece is gated twice — the availability year, then `station.new_airport_graphics` for the pieces drawn from this fork's own bitmaps (decorations, the small hangar's closed-back views). Ask `GetModularPieceUnavailableReason(piece, rotation)`, never without a rotation and never by re-deriving it: `BuildModularAirportTile_Check`, the builder's greyed-out buttons and the script API all go through it so they cannot disagree. `CmdUpgradeModularAirportTile` is the one exception — its own inline check is year-only. Runtime mirrors of base-set sprites are deliberately not gated. `_settings_game` is all-false in the unit tests, so a test that builds a decoration must set the flag itself. See `skills/modular_editor.md`.

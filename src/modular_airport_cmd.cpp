@@ -2428,7 +2428,7 @@ TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileInde
 	int best_score = INT_MAX;
 
 	/* Terminal piece types: APT_STAND, APT_STAND_1 */
-	/* TODO: Also support hangars (9,10) and helipads (11) */
+	/* TODO(modular): Also support hangars (9,10) and helipads (11) */
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1) {
 			/* Check if tile is free */
