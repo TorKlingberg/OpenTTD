@@ -24,12 +24,18 @@ horizon from the current path index regardless of which segment triggered the ca
 
 | Tile kind | Safe stop? | Why |
 |-----------|-----------|-----|
-| Stand | Yes | Parking; per-stand exclusivity, others route around |
+| Stand | Only for the aircraft parking on it (its goal) | Parking; per-stand exclusivity, others route around |
 | Hangar | Yes | Multi-capacity parking; never hard-blocks |
-| Helipad | Yes | Parking for helicopters |
+| Helipad | Only for the aircraft parking on it (its goal) | Parking for helicopters |
 | `OneWay` taxiway tile | Yes | Designed as a queue; per-tile semantics support waiting |
 | Runway tile | **No** (in transit) | Shared crossing/operation space; an aircraft may not wait there |
 | `FreeMove` grass / apron | **No** | Pure transit; stopping blocks anyone else needing to cross |
+
+A stand or helipad holds one aircraft, so it is a safe stop only for the aircraft whose goal
+it is (`IsModularSafeStopTile(st, tile, goal)`; with no valid goal, every stand and helipad
+counts, as the function's comment says). Any other aircraft passing over it reserves
+straight across to the next safe stop beyond, and never waits on it. That is why a hangar
+whose only way out crosses a stand cannot jam on that stand (section 9).
 
 A runway tile is special: it *is* the destination during takeoff (`MGT_RUNWAY_TAKEOFF` → state `TAKEOFF`), where the aircraft transitions out of ground movement entirely. So a runway-end takeoff goal is acceptable as a path terminus, but **never** as a mid-path resting place.
 
@@ -172,6 +178,17 @@ Taking a route that could not be claimed, while still holding the buffer, deadlo
 ## 6. Path rebuilding and retargeting
 
 - Taxi path is rebuilt when invalid or out of sync with current tile/goal.
+- A rebuild only chooses the route (`FindReservableRoute`, from wherever the aircraft
+  stands); beyond the tile it stands on (and a kept goal stand, below), it reserves
+  nothing. The route is reserved by `TryReserveTaxiSegment` from index 0 of the new route,
+  straight after the rebuild in the same `AirportMoveModular` call. So "index 0" does not mean the
+  start of a trip: after a rebuild it can be an apron or runway-crossing tile in the middle
+  of one. Anything that behaves differently at the start of a route has to be told so
+  explicitly, as the stand claim is (`BuildForwardReservationPlan`'s `route_start`; "Queues
+  ahead of a runway", section 3).
+- The rebuild first releases the old route's reservations (`ClearTaxiPathState`). A goal
+  stand already claimed is taken back once the new route is installed; with no new route
+  it is let go, so that a retarget can pick another goal.
 - After waiting >64 ticks, `TryRetargetModularGroundGoal` can reroute to a different terminal/helipad/hangar/rollout, and re-picks the takeoff end for `MGT_RUNWAY_TAKEOFF`. Reservations stay until retarget actually succeeds and replaces them; the stale whole-runway claim is released on the next tick because `ShouldRetainRunwayReservation` compares it against the new `modular_takeoff_tile`.
 
 ## 7. Hangars

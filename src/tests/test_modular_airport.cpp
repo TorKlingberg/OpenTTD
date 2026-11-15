@@ -88,7 +88,17 @@ static void SetupAircraftPool()
 }
 
 /* Bare-shell aircraft for tests: only fields read by the APIs under test
- * (index, subtype, tile, x_pos/y_pos, ground_path_goal) are populated by callers. */
+ * (index, subtype, tile, x_pos/y_pos, ground_path_goal) are populated by callers.
+ *
+ * A test that calls AirportMoveModular needs more than that. The aircraft must have a
+ * valid direction: turning it towards the next tile asserts in DirDifference otherwise.
+ * If the step is taken (it turns or moves) it also needs the shadow vehicle that
+ * SetAircraftPosition updates;
+ * CreateAircraftWithShadow and PlaceAircraftOnTile (further down) set both up. To test
+ * what a step does before it moves -- a route rebuild, the reservation and its clean-up
+ * -- hold the next tile with CreateBlockerOnTile so the step is refused. A failed
+ * assertion aborts the whole test binary, and each abort puts a macOS crash dialog on the
+ * user's screen; skills/crash_debugging.md says how to read the stack without rerunning. */
 static Aircraft *CreateAircraft(VehicleID index)
 {
 	Aircraft *v = Aircraft::CreateAtIndex(index);

@@ -102,6 +102,27 @@ raw result of a paused save is `movements=0`, which parses fine and would otherw
 total throughput collapse (or pass silently against a low floor). Check with `_pause_mode` in a
 debugger if a new fixture behaves oddly; the committed saves all read 0.
 
+The same holds for temporary diagnostic code: a hook on a game timer (the year-end
+`[AirportStats]` report, a daily or monthly tick) never fires on a paused save, and the
+headless run exits silently. Personal saves are often saved paused. To dump something that
+needs no simulation -- a layout check, the tile data, a computed route -- hang it on a
+realtime timer that runs while paused:
+
+```cpp
+static IntervalTimer<TimerGameRealtime> _tmp_dump({std::chrono::milliseconds(1), TimerGameRealtime::Trigger::Always}, [](auto) {
+	static bool done = false;
+	if (done) return;
+	done = true;
+	/* ... Debug(Facility::Misc, Severity::Critical, ...) ... */
+});
+```
+
+It fires shortly after the load, on the first game loop at least 1 ms after the first
+(`timer/timer_game_realtime.h`). The `done` guard keeps it from firing again. Setting
+`_exit_game` does not stop the null video driver, which always runs its full `ticks`, so keep
+`ticks` small: `-x -d misc=1 -g <save> -s null -m null -v null:ticks=200`. On an unpaused
+save the simulation keeps running for those ticks after the dump.
+
 ## Builds and logs
 
 `n_years_plus2.sh` runs `scripts/build_and_sign.sh` before **every** fixture unless

@@ -38,6 +38,29 @@ tail -n 200 /tmp/openttd.log
 grep '\[ModAp\]' /tmp/openttd.log | tail -n 120
 ```
 
+## 3b) A crash in `openttd_test`
+A failed assertion in the unit tests aborts the test binary. Catch reports only
+`SIGABRT` and the section, and no `crash*.json.log` is written. Each abort also puts a
+macOS "quit unexpectedly" dialog on the user's screen, so do not rerun a crashing test in
+a loop to narrow it down. macOS has already saved the stack: read the newest
+`~/Library/Logs/DiagnosticReports/openttd_test-*.ips` instead of reaching for LLDB, which
+in batch mode may print no backtrace for this abort, or hang.
+
+```bash
+python3 - <<'EOF'
+import glob, json, os
+f = max(glob.glob(os.path.expanduser('~/Library/Logs/DiagnosticReports/openttd_test-*.ips')), key=os.path.getmtime)
+body = json.loads(open(f).read().split('\n', 1)[1])
+imgs = body['usedImages']
+thread = next(t for t in body['threads'] if t.get('triggered'))
+for fr in thread['frames'][:20]:
+    print(imgs[fr['imageIndex']].get('name', '?'), fr.get('symbol', '?'), fr.get('sourceFile', ''), fr.get('sourceLine', ''))
+EOF
+```
+
+The frame below `AssertFailedError` is the failed assertion; follow the frames down to the
+test line.
+
 ## 4) Correlate crash with code
 - Open the crashing function from stacktrace.
 - Look for unchecked tile/world coordinate usage, stale pointers, or invalid state transitions.
