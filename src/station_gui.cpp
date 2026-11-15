@@ -2051,13 +2051,11 @@ struct StationViewWindow : public Window {
 				} else if (no_way_out) {
 					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT, what));
 				}
-				if (has(ModularLayoutProblem::BehindStand, hangar)) {
-					line(GetString(hangar ? STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR_BEHIND_STAND : STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND));
-				}
 			}
 			auto any = [&issues](ModularLayoutProblem problem) {
 				return std::ranges::any_of(issues, [problem](const ModularLayoutIssue &issue) { return issue.problem == problem; });
 			};
+			if (any(ModularLayoutProblem::BehindStand)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND));
 			if (any(ModularLayoutProblem::QueueLoop)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_QUEUE_LOOP));
 			if (any(ModularLayoutProblem::SharedQueue)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_SHARED_QUEUE));
 			gap();

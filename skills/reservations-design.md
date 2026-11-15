@@ -291,9 +291,25 @@ What can be said is narrower. A layout is *sound* when all four of these hold, a
 | Finding | What is wrong | Why it jams |
 |---|---|---|
 | `Unreachable`, `NoWayOut` | A stand or hangar has no taxi route from any landing end, or to any takeoff end. | Not a deadlock, just dead: nothing parks there, or what does never leaves. |
-| `BehindStand` | The only way to or from a stand or hangar crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
+| `BehindStand` | The only way from a stand to a takeoff runway, or to a hangar, crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
 | `QueueLoop` | Queue (one-way) tiles follow each other round in a circle on the routes aircraft take. | A queue tile is a safe stop, so the loop can fill: one aircraft per tile, each waiting for the tile ahead. |
 | `SharedQueue` | One queue tile is on a route from a runway to parking or from a hangar to a stand, and on a route from a stand to a runway, and some departure from a stand that uses it has no way round it. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
+
+Only trips that start on a stand can be held up behind a stand, because only an
+aircraft waiting on a stand is in the way of one. A stand is not a safe stop for an
+aircraft passing over it, so an arrival reserves its way past any stand it crosses
+before it lands, and an aircraft leaving a hangar before it leaves the hangar; neither
+stops on the stand it crosses. A hangar boxed in behind a row of stands along the
+runway is therefore sound: its aircraft take whichever stand is free, and the aircraft
+on the stands leave without needing anything from them. The trip from a stand to a
+hangar is checked for the hangar the game sends the aircraft to
+(`FindFreeModularHangar`: the cheapest route).
+
+One gap is known. An arrival that rests on a queue tile before the stand it crosses
+waits there, and if the aircraft on that stand must pass the same queue tile on its way
+to a hangar, neither moves. Trips to a hangar are not departures to `SharedQueue`, so
+nothing reports it; it needs a one-way tile that a trip to the hangar enters in its own
+direction.
 
 Departures from a hangar do not count. A hangar takes any number of aircraft, so an
 aircraft leaving one frees nothing anyone waits for, and while it waits in the hangar it

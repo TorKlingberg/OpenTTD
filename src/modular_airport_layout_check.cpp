@@ -250,13 +250,11 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	std::vector<Departure> departures;
 	for (TileIndex tile : parking) {
 		bool reached = false;
-		bool reached_clear = false;
 		for (TileIndex end : landing_ends) {
 			const AirportGroundPath path = FindRoute(st, end, tile);
 			if (!path.found) continue;
 			reached = true;
 			queues.AddRoute(st, path, &queues.arrivals);
-			reached_clear = reached_clear || ReachesAvoiding(st, end, tile, stands);
 		}
 
 		bool leaves = false;
@@ -278,21 +276,36 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 		if (!reached) issues.push_back({ModularLayoutProblem::Unreachable, tile});
 		if (!leaves) issues.push_back({ModularLayoutProblem::NoWayOut, tile});
 		/* A stand that is the only way through gets parked on, and then it is no way
-		 * through at all: two aircraft that each need the other's stand never move. */
-		if ((reached && !reached_clear) || (leaves && !leaves_clear)) {
-			issues.push_back({ModularLayoutProblem::BehindStand, tile});
-		}
+		 * through at all: two aircraft that each need the other's stand never move.
+		 * Only one waiting on a stand holds a stand. A stand is no safe stop for an
+		 * aircraft passing over it, so an arrival reserves its way past any stand it
+		 * crosses before it lands, and one leaving a hangar before it leaves the
+		 * hangar, which takes any number of aircraft. Neither waits on a stand. */
+		if (from_stand && leaves && !leaves_clear) issues.push_back({ModularLayoutProblem::BehindStand, tile});
 	}
 
 	/* Aircraft also taxi between stands and hangars, and those routes can close a loop
 	 * the runway routes leave open. One bound from a hangar for a stand waits for that
 	 * stand just as an arrival from a runway does, so it queues like one. */
 	for (TileIndex stand : stands) {
+		/* The hangar an aircraft on the stand is sent to, as FindFreeModularHangar picks
+		 * it: the cheapest route, the first such hangar on a tie. */
+		TileIndex nearest = INVALID_TILE;
+		int nearest_cost = 0;
 		for (TileIndex hangar : hangars) {
 			const AirportGroundPath to_hangar = FindRoute(st, stand, hangar);
-			if (to_hangar.found) queues.AddRoute(st, to_hangar, nullptr);
+			if (to_hangar.found) {
+				queues.AddRoute(st, to_hangar, nullptr);
+				if (nearest == INVALID_TILE || to_hangar.cost < nearest_cost) {
+					nearest = hangar;
+					nearest_cost = to_hangar.cost;
+				}
+			}
 			const AirportGroundPath from_hangar = FindRoute(st, hangar, stand);
 			if (from_hangar.found) queues.AddRoute(st, from_hangar, &queues.arrivals);
+		}
+		if (nearest != INVALID_TILE && !ReachesAvoiding(st, stand, nearest, stands)) {
+			issues.push_back({ModularLayoutProblem::BehindStand, stand});
 		}
 	}
 

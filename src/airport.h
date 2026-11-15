@@ -57,7 +57,7 @@ static constexpr int MODULAR_HOLDING_SAMPLE_INTERVAL_PX = 48; ///< ~3 tiles per 
 enum class ModularLayoutProblem : uint8_t {
 	Unreachable,  ///< No landing runway has a taxi route to this stand or hangar.
 	NoWayOut,     ///< This stand or hangar has no taxi route to a takeoff runway end.
-	BehindStand,  ///< Reaching or leaving this stand or hangar means taxiing across another stand.
+	BehindStand,  ///< Leaving this stand, for a runway or a hangar, means taxiing across another stand.
 	QueueLoop,    ///< One-way queue tiles that aircraft pass in a circle, or in both orders.
 	SharedQueue,  ///< A one-way queue tile used both by arrivals and by departures.
 	End,

@@ -6734,8 +6734,9 @@ TEST_CASE("ModularAirportLayoutCheck")
 
 	SECTION("A row of stands as the only way to the hangar") {
 		/* The aircraft on the first stand wants the hangar and must cross the second;
-		 * the one on the second wants the runway and must cross the first. The first
-		 * stand itself is fine: nothing stands between it and the runway. */
+		 * the one on the second wants the runway and must cross the first. Both are
+		 * reported. The hangar is not: an aircraft leaving it waits inside until its
+		 * way out is clear, and an arrival for it waits before it lands. */
 		CHECK(check({
 			"RRRRRR",
 			".",
@@ -6743,9 +6744,21 @@ TEST_CASE("ModularAirportLayoutCheck")
 			"S",
 			"N",
 		}) == Issues{
+			{ModularLayoutProblem::BehindStand, at(0, 2)},
 			{ModularLayoutProblem::BehindStand, at(0, 3)},
-			{ModularLayoutProblem::BehindStand, at(0, 4)},
 		});
+	}
+
+	SECTION("A hangar behind a row of stands along the runway") {
+		/* The hangar's aircraft can only reach the runway across a stand, but they
+		 * take whichever is free and wait in the hangar until one is. The stands'
+		 * aircraft go straight onto the runway, and to the hangar over the apron. */
+		CHECK(check({
+			"RRRRRR",
+			"vSSS",
+			"......",
+			"  N",
+		}).empty());
 	}
 
 	SECTION("A queue tile arrivals and departures both pass") {
