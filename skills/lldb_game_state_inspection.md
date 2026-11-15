@@ -95,7 +95,16 @@ If a debugger-side recursive dump helps, print `GetName()`/`GetType().GetName()`
 - **Names are lazy and fuzzy.** `Town::cached_name` is only filled once the label has been drawn; and the user's recollection of a generated name may be slightly off ("Grenford" vs actual "Grennford"). Prefer identifying objects by state (tile counts, piece types, town links) and treat name matches as confirmation.
 - **Oil rigs look like airports.** They are stations with facilities Airport|Dock (0x18) and `airport.type == 9` (`AT_OILRIG`). Exclude them when counting player airports, as the game itself does.
 - **Facility bits** (`StationFacility`, bit positions): Train 0x1, TruckStop 0x2, BusStop 0x4, Airport 0x8, Dock 0x10.
-- **Modular `piece_type` values** are `AirportTiles` enum indices (`src/table/airporttile_ids.h`), e.g. `APT_APRON` = 0, `APT_EMPTY` = 29. Count from the enum when decoding a histogram.
+- **Modular `piece_type` values** are `AirportTiles` enum indices (`src/table/airporttile_ids.h`), e.g. `APT_APRON` = 0, `APT_EMPTY` = 29. Count from the enum when decoding a histogram. 74-79 are the rotated hangars and `0x100` up are decorations, so neither matches the tile's map gfx (see `modular_airports.md`, Shared tile layout overrides). `airport.modular_tile_data` is a raw `std::vector *`; `Dereference()` it before asking for children.
+- **Map tiles are not a pool.** To read m1-m5 (m5 is an airport tile's gfx), find the `Tile::base_tiles` array through its mangled symbol and read 8 bytes per tile. Bytes are `type, height, m2(2), m1, m3, m4, m5`, and the tile type is the high nibble of byte 0:
+
+  ```python
+  sym = target.FindSymbols("_ZN4Tile10base_tilesE").GetContextAtIndex(0).GetSymbol()
+  base = proc.ReadPointerFromMemory(sym.GetStartAddress().GetLoadAddress(target), err)
+  b = proc.ReadMemory(base + tile * 8, 8, err)   # b[0] >> 4 = type, b[7] = m5
+  ```
+
+  `GetLoadAddress` is needed because the binary is slid by ASLR; a raw `nm` address is wrong at runtime.
 - **Avoid `expr` calls into game code.** With RelWithDebInfo, inline functions (`MaxTownNoise`, `Town::GetIfValid`, pool iterators) usually fail to evaluate or are unavailable. Recompute formulas Python-side from raw fields instead.
 - **`printf` from expressions goes to the game's stdout,** not to you. Write to a `/tmp` file from Python and print a completion marker.
 

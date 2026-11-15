@@ -360,7 +360,18 @@ The same condition feeds two non-crash paths. Automatic hangar selection (`aircr
 
 It is used by normal tile drawing (`ApplyModularAirportTileLayoutOverrides`), the builder preview, and the template preview, to keep those paths from diverging. Perimeter fences are drawn by `DrawModularAirportPerimeterFences` from `edge_block_mask` plus `GetModularTileFenceOpenMask`.
 
-`AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata. Every modular map write goes through `GetModularAirportMapGfx`, which maps the rotated hangars (IDs 74-79) to their SE variant.
+Modular tiles use two ID spaces, and they disagree above 73:
+
+| ID | `ModularAirportTileData::piece_type` | Map gfx (`GetStationGfx`, m5) |
+|---|---|---|
+| 0-73 | original airport tiles | the same original tiles |
+| 74-79 | the fork's rotated hangars (`APT_DEPOT_SW/NW/NE`, `APT_SMALL_DEPOT_SW/NW/NE`) | never stored; the SE hangar is stored instead (in map gfx these IDs would mean NewGRF tiles) |
+| 80-255 (`APT_END` up) | NewGRF airport tiles, stored as is | NewGRF tiles |
+| `0x100` and up | decorations | not representable; stored as `APT_APRON` |
+
+So a NewGRF tile in a piece type is `>= APT_END`, not `>= NEW_AIRPORTTILE_OFFSET` (template capture, preview and `ResolveAirportTileIndexByGRF` all use `APT_END`, which leaves NewGRF slots 74-79 unusable in modular templates). Every modular map write goes through `GetModularAirportMapGfx`, which maps the rotated hangars to their SE variant and decorations to apron. Identity always comes from the metadata: drawing, pathfinding and `IsHangar` never read the map gfx. A load-time rewrite in `afterload.cpp` (`TODO(modular)`) fixes saves made before this rule.
+
+The SE hangar or apron in the map is only a stand-in, and that matters under NewGRF overrides. `GetAirportGfx` returns the *translated* gfx: when a NewGRF overrides an original tile, it is `>= NEW_AIRPORTTILE_OFFSET` and differs from the raw `GetStationGfx`. `DrawTile_Station` drops back to the raw gfx for stand-ins (`IsModularAirportStandInMapGfx`), so an override of the SE hangar does not draw every rotation as SE. Animation, tile callbacks and the land-info name still follow the override for stand-ins. That is cosmetic and deterministic, so it cannot desync.
 
 ### Builder UI
 

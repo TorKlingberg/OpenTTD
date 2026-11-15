@@ -147,6 +147,8 @@ lldb --batch -o "process attach --pid $PID" \
  grep -oE '"/tmp/scratch[^"]+\.png"' | tail -1 | tr -d '"'
 ```
 
+The `grep` hardcodes the config's folder. Run the instance from anywhere else and the script prints nothing, even though the screenshot was written; take the newest `.png` in the config's own folder instead (`ls -t`). `SC_CRASHLOG` writes to the personal dir, not to `screenshot/`.
+
 Then crop and look at it — `Read` renders a PNG:
 
 ```bash
@@ -175,12 +177,39 @@ right when the window opens somewhere else next time.
 
 Kill the instance when done: `kill <pid>`.
 
+## Looking at world tiles rather than windows
+
+To check how tiles draw (hangars, decorations, fences), centre the main view on a tile:
+
+```
+expr -- ((bool(*)(unsigned,bool))&ScrollMainWindowToTile)(14420u, true)
+```
+
+The direct call `ScrollMainWindowToTile(TileIndex(14420), true)` does not compile, because the
+`TileIndex` strong type cannot be constructed in the expression parser. The cast calls the
+same symbol with a plain `unsigned`. A tile index is `y << log_x | x`; a station's `xy` is a
+good target.
+
+**Turn transparency off first.** The copied user config brings the user's transparency
+settings with it, and with station transparency on, airport buildings and hangars are simply
+absent. The screenshot looks like a drawing bug, not like a setting. Clear both masks before
+screenshotting:
+
+```
+expr -- *(unsigned*)&_transparency_opt = 0
+expr -- *(unsigned*)&_invisibility_opt = 0
+```
+
 ## Before/after pairs
 
-Capture the "after" first, then `git stash`, rebuild (incremental — usually one or two files
-plus the link), capture the "before" the same way, `git stash pop`, rebuild. Two crops of the
-same button answer "is this actually wrong, and is it actually fixed" in a way that reading
-the sprite maths does not.
+Capture the "after" and the "before" from two binaries rather than switching one checkout
+back and forth. Build the "before" from a worktree at the old commit, or use any worktree whose
+`build/openttd` is already at that commit, and run both against the same save and tile. Two
+crops of the same button or tile answer "is this actually wrong, and is it actually fixed" in
+a way that reading the sprite maths does not.
+
+Do not use bare `git stash` / `git stash pop` for this. The stash stack is shared with every
+worktree and every concurrent session, so a bare `pop` can apply someone else's changes.
 
 ## LLDB expression gotchas
 
