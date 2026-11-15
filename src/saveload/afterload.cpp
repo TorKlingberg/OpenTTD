@@ -819,6 +819,21 @@ bool AfterLoadGame()
 		}
 	}
 
+	/* A modular tile's map graphic is derived from its metadata. Older saves stored the
+	 * rotated hangars under their own IDs, which lie in the NewGRF airport tile range;
+	 * rewriting every modular tile from its metadata is idempotent, so no version gate. */
+	for (Station *st : Station::Iterate()) {
+		if (!st->facilities.Test(StationFacility::Airport)) continue;
+		if (!st->airport.blocks.Test(AirportBlock::Modular) || st->airport.modular_tile_data == nullptr) continue;
+		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			Tile t(data.tile);
+			if (!IsTileType(t, TileType::Station) || !IsAirport(t) || GetStationIndex(t) != st->index) continue;
+			/* No build path stores such a piece; leave a corrupt entry alone rather than assert. */
+			if (data.piece_type >= NUM_AIRPORTTILES && !IsModularAirportDecorationPiece(data.piece_type)) continue;
+			SetStationGfx(t, GetModularAirportMapGfx(data.piece_type));
+		}
+	}
+
 	/* Load the sprites */
 	GfxLoadSprites();
 	LoadStringWidthTable();

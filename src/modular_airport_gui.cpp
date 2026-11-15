@@ -1499,9 +1499,8 @@ public:
 			int x = (ir.Width()  - ScaleSpriteTrad(64)) / 2 + ScaleSpriteTrad(31);
 			int y = (ir.Height() + ScaleSpriteTrad(48)) / 2 - ScaleSpriteTrad(31);
 			uint8_t rot = _widget_to_rot[widget - WID_MAHP_DIR_NW];
-			/* Use the modular hangar layout directly -- StationPickerDrawSprite can't handle
-			 * the high gfx indices (APT_DEPOT_NW/NE/SW = 88-90) which are beyond the
-			 * airport tile layout table size and get clamped to index 0 (apron). */
+			/* Use the modular hangar layout directly: the facing lives only in the modular
+			 * piece, and StationPickerDrawSprite would draw the stock SE hangar. */
 			const DrawTileSprites *t = GetModularHangarTileLayout(rot, !this->large_hangar);
 			PaletteID pal = GetCompanyPalette(_local_company);
 			DrawSprite(t->ground.sprite, HasBit(t->ground.sprite, PALETTE_MODIFIER_COLOUR) ? pal : PAL_NONE, x, y);

@@ -3462,6 +3462,15 @@ static void DrawTile_Station(TileInfo *ti)
 	StationGfx gfx = GetStationGfx(ti->tile);
 	if (IsAirport(ti->tile)) {
 		gfx = GetAirportGfx(ti->tile);
+		if (gfx >= NEW_AIRPORTTILE_OFFSET && gfx != GetStationGfx(ti->tile)) {
+			/* A NewGRF overrides this original tile. A modular rotated hangar or decoration
+			 * only borrows the original as a stand-in, so the override must not draw it. */
+			const Station *ovr_st = Station::GetByTile(ti->tile);
+			if (ovr_st->airport.blocks.Test(AirportBlock::Modular)) {
+				const ModularAirportTileData *md = ovr_st->airport.GetModularTileData(ti->tile);
+				if (md != nullptr && IsModularAirportStandInMapGfx(md->piece_type)) gfx = GetStationGfx(ti->tile);
+			}
+		}
 		if (gfx >= NEW_AIRPORTTILE_OFFSET) {
 			const AirportTileSpec *ats = AirportTileSpec::Get(gfx);
 			if (ats->grf_prop.HasSpriteGroups() && DrawNewAirportTile(ti, Station::GetByTile(ti->tile), ats)) {
@@ -3469,15 +3478,8 @@ static void DrawTile_Station(TileInfo *ti)
 			}
 			/* No sprite group (or no valid one) found, meaning no graphics associated.
 			 * Use the substitute one instead */
-			if (ats->grf_prop.subst_id == INVALID_AIRPORTTILE && Station::GetByTile(ti->tile)->airport.blocks.Test(AirportBlock::Modular)) {
-				/* The rotated modular hangars (APT_DEPOT_SW and up) are stored in the map under IDs
-				 * past the original tiles, where no NewGRF tile need be allocated. They are drawn
-				 * from the modular metadata below; the map graphic only has to be a valid ground. */
-				gfx = APT_APRON;
-			} else {
-				assert(ats->grf_prop.subst_id != INVALID_AIRPORTTILE);
-				gfx = ats->grf_prop.subst_id;
-			}
+			assert(ats->grf_prop.subst_id != INVALID_AIRPORTTILE);
+			gfx = ats->grf_prop.subst_id;
 		}
 
 		ApplyModularAirportTileLayoutOverrides(ti, gfx, t);

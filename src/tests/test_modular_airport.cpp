@@ -792,6 +792,10 @@ TEST_CASE("ModularAirportTemplatePlacementReplacesTileKinds")
 	REQUIRE(hangar_data != nullptr);
 	CHECK(hangar_data->piece_type == APT_SMALL_DEPOT_NW);
 	CHECK(hangar_data->rotation == 2);
+	/* The facing lives in the metadata only; the map keeps an original tile, never an
+	 * ID from the NewGRF airport tile range. */
+	CHECK(GetStationGfx(closed_hangar) == APT_SMALL_DEPOT_SE);
+	CHECK(IsHangar(closed_hangar));
 
 	/* A quarter-turned 3-tile small terminal draws from the same runtime mirrors as the
 	 * legacy runway above, so the stored-bitmap graphics setting must not gate it either. */
@@ -1745,6 +1749,29 @@ TEST_CASE("ModularAirportPieceClassification")
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_CARGO_TERMINAL) == APT_APRON);
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_FUEL_FARM) == APT_APRON);
 		CHECK(GetModularAirportMapGfx(APT_MODULAR_CAR_PARK) == APT_APRON);
+	}
+
+	SECTION("Every piece maps to an original airport tile") {
+		for (uint16_t piece = 0; piece < APT_END; piece++) {
+			CAPTURE(piece);
+			CHECK(GetModularAirportMapGfx(piece) < NEW_AIRPORTTILE_OFFSET);
+		}
+		for (uint8_t piece : {APT_DEPOT_SE, APT_DEPOT_SW, APT_DEPOT_NW, APT_DEPOT_NE}) {
+			CHECK(GetModularAirportMapGfx(piece) == APT_DEPOT_SE);
+		}
+		for (uint8_t piece : {APT_SMALL_DEPOT_SE, APT_SMALL_DEPOT_SW, APT_SMALL_DEPOT_NW, APT_SMALL_DEPOT_NE}) {
+			CHECK(GetModularAirportMapGfx(piece) == APT_SMALL_DEPOT_SE);
+		}
+		/* A NewGRF airport tile placed from a template keeps its own ID. */
+		CHECK(GetModularAirportMapGfx(APT_END) == APT_END);
+		CHECK(GetModularAirportMapGfx(NUM_AIRPORTTILES - 1) == NUM_AIRPORTTILES - 1);
+
+		CHECK(IsModularAirportStandInMapGfx(APT_DEPOT_NE));
+		CHECK(IsModularAirportStandInMapGfx(APT_SMALL_DEPOT_SW));
+		CHECK(IsModularAirportStandInMapGfx(APT_MODULAR_FIRE_STATION));
+		CHECK_FALSE(IsModularAirportStandInMapGfx(APT_DEPOT_SE));
+		CHECK_FALSE(IsModularAirportStandInMapGfx(APT_APRON));
+		CHECK_FALSE(IsModularAirportStandInMapGfx(APT_END));
 	}
 
 	SECTION("Taxiway Pieces") {

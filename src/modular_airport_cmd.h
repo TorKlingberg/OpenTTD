@@ -190,15 +190,42 @@ inline bool IsModularAirportDecorationPiece(ModularAirportPieceID piece_type)
 /**
  * Canonical AirportTile graphic stored in the map for a modular piece.
  *
- * Metadata-only decorations have IDs beyond the original airport-tile range.
- * Keeping those IDs exclusively in ModularAirportTileData avoids treating them
- * as NewGRF airport tiles while still giving the map a valid ground surface.
+ * A modular piece is identified by its ModularAirportTileData, which is what
+ * drawing, pathfinding and IsHangar read. The map only needs a graphic that does
+ * not collide with anything: IDs at or above NEW_AIRPORTTILE_OFFSET are NewGRF
+ * airport tiles, so the fork's own pieces numbered there must not reach the map,
+ * or a NewGRF that allocates that slot would take over the tile.
+ *  - Metadata-only decorations have IDs beyond the airport-tile range; the map
+ *    gets plain apron ground.
+ *  - The rotated hangars (APT_DEPOT_SW up to APT_END) are numbered past the
+ *    original tiles; the map gets the SE hangar of the same size.
+ *  - A NewGRF airport tile placed from a template (APT_END and up) is stored as is.
  */
 inline uint8_t GetModularAirportMapGfx(ModularAirportPieceID piece_type)
 {
 	if (IsModularAirportDecorationPiece(piece_type)) return APT_APRON;
+	switch (piece_type) {
+		case APT_DEPOT_SW: case APT_DEPOT_NW: case APT_DEPOT_NE:
+			return APT_DEPOT_SE;
+		case APT_SMALL_DEPOT_SW: case APT_SMALL_DEPOT_NW: case APT_SMALL_DEPOT_NE:
+			return APT_SMALL_DEPOT_SE;
+		default:
+			break;
+	}
 	assert(piece_type < NUM_AIRPORTTILES);
 	return static_cast<uint8_t>(piece_type);
+}
+
+/**
+ * Whether a modular piece is stored in the map under a stand-in graphic, so the
+ * map graphic must not be used to pick NewGRF drawing for it.
+ * @param piece_type Modular piece type.
+ * @return True for rotated hangars and metadata-only decorations.
+ */
+inline bool IsModularAirportStandInMapGfx(ModularAirportPieceID piece_type)
+{
+	if (piece_type >= NUM_AIRPORTTILES && !IsModularAirportDecorationPiece(piece_type)) return false;
+	return GetModularAirportMapGfx(piece_type) != piece_type;
 }
 
 /**

@@ -358,7 +358,7 @@ The same condition feeds two non-crash paths. Automatic hangar selection (`aircr
 
 It is used by normal tile drawing (`ApplyModularAirportTileLayoutOverrides`), the builder preview, and the template preview, to keep those paths from diverging. Perimeter fences are drawn by `DrawModularAirportPerimeterFences` from `edge_block_mask` plus `GetModularTileFenceOpenMask`.
 
-`AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata.
+`AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata. Every modular map write goes through `GetModularAirportMapGfx`, which maps the rotated hangars (IDs 74-79) to their SE variant.
 
 ### Builder UI
 

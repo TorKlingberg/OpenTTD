@@ -256,7 +256,7 @@ verbatim. Fork features are versioned on their own axis in the `XVER` chunk
 - Path cost has a non-goal stand/parking penalty (`+5`), so routes may prefer slightly longer taxiways over cutting through stands.
 - Ground routes are riddled with cost ties, and the A* expansion order silently decides which one wins — on at least 43% of routable queries there is an equal-cost, equal-length alternative. That choice is a throughput lever worth ~18% of `mass7-inair` between its best and worst setting, and nothing pulls it deliberately — see `skills/regression_testing.md`.
 - Runway flags (`RUF_LANDING`, `RUF_TAKEOFF`, `RUF_DIR_LOW`, `RUF_DIR_HIGH`) propagate to all tiles in a contiguous runway via `CmdSetRunwayFlags`.
-- `AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are treated as NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata.
+- `AirportTiles` IDs `>= NEW_AIRPORTTILE_OFFSET` (74) are treated as NewGRF airport tiles. Do not store new modular default-tile IDs in map gfx; keep canonical gfx IDs and branch drawing from modular metadata. Every modular map write goes through `GetModularAirportMapGfx`, which maps the rotated hangars (IDs 74-79) to their SE variant.
 - Depot windows can outlive tile deletion. Guard depot UI reads with a valid depot tile check.
 - Rotation invariants for modular airports:
   - Hangar directional convention is `0=SE, 1=NE, 2=NW, 3=SW` (clockwise in world space). Keep this mapping consistent across build/rotate/draw/pathfinder code.

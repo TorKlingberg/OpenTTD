@@ -98,7 +98,7 @@ static void NormalizeRunwaySegmentVisuals(Station *st, TileIndex changed_tile, b
 
 			if (td->piece_type != new_type) {
 				td->piece_type = new_type;
-				SetStationGfx(Tile(seg[i]), new_type);
+				SetStationGfx(Tile(seg[i]), GetModularAirportMapGfx(new_type));
 				MarkTileDirtyByTile(seg[i]);
 				retyped_any = true;
 			}
@@ -702,8 +702,7 @@ CommandCost CmdUpgradeModularAirportTile(DoCommandFlags flags, TileIndex tile, T
 			noise_before.try_emplace(st->index, GetModularAirportNoiseSnapshot(st));
 			/* Update map tile gfx and modular metadata. */
 			uint8_t old_rotation = md->rotation;
-			assert(target.new_piece < NUM_AIRPORTTILES);
-			SetStationGfx(Tile(t), static_cast<uint8_t>(target.new_piece));
+			SetStationGfx(Tile(t), GetModularAirportMapGfx(target.new_piece));
 			md->piece_type = target.new_piece;
 			md->auto_taxi_dir_mask = CalculateAutoTaxiDirectionsForGfx(target.new_piece, old_rotation);
 
@@ -1366,8 +1365,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 
 		for (const ModularAirportTileData &data : converted_data) {
 			Tile t(data.tile);
-			assert(data.piece_type < NUM_AIRPORTTILES);
-			const uint8_t map_gfx = static_cast<uint8_t>(data.piece_type);
+			const uint8_t map_gfx = GetModularAirportMapGfx(data.piece_type);
 			MakeAirport(t, st->owner, st->index, map_gfx, WaterClass::Invalid);
 			SetStationTileRandomBits(t, GB(Random(), 0, 4));
 			st->airport.Add(data.tile);

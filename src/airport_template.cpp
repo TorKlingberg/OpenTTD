@@ -42,7 +42,9 @@ static std::string GetTemplatesDirectory()
 
 static std::optional<uint8_t> ResolveAirportTileIndexByGRF(uint32_t grfid, uint16_t local_id)
 {
-	for (uint16_t gfx = NEW_AIRPORTTILE_OFFSET; gfx < NUM_AIRPORTTILES; gfx++) {
+	/* Modular piece IDs NEW_AIRPORTTILE_OFFSET up to APT_END are the rotated hangars, so a
+	 * NewGRF tile allocated in one of those slots cannot be a template piece. */
+	for (uint16_t gfx = APT_END; gfx < NUM_AIRPORTTILES; gfx++) {
 		const AirportTileSpec *ats = AirportTileSpec::Get(static_cast<StationGfx>(gfx));
 		if (ats == nullptr) continue;
 		if (FlattenNewGRFLabel(ats->grf_prop.grfid) == grfid && ats->grf_prop.local_id == local_id) return static_cast<uint8_t>(gfx);
