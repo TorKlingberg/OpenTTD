@@ -12,7 +12,8 @@
 #include "articulated_vehicles.h"
 #include "command_func.h"
 #include "error_func.h"
-#include "pathfinder/yapf/yapf.hpp"
+#include "pathfinder/follow_track.hpp"
+#include "pathfinder/yapf/yapf.h"
 #include "news_func.h"
 #include "company_func.h"
 #include "newgrf_sound.h"
@@ -20,20 +21,25 @@
 #include "strings_func.h"
 #include "viewport_func.h"
 #include "vehicle_func.h"
+#include "vehicle_gui.h"
 #include "sound_func.h"
 #include "ai/ai.hpp"
 #include "game/game.hpp"
 #include "newgrf_station.h"
 #include "effectvehicle_func.h"
-#include "network/network.h"
 #include "core/random_func.hpp"
 #include "company_base.h"
 #include "newgrf.h"
 #include "order_backup.h"
+#include "pbs.h"
 #include "zoom_func.h"
 #include "newgrf_debug.h"
 #include "framerate_type.h"
+#include "station_base.h"
+#include "station_func.h"
+#include "train.h"
 #include "train_cmd.h"
+#include "tunnelbridge_map.h"
 #include "misc_cmd.h"
 #include "script/api/script_event_types.hpp"
 #include "timer/timer_game_calendar.h"
@@ -197,7 +203,7 @@ void Train::ConsistChanged(ConsistChangeFlags allowed_changes)
 		uint16_t new_cap = e_u->DetermineCapacity(u);
 		if (allowed_changes.Test(ConsistChangeFlag::Capacity)) {
 			/* Update vehicle capacity. */
-			if (u->cargo_cap > new_cap) u->cargo.Truncate(new_cap);
+			if (u->cargo.TotalCount() > new_cap) u->cargo.Truncate(u->cargo.TotalCount() - new_cap);
 			u->refit_cap = std::min(new_cap, u->refit_cap);
 			u->cargo_cap = new_cap;
 		} else {
@@ -704,6 +710,7 @@ static CommandCost CmdBuildRailWagon(DoCommandFlags flags, TileIndex tile, const
 		v->refit_cap = 0;
 
 		v->railtypes = rvi->railtypes;
+		v->flags.Set(VehicleRailFlag::AllowedOnNormalRail, _settings_game.vehicle.disable_elrails && rvi->intended_railtypes.Test(RAILTYPE_ELECTRIC));
 
 		v->date_of_last_service = TimerGameEconomy::date;
 		v->date_of_last_service_newgrf = TimerGameCalendar::date;
@@ -774,6 +781,7 @@ static void AddRearEngineToMultiheadedTrain(Train *v)
 	u->cargo_cap = v->cargo_cap;
 	u->refit_cap = v->refit_cap;
 	u->railtypes = v->railtypes;
+	u->flags.Set(VehicleRailFlag::AllowedOnNormalRail, _settings_game.vehicle.disable_elrails && RailVehInfo(v->engine_type)->intended_railtypes.Test(RAILTYPE_ELECTRIC));
 	u->engine_type = v->engine_type;
 	u->date_of_last_service = v->date_of_last_service;
 	u->date_of_last_service_newgrf = v->date_of_last_service_newgrf;
@@ -841,6 +849,7 @@ CommandCost CmdBuildRailVehicle(DoCommandFlags flags, TileIndex tile, const Engi
 		v->max_age = e->GetLifeLengthInDays();
 
 		v->railtypes = rvi->railtypes;
+		v->flags.Set(VehicleRailFlag::AllowedOnNormalRail, _settings_game.vehicle.disable_elrails && rvi->intended_railtypes.Test(RAILTYPE_ELECTRIC));
 
 		v->SetServiceInterval(Company::Get(_current_company)->settings.vehicle.servint_trains);
 		v->date_of_last_service = TimerGameEconomy::date;
@@ -2270,7 +2279,7 @@ void Train::PlayLeaveStationSound(bool force) const
 		SND_41_DEPARTURE_MAGLEV
 	};
 
-	if (PlayVehicleSound(this, VSE_START, force)) return;
+	if (PlayVehicleSound(this, VehicleSoundEvent::Start, force)) return;
 
 	SndPlayVehicleFx(sfx[to_underlying(RailVehInfo(this->engine_type)->engclass)], this);
 }
@@ -3056,7 +3065,7 @@ void Train::MarkDirty()
 	} while ((v = v->Next()) != nullptr);
 
 	/* need to update acceleration and cached values since the goods on the train changed. */
-	this->CargoChanged();
+	this->ConsistChanged({});
 	this->UpdateAcceleration();
 }
 
@@ -3248,9 +3257,26 @@ static uint TrainCrashed(Train *v)
 		Game::NewEvent(new ScriptEventVehicleCrashed(v->index, tile, ScriptEventVehicleCrashed::CRASH_TRAIN, victims, v->owner));
 	}
 
+	return victims;
+}
+
+/**
+ * Marks trains as crashed and creates an script events.
+ * @param v First vehicle of first consist.
+ * @param u First vehicle of second consist.
+ * @return The number of victims (including 4 drivers; 2 for each train that has not previously crashed).
+ */
+static uint TrainsCrashed(Train *v, Train *u)
+{
+	/* Crash both trains. Two statements required to guarantee execution
+	 * order because RandomRange() is involved. */
+	uint victims = TrainCrashed(v);
+	victims += TrainCrashed(u);
+
 	/* Try to re-reserve track under already crashed train too.
-	 * Crash() clears the reservation! */
+	 * Crash() in TrainCrashed() clears the reservation! */
 	v->ReserveTrackUnderConsist();
+	u->ReserveTrackUnderConsist();
 
 	return victims;
 }
@@ -3292,10 +3318,7 @@ static uint CheckTrainCollision(Vehicle *v, Train *moving_front)
 	/* Happens when there is a train under bridge next to bridge head */
 	if (abs(v->z_pos - moving_front->z_pos) > 5) return 0;
 
-	/* Crash both trains. Two statements required to guarantee execution
-	 * order because RandomRange() is involved. */
-	uint num_victims = TrainCrashed(moving_front->First());
-	return num_victims + TrainCrashed(Train::From(v)->First());
+	return TrainsCrashed(moving_front->First(), Train::From(v)->First());
 }
 
 /**
@@ -3715,8 +3738,8 @@ static void DeleteLastWagon(Train *v)
 		trackbits = DiagDirToDiagTrack(GetTunnelBridgeDirection(tile));
 	}
 
-	Track track = TrackBitsToTrack(trackbits);
-	if (HasReservedTracks(tile, trackbits)) {
+	if (trackbits != Track::Depot && HasReservedTracks(tile, trackbits)) {
+		Track track = TrackBitsToTrack(trackbits);
 		UnreserveRailTrack(tile, track);
 
 		/* If there are still crashed vehicles on the tile, give the track reservation to them */
@@ -3751,7 +3774,7 @@ static void DeleteLastWagon(Train *v)
 	if (IsTileType(tile, TileType::TunnelBridge) || IsRailDepotTile(tile)) {
 		UpdateSignalsOnSegment(tile, DiagDirection::Invalid, owner);
 	} else {
-		SetSignalsOnBothDir(tile, track, owner);
+		SetSignalsOnBothDir(tile, TrackBitsToTrack(trackbits), owner);
 	}
 }
 
@@ -4107,9 +4130,10 @@ static bool TrainLocoHandler(Train *consist, bool mode)
 	if (j < adv_spd) {
 		/* if the vehicle has speed 0, update the last_speed field. */
 		if (consist->cur_speed == 0) consist->SetLastSpeed();
+	} else if (!TrainCheckIfLineEnds(moving_front)) {
+		/* Train reversed, discard any further motion, to prevent uncommanded movement in the reverse direction. */
+		j = 0;
 	} else {
-		TrainCheckIfLineEnds(moving_front);
-		moving_front = moving_front->GetMovingFront();
 		/* Loop until the train has finished moving. */
 		for (;;) {
 			j -= adv_spd;

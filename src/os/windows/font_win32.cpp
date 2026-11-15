@@ -16,6 +16,7 @@
 #include "../../fontcache.h"
 #include "../../fontcache/truetypefontcache.h"
 #include "../../library_loader.h"
+#include "../../spritecache.h"
 #include "../../string_func.h"
 #include "../../strings_func.h"
 #include "../../zoom_func.h"
@@ -76,10 +77,10 @@ static int CALLBACK EnumFontCallback(const ENUMLOGFONTEX *logfont, const NEWTEXT
 	char font_name[MAX_PATH];
 	convert_from_fs(logfont->elfFullName, font_name);
 
-	if (!FontCache::TryFallback(info->callback->missing_fontsizes, info->callback->missing_glyphs, font_name, logfont->elfLogFont)) return 1;
+	if (!FontCache::TryFallback(info->callback->missing_fontsizes, info->callback->required_glyphs, font_name, logfont->elfLogFont)) return 1;
 
 	FontCache::AddFallback(info->callback->missing_fontsizes, font_name, logfont->elfLogFont);
-	Debug(fontcache, 1, "Fallback font: {}", font_name);
+	Debug(Facility::Fontcache, Severity::Error, "Fallback font: {}", font_name);
 	return 0; // stop enumerating
 }
 
@@ -159,7 +160,7 @@ void Win32FontCache::SetFontSize(int pixels)
 
 	this->fontname = FS2OTTD((LPWSTR)((BYTE *)otm + (ptrdiff_t)otm->otmpFaceName));
 
-	Debug(fontcache, 2, "Loaded font '{}' with size {}", this->fontname, pixels);
+	Debug(Facility::Fontcache, Severity::Warning, "Loaded font '{}' with size {}", this->fontname, pixels);
 	delete[] (BYTE*)otm;
 }
 
@@ -302,12 +303,12 @@ public:
 
 	bool FindFallbackFont(const std::string &language_isocode, MissingGlyphSearcher *callback) const override
 	{
-		Debug(fontcache, 1, "Trying fallback fonts");
+		Debug(Facility::Fontcache, Severity::Error, "Trying fallback fonts");
 		EFCParam langInfo;
-		std::wstring lang = OTTD2FS(language_isocode.substr(0, language_isocode.find('_')));
+		std::wstring lang = OTTD2FS(language_isocode);
 		if (GetLocaleInfoEx(lang.c_str(), LOCALE_FONTSIGNATURE, reinterpret_cast<LPWSTR>(&langInfo.locale), sizeof(langInfo.locale) / sizeof(wchar_t)) == 0) {
 			/* Invalid isocode or some other mysterious error, can't determine fallback font. */
-			Debug(fontcache, 1, "Can't get locale info for fallback font (isocode={})", language_isocode);
+			Debug(Facility::Fontcache, Severity::Error, "Can't get locale info for fallback font (isocode={})", language_isocode);
 			return false;
 		}
 		langInfo.callback = callback;

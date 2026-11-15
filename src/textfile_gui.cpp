@@ -10,7 +10,6 @@
 #include "stdafx.h"
 #include "core/backup_type.hpp"
 #include "fileio_func.h"
-#include "fontcache.h"
 #include "gfx_type.h"
 #include "gfx_func.h"
 #include "string_func.h"
@@ -83,7 +82,7 @@ static WindowDesc _textfile_desc(
 	_nested_textfile_widgets
 );
 
-TextfileWindow::TextfileWindow(Window *parent, TextfileType file_type) : Window(_textfile_desc), BaseStringMissingGlyphSearcher(FontSize::Monospace), file_type(file_type)
+TextfileWindow::TextfileWindow(Window *parent, TextfileType file_type) : Window(_textfile_desc), file_type(file_type)
 {
 	/* Init of nested tree is deferred.
 	 * TextfileWindow::ConstructWindow must be called by the inheriting window. */
@@ -297,7 +296,7 @@ const TextfileWindow::Hyperlink *TextfileWindow::GetHyperlink(Point pt) const
 
 	size_t line_index = it - this->lines.cbegin();
 	size_t subline = clicked_row - (visible_line - it->num_lines);
-	Debug(misc, 4, "TextfileWindow check hyperlink: clicked_row={}, line_index={}, line.top={}, subline={}", clicked_row, line_index, visible_line - it->num_lines, subline);
+	Debug(Facility::Misc, Severity::Info, "TextfileWindow check hyperlink: clicked_row={}, line_index={}, line.top={}, subline={}", clicked_row, line_index, visible_line - it->num_lines, subline);
 
 	/* Find hyperlinks in this line. */
 	std::vector<const Hyperlink *> found_links;
@@ -312,13 +311,13 @@ const TextfileWindow::Hyperlink *TextfileWindow::GetHyperlink(Point pt) const
 	assert(subline < layout.size());
 	ptrdiff_t char_index = layout.GetCharAtPosition(pt.x - WidgetDimensions::scaled.frametext.left, subline);
 	if (char_index < 0) return nullptr;
-	Debug(misc, 4, "TextfileWindow check hyperlink click: line={}, subline={}, char_index={}", line_index, subline, char_index);
+	Debug(Facility::Misc, Severity::Info, "TextfileWindow check hyperlink click: line={}, subline={}, char_index={}", line_index, subline, char_index);
 
 	/* Found character index in line, check if any links are at that position. */
 	for (const Hyperlink *link : found_links) {
-		Debug(misc, 4, "Checking link from char {} to {}", link->begin, link->end);
+		Debug(Facility::Misc, Severity::Info, "Checking link from char {} to {}", link->begin, link->end);
 		if (static_cast<size_t>(char_index) >= link->begin && static_cast<size_t>(char_index) < link->end) {
-			Debug(misc, 4, "Returning link with destination: {}", link->destination);
+			Debug(Facility::Misc, Severity::Info, "Returning link with destination: {}", link->destination);
 			return link;
 		}
 	}
@@ -912,7 +911,7 @@ void TextfileWindow::LoadText(std::string_view buf)
 	this->AfterLoadText();
 	this->ReflowContent();
 
-	CheckForMissingGlyphs(this);
+	CheckForMissingGlyphs(FontSize::Monospace, this);
 
 	/* The font may have changed when searching for glyphs, so ensure widget sizes are updated just in case. */
 	this->ReInit();

@@ -12,7 +12,6 @@
 #include "clear_map.h"
 #include "company_func.h"
 #include "company_base.h"
-#include "house.h"
 #include "gui.h"
 #include "window_gui.h"
 #include "window_func.h"
@@ -105,6 +104,26 @@ static void PlaceRockyArea(TileIndex end, TileIndex start, bool remove)
 					}
 				} else {
 					MakeClear(tile, ClearGround::Rocks, 3);
+				}
+				break;
+
+			case TileType::Water:
+				if (remove) {
+					switch (GetWaterTileType(tile)) {
+						case WaterTileType::ClearRocks: SetWaterTileType(tile, WaterTileType::Clear); break;
+						case WaterTileType::CoastRocks: SetWaterTileType(tile, WaterTileType::Coast); break;
+						default: continue;
+					}
+				} else {
+					switch (GetWaterTileType(tile)) {
+						case WaterTileType::Clear:
+							if (GetTileSlope(tile) != SLOPE_FLAT) continue;
+							SetWaterTileType(tile, WaterTileType::ClearRocks);
+							break;
+
+						case WaterTileType::Coast: SetWaterTileType(tile, WaterTileType::CoastRocks); break;
+						default: continue;
+					}
 				}
 				break;
 

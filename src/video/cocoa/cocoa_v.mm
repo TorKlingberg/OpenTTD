@@ -63,8 +63,13 @@ static const Dimension _default_resolutions[] = {
 };
 
 
-VideoDriver_Cocoa::VideoDriver_Cocoa(bool uses_hardware_acceleration)
-	: VideoDriver(uses_hardware_acceleration)
+/**
+ * Create the video driver.
+ * @param uses_hardware_acceleration Whether hardware acceleration is used by this driver.
+ * @param supports_animation_buffer Whether this driver supports a hardware accelerated animation buffer.
+ */
+VideoDriver_Cocoa::VideoDriver_Cocoa(bool uses_hardware_acceleration, bool supports_animation_buffer)
+	: VideoDriver(uses_hardware_acceleration, supports_animation_buffer)
 {
 	this->setup         = false;
 	this->buffer_locked = false;
@@ -359,7 +364,7 @@ bool VideoDriver_Cocoa::MakeWindow(int width, int height)
 	unsigned int style = NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskClosable;
 	this->window = [ [ OTTD_CocoaWindow alloc ] initWithContentRect:contentRect styleMask:style backing:NSBackingStoreBuffered defer:NO driver:this ];
 	if (this->window == nil) {
-		Debug(driver, 0, "Could not create the Cocoa window.");
+		Debug(Facility::Driver, Severity::Critical, "Could not create the Cocoa window.");
 		this->setup = false;
 		return false;
 	}
@@ -387,7 +392,7 @@ bool VideoDriver_Cocoa::MakeWindow(int width, int height)
 	NSRect view_frame = [ this->window contentRectForFrameRect:[ this->window frame ] ];
 	this->cocoaview = [ [ OTTD_CocoaView alloc ] initWithFrame:view_frame ];
 	if (this->cocoaview == nil) {
-		Debug(driver, 0, "Could not create the event wrapper view.");
+		Debug(Facility::Driver, Severity::Critical, "Could not create the event wrapper view.");
 		this->setup = false;
 		return false;
 	}
@@ -396,7 +401,7 @@ bool VideoDriver_Cocoa::MakeWindow(int width, int height)
 	/* Create content view. */
 	NSView *draw_view = this->AllocateDrawView();
 	if (draw_view == nil) {
-		Debug(driver, 0, "Could not create the drawing view.");
+		Debug(Facility::Driver, Severity::Critical, "Could not create the drawing view.");
 		this->setup = false;
 		return false;
 	}

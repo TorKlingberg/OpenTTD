@@ -15,7 +15,6 @@
 #include "viewport_func.h"
 #include "train.h"
 #include "company_base.h"
-#include "pbs.h"
 
 #include "table/signal_data.h"
 
@@ -159,7 +158,7 @@ public:
 	{
 		if (this->IsFull()) {
 			overflowed = true;
-			Debug(misc, 0, "SignalSegment too complex. Set {} is full (maximum {})", name, items);
+			Debug(Facility::Misc, Severity::Critical, "SignalSegment too complex. Set {} is full (maximum {})", name, items);
 			return false; // set is full
 		}
 

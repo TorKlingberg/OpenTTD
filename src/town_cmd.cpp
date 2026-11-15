@@ -8,18 +8,22 @@
 /** @file town_cmd.cpp Handling of town tiles. */
 
 #include "stdafx.h"
+#include "bridge.h"
 #include "misc/history_type.hpp"
 #include "misc/history_func.hpp"
 #include "road.h"
 #include "road_internal.h" /* Cleaning up road bits */
 #include "road_cmd.h"
 #include "landscape.h"
+#include "tilearea_spiral.h"
+#include "tilearea_type.h"
 #include "viewport_func.h"
 #include "viewport_kdtree.h"
 #include "command_func.h"
 #include "company_func.h"
 #include "industry.h"
 #include "station_base.h"
+#include "station_func.h"
 #include "waypoint_base.h"
 #include "station_kdtree.h"
 #include "company_base.h"
@@ -46,7 +50,6 @@
 #include "core/random_func.hpp"
 #include "core/backup_type.hpp"
 #include "depot_base.h"
-#include "object_map.h"
 #include "object_base.h"
 #include "ai/ai.hpp"
 #include "game/game.hpp"
@@ -2140,7 +2143,7 @@ static CommandCost TownCanBePlacedHere(TileIndex tile, bool check_surrounding)
  * @param name The name to check.
  * @return true if the name is unique
  */
-static bool IsUniqueTownName(const std::string &name)
+static bool IsUniqueTownName(std::string_view name)
 {
 	for (const Town *t : Town::Iterate()) {
 		if (!t->name.empty() && t->name == name) return false;
@@ -2214,7 +2217,7 @@ std::tuple<CommandCost, Money, TownID> CmdFoundTown(DoCommandFlags flags, TileIn
 		}
 
 		Backup<bool> old_generating_world(_generating_world, true);
-		UpdateNearestTownForRoadTiles(true);
+		bool road_pending = UpdateNearestTownForRoadTiles(true);
 		Town *t;
 		if (random_location) {
 			t = CreateRandomTown(20, townnameparts, size, city, layout);
@@ -2223,7 +2226,7 @@ std::tuple<CommandCost, Money, TownID> CmdFoundTown(DoCommandFlags flags, TileIn
 			DoCreateTown(t, tile, townnameparts, size, city, layout, true);
 		}
 
-		UpdateNearestTownForRoadTiles(false);
+		if (road_pending) UpdateNearestTownForRoadTiles(false);
 		old_generating_world.Restore();
 
 		if (t == nullptr) return { CommandCost(STR_ERROR_NO_SPACE_FOR_TOWN), 0, TownID::Invalid() };
@@ -2471,6 +2474,36 @@ bool GenerateTowns(TownLayout layout, std::optional<uint> number)
 	return false;  // we are still without a town? we failed, simply
 }
 
+/**
+ * Try to generate a named town around a tile.
+ * @param target_tile Target tile.
+ * @param size The preset size of the town.
+ * @param city Should we create a city?
+ * @param layout The road layout of the town.
+ * @param name Town name.
+ * @return town or nullptr.
+ */
+Town *TryGenerateNamedTownAroundTile(TileIndex target_tile, TownSize size, bool city, TownLayout layout, std::string_view name)
+{
+	if (!Town::CanAllocateItem() || name.empty() || Utf8StringLength(name) >= MAX_LENGTH_TOWN_NAME_CHARS || !IsUniqueTownName(name)) {
+		return nullptr;
+	}
+
+	/* Try founding on the target tile, and if that doesn't work, find the nearest suitable tile up to 16 tiles away.
+	 * The target might be on water, blocked somehow, or on a steep slope that can't be terraformed by the founding command. */
+	for (TileIndex tile : SpiralTileSequence(target_tile, 16, 0, 0)) {
+		CommandCost ret = TownCanBePlacedHere(tile, false);
+		if (ret.Failed()) continue;
+
+		Town *t = Town::Create(tile);
+		t->name = name;
+		DoCreateTown(t, tile, 0, size, city, layout, true);
+
+		return t;
+	}
+
+	return nullptr;
+}
 
 /**
  * Returns the bit corresponding to the town zone of the specified tile.
@@ -3005,9 +3038,7 @@ CommandCost CmdPlaceHouseArea(DoCommandFlags flags, TileIndex tile, TileIndex st
 	CommandCost last_error = CMD_ERROR;
 	bool had_success = false;
 
-	std::unique_ptr<TileIterator> iter = TileIterator::Create(tile, start_tile, diagonal);
-	for (; *iter != INVALID_TILE; ++(*iter)) {
-		TileIndex t = *iter;
+	for (TileIndex t : CreateOrthoDiagonalArea(tile, start_tile, diagonal)) {
 		CommandCost ret = Command<Commands::PlaceHouse>::Do(DoCommandFlags{flags}.Reset(DoCommandFlag::Execute), t, house, is_protected, replace);
 
 		/* If we've reached the limit, stop building (or testing). */

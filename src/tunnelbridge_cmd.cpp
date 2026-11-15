@@ -11,6 +11,7 @@
  */
 
 #include "stdafx.h"
+#include "bridge.h"
 #include "viewport_func.h"
 #include "command_func.h"
 #include "town.h"
@@ -21,7 +22,6 @@
 #include "newgrf_sound.h"
 #include "autoslope.h"
 #include "tunnelbridge_map.h"
-#include "strings_func.h"
 #include "timer/timer_game_calendar.h"
 #include "clear_func.h"
 #include "vehicle_func.h"
@@ -1977,7 +1977,7 @@ static VehicleEnterTileStates VehicleEnterTile_TunnelBridge(Vehicle *v, TileInde
 
 			if (t->track != Track::Wormhole && dir == vdir) {
 				if (t->IsMovingFront() && frame == TUNNEL_SOUND_FRAME) {
-					if (!PlayVehicleSound(t, VSE_TUNNEL) && RailVehInfo(t->engine_type)->engclass == EngineClass::Steam) {
+					if (!PlayVehicleSound(t, VehicleSoundEvent::Tunnel) && RailVehInfo(t->engine_type)->engclass == EngineClass::Steam) {
 						SndPlayVehicleFx(SND_05_TRAIN_THROUGH_TUNNEL, v);
 					}
 					return {};

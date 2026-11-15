@@ -16,7 +16,6 @@
 #include "order_type.h"
 #include "cargo_type.h"
 #include "source_type.h"
-#include "vehicle_type.h"
 #include "core/multimap.hpp"
 #include "saveload/saveload_type.h"
 
@@ -71,9 +70,6 @@ public:
 	CargoPacket(CargoPacketID index, StationID first_station, uint16_t count, Source source);
 	CargoPacket(CargoPacketID index, uint16_t count, uint16_t periods_in_transit, StationID first_station, TileIndex source_xy, Money feeder_share);
 	CargoPacket(CargoPacketID index, uint16_t count, Money feeder_share, CargoPacket &original);
-
-	/** Destroy the packet. */
-	~CargoPacket() { }
 
 	CargoPacket *Split(uint new_size);
 	void Merge(CargoPacket *cp);
@@ -255,6 +251,20 @@ public:
 		return this->next_hop;
 	}
 
+	/**
+	 * Are the two CargoPackets mergeable.
+	 * @param cp1 First cargo packet to check.
+	 * @param cp2 Second cargo packet to check.
+	 * @return \c true iff they are mergeable.
+	 */
+	static bool AreMergable(const CargoPacket *cp1, const CargoPacket *cp2)
+	{
+		return cp1->source_xy == cp2->source_xy &&
+				cp1->periods_in_transit == cp2->periods_in_transit &&
+				cp1->first_station == cp2->first_station &&
+				cp1->source == cp2->source;
+	}
+
 	static void InvalidateAllFrom(Source src);
 	static void InvalidateAllFrom(StationID sid);
 	static void AfterLoad();
@@ -361,6 +371,7 @@ protected:
 
 	void AddToMeta(const CargoPacket *cp, MoveToAction action);
 	void RemoveFromMeta(const CargoPacket *cp, MoveToAction action, uint count);
+	uint TryRemoveFromMeta(const CargoPacket *cp, MoveToAction action, uint count);
 
 	static MoveToAction ChooseAction(const CargoPacket *cp, StationID cargo_next,
 			StationID current_station, bool accepted, std::span<const StationID> next_station);
@@ -487,21 +498,6 @@ public:
 	uint Shift(uint max_move, VehicleCargoList *dest);
 	uint Truncate(uint max_move = UINT_MAX);
 	uint Reroute(uint max_move, VehicleCargoList *dest, StationID avoid, StationID avoid2, const GoodsEntry *ge);
-
-	/**
-	 * Are the two CargoPackets mergeable in the context of
-	 * a list of CargoPackets for a Vehicle?
-	 * @param cp1 First CargoPacket.
-	 * @param cp2 Second CargoPacket.
-	 * @return True if they are mergeable.
-	 */
-	static bool AreMergable(const CargoPacket *cp1, const CargoPacket *cp2)
-	{
-		return cp1->source_xy == cp2->source_xy &&
-				cp1->periods_in_transit == cp2->periods_in_transit &&
-				cp1->first_station == cp2->first_station &&
-				cp1->source == cp2->source;
-	}
 };
 
 typedef MultiMap<StationID, CargoPacket *> StationCargoPacketMap;
@@ -601,21 +597,6 @@ public:
 	uint Load(uint max_move, VehicleCargoList *dest, std::span<const StationID> next, TileIndex current_tile);
 	uint Truncate(uint max_move = UINT_MAX, StationCargoAmountMap *cargo_per_source = nullptr);
 	uint Reroute(uint max_move, StationCargoList *dest, StationID avoid, StationID avoid2, const GoodsEntry *ge);
-
-	/**
-	 * Are the two CargoPackets mergeable in the context of
-	 * a list of CargoPackets for a Station?
-	 * @param cp1 First CargoPacket.
-	 * @param cp2 Second CargoPacket.
-	 * @return True if they are mergeable.
-	 */
-	static bool AreMergable(const CargoPacket *cp1, const CargoPacket *cp2)
-	{
-		return cp1->source_xy == cp2->source_xy &&
-				cp1->periods_in_transit == cp2->periods_in_transit &&
-				cp1->first_station == cp2->first_station &&
-				cp1->source == cp2->source;
-	}
 };
 
 #endif /* CARGOPACKET_H */

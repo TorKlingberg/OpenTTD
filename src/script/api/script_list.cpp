@@ -402,9 +402,8 @@ ScriptList::ScriptList()
 	this->modifications  = 0;
 }
 
-ScriptList::~ScriptList()
-{
-}
+/** Needs to be manually defined due to incomplete definition of types in the header. */
+ScriptList::~ScriptList() = default;
 
 bool ScriptList::HasItem(SQInteger item) const
 {
@@ -455,7 +454,7 @@ SQInteger ScriptList::Begin()
 SQInteger ScriptList::Next()
 {
 	if (!this->initialized) {
-		Debug(script, 0, "Next() is invalid as Begin() is never called");
+		Debug(Facility::Script, Severity::Critical, "Next() is invalid as Begin() is never called");
 		return 0;
 	}
 	return this->sorter->Next().value_or(0);
@@ -469,7 +468,7 @@ bool ScriptList::IsEmpty() const
 bool ScriptList::IsEnd() const
 {
 	if (!this->initialized) {
-		Debug(script, 0, "IsEnd() is invalid as Begin() is never called");
+		Debug(Facility::Script, Severity::Critical, "IsEnd() is invalid as Begin() is never called");
 		return true;
 	}
 	return this->sorter->IsEnd();

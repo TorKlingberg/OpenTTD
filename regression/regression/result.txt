@@ -1653,6 +1653,8 @@ ERROR: IsEnd() is invalid as Begin() is never called
   IsAirportTile():      true
   GetAirportType():     0
   GetCosts():           9900
+  Hangar
+    GetName():          (null : 0x00000000)
   RemoveAirport():      true
   IsHangarTile():       false
   IsAirportTile():      false
@@ -8433,6 +8435,16 @@ ERROR: IsEnd() is invalid as Begin() is never called
   HasWaypointType:
     false  true  false
 
+  Depot
+    DepotList
+      Count():                     1
+      Depot distance from (0,0) ListDump:
+        28479 => 174
+    GetName():          Chenfingbourne Ship Depot
+    SetName():          true
+    GetName():          Regression
+    GetName():          Regression
+    GetName():          (null : 0x00000000)
   RemoveWaterDepot():   true
   RemoveDock():         true
   RemoveBuoy():         true
@@ -8567,6 +8579,10 @@ ERROR: IsEnd() is invalid as Begin() is never called
       Count():                     1
       Depot distance from (0,0) ListDump:
         33411 => 261
+    GetName():                     Little Frutford Train Depot
+    SetName():                     true
+    GetName():                     Regression
+    GetName():                     (null : 0x00000000)
     RemoveDepot():                 true
     BuildRailDepot():              true
   Station
@@ -8668,6 +8684,10 @@ ERROR: IsEnd() is invalid as Begin() is never called
       Count():                     1
       Depot distance from (0,0) ListDump:
         33411 => 261
+    GetName():                     Little Frutford Road Vehicle Depot
+    SetName():                     true
+    GetName():                     Regression
+    GetName():                     (null : 0x00000000)
     RemoveRoadDepot():             true
     RemoveRoadDepot():             false
   Station
@@ -10586,10 +10606,13 @@ ERROR: IsEnd() is invalid as Begin() is never called
   GetWagonAge():        0
   GetWagonEngineType(): 65535
   GetWagonAge():        -1
+  GetVehicleType():     3
+  GetLength():          -1
   --Refit--
     GetBuildWithRefitCapacity(): -1
     GetBuildWithRefitCapacity(): 0
     GetBuildWithRefitCapacity(): 160
+    GetBuildWithRefitCapacity(): -1
     BuildVehicleWithRefit():     20
     GetCapacity():               160
     GetCapacity():               0
@@ -10629,11 +10652,11 @@ ERROR: IsEnd() is invalid as Begin() is never called
     14 => 1
     12 => 1
   Age ListDump:
+    17 => 1
+    16 => 1
     14 => 1
     13 => 1
     12 => 1
-    17 => 0
-    16 => 0
   MaxAge ListDump:
     16 => 10980
     14 => 10980
@@ -10641,9 +10664,9 @@ ERROR: IsEnd() is invalid as Begin() is never called
     13 => 5490
     12 => 5490
   AgeLeft ListDump:
-    16 => 10980
+    16 => 10979
     14 => 10979
-    17 => 7320
+    17 => 7319
     13 => 5489
     12 => 5489
   CurrentSpeed ListDump:
@@ -10703,6 +10726,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
 
 --Order--
   GetOrderCount():       0
+  GetOrderCount():       -1
   GetOrderDestination(): -1
   AreOrderFlagsValid():  true
   AreOrderFlagsValid():  false
@@ -10891,7 +10915,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
   LowerTile():          true
   RaiseTile():          true
   LowerTile():          true
-  GetCosts():           2478
+  GetCosts():           2778
   LowerTile():          false
   LowerTile():          true
   RaiseTile():          false
@@ -10899,7 +10923,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
   LowerTile():          false
   RaiseTile():          true
   LowerTile():          true
-  GetCosts():           5551
+  GetCosts():           5701
   RaiseTile():          true
   LowerTile():          true
   GetCosts():           16055
@@ -10914,7 +10938,7 @@ ERROR: IsEnd() is invalid as Begin() is never called
   GetCosts():           9628
   LevelTiles():         true
   LevelTiles():         true
-  GetCosts():           286079
+  GetCosts():           288029
   LowerTile():          false
   RaiseTile():          true
   RaiseTile():          false
@@ -11122,7 +11146,7 @@ CALLSTACK WITH LOCALS
 *FUNCTION [Valuate()] Valuate line [5]
   [args] ARRAY
   [this] INSTANCE
-*FUNCTION [Start()] regression/main.nut line [2904]
+*FUNCTION [Start()] regression/main.nut line [2934]
   [Infinite] CLOSURE
   [list] INSTANCE
   [this] INSTANCE

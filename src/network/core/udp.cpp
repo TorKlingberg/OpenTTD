@@ -8,9 +8,7 @@
 /** @file udp.cpp Basic functions to receive and send UDP packets. */
 
 #include "../../stdafx.h"
-#include "../../timer/timer_game_calendar.h"
 #include "../../debug.h"
-#include "network_game_info.h"
 #include "udp.h"
 
 #include "../../safeguards.h"
@@ -87,18 +85,18 @@ void NetworkUDPSocketHandler::SendPacket(Packet &p, NetworkAddress &recv, bool a
 			/* Enable broadcast */
 			unsigned long val = 1;
 			if (setsockopt(s.first, SOL_SOCKET, SO_BROADCAST, (char *) &val, sizeof(val)) < 0) {
-				Debug(net, 1, "Setting broadcast mode failed: {}", NetworkError::GetLast().AsString());
+				Debug(Facility::Net, Severity::Error, "Setting broadcast mode failed: {}", NetworkError::GetLast().AsString());
 			}
 		}
 
 		/* Send the buffer */
-		ssize_t res = p.TransferOut([&](std::span<const uint8_t> buffer) {
+		std::ptrdiff_t res = p.TransferOut([&](std::span<const uint8_t> buffer) {
 			return sendto(s.first, reinterpret_cast<const char *>(buffer.data()), static_cast<int>(buffer.size()), 0, reinterpret_cast<const struct sockaddr *>(send.GetAddress()), send.GetAddressLength());
 		});
-		Debug(net, 7, "sendto({})", send.GetAddressAsString());
+		Debug(Facility::Net, Severity::Trace1, "sendto({})", send.GetAddressAsString());
 
 		/* Check for any errors, but ignore it otherwise */
-		if (res == -1) Debug(net, 1, "sendto({}) failed: {}", send.GetAddressAsString(), NetworkError::GetLast().AsString());
+		if (res == -1) Debug(Facility::Net, Severity::Error, "sendto({}) failed: {}", send.GetAddressAsString(), NetworkError::GetLast().AsString());
 
 		if (!all) break;
 	}
@@ -119,7 +117,7 @@ void NetworkUDPSocketHandler::ReceivePackets()
 
 			/* Try to receive anything */
 			SetNonBlocking(s.first); // Some OSes seem to lose the non-blocking status of the socket
-			ssize_t nbytes = p.TransferIn([&](std::span<uint8_t> buffer) {
+			std::ptrdiff_t nbytes = p.TransferIn([&](std::span<uint8_t> buffer) {
 				return recvfrom(s.first, reinterpret_cast<char *>(buffer.data()), static_cast<int>(buffer.size()), 0, reinterpret_cast<struct sockaddr *>(&client_addr), &client_len);
 			});
 
@@ -135,11 +133,11 @@ void NetworkUDPSocketHandler::ReceivePackets()
 			/* If the size does not match the packet must be corrupted.
 			 * Otherwise it will be marked as corrupted later on. */
 			if (!p.ParsePacketSize() || static_cast<size_t>(nbytes) != p.Size()) {
-				Debug(net, 1, "Received a packet with mismatching size from {}", address.GetAddressAsString());
+				Debug(Facility::Net, Severity::Error, "Received a packet with mismatching size from {}", address.GetAddressAsString());
 				continue;
 			}
 			if (!p.PrepareToRead()) {
-				Debug(net, 1, "Invalid packet received (too small / decryption error)");
+				Debug(Facility::Net, Severity::Error, "Invalid packet received (too small / decryption error)");
 				continue;
 			}
 
@@ -166,7 +164,7 @@ void NetworkUDPSocketHandler::HandleUDPPacket(Packet &p, NetworkAddress &client_
 		case PacketUDPType::ServerResponse: this->ReceiveServerResponse(p, client_addr); break;
 
 		default:
-			Debug(net, 0, "[udp] Received invalid packet type {} from {}", type, client_addr.GetAddressAsString());
+			Debug(Facility::Net, Severity::Critical, "[udp] Received invalid packet type {} from {}", type, client_addr.GetAddressAsString());
 			break;
 	}
 }
@@ -178,7 +176,7 @@ void NetworkUDPSocketHandler::HandleUDPPacket(Packet &p, NetworkAddress &client_
  */
 void NetworkUDPSocketHandler::ReceiveInvalidPacket(PacketUDPType type, NetworkAddress &client_addr)
 {
-	Debug(net, 0, "[udp] Received packet type {} on wrong port from {}", type, client_addr.GetAddressAsString());
+	Debug(Facility::Net, Severity::Critical, "[udp] Received packet type {} on wrong port from {}", type, client_addr.GetAddressAsString());
 }
 
 void NetworkUDPSocketHandler::ReceiveClientFindServer(Packet &, NetworkAddress &client_addr) { this->ReceiveInvalidPacket(PacketUDPType::ClientFindServer, client_addr); }

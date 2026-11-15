@@ -10,8 +10,6 @@
 #ifndef STRING_FUNC_H
 #define STRING_FUNC_H
 
-#include <iosfwd>
-
 #include "string_type.h"
 
 void strecpy(std::span<char> dst, std::string_view src);
@@ -140,13 +138,21 @@ inline bool IsPrintable(char32_t c)
  */
 inline bool IsWhitespace(char32_t c)
 {
-	return c == 0x0020 /* SPACE */ || c == 0x3000; /* IDEOGRAPHIC SPACE */
+	return c == 0x0020 /* SPACE */ || (c >= 0x2000 && c <= 0x200C) || c == 0x3000; /* IDEOGRAPHIC SPACE */
 }
 
-/* Needed for NetBSD version (so feature) testing */
-#if defined(__NetBSD__) || defined(__FreeBSD__)
-#include <sys/param.h>
-#endif
+/**
+ * Check wheather a character is non-breaking whitespace.
+ * @param c character to check.
+ * @return \c true if a character is a non-breaking whitespace character.
+ */
+inline bool IsNonbreakingWhitespace(char32_t c)
+{
+	return c == 0x00A0 /* NBSP */
+		|| c == 0x202F /* NARROW NO-BREAK SPACE */
+		|| c == 0x200D /* ZERO WIDTH JOINER */
+		|| c == 0x2060; /* WORD JOINER */
+}
 
 std::optional<std::string_view> GetEnv(const char *variable);
 

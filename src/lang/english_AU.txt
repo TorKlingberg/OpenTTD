@@ -3175,21 +3175,20 @@ STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_CAPTION                 :{WHITE}Remove a
 STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_QUERY                   :{YELLOW}Are you sure you want to remove all industries?
 
 # Industry cargoes window
-STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Industry Chain - {STRING}
-STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Cargo Chain - {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Producing industries
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Accepting industries
-STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Houses
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Click at the industry to see its suppliers and customers
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Click at the cargo to see its suppliers and customers
-STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Industry Chain
-STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Display cargo supplying and accepting industries
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Link to smallmap
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :{BLACK}Select the displayed industries at the smallmap as well
-STR_INDUSTRY_CARGOES_SELECT_CARGO                               :{BLACK}Select cargo
-STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :{BLACK}Select the cargo you want to display
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :{BLACK}Select industry
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :{BLACK}Select the industry you want to display
+STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :Industry Chain - {STRING}
+STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :Cargo Chain - {STRING}
+STR_INDUSTRY_CARGOES_SOURCES                                    :Sources
+STR_INDUSTRY_CARGOES_DESTINATIONS                               :Destinations
+STR_INDUSTRY_CARGOES_HOUSES                                     :Houses
+STR_INDUSTRY_CARGOES_ACCEPTS_PRODUCES_TOOLTIP                   :{STRING}{}Accepts: {CARGO_LIST}{}Produces: {CARGO_LIST}
+STR_INDUSTRY_DISPLAY_CHAIN                                      :Industry Chain
+STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :Display cargo supplying and accepting industries
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :Link to smallmap
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :Select the displayed industries at the smallmap as well
+STR_INDUSTRY_CARGOES_SELECT_CARGO                               :Select cargo
+STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :Select the cargo you want to display
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :Select industry
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :Select the industry you want to display
 
 # Land area window
 STR_LAND_AREA_INFORMATION_CAPTION                               :{WHITE}Land Area Information
@@ -3288,6 +3287,8 @@ STR_LAI_WATER_DESCRIPTION_LOCK                                  :Lock
 STR_LAI_WATER_DESCRIPTION_RIVER                                 :River
 STR_LAI_WATER_DESCRIPTION_COAST_OR_RIVERBANK                    :Coast or riverbank
 STR_LAI_WATER_DESCRIPTION_SHIP_DEPOT                            :Ship depot
+STR_LAI_WATER_DESCRIPTION_WATER_ROCKS                           :Rocks
+STR_LAI_WATER_DESCRIPTION_COAST_ROCKS                           :Coast or riverbank with rocks
 
 # Industries come directly from their industry names
 
@@ -4622,9 +4623,7 @@ STR_VEHICLE_INFO_PROFIT_THIS_PERIOD_LAST_PERIOD_MIN_PERFORMANCE :{BLACK}Profit t
 STR_VEHICLE_INFO_RELIABILITY_BREAKDOWNS                         :{BLACK}Reliability: {LTBLUE}{COMMA}% (max: {COMMA}%)  {BLACK}Breakdowns since last service: {LTBLUE}{COMMA}
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Built: {LTBLUE}{NUM}{BLACK} Value: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Capacity: {LTBLUE}None{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Capacity: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Capacity: {LTBLUE}{CARGO_LONG}{STRING} (x{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Capacity: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}Transfer Credits: {LTBLUE}{CURRENCY_LONG}
@@ -4657,22 +4656,23 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Name air
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}   Built: {LTBLUE}{NUM}{BLACK} Value: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}   Value: {LTBLUE}{CURRENCY_LONG}
 
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Total cargo capacity of this train:
+STR_VEHICLE_DETAILS_TRAIN_LENGTH                                :{BLACK}Train length: {LTBLUE}{DECIMAL} tile{P "" s}
+
+STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Total cargo of this train:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) (x{NUM})
+
+STR_VEHICLE_DETAILS_TRAIN_CARGO_EMPTY                           :{LTBLUE}Empty ({CARGO_LONG}){STRING}
+STR_VEHICLE_DETAILS_TRAIN_CARGO_FROM                            :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) from {STATION}{STRING}
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Empty
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG} from {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} from {STATION} (x{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Cargo
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Show details of cargo carried
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Information
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Show details of train vehicles
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Capacities
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Show capacities of each vehicle
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Total Cargo
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Show total capacity of train, split by cargo type
+STR_VEHICLE_DETAIL_TAB_TOTALS                                   :{BLACK}Totals
+STR_VEHICLE_DETAILS_TRAIN_TOTALS_TOOLTIP                        :{BLACK}Show total cargo, capacity, and length of train
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Capacity: {LTBLUE}{STRING}
 

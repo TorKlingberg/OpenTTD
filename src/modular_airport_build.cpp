@@ -547,8 +547,8 @@ CommandCost RemoveModularAirportTile(TileIndex tile, DoCommandFlags flags)
 			}
 			DoClearSquare(t);
 			DeleteNewGRFInspectWindow(GrfSpecFeature::AirportTiles, t.base());
-			st->rect.AfterRemoveTile(st, t);
 		}
+		MakeStationSpreadAreaSmaller(st);
 
 		if (st->airport.modular_tile_data != nullptr) {
 			auto &tile_data_vec = *st->airport.modular_tile_data;
@@ -953,7 +953,7 @@ void BuildModularAirportTile_Apply(TileIndex tile, uint16_t gfx, Station *st, bo
 	}
 	st->airport.blocks.Set(AirportBlock::Modular);
 
-	st->rect.BeforeAddTile(tile, StationRect::ADD_TRY);
+	st->spread.Add(tile);
 
 	Tile t(tile);
 
@@ -1173,11 +1173,11 @@ std::vector<ModularAirportTileData> ConvertStockAirportLayoutToModular(uint8_t a
 	const std::span<const StockRunwayConfig> runway_configs = GetStockRunwayConfigs(airport_type);
 	std::vector<ModularAirportTileData> result;
 
-	for (AirportTileTableIterator iter(as->layouts[layout].tiles, base_tile); iter != INVALID_TILE; ++iter) {
-		const TileIndex tile = iter;
+	for (AirportTileTableIterator iter(as->layouts[layout].tiles, base_tile, false); *iter != INVALID_TILE; ++iter) {
+		const TileIndex tile = *iter;
 		const int dx = TileX(tile) - TileX(base_tile);
 		const int dy = TileY(tile) - TileY(base_tile);
-		const StationGfx stock_gfx = iter.GetStationGfx();
+		const StationGfx stock_gfx = static_cast<StationGfx>(iter.GetAirportGfx());
 		const uint8_t piece_type = ApplyStockTileOverride(airport_type, dx, dy, MapStockGfxToModularPiece(stock_gfx));
 
 		ModularAirportTileData data;
@@ -1299,7 +1299,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 		return CommandCost(STR_ERROR_STATION_TOO_SPREAD_OUT);
 	}
 
-	AirportTileTableIterator tile_iter(as->layouts[layout].tiles, tile);
+	AirportTileTableIterator tile_iter(as->layouts[layout].tiles, tile, true);
 	CommandCost cost = CheckFlatLandAirport(tile_iter, flags);
 	if (cost.Failed()) return cost;
 
@@ -1359,7 +1359,7 @@ CommandCost CmdBuildModularAirportFromStock(DoCommandFlags flags, TileIndex tile
 		st->AddFacility(StationFacility::Airport, tile);
 		InitializeNewModularAirport(st->airport);
 
-		st->rect.BeforeAddRect(tile, w, h, StationRect::ADD_TRY);
+		st->spread.Add(TileArea(tile, w, h));
 
 		st->airport.EnsureModularDataExists();
 		auto &tile_data_vec = *st->airport.modular_tile_data;

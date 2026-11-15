@@ -10,10 +10,7 @@
 #ifndef PALETTE_FUNC_H
 #define PALETTE_FUNC_H
 
-#include "core/enum_type.hpp"
 #include "gfx_type.h"
-#include "strings_type.h"
-#include "string_type.h"
 
 extern Palette _cur_palette; ///< Current palette
 
@@ -92,7 +89,7 @@ void SetColourGradient(Colours colour, Shade shade, PixelColour palette_colour);
  * @param level Intensity, 0 = black, 15 = white
  * @return colour
  */
-inline constexpr PixelColour GREY_SCALE(uint8_t level) { return PixelColour{level}; }
+constexpr PixelColour GREY_SCALE(uint8_t level) { return PixelColour{level}; }
 
 static constexpr PixelColour PC_BLACK              {GREY_SCALE(1)};  ///< Black palette colour.
 static constexpr PixelColour PC_DARK_GREY          {GREY_SCALE(6)};  ///< Dark grey palette colour.

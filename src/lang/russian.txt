@@ -3350,21 +3350,20 @@ STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_CAPTION                 :{WHITE}Убра
 STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_QUERY                   :{YELLOW}Убрать все предприятия с карты?
 
 # Industry cargoes window
-STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Производственная цепочка - {STRING}
-STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Цепочка грузоперевозок - {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Производители
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Потребители
-STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Городские здания
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Щелчок по предприятию покажет его поставщиков и потребителей
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Щелчок по типу груза покажет его производителей и потребителей
-STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Показать связи
-STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Показать производителей сырья и потребителей продукции этого предприятия
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Показать на карте
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :{BLACK}Показать на карте выбранные предприятия
-STR_INDUSTRY_CARGOES_SELECT_CARGO                               :{BLACK}Выберите груз
-STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :{BLACK}Выберите груз для отображения
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :{BLACK}Выберите предприятие
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :{BLACK}Выберите предприятие для отображения
+STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :Производственная цепочка - {STRING}
+STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :Цепочка грузоперевозок - {STRING}
+STR_INDUSTRY_CARGOES_SOURCES                                    :Пункты отправки
+STR_INDUSTRY_CARGOES_DESTINATIONS                               :Пункты назначения
+STR_INDUSTRY_CARGOES_HOUSES                                     :Городские здания
+STR_INDUSTRY_CARGOES_ACCEPTS_PRODUCES_TOOLTIP                   :{STRING}{}Принимает: {CARGO_LIST}{}Производит: {CARGO_LIST}
+STR_INDUSTRY_DISPLAY_CHAIN                                      :Показать связи
+STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :Показать производителей сырья и потребителей продукции этого предприятия
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :Показать на карте
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :Показать на карте выбранные предприятия
+STR_INDUSTRY_CARGOES_SELECT_CARGO                               :Выберите груз
+STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :Выберите груз для отображения
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :Выберите предприятие
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :Выберите предприятие для отображения
 
 # Land area window
 STR_LAND_AREA_INFORMATION_CAPTION                               :{WHITE}Информация о территории
@@ -3463,6 +3462,8 @@ STR_LAI_WATER_DESCRIPTION_LOCK                                  :Шлюз
 STR_LAI_WATER_DESCRIPTION_RIVER                                 :Река
 STR_LAI_WATER_DESCRIPTION_COAST_OR_RIVERBANK                    :Морской или речной берег
 STR_LAI_WATER_DESCRIPTION_SHIP_DEPOT                            :Верфь
+STR_LAI_WATER_DESCRIPTION_WATER_ROCKS                           :Камни
+STR_LAI_WATER_DESCRIPTION_COAST_ROCKS                           :Каменистый берег
 
 # Industries come directly from their industry names
 
@@ -4809,9 +4810,7 @@ STR_VEHICLE_INFO_PROFIT_THIS_PERIOD_LAST_PERIOD_MIN_PERFORMANCE :{BLACK}Приб
 STR_VEHICLE_INFO_RELIABILITY_BREAKDOWNS                         :{BLACK}Надёжность: {LTBLUE}{COMMA}% (макс. {COMMA}%) {BLACK}Поломок после ТО: {LTBLUE}{COMMA}
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Построен в {LTBLUE}{NUM} г.{BLACK} Стоимость: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Ёмкость: {LTBLUE}отсутствует{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Ёмкость: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Ёмкость: {LTBLUE}{CARGO_LONG}{STRING} (×{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Ёмкость: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}Выручка перевозки: {LTBLUE}{CURRENCY_LONG}
@@ -4844,22 +4843,23 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Назв
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK} Построен в {LTBLUE}{NUM} г. {BLACK}Стоимость: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK} Стоимость: {LTBLUE}{CURRENCY_LONG}
 
+STR_VEHICLE_DETAILS_TRAIN_LENGTH                                :{BLACK}Длина состава: {LTBLUE}{DECIMAL} пол{P е я ей}
+
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Общая загруженность состава:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}{CARGO_LONG} (Всего: {CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) (×{NUM})
+
+STR_VEHICLE_DETAILS_TRAIN_CARGO_EMPTY                           :{LTBLUE}Пустой ({CARGO_LONG}){STRING}
+STR_VEHICLE_DETAILS_TRAIN_CARGO_FROM                            :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) из {STATION}{STRING}
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Пусто
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG} из {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} из {STATION} (×{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Груз
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Показать сведения о перевозимых грузах
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Информация
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Показать сведения о вагонах
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Вместимость
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Показать вместимость вагонов
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Общий груз
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Показать общую вместимость поезда по типам грузов
+STR_VEHICLE_DETAIL_TAB_TOTALS                                   :{BLACK}Всего
+STR_VEHICLE_DETAILS_TRAIN_TOTALS_TOOLTIP                        :{BLACK}Показать груз, вместимость и длину состава
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Ёмкость: {LTBLUE}{STRING}
 

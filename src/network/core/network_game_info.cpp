@@ -14,11 +14,12 @@
 #include "../../timer/timer_game_tick.h"
 #include "../../debug.h"
 #include "../../newgrf.h"
+#include "../../newgrf_text.h"
 #include "../../map_func.h"
 #include "../../game/game.hpp"
 #include "../../game/game_info.hpp"
 #include "../../settings_type.h"
-#include "../../string_func.h"
+#include "../../strings_func.h"
 #include "../../rev.h"
 #include "../network_func.h"
 #include "../network.h"
@@ -78,7 +79,7 @@ std::string_view GetNetworkRevisionString()
 			network_revision.replace(hash_end, std::string::npos, githash_suffix);
 		}
 		assert(network_revision.size() < NETWORK_REVISION_LENGTH); // size does not include terminator, constant does, hence strictly less than
-		Debug(net, 3, "Network revision name: {}", network_revision);
+		Debug(Facility::Net, Severity::Notice, "Network revision name: {}", network_revision);
 	}
 
 	return network_revision;

@@ -12,7 +12,6 @@
 #include "error.h"
 #include "gui.h"
 #include "command_func.h"
-#include "network/network_type.h"
 #include "network/network.h"
 #include "genworld.h"
 #include "strings_func.h"
@@ -80,10 +79,10 @@ struct CommandInfo {
 };
 /* Helpers to generate the master command table from the command traits. */
 template <typename T>
-inline constexpr CommandInfo CommandFromTrait() noexcept { return { T::name, T::flags, T::type }; };
+constexpr CommandInfo CommandFromTrait() noexcept { return { T::name, T::flags, T::type }; };
 
 template <typename T, T... i>
-inline constexpr auto MakeCommandsFromTraits(std::integer_sequence<T, i...>) noexcept {
+constexpr auto MakeCommandsFromTraits(std::integer_sequence<T, i...>) noexcept {
 	return EnumIndexArray<CommandInfo, Commands, static_cast<Commands>(sizeof...(i))>{{{ CommandFromTrait<CommandTraits<static_cast<Commands>(i)>>()... }}};
 }
 
@@ -259,7 +258,7 @@ void CommandHelperBase::InternalPostResult(CommandCost &res, TileIndex tile, boo
  */
 void CommandHelperBase::LogCommandExecution(Commands cmd, StringID err_message, const CommandDataBuffer &args, bool failed)
 {
-	Debug(desync, 1, "{}: {:08x}; {:02x}; {:02x}; {:08x}; {:08x}; {} ({})", failed ? "cmdf" : "cmd", (uint32_t)TimerGameEconomy::date.base(), TimerGameEconomy::date_fract, _current_company, cmd, err_message, FormatArrayAsHex(args), GetCommandName(cmd));
+	Debug(Facility::Desync, Severity::Error, "{}: {:08x}; {:02x}; {:02x}; {:08x}; {:08x}; {} ({})", failed ? "cmdf" : "cmd", (uint32_t)TimerGameEconomy::date.base(), TimerGameEconomy::date_fract, _current_company, cmd, err_message, FormatArrayAsHex(args), GetCommandName(cmd));
 }
 
 /**
@@ -324,7 +323,7 @@ std::tuple<bool, bool, bool> CommandHelperBase::InternalExecuteValidateTestAndPr
 		BasePersistentStorageArray::SwitchMode(PSM_ENTER_COMMAND);
 	}
 
-	return { false, _debug_desync_level >= 1, send_net };
+	return { false, IsVisibleSeverity(Facility::Desync, Severity::Error), send_net };
 }
 
 /**

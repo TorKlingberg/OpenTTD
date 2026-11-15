@@ -13,6 +13,7 @@
 #include "../network_internal.h"
 #include "../../debug.h"
 #include "../../error.h"
+#include "../../openttd.h"
 #include "../../strings_func.h"
 
 #include "table/strings.h"
@@ -107,7 +108,7 @@ NetworkRecvStatus NetworkGameSocketHandler::HandlePacket(Packet &p)
 		case PacketGameType::ServerConfigurationUpdate: return this->ReceiveServerConfigurationUpdate(p);
 
 		default:
-			Debug(net, 0, "[tcp/game] Received invalid packet type {} from client {}", type, this->client_id);
+			Debug(Facility::Net, Severity::Critical, "[tcp/game] Received invalid packet type {} from client {}", type, this->client_id);
 			this->CloseConnection();
 			return NetworkRecvStatus::MalformedPacket;
 	}
@@ -138,7 +139,7 @@ NetworkRecvStatus NetworkGameSocketHandler::ReceivePackets()
  */
 NetworkRecvStatus NetworkGameSocketHandler::ReceiveInvalidPacket(PacketGameType type)
 {
-	Debug(net, 0, "[tcp/game] Received illegal packet type {} from client {}", type, this->client_id);
+	Debug(Facility::Net, Severity::Critical, "[tcp/game] Received illegal packet type {} from client {}", type, this->client_id);
 	return NetworkRecvStatus::MalformedPacket;
 }
 

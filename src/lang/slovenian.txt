@@ -1203,6 +1203,8 @@ STR_CONFIG_SETTING_TYPE_GAME_MENU                               :Nastavitve igre
 STR_CONFIG_SETTING_TYPE_GAME_INGAME                             :Nastavitve igre (shranjeno v igrah; vpliva samo na tekočo igro)
 STR_CONFIG_SETTING_TYPE_COMPANY_MENU                            :Nastavitve podjetja (shranjeno v igrah, vpliva samo na nove igre)
 STR_CONFIG_SETTING_TYPE_COMPANY_INGAME                          :Nastavitve podjetja (shranjeno v igrah, vpliva samo na trenutno podjetje)
+STR_CONFIG_SETTING_RESET_ALL_CONFIRMATION_DIALOG_CAPTION        :{WHITE}Pozor!
+STR_CONFIG_SETTING_RESET_ALL_CONFIRMATION_DIALOG_TEXT           :{WHITE}Nastavitve igre bodo ponastavljene.{}Ali res želiš nadaljevati?
 
 STR_CONFIG_SETTING_RESTRICT_CATEGORY                            :Kategorija:
 STR_CONFIG_SETTING_RESTRICT_TYPE                                :Tip:
@@ -1290,6 +1292,7 @@ STR_CONFIG_SETTING_CITY_APPROVAL                                :Odnos mestnega 
 STR_CONFIG_SETTING_CITY_APPROVAL_HELPTEXT                       :Nastavitev nivoja hrupa in posameznih posegov podjetja na oceno v mestu in nadaljnjo gradnjo
 
 ###setting-zero-is-special
+STR_CONFIG_SETTING_MAP_HEIGHT_LIMIT_AUTO                        :(samodejno)
 STR_CONFIG_SETTING_TOO_HIGH_MOUNTAIN                            :{WHITE}Ne moreš nastaviti najvišjega nivoja zemljevida na to vrednost. Vsaj ena gora na zemljevidu je višja.
 
 STR_CONFIG_SETTING_AUTOSLOPE                                    :Dovoli oblikovanje terena pod objekti, tiri, ipd. (samonaklon): {STRING}
@@ -2714,11 +2717,7 @@ STR_FUND_INDUSTRY_FUND_NEW_INDUSTRY                             :{BLACK}Ustanovi
 # Industry cargoes window
 STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Industrijska veriga za industrijo {STRING}
 STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Industrijska veriga za tovor {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Proizvajalne industrije
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Sprejemajoče industrije
 STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Hiše
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Klikni na industrijo za ogled strank in dobaviteljev
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Klikni na tovor za ogled strank in dobaviteljev
 STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Prikaži verigo
 STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Prikaži oskrbo s tovorom in pripadajoče industrije
 STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Poveži z zemljevidom
@@ -2863,6 +2862,7 @@ STR_SAVELOAD_SAVE_SCENARIO                                      :{WHITE}Shrani s
 STR_SAVELOAD_LOAD_SCENARIO                                      :{WHITE}Naloži scenarij
 STR_SAVELOAD_LOAD_HEIGHTMAP                                     :{WHITE}Naloži višinsko karto
 STR_SAVELOAD_SAVE_HEIGHTMAP                                     :{WHITE}Shrani višinsko karto
+STR_SAVELOAD_LOAD_TOWN_DATA                                     :{WHITE}Nalaganje podatkov o mestih
 STR_SAVELOAD_HOME_BUTTON_TOOLTIP                                :{BLACK}Klikni tukaj za skok v mapo shrani/naloži
 STR_SAVELOAD_BYTES_FREE                                         :{BLACK}{BYTES} prosto
 STR_SAVELOAD_LIST_TOOLTIP                                       :{BLACK}Seznam pogonov, map in shranjenih iger
@@ -2874,6 +2874,7 @@ STR_SAVELOAD_SAVE_TOOLTIP                                       :{BLACK}Shrani t
 STR_SAVELOAD_LOAD_BUTTON                                        :{BLACK}Naloži
 STR_SAVELOAD_LOAD_TOOLTIP                                       :{BLACK}Naloži izbrano igro
 STR_SAVELOAD_LOAD_HEIGHTMAP_TOOLTIP                             :{BLACK}Naloži višinsko karto
+STR_SAVELOAD_LOAD_TOWN_DATA_TOOLTIP                             :{BLACK}Naloži lastne podatke o mestih
 STR_SAVELOAD_DETAIL_CAPTION                                     :{BLACK}Podrobnosti igre
 STR_SAVELOAD_DETAIL_NOT_AVAILABLE                               :{BLACK}Ni informacij na voljo
 STR_SAVELOAD_DETAIL_COMPANY_INDEX                               :{SILVER}{COMMA}: {WHITE}{STRING}
@@ -3812,6 +3813,10 @@ STR_VEHICLE_STATUS_HEADING_FOR_WAYPOINT_VEL                     :{LTBLUE}Pelje p
 STR_VEHICLE_STATUS_HEADING_FOR_DEPOT_VEL                        :{ORANGE}Pelje proti {DEPOT}, {VELOCITY}
 STR_VEHICLE_STATUS_HEADING_FOR_DEPOT_SERVICE_VEL                :{LTBLUE}Servis v {DEPOT}, {VELOCITY}
 
+STR_VEHICLE_STATUS_CANNOT_REACH_STATION_VEL                     :{LTBLUE}{1:VELOCITY} - Ne najde postaje {0:STATION}
+STR_VEHICLE_STATUS_CANNOT_REACH_WAYPOINT_VEL                    :{LTBLUE}{1:VELOCITY} - Ne najde kontrolne točke {0:WAYPOINT}
+STR_VEHICLE_STATUS_CANNOT_REACH_DEPOT_VEL                       :{ORANGE}{1:VELOCITY} - Ne najde {0:DEPOT}
+STR_VEHICLE_STATUS_CANNOT_REACH_DEPOT_SERVICE_VEL               :{LTBLUE}{1:VELOCITY} - Ne najde {0:DEPOT}
 
 # Vehicle stopped/started animations
 STR_VEHICLE_COMMAND_STOPPED                                     :{RED}Ustavljeno
@@ -3837,9 +3842,7 @@ STR_VEHICLE_INFO_WEIGHT_POWER_MAX_SPEED_MAX_TE                  :{BLACK}Teža: {
 STR_VEHICLE_INFO_PROFIT_THIS_YEAR_LAST_YEAR                     :{BLACK}Letošnji dobiček: {LTBLUE}{CURRENCY_LONG} (lani: {CURRENCY_LONG})
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Zgrajeno: {LTBLUE}{NUM}{BLACK} Vrednost: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Zmogljivost: {LTBLUE}Brez{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Zmogljivost: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Zmogljivost: {LTBLUE}{CARGO_LONG}{STRING} (x{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Zmogljivost: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}Prenesi kredite: {LTBLUE}{CURRENCY_LONG}
@@ -3859,22 +3862,18 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Poimenuj
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}   Zgrajeno: {LTBLUE}{NUM}{BLACK} Vrednost: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}   Vrednost: {LTBLUE}{CURRENCY_LONG}
 
+
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Skupna tovorna zmogljivost tega vlaka:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}- {CARGO_LONG} ({CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}- {CARGO_LONG} ({CARGO_SHORT}) (x{NUM})
+
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Prazen
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :Tovor {LTBLUE}{CARGO_LONG} iz postaje {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} iz {STATION} (x{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Tovor
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Prikaži podrobnosti naloženega tovora
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Informacije
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Prikaži podrobnosti o železniških vozilih
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Zmogljivosti
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Prikaži zmogljivosti vsakega vagona
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Skupni tovor
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Prikaži polno zmogljivost vlaka, razdeli glede na tip tovora
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Zmogljivost: {LTBLUE}{STRING}
 

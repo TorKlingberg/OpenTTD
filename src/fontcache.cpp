@@ -132,14 +132,7 @@ void SetFont(FontSize fontsize, const std::string &font, uint size)
 
 	if (fontsize != FontSize::Monospace) {
 		/* Try to reload only the modified font. */
-		FontCacheSettings backup = _fcsettings;
-		for (FontSize fs : EnumRange(FontSize::End)) {
-			if (fs == fontsize) continue;
-			FontCache *fc = FontCache::Get(fs);
-			GetFontCacheSubSetting(fs)->font = fc->HasParent() ? fc->GetFontName() : "";
-		}
-		CheckForMissingGlyphs();
-		_fcsettings = std::move(backup);
+		CheckForMissingGlyphs(fontsize);
 	} else {
 		FontCache::LoadFontCaches(fontsize);
 	}
@@ -169,7 +162,7 @@ static bool IsDefaultFont(const FontCacheSubSetting &setting)
 uint GetFontCacheFontSize(FontSize fs)
 {
 	const FontCacheSubSetting &setting = *GetFontCacheSubSetting(fs);
-	return IsDefaultFont(setting) ? FontCache::GetDefaultFontHeight(fs) : setting.size;
+	return IsDefaultFont(setting) && setting.size == 0 ? FontCache::GetDefaultFontHeight(fs) : setting.size;
 }
 
 #if defined(WITH_FREETYPE) || defined(_WIN32) || defined(WITH_COCOA)
@@ -266,7 +259,7 @@ static std::string GetFontCacheFontName(FontSize fs)
 	}
 
 	if (matching_chars < glyphs.size()) {
-		Debug(fontcache, 1, "Font \"{}\" misses {} glyphs", name, glyphs.size() - matching_chars);
+		Debug(Facility::Fontcache, Severity::Info, "Font \"{}\" misses {} glyph(s)", name, glyphs.size() - matching_chars);
 		return false;
 	}
 

@@ -11,7 +11,6 @@
 #include "company_base.h"
 #include "company_func.h"
 #include "company_gui.h"
-#include "core/backup_type.hpp"
 #include "town.h"
 #include "news_func.h"
 #include "command_func.h"
@@ -537,7 +536,7 @@ static Colours GenerateCompanyColour()
 	}
 
 	/* Sort it according to the values in _colour_sort. */
-	std::ranges::stable_sort(colours, std::greater_equal{}, [](auto &i) { return _colour_sort[i]; });
+	std::ranges::stable_sort(colours, std::greater{}, [](auto &i) { return _colour_sort[i]; });
 
 	/* Move the colours that look similar to each company's colour to the side */
 	for (const Company *c : Company::Iterate()) {

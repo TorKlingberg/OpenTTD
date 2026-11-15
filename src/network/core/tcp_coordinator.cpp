@@ -8,7 +8,6 @@
 /** @file tcp_coordinator.cpp Basic functions to receive and send Game Coordinator packets. */
 
 #include "../../stdafx.h"
-#include "../../timer/timer_game_calendar.h"
 #include "../../debug.h"
 #include "tcp_coordinator.h"
 
@@ -44,7 +43,7 @@ bool NetworkCoordinatorSocketHandler::HandlePacket(Packet &p)
 		case PacketCoordinatorType::GameCoordinatorTurnConnect: return this->ReceiveGameCoordinatorTurnConnect(p);
 
 		default:
-			Debug(net, 0, "[tcp/coordinator] Received invalid packet type {}", type);
+			Debug(Facility::Net, Severity::Critical, "[tcp/coordinator] Received invalid packet type {}", type);
 			return false;
 	}
 }
@@ -80,7 +79,7 @@ bool NetworkCoordinatorSocketHandler::ReceivePackets()
  */
 bool NetworkCoordinatorSocketHandler::ReceiveInvalidPacket(PacketCoordinatorType type)
 {
-	Debug(net, 0, "[tcp/coordinator] Received illegal packet type {}", type);
+	Debug(Facility::Net, Severity::Critical, "[tcp/coordinator] Received illegal packet type {}", type);
 	return false;
 }
 

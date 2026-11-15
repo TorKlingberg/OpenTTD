@@ -58,7 +58,7 @@ void SetCustomEngineSprites(EngineID engine, CargoType cargo, const SpriteGroup 
 	Engine *e = Engine::Get(engine);
 
 	if (e->grf_prop.GetSpriteGroup(cargo) != nullptr) {
-		GrfMsg(6, "SetCustomEngineSprites: engine {} cargo {} already has group -- replacing", engine, cargo);
+		GrfMsg(Severity::Debug2, "SetCustomEngineSprites: engine {} cargo {} already has group -- replacing", engine, cargo);
 	}
 	e->grf_prop.SetSpriteGroup(cargo, group);
 }
@@ -516,7 +516,7 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 
 				const Station *st = GetTargetAirportIfValid(Aircraft::From(v));
 
-				if (st != nullptr && st->airport.tile != INVALID_TILE) {
+				if (st != nullptr && !st->airport.IsEmpty()) {
 					airporttype = st->airport.blocks.Test(AirportBlock::Modular) ?
 							GetModularAirportNewGRFType(st) : st->airport.GetSpec()->ttd_airport_type;
 				}
@@ -747,10 +747,14 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 				/* Before trains could drive backwards, many NewGRFs faked this effect by swapping sprites when the Reversed flag was set.
 				 * To maintain their intended behaviour, only pass them the Reversed flag if the vehicle is not driving backwards. */
 				if (t->flags.Test(VehicleRailFlag::Reversed) != t->IsDrivingBackwards()) SetBit(modflags, 8);
+
+				if (v->IsDrivingBackwards()) SetBit(modflags, 11);
 			}
+
+			if (v->type == VehicleType::Ship && Ship::From(v)->flags.Test(VehicleShipFlag::SecondEndFacingForward)) SetBit(modflags, 11);
+
 			if (v->vehicle_flags.Test(VehicleFlag::CargoUnloading)) SetBit(modflags, 1);
 			if (v->vehicle_flags.Test(VehicleFlag::BuiltAsPrototype)) SetBit(modflags, 10);
-			if (v->IsDrivingBackwards()) SetBit(modflags, 11);
 
 			return variable == 0xFE ? modflags : GB(modflags, 8, 8);
 		}
@@ -974,7 +978,7 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 		default: break;
 	}
 
-	Debug(grf, 1, "Unhandled vehicle variable 0x{:X}, type 0x{:X}", variable, (uint)v->type);
+	object->ro.UnhandledVariable(variable);
 
 	available = false;
 	return UINT_MAX;

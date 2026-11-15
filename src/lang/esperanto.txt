@@ -3269,21 +3269,20 @@ STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_CAPTION                 :{WHITE}Forigi �
 STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_QUERY                   :{YELLOW}Ĉu vi certas ke vi volas forigi ĉiujn entreprenojn?
 
 # Industry cargoes window
-STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Industria ĉeno - {STRING}
-STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Industria ĉeno por ŝarĝo - {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Provizantoj
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Akceptantoj
-STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Domoj
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Alklaku la industrion por vidi ĝia provizanoj kaj klientoj
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Alklaku la ŝarĝon por vidi ĝia provizantoj kaj klientoj
-STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Industria ĉeno
-STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Montri ŝarĝo-provizantajn kaj akceptantajn industriojn
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Sinsekvigi al karteto
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :{BLACK}Ankaŭ elektu la montrajn industriojn je la karteto
-STR_INDUSTRY_CARGOES_SELECT_CARGO                               :{BLACK}Elekti ŝarĝon
-STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :{BLACK}Elekti la ŝarĝon, kiun vi deziras montri
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :{BLACK}Elekti industrion
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :{BLACK}Elekti industrion, kiun vi deziras montri
+STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :Industria ĉeno - {STRING}
+STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :Industria ĉeno por ŝarĝo - {STRING}
+STR_INDUSTRY_CARGOES_SOURCES                                    :Fontoj
+STR_INDUSTRY_CARGOES_DESTINATIONS                               :Celpunktoj
+STR_INDUSTRY_CARGOES_HOUSES                                     :Domoj
+STR_INDUSTRY_CARGOES_ACCEPTS_PRODUCES_TOOLTIP                   :{STRING}{}Akceptas: {CARGO_LIST}{}Produktas: {CARGO_LIST}
+STR_INDUSTRY_DISPLAY_CHAIN                                      :Industria ĉeno
+STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :Montri ŝarĝo-provizantajn kaj akceptantajn industriojn
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :Sinsekvigi al karteto
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :Ankaŭ elektu la montrajn industriojn je la karteto
+STR_INDUSTRY_CARGOES_SELECT_CARGO                               :Elekti ŝarĝon
+STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :Elektu la ŝarĝon, kiun vi deziras montri
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :Elekti industrion
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :Elektu industrion, kiun vi deziras montri
 
 # Land area window
 STR_LAND_AREA_INFORMATION_CAPTION                               :{WHITE}Landregionaj informoj
@@ -3382,6 +3381,8 @@ STR_LAI_WATER_DESCRIPTION_LOCK                                  :Kluzo
 STR_LAI_WATER_DESCRIPTION_RIVER                                 :Rivero
 STR_LAI_WATER_DESCRIPTION_COAST_OR_RIVERBANK                    :Mara aŭ rivera bordo
 STR_LAI_WATER_DESCRIPTION_SHIP_DEPOT                            :Ŝipgaraĝo
+STR_LAI_WATER_DESCRIPTION_WATER_ROCKS                           :Rokoj
+STR_LAI_WATER_DESCRIPTION_COAST_ROCKS                           :Mara aŭ rivera bordo kun rokoj
 
 # Industries come directly from their industry names
 
@@ -4727,9 +4728,7 @@ STR_VEHICLE_INFO_PROFIT_THIS_PERIOD_LAST_PERIOD_MIN_PERFORMANCE :{BLACK}Gajno ĉ
 STR_VEHICLE_INFO_RELIABILITY_BREAKDOWNS                         :{BLACK}Fidindo: {LTBLUE}{COMMA}% (maks.: {COMMA}%) {BLACK}Paneoj ekde lasta servo: {LTBLUE}{COMMA}
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Konstruita: {LTBLUE}{NUM}{BLACK} Valoro: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Enhaveco: {LTBLUE}Neniu{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Kapacito: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Kapacito: {LTBLUE}{CARGO_LONG}{STRING} (x{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Enhaveco: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}Transigaj kreditoj: {LTBLUE}{CURRENCY_LONG}
@@ -4762,22 +4761,23 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Alinomi 
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}   Kreite: {LTBLUE}{NUM}{BLACK} Valoro: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}   Valoro: {LTBLUE}{CURRENCY_LONG}
 
+STR_VEHICLE_DETAILS_TRAIN_LENGTH                                :{BLACK}Longo de vagonaro: {LTBLUE}{DECIMAL} kahelo{P "" j}
+
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Tuta ŝarĝkapablo de ĉi tiu vagonaro:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) (x{NUM})
+
+STR_VEHICLE_DETAILS_TRAIN_CARGO_EMPTY                           :{LTBLUE}Malplena ({CARGO_LONG}){STRING}
+STR_VEHICLE_DETAILS_TRAIN_CARGO_FROM                            :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) de {STATION}{STRING}
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Malplena
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG} de {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} de {STATION} (x{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Ŝarĝo
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Montri detalojn de portata ŝarĝo
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Informoj
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Montri detalojn de vagonaroj
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Kapabloj
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Montri kapablojn de ĉiu veturilo
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Tuta ŝarĝo
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Montri tutan kapablon de vagonaro, dividite laŭ ŝarĝtipo
+STR_VEHICLE_DETAIL_TAB_TOTALS                                   :{BLACK}Tutaĵo
+STR_VEHICLE_DETAILS_TRAIN_TOTALS_TOOLTIP                        :{BLACK}Montri tutan ŝarĝon, kapablon kaj longon de vagonaro
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Kapacito: {LTBLUE}{STRING}
 

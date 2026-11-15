@@ -145,7 +145,7 @@ void AirportTemplateManager::Refresh()
 			t->CheckAvailability();
 			_templates.push_back(std::move(t));
 		} catch (const std::exception &e) {
-			Debug(misc, 1, "Failed to load airport template {}: {}", FS2OTTD(entry.path().native()), e.what());
+			Debug(Facility::Misc, Severity::Error, "Failed to load airport template {}: {}", FS2OTTD(entry.path().native()), e.what());
 		}
 	}
 
@@ -233,7 +233,7 @@ bool AirportTemplateManager::SaveTemplate(const AirportTemplate &template_to_sav
 		AirportTemplateManager::Refresh();
 		return true;
 	} catch (const std::exception &e) {
-		Debug(misc, 1, "Failed to save airport template {}: {}", filename, e.what());
+		Debug(Facility::Misc, Severity::Error, "Failed to save airport template {}: {}", filename, e.what());
 		return false;
 	}
 }
@@ -247,7 +247,7 @@ bool AirportTemplateManager::DeleteTemplateByFileStem(const std::string &file_st
 	std::error_code ec;
 	if (!std::filesystem::remove(path, ec)) {
 		if (!ec) return false;
-		Debug(misc, 1, "Failed to delete airport template {}: {}", FS2OTTD(path.native()), ec.message());
+		Debug(Facility::Misc, Severity::Error, "Failed to delete airport template {}: {}", FS2OTTD(path.native()), ec.message());
 		return false;
 	}
 

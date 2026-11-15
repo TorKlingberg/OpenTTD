@@ -3175,21 +3175,20 @@ STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_CAPTION                 :{WHITE}Ta bort 
 STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_QUERY                   :{YELLOW}Är du säker på att du vill ta bort alla industrier?
 
 # Industry cargoes window
-STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Industrikedja - {STRING}
-STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Godskedja - {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Producerande industrier
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Mottagande industrier
-STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Hus
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Klicka på industrin för att se dess leverantörer och kunder
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Klicka på godset för att se dess leverantörer och kunder
-STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Industrikedja
-STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Visa industrier som levererar och tar emot gods
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Koppla till minikartan
-STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :{BLACK}Markera visade industrier även på minikartan
-STR_INDUSTRY_CARGOES_SELECT_CARGO                               :{BLACK}Välj last
-STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :{BLACK}Välj den typ av last du vill visa
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :{BLACK}Välj industri
-STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :{BLACK}Välj den typ av industri du vill visa
+STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :Industrikedja - {STRING}
+STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :Godskedja - {STRING}
+STR_INDUSTRY_CARGOES_SOURCES                                    :Ursprung
+STR_INDUSTRY_CARGOES_DESTINATIONS                               :Destinationer
+STR_INDUSTRY_CARGOES_HOUSES                                     :Hus
+STR_INDUSTRY_CARGOES_ACCEPTS_PRODUCES_TOOLTIP                   :{STRING}{}Accepterar: {CARGO_LIST}{}Producerar: {CARGO_LIST}
+STR_INDUSTRY_DISPLAY_CHAIN                                      :Industrikedja
+STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :Visa industrier som levererar och tar emot gods
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :Koppla till minikartan
+STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP_TOOLTIP                    :Markera visade industrier även på minikartan
+STR_INDUSTRY_CARGOES_SELECT_CARGO                               :Välj last
+STR_INDUSTRY_CARGOES_SELECT_CARGO_TOOLTIP                       :Välj den typ av last du vill visa
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY                            :Välj industri
+STR_INDUSTRY_CARGOES_SELECT_INDUSTRY_TOOLTIP                    :Välj den typ av industri du vill visa
 
 # Land area window
 STR_LAND_AREA_INFORMATION_CAPTION                               :{WHITE}Markområdesinformation
@@ -3288,6 +3287,8 @@ STR_LAI_WATER_DESCRIPTION_LOCK                                  :Sluss
 STR_LAI_WATER_DESCRIPTION_RIVER                                 :Flod
 STR_LAI_WATER_DESCRIPTION_COAST_OR_RIVERBANK                    :Kust eller flodbank
 STR_LAI_WATER_DESCRIPTION_SHIP_DEPOT                            :Skeppsvarv
+STR_LAI_WATER_DESCRIPTION_WATER_ROCKS                           :Stenar
+STR_LAI_WATER_DESCRIPTION_COAST_ROCKS                           :Kust eller flodbank med stenar
 
 # Industries come directly from their industry names
 
@@ -4622,9 +4623,7 @@ STR_VEHICLE_INFO_PROFIT_THIS_PERIOD_LAST_PERIOD_MIN_PERFORMANCE :{BLACK}Vinst de
 STR_VEHICLE_INFO_RELIABILITY_BREAKDOWNS                         :{BLACK}Tillförlitlighet: {LTBLUE}{COMMA}% (max: {COMMA}%) {BLACK}Motorstopp sedan senaste servicen: {LTBLUE}{COMMA}
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Byggt: {LTBLUE}{NUM}{BLACK} Värde: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Kapacitet: {LTBLUE}Ingen{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Kapacitet: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Kapacitet: {LTBLUE}{CARGO_LONG}{STRING} (x{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Kapacitet: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK} Överför kredit: {LTBLUE}{CURRENCY_LONG}
@@ -4657,22 +4656,23 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Byt namn
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}   Byggt: {LTBLUE}{NUM}{BLACK} Värde: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}   Värde: {LTBLUE}{CURRENCY_LONG}
 
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Tågets totala kapacitet:
+STR_VEHICLE_DETAILS_TRAIN_LENGTH                                :{BLACK}Tåglängd: {LTBLUE}{DECIMAL} rut{P "a" or}
+
+STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Tågets totala gods:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) (x{NUM})
+
+STR_VEHICLE_DETAILS_TRAIN_CARGO_EMPTY                           :{LTBLUE}Tom ({CARGO_LONG}){STRING}
+STR_VEHICLE_DETAILS_TRAIN_CARGO_FROM                            :{LTBLUE}{CARGO_LONG} ({CARGO_SHORT}) från {STATION}{STRING}
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Tom
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG} från {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} från {STATION} (x{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Gods
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Visa detaljer för lastat gods
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Information
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Visa detaljer för tågfordon
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Kapaciteter
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Visa kapaciteter för varje fordon
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Gods totalt
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Visa tågets totala kapacitet, separera för typ av gods
+STR_VEHICLE_DETAIL_TAB_TOTALS                                   :{BLACK}Summerade värden
+STR_VEHICLE_DETAILS_TRAIN_TOTALS_TOOLTIP                        :{BLACK}Visa total gods, kapacitet, och längd för tåget
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Kapacitet: {LTBLUE}{STRING}
 

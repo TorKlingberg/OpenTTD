@@ -2315,11 +2315,7 @@ STR_FUND_INDUSTRY_FUND_NEW_INDUSTRY                             :{BLACK}Biaya
 # Industry cargoes window
 STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}Rantaian industri untuk {STRING} industri
 STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}Rantaian industri untuk kargo {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}Industri pengeluaran
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}Industri penerimaan
 STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}Rumah
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}Klik pada industri untuk melihat pembekal dan pelanggan-pelanggan
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}Klik pada kargo untuk melihat pembekal dan pelanggan-pelanggan
 STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}Paparkan rangkaian
 STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}Paparkan kargo yang dibekalkan dan diterima oleh industri
 STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}Pautan ke peta kecil
@@ -3383,9 +3379,7 @@ STR_VEHICLE_INFO_WEIGHT_POWER_MAX_SPEED_MAX_TE                  :{BLACK}Berat: {
 STR_VEHICLE_INFO_PROFIT_THIS_YEAR_LAST_YEAR                     :{BLACK}Keuntungan tahun ini: {LTBLUE}{CURRENCY_LONG} (tahun lepas: {CURRENCY_LONG})
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE} {BLACK}Keluaran: {LTBLUE}{NUM}{BLACK} Nilai: {LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}Muatan: {LTBLUE}Tiada{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}Muatan: {LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}Muatan: {LTBLUE}{CARGO_LONG}{STRING} (x{NUM})
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}Muatan: {LTBLUE}{CARGO_LONG}, {CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}Pindahkan kredit: {LTBLUE}{CURRENCY_LONG}
@@ -3403,22 +3397,18 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}Namakan 
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}   Keluaran: {LTBLUE}{NUM}{BLACK} Nilai: {LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}   Nilai: {LTBLUE}{CURRENCY_LONG}
 
+
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}Jumlah kapasiti kargo keretapi ini:
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}- {CARGO_LONG} ({CARGO_SHORT})
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}- {CARGO_LONG} ({CARGO_SHORT}) (x{NUM})
+
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}Kosong
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG} dari {STATION}
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG} dari {STATION} (x{NUM})
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}Kargo
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}Tunjukkan butiran kargo yang dibawa
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}Maklumat
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}Tunjukkan butiran keretapi
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}Kapasiti
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}Tunjukkan muatan setiap kenderaan
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}Jumlah Kargo
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}Tunjukkan jumlah muatan keretapi, diasingkan dengan jenis kargo
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}Muatan: {LTBLUE}{STRING}
 

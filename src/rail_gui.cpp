@@ -10,6 +10,7 @@
 #include "stdafx.h"
 #include "gui.h"
 #include "station_base.h"
+#include "station_func.h"
 #include "waypoint_base.h"
 #include "window_gui.h"
 #include "station_gui.h"
@@ -17,7 +18,6 @@
 #include "viewport_func.h"
 #include "command_func.h"
 #include "waypoint_func.h"
-#include "newgrf_badge.h"
 #include "newgrf_badge_gui.h"
 #include "newgrf_station.h"
 #include "company_base.h"
@@ -31,7 +31,6 @@
 #include "tilehighlight_func.h"
 #include "core/geometry_func.hpp"
 #include "hotkeys.h"
-#include "engine_base.h"
 #include "vehicle_func.h"
 #include "zoom_func.h"
 #include "rail_gui.h"
@@ -40,6 +39,7 @@
 #include "tunnelbridge_cmd.h"
 #include "waypoint_cmd.h"
 #include "rail_cmd.h"
+#include "tile_cmd.h"
 #include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
 #include "picker_gui.h"
@@ -1149,26 +1149,6 @@ private:
 		}
 	}
 
-	/**
-	 * Set the build station tile highlight to current station size.
-	 */
-	void SetSelectedSize()
-	{
-		if (_settings_client.gui.station_dragdrop) {
-			SetTileSelectSize(1, 1);
-		} else {
-			int x = _settings_client.gui.station_numtracks;
-			int y = _settings_client.gui.station_platlength;
-			if (_station_gui.axis == Axis::X) std::swap(x, y);
-			if (!_remove_button_clicked) {
-				SetTileSelectSize(x, y);
-			}
-		}
-
-		int rad = (_settings_game.station.modified_catchment) ? CA_TRAIN : CA_UNMODIFIED;
-		if (_settings_client.gui.station_show_coverage) SetTileSelectBigSize(-rad, -rad, 2 * rad, 2 * rad);
-	}
-
 public:
 	BuildRailStationWindow(WindowDesc &desc, Window *parent) : PickerWindow(desc, parent, TransportType::Rail, StationPickerCallbacks::instance)
 	{
@@ -1187,7 +1167,6 @@ public:
 		}
 		this->SetWidgetLoweredState(WID_BRAS_HIGHLIGHT_OFF, !_settings_client.gui.station_show_coverage);
 		this->SetWidgetLoweredState(WID_BRAS_HIGHLIGHT_ON, _settings_client.gui.station_show_coverage);
-		this->SetSelectedSize();
 
 		this->PickerWindow::OnInit();
 	}
@@ -1211,7 +1190,21 @@ public:
 	void OnPaint() override
 	{
 		const StationSpec *statspec = StationClass::Get(_station_gui.sel_class)->GetSpec(_station_gui.sel_type);
+
+		if (_settings_client.gui.station_dragdrop) {
+			SetTileSelectSize(1, 1);
+		} else {
+			int x = _settings_client.gui.station_numtracks;
+			int y = _settings_client.gui.station_platlength;
+			if (_station_gui.axis == Axis::X) std::swap(x, y);
+			if (!_remove_button_clicked) {
+				SetTileSelectSize(x, y);
+			}
+		}
+
 		int rad = (_settings_game.station.modified_catchment) ? CA_TRAIN : CA_UNMODIFIED;
+
+		if (_settings_client.gui.station_show_coverage) SetTileSelectBigSize(-rad, -rad, 2 * rad, 2 * rad);
 
 		for (uint bits = 0; bits < 7; bits++) {
 			bool disable = bits >= _settings_game.station.station_spread;
@@ -1309,8 +1302,6 @@ public:
 				this->RaiseWidget(WID_BRAS_PLATFORM_DIR_X + to_underlying(_station_gui.axis));
 				_station_gui.axis = static_cast<Axis>(widget - WID_BRAS_PLATFORM_DIR_X);
 				this->LowerWidget(WID_BRAS_PLATFORM_DIR_X + to_underlying(_station_gui.axis));
-
-				this->SetSelectedSize();
 				SndClickBeep();
 				this->SetDirty();
 				CloseWindowById(WindowClass::JoinStation, 0);
@@ -1343,7 +1334,6 @@ public:
 
 				this->LowerWidget(_settings_client.gui.station_numtracks + WID_BRAS_PLATFORM_NUM_BEGIN);
 				this->LowerWidget(_settings_client.gui.station_platlength + WID_BRAS_PLATFORM_LEN_BEGIN);
-				this->SetSelectedSize();
 				SndClickBeep();
 				this->SetDirty();
 				CloseWindowById(WindowClass::JoinStation, 0);
@@ -1377,7 +1367,6 @@ public:
 
 				this->LowerWidget(_settings_client.gui.station_numtracks + WID_BRAS_PLATFORM_NUM_BEGIN);
 				this->LowerWidget(_settings_client.gui.station_platlength + WID_BRAS_PLATFORM_LEN_BEGIN);
-				this->SetSelectedSize();
 				SndClickBeep();
 				this->SetDirty();
 				CloseWindowById(WindowClass::JoinStation, 0);
@@ -1412,7 +1401,6 @@ public:
 
 				this->SetWidgetLoweredState(_settings_client.gui.station_numtracks + WID_BRAS_PLATFORM_NUM_BEGIN, !_settings_client.gui.station_dragdrop);
 				this->SetWidgetLoweredState(_settings_client.gui.station_platlength + WID_BRAS_PLATFORM_LEN_BEGIN, !_settings_client.gui.station_dragdrop);
-				this->SetSelectedSize();
 				SndClickBeep();
 				this->SetDirty();
 				CloseWindowById(WindowClass::JoinStation, 0);
@@ -1425,7 +1413,6 @@ public:
 
 				this->SetWidgetLoweredState(WID_BRAS_HIGHLIGHT_OFF, !_settings_client.gui.station_show_coverage);
 				this->SetWidgetLoweredState(WID_BRAS_HIGHLIGHT_ON, _settings_client.gui.station_show_coverage);
-				this->SetSelectedSize();
 				SndClickBeep();
 				this->SetDirty();
 				SetViewportCatchmentStation(nullptr, true);

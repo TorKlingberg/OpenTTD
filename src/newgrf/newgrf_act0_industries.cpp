@@ -76,7 +76,7 @@ static ChangeInfoResult IndustrytilesChangeInfo(uint first, uint last, int prop,
 	ChangeInfoResult ret = ChangeInfoResult::Success;
 
 	if (last > NUM_INDUSTRYTILES_PER_GRF) {
-		GrfMsg(1, "IndustryTilesChangeInfo: Too many industry tiles loaded ({}), max ({}). Ignoring.", last, NUM_INDUSTRYTILES_PER_GRF);
+		GrfMsg(Severity::Error, "IndustryTilesChangeInfo: Too many industry tiles loaded ({}), max ({}). Ignoring.", last, NUM_INDUSTRYTILES_PER_GRF);
 		return ChangeInfoResult::InvalidId;
 	}
 
@@ -97,15 +97,13 @@ static ChangeInfoResult IndustrytilesChangeInfo(uint first, uint last, int prop,
 				uint8_t subs_id = buf.ReadByte();
 				if (subs_id >= NEW_INDUSTRYTILEOFFSET) {
 					/* The substitute id must be one of the original industry tile. */
-					GrfMsg(2, "IndustryTilesChangeInfo: Attempt to use new industry tile {} as substitute industry tile for {}. Ignoring.", subs_id, id);
+					GrfMsg(Severity::Warning, "IndustryTilesChangeInfo: Attempt to use new industry tile {} as substitute industry tile for {}. Ignoring.", subs_id, id);
 					continue;
 				}
 
 				/* Allocate space for this industry. */
 				if (tsp == nullptr) {
 					tsp = std::make_unique<IndustryTileSpec>(_industry_tile_specs[subs_id]);
-
-					tsp->enabled = true;
 
 					/* A copied tile should not have the animation infos copied too.
 					 * The anim_state should be left untouched, though
@@ -126,7 +124,7 @@ static ChangeInfoResult IndustrytilesChangeInfo(uint first, uint last, int prop,
 
 				/* The industry being overridden must be an original industry. */
 				if (ovrid >= NEW_INDUSTRYTILEOFFSET) {
-					GrfMsg(2, "IndustryTilesChangeInfo: Attempt to override new industry tile {} with industry tile id {}. Ignoring.", ovrid, id);
+					GrfMsg(Severity::Warning, "IndustryTilesChangeInfo: Attempt to override new industry tile {} with industry tile id {}. Ignoring.", ovrid, id);
 					continue;
 				}
 
@@ -341,7 +339,7 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 	ChangeInfoResult ret = ChangeInfoResult::Success;
 
 	if (last > NUM_INDUSTRYTYPES_PER_GRF) {
-		GrfMsg(1, "IndustriesChangeInfo: Too many industries loaded ({}), max ({}). Ignoring.", last, NUM_INDUSTRYTYPES_PER_GRF);
+		GrfMsg(Severity::Error, "IndustriesChangeInfo: Too many industries loaded ({}), max ({}). Ignoring.", last, NUM_INDUSTRYTYPES_PER_GRF);
 		return ChangeInfoResult::InvalidId;
 	}
 
@@ -363,11 +361,11 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 				if (subs_id == 0xFF) {
 					/* Instead of defining a new industry, a substitute industry id
 					 * of 0xFF disables the old industry with the current id. */
-					_industry_specs[id].enabled = false;
+					if (id < NEW_INDUSTRYOFFSET) _industry_specs[id].enabled = false;
 					continue;
 				} else if (subs_id >= NEW_INDUSTRYOFFSET) {
 					/* The substitute id must be one of the original industry. */
-					GrfMsg(2, "_industry_specs: Attempt to use new industry {} as substitute industry for {}. Ignoring.", subs_id, id);
+					GrfMsg(Severity::Warning, "_industry_specs: Attempt to use new industry {} as substitute industry for {}. Ignoring.", subs_id, id);
 					continue;
 				}
 
@@ -393,7 +391,7 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 
 				/* The industry being overridden must be an original industry. */
 				if (ovrid >= NEW_INDUSTRYOFFSET) {
-					GrfMsg(2, "IndustriesChangeInfo: Attempt to override new industry {} with industry id {}. Ignoring.", ovrid, id);
+					GrfMsg(Severity::Warning, "IndustriesChangeInfo: Attempt to override new industry {} with industry id {}. Ignoring.", ovrid, id);
 					continue;
 				}
 				indsp->grf_prop.override_id = ovrid;
@@ -402,40 +400,42 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 			}
 
 			case 0x0A: { // Set industry layout(s)
-				uint8_t new_num_layouts = buf.ReadByte();
-				uint32_t definition_size = buf.ReadDWord();
-				uint32_t bytes_read = 0;
-				std::vector<IndustryTileLayout> new_layouts;
+				uint8_t num_layouts = buf.ReadByte();
+				size_t definition_size = buf.ReadDWord();
+				size_t definition_end = definition_size + buf.GetBytesRead();
+
+				std::vector<IndustryTileLayout> layouts;
+				layouts.reserve(num_layouts);
+
 				IndustryTileLayout layout;
 
-				for (uint8_t j = 0; j < new_num_layouts; j++) {
+				for (uint8_t j = 0; j < num_layouts; j++) {
+					bool invalid_layout = false;
 					layout.clear();
 
 					for (uint k = 0;; k++) {
-						if (bytes_read >= definition_size) {
-							GrfMsg(3, "IndustriesChangeInfo: Incorrect size for industry tile layout definition for industry {}.", id);
+						if (definition_end < buf.GetBytesRead()) {
+							GrfMsg(Severity::Notice, "IndustriesChangeInfo: Incorrect size for industry tile layout definition for industry {}.", id);
 							/* Avoid warning twice */
-							definition_size = UINT32_MAX;
+							definition_end = SIZE_MAX;
 						}
 
 						IndustryTileLayoutTile &it = layout.emplace_back();
 
 						it.ti.x = buf.ReadByte(); // Offsets from northernmost tile
-						++bytes_read;
 
 						if (it.ti.x == 0xFE && k == 0) {
 							/* This means we have to borrow the layout from an old industry */
 							IndustryType type = buf.ReadByte();
 							uint8_t laynbr = buf.ReadByte();
-							bytes_read += 2;
 
 							if (type >= lengthof(_origin_industry_specs)) {
-								GrfMsg(1, "IndustriesChangeInfo: Invalid original industry number for layout import, industry {}", id);
+								GrfMsg(Severity::Error, "IndustriesChangeInfo: Invalid original industry number for layout import, industry {}", id);
 								DisableGrf(STR_NEWGRF_ERROR_INVALID_ID);
 								return ChangeInfoResult::Disabled;
 							}
 							if (laynbr >= _origin_industry_specs[type].layouts.size()) {
-								GrfMsg(1, "IndustriesChangeInfo: Invalid original industry layout index for layout import, industry {}", id);
+								GrfMsg(Severity::Error, "IndustriesChangeInfo: Invalid original industry layout index for layout import, industry {}", id);
 								DisableGrf(STR_NEWGRF_ERROR_INVALID_ID);
 								return ChangeInfoResult::Disabled;
 							}
@@ -444,7 +444,6 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 						}
 
 						it.ti.y = buf.ReadByte(); // Or table definition finalisation
-						++bytes_read;
 
 						if (it.ti.x == 0 && it.ti.y == 0x80) {
 							/* Terminator, remove and finish up */
@@ -453,18 +452,17 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 						}
 
 						it.gfx = buf.ReadByte();
-						++bytes_read;
 
 						if (it.gfx == 0xFE) {
 							/* Use a new tile from this GRF */
 							int local_tile_id = buf.ReadWord();
-							bytes_read += 2;
 
 							/* Read the ID from the _industile_mngr. */
 							int tempid = _industile_mngr.GetID(local_tile_id, _cur_gps.grffile->grfid);
 
 							if (tempid == INVALID_INDUSTRYTILE) {
-								GrfMsg(2, "IndustriesChangeInfo: Attempt to use industry tile {} with industry id {}, not yet defined. Ignoring.", local_tile_id, id);
+								GrfMsg(Severity::Warning, "IndustriesChangeInfo: Attempt to use industry tile {} with industry id {}, not yet defined. Ignoring.", local_tile_id, id);
+								invalid_layout = true;
 							} else {
 								/* Declared as been valid, can be used */
 								it.gfx = tempid;
@@ -482,19 +480,24 @@ static ChangeInfoResult IndustriesChangeInfo(uint first, uint last, int prop, By
 							 * For GRF version < 8 we need to emulate the old shifting behaviour.
 							 */
 							if (_cur_gps.grffile->grf_version < 8 && it.ti.x < 0) it.ti.y += 1;
+						} else if (it.gfx >= NEW_INDUSTRYTILEOFFSET) {
+							GrfMsg(Severity::Warning, "IndustriesChangeInfo: Attempt to use invalid industry tile {} with industry id {}. Ignoring.", it.gfx, id);
+							invalid_layout = true;
 						}
 					}
 
+					if (invalid_layout) continue;
+
 					if (!ValidateIndustryLayout(layout)) {
 						/* The industry layout was not valid, so skip this one. */
-						GrfMsg(1, "IndustriesChangeInfo: Invalid industry layout for industry id {}. Ignoring", id);
+						GrfMsg(Severity::Error, "IndustriesChangeInfo: Invalid industry layout for industry id {}. Ignoring", id);
 					} else {
-						new_layouts.push_back(layout);
+						layouts.push_back(layout);
 					}
 				}
 
 				/* Install final layout construction in the industry spec */
-				indsp->layouts = std::move(new_layouts);
+				indsp->layouts = std::move(layouts);
 				break;
 			}
 

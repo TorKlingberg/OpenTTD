@@ -27,9 +27,11 @@
 #include "strings_func.h"
 #include "zoom_func.h"
 #include "vehicle_func.h"
+#include "vehicle_gui.h"
 #include "autoreplace_func.h"
 #include "autoreplace_gui.h"
 #include "station_base.h"
+#include "station_func.h"
 #include "ai/ai.hpp"
 #include "depot_func.h"
 #include "network/network.h"
@@ -49,7 +51,6 @@
 #include "tunnel_map.h"
 #include "depot_map.h"
 #include "gamelog.h"
-#include "linkgraph/linkgraph.h"
 #include "linkgraph/refresh.h"
 #include "framerate_type.h"
 #include "autoreplace_cmd.h"
@@ -352,9 +353,9 @@ void ShowNewGrfVehicleError(EngineID engine, StringID part1, StringID part2, GRF
 	}
 
 	/* debug output */
-	Debug(grf, 0, "{}", StrMakeValid(GetString(part1, grfconfig->GetName())));
+	Debug(Facility::Grf, Severity::Critical, "{}", StrMakeValid(GetString(part1, grfconfig->GetName())));
 
-	Debug(grf, 0, "{}", StrMakeValid(GetString(part2, std::monostate{}, engine)));
+	Debug(Facility::Grf, Severity::Critical, "{}", StrMakeValid(GetString(part2, std::monostate{}, engine)));
 }
 
 /**
@@ -1025,11 +1026,11 @@ void CallVehicleTicks()
 		if (_current_company != OWNER_NONE) {
 			if (v->type == VehicleType::Aircraft) {
 				const Aircraft *a = Aircraft::From(v);
-				Debug(misc, 0,
+				Debug(Facility::Misc, Severity::Critical,
 					"[TickGuard] Vehicle {} (aircraft state={} targetairport={} tile={}) leaked _current_company={} after Tick(); forcing OWNER_NONE",
 					v->index, a->state, a->targetairport, IsValidTile(a->tile) ? a->tile.base() : 0, _current_company.base());
 			} else {
-				Debug(misc, 0,
+				Debug(Facility::Misc, Severity::Critical,
 					"[TickGuard] Vehicle {} (type={}) leaked _current_company={} after Tick(); forcing OWNER_NONE",
 					v->index, v->type, _current_company.base());
 			}
@@ -1087,13 +1088,13 @@ void CallVehicleTicks()
 				}
 
 				/* Play a running sound if the motion counter passes 256 (Do we not skip sounds?) */
-				if (GB(v->motion_counter, 0, 8) < front->cur_speed) PlayVehicleSound(v, VSE_RUNNING);
+				if (GB(v->motion_counter, 0, 8) < front->cur_speed) PlayVehicleSound(v, VehicleSoundEvent::Running);
 
 				/* Play an alternating running sound every 16 ticks */
 				if (GB(v->tick_counter, 0, 4) == 0) {
 					/* Play running sound when speed > 0 and not braking */
 					bool running = (front->cur_speed > 0) && !front->vehstatus.Any({VehState::Stopped, VehState::TrainSlowing});
-					PlayVehicleSound(v, running ? VSE_RUNNING_16 : VSE_STOPPED_16);
+					PlayVehicleSound(v, running ? VehicleSoundEvent::Running16 : VehicleSoundEvent::Stopped16);
 				}
 
 				break;
@@ -1360,9 +1361,9 @@ void CheckVehicleBreakdown(Vehicle *v)
 	if (_settings_game.difficulty.vehicle_breakdowns == VehicleBreakdowns::Reduced && v->current_order.IsType(OT_LOADING)) return;
 
 	/* Decrease reliability. */
-	int rel, rel_old;
-	v->reliability = rel = std::max((rel_old = v->reliability) - v->reliability_spd_dec, 0);
-	if ((rel_old >> 8) != (rel >> 8)) SetWindowDirty(WindowClass::VehicleDetails, v->index);
+	int rel_old = v->reliability;
+	v->reliability = Clamp(rel_old - v->reliability_spd_dec, 0, Engine::Get(v->engine_type)->reliability);
+	if ((rel_old >> 8) != (v->reliability >> 8)) SetWindowDirty(WindowClass::VehicleDetails, v->index);
 
 	/* Some vehicles lose reliability but won't break down. */
 	/* Breakdowns are disabled. */
@@ -1384,7 +1385,7 @@ void CheckVehicleBreakdown(Vehicle *v)
 	v->breakdown_chance = ClampTo<uint8_t>(chance);
 
 	/* Calculate reliability value to use in comparison. */
-	rel = v->reliability;
+	int rel = v->reliability;
 	if (v->type == VehicleType::Ship) rel += 0x6666;
 
 	/* Reduce the chance if the player has chosen the Reduced setting. */
@@ -1428,7 +1429,7 @@ bool Vehicle::HandleBreakdown()
 			} else {
 				this->cur_speed = 0;
 
-				if (!PlayVehicleSound(this, VSE_BREAKDOWN)) {
+				if (!PlayVehicleSound(this, VehicleSoundEvent::Breakdown)) {
 					bool train_or_ship = this->type == VehicleType::Train || this->type == VehicleType::Ship;
 					SndPlayVehicleFx((_settings_game.game_creation.landscape != LandscapeType::Toyland) ?
 						(train_or_ship ? SND_10_BREAKDOWN_TRAIN_SHIP : SND_0F_BREAKDOWN_ROADVEHICLE) :
@@ -2390,7 +2391,7 @@ void Vehicle::CancelReservation(StationID next, Station *st)
 	for (Vehicle *v = this; v != nullptr; v = v->next) {
 		VehicleCargoList &cargo = v->cargo;
 		if (cargo.ActionCount(VehicleCargoList::MoveToAction::Load) > 0) {
-			Debug(misc, 1, "cancelling cargo reservation");
+			Debug(Facility::Misc, Severity::Error, "cancelling cargo reservation");
 			cargo.Return(UINT_MAX, &st->goods[v->cargo_type].GetOrCreateData().cargo, next, v->tile);
 		}
 		cargo.KeepAll();
@@ -2800,7 +2801,8 @@ static void SpawnAdvancedVisualEffect(const Vehicle *v)
 	}
 
 	Direction l_dir = v->direction;
-	if (v->type == VehicleType::Train && Train::From(v)->flags.Test(VehicleRailFlag::Flipped)) l_dir = ReverseDir(l_dir);
+	if ((v->type == VehicleType::Train && Train::From(v)->flags.Test(VehicleRailFlag::Flipped))
+			|| (v->type == VehicleType::Ship && Ship::From(v)->flags.Test(VehicleShipFlag::SecondEndFacingForward))) l_dir = ReverseDir(l_dir);
 	Direction t_dir = ChangeDir(l_dir, DirDiff::Right90);
 
 	int8_t x_center = _vehicle_smoke_pos[l_dir] * l_center;
@@ -2998,7 +3000,8 @@ void Vehicle::ShowVisualEffect() const
 			int x = _vehicle_smoke_pos[v->direction] * effect_offset;
 			int y = _vehicle_smoke_pos[ChangeDir(v->direction, DirDiff::Right90)] * effect_offset;
 
-			if (v->type == VehicleType::Train && Train::From(v)->flags.Test(VehicleRailFlag::Flipped)) {
+			if ((v->type == VehicleType::Train && Train::From(v)->flags.Test(VehicleRailFlag::Flipped))
+					|| (v->type == VehicleType::Ship && Ship::From(v)->flags.Test(VehicleShipFlag::SecondEndFacingForward))) {
 				x = -x;
 				y = -y;
 			}
@@ -3007,7 +3010,7 @@ void Vehicle::ShowVisualEffect() const
 		}
 	} while ((v = v->Next()) != nullptr);
 
-	if (sound) PlayVehicleSound(this, VSE_VISUAL_EFFECT);
+	if (sound) PlayVehicleSound(this, VehicleSoundEvent::VisualEffect);
 }
 
 /**

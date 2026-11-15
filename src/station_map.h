@@ -13,7 +13,6 @@
 #include "rail_map.h"
 #include "road_map.h"
 #include "water_map.h"
-#include "station_func.h"
 #include "rail.h"
 #include "road.h"
 #include "vehicle_type.h"

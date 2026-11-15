@@ -17,10 +17,15 @@
 #include "station_type.h"
 #include "newgrf_roadstop.h"
 #include "newgrf_station.h"
+#include "tilearea_airport.h"
+#include "tilearea_airportlayout.h"
+#include "tilearea_wrapper.h"
 #include "table/airporttile_ids.h"
 
 struct Town;
-class AirportTileTableIterator;
+struct AirportSpec;
+
+extern Town *AirportGetNearestTown(const AirportSpec *as, Direction rotation, TileIndex tile, TileIteratorWrapper<AirportTileIterator, AirportTileTableIterator> &&iter, uint &mindist);
 
 /** Station types a station could be named after. */
 enum class StationNaming : uint8_t {
@@ -37,6 +42,7 @@ CommandCost CheckBuildableTile(TileIndex tile, DiagDirections invalid_dirs, int 
 CommandCost FindJoiningStation(StationID existing_station, StationID station_to_join, bool adjacent, TileArea ta, Station **st);
 CommandCost BuildStationPart(Station **st, DoCommandFlags flags, bool reuse, TileArea area, StationNaming name_class);
 Station *GetClosestDeletedStationForArea(const TileArea &area);
+void MakeStationSpreadAreaSmaller(BaseStation *st);
 CommandCost CheckFlatLandAirport(AirportTileTableIterator tile_iter, DoCommandFlags flags);
 
 struct ModularTemplatePlacementTile {
@@ -62,11 +68,10 @@ struct ModularTemplatePlacementData {
 	std::vector<ModularTemplatePlacementTile> tiles;
 };
 
-extern Town *AirportGetNearestTown(const struct AirportSpec *as, Direction rotation, TileIndex tile, TileIterator &&it, uint &mindist);
 extern Town *AirportGetNearestTown(const struct Station *st, uint &mindist);
 extern Town *AirportGetNearestTown(std::span<const TileIndex> tiles, uint &mindist);
 extern uint8_t GetAirportNoiseLevelForDistance(uint8_t noise_level, uint distance);
-extern uint8_t GetAirportNoiseLevelForDistance(const struct AirportSpec *as, uint distance);
+extern uint8_t GetAirportNoiseLevelForDistance(const AirportSpec *as, uint distance);
 extern uint8_t GetAirportNoiseLevelForDistance(const struct Station *st, uint distance);
 
 CommandCost CmdBuildAirport(DoCommandFlags flags, TileIndex tile, uint8_t airport_type, uint8_t layout, StationID station_to_join, bool allow_adjacent);

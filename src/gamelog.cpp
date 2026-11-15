@@ -14,7 +14,6 @@
 #include "gamelog_internal.h"
 #include "console_func.h"
 #include "debug.h"
-#include "timer/timer_game_calendar.h"
 #include "timer/timer_game_tick.h"
 #include "rev.h"
 
@@ -38,9 +37,7 @@ Gamelog::Gamelog()
 }
 
 /** Needs to be manually defined due to incomplete definition of GamelogInternalData in the header. */
-Gamelog::~Gamelog()
-{
-}
+Gamelog::~Gamelog() = default;
 
 /**
  * Return the revision string for the current client version, for use in gamelog.
@@ -82,7 +79,7 @@ void Gamelog::StopAction()
 	this->current_action = nullptr;
 	this->action_type = GamelogActionType::None;
 
-	if (print) this->PrintDebug(5);
+	if (print) this->PrintDebug(Severity::Debug1);
 }
 
 void Gamelog::StopAnyAction()
@@ -317,12 +314,12 @@ void Gamelog::PrintConsole()
  * Prints gamelog to debug output. Code is executed even when
  * there will be no output. It is called very seldom, so it
  * doesn't matter that much. At least it gives more uniform code...
- * @param level debug level we need to print stuff
+ * @param severity debug severity level we need to print stuff
  */
-void Gamelog::PrintDebug(int level)
+void Gamelog::PrintDebug(Severity severity)
 {
-	this->Print([level](const std::string &s) {
-		Debug(gamelog, level, "{}", s);
+	this->Print([severity](const std::string &s) {
+		Debug(Facility::Gamelog, severity, "{}", s);
 	});
 }
 

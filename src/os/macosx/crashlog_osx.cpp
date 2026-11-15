@@ -207,7 +207,7 @@ static void CDECL HandleCrash(int signum)
 {
 	if (CrashLogOSX::current != nullptr) {
 		CrashLog::AfterCrashLogCleanup();
-		_exit(2);
+		std::_Exit(2);
 	}
 
 	/* Capture crashing during the handling of a crash. */
@@ -241,7 +241,7 @@ static void CDECL HandleCrash(int signum)
 	}
 
 	CrashLog::AfterCrashLogCleanup();
-	_exit(2);
+	std::_Exit(2);
 }
 
 /* static */ void CrashLog::InitialiseCrashLog()

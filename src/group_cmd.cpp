@@ -12,6 +12,7 @@
 #include "train.h"
 #include "vehiclelist.h"
 #include "vehicle_func.h"
+#include "vehicle_gui.h"
 #include "autoreplace_base.h"
 #include "autoreplace_func.h"
 #include "string_func.h"
@@ -52,7 +53,7 @@ void UpdateGroupChildren()
 		if (pg == nullptr || pg->owner != g->owner || pg->vehicle_type != g->vehicle_type) {
 			/* Due to a bug, groups which should have been deleted could be left with an invalid parent.
 			 * Keep the group but clear the invalid parent so that the game is recoverable. */
-			Debug(misc, 2, "Group {} has invalid parent {}", g->index, g->parent);
+			Debug(Facility::Misc, Severity::Warning, "Group {} has invalid parent {}", g->index, g->parent);
 			g->parent = GroupID::Invalid();
 		} else {
 			pg->children.insert(g->index);

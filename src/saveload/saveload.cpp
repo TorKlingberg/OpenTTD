@@ -48,9 +48,11 @@
 #include "../newgrf_railtype.h"
 #include "../newgrf_roadtype.h"
 #include "../settings_internal.h"
+#include "saveload_error.hpp"
+#include "saveload_filter.h"
+#include "saveload_func.h"
 #include "saveload_internal.h"
 #include "extended_version_sl.h"
-#include "saveload_filter.h"
 
 #include <atomic>
 #ifdef __EMSCRIPTEN__
@@ -69,6 +71,7 @@
 #include <lzma.h>
 #endif /* WITH_LIBLZMA */
 
+#include "../table/control_codes.h"
 #include "table/strings.h"
 
 #include "../safeguards.h"
@@ -326,7 +329,7 @@ static void SlNullPointers()
 	_sl_version = SAVEGAME_VERSION;
 
 	for (const ChunkHandler &ch : ChunkHandlers()) {
-		Debug(sl, 3, "Nulling pointers for {}", ch.GetName());
+		Debug(Facility::Sl, Severity::Notice, "Nulling pointers for {}", ch.GetName());
 		ch.FixPointers();
 	}
 
@@ -687,11 +690,9 @@ static inline uint SlCalcConvMemLen(VarMemType conv)
 		case VarMemType::I64: return sizeof(int64_t);
 		case VarMemType::U64: return sizeof(uint64_t);
 		case VarMemType::Null: return 0;
-		case VarMemType::LabelReverse: return sizeof(BaseLabel);
-		case VarMemType::LabelForward: return sizeof(BaseLabel);
+		case VarMemType::Label: return sizeof(BaseLabel);
 
 		case VarMemType::Str:
-		case VarMemType::StrQ:
 			return SlReadArrayLength();
 
 		case VarMemType::Name:
@@ -780,7 +781,7 @@ int SlIterateArray()
 			case ChunkType::Table:
 			case ChunkType::Array: index = _sl.array_index++; break;
 			default:
-				Debug(sl, 0, "SlIterateArray error");
+				Debug(Facility::Sl, Severity::Critical, "SlIterateArray error");
 				return -1; // error
 		}
 
@@ -941,14 +942,11 @@ static void SlSaveLoadConv(void *ptr, VarType conv)
 {
 	switch (_sl.action) {
 		case SaveLoadAction::Save: {
-			if (conv == VarTypes::LABEL_REVERSE) {
+			if (conv == VarTypes::LABEL) {
+				/* Labels are written in reverse order as that is the way GrfIDs used to be written.
+				 * Changing the order means changing external applications that extract this data. */
 				BaseLabel *label = static_cast<BaseLabel *>(ptr);
 				for (auto it = label->rbegin(); it != label->rend(); it++) SlWriteByte(*it);
-				break;
-			}
-			if (conv == VarTypes::LABEL_FORWARD) {
-				BaseLabel *label = static_cast<BaseLabel *>(ptr);
-				for (auto it = label->begin(); it != label->end(); it++) SlWriteByte(*it);
 				break;
 			}
 
@@ -993,14 +991,13 @@ static void SlSaveLoadConv(void *ptr, VarType conv)
 		}
 		case SaveLoadAction::LoadCheck:
 		case SaveLoadAction::Load: {
-			if (conv == VarTypes::LABEL_REVERSE) {
+			if (conv == VarTypes::LABEL) {
+				/* Labels are written in reverse order as that is the way GrfIDs used to be written.
+				 * Changing the order means changing external applications that extract this data.
+				 * The road/rail type labels were in forward order. They are fixed when needed in
+				 * their respective loaders. */
 				BaseLabel *label = static_cast<BaseLabel *>(ptr);
 				for (auto it = label->rbegin(); it != label->rend(); it++) *it = SlReadByte();
-				break;
-			}
-			if (conv == VarTypes::LABEL_FORWARD) {
-				BaseLabel *label = static_cast<BaseLabel *>(ptr);
-				for (auto it = label->begin(); it != label->end(); it++) *it = SlReadByte();
 				break;
 			}
 
@@ -1233,7 +1230,7 @@ static void SlCopyInternal(void *object, size_t length, VarType conv)
 			return;
 		}
 		/* used for conversion of Money 32bit->64bit */
-		if (conv == (VarFileType::I32 | VarMemType::I64)) {
+		if (conv.file == VarFileType::I32 && conv.mem == VarMemType::I64) {
 			for (uint i = 0; i < length; i++) {
 				static_cast<int64_t *>(object)[i] = std::byteswap(SlReadUint32());
 			}
@@ -1992,7 +1989,7 @@ std::vector<SaveLoad> SlTableHeader(const SaveLoadTable &slt)
 				auto sld_it = key_lookup.find(key);
 				if (sld_it == key_lookup.end()) {
 					/* SLA_LOADCHECK triggers this debug statement a lot and is perfectly normal. */
-					Debug(sl, _sl.action == SaveLoadAction::Load ? 2 : 6, "Field '{}' of type 0x{:02x} not found, skipping", key, type.storage);
+					Debug(Facility::Sl, _sl.action == SaveLoadAction::Load ? Severity::Warning : Severity::Debug2, "Field '{}' of type 0x{:02x} not found, skipping", key, type.storage);
 
 					std::shared_ptr<SaveLoadHandler> handler = nullptr;
 					SaveLoadType saveload_type;
@@ -2012,7 +2009,7 @@ std::vector<SaveLoad> SlTableHeader(const SaveLoadTable &slt)
 					}
 
 					/* We don't know this field, so read to nothing. */
-					saveloads.emplace_back(std::move(key), saveload_type, type.Type() | VarMemType::Null, 1, SaveLoadVersion::MinVersion, SaveLoadVersion::MaxVersion, nullptr, 0, std::move(handler));
+					saveloads.emplace_back(std::move(key), saveload_type, VarType{type.Type(), VarMemType::Null}, 1, SaveLoadVersion::MinVersion, SaveLoadVersion::MaxVersion, nullptr, 0, std::move(handler));
 					continue;
 				}
 
@@ -2023,7 +2020,7 @@ std::vector<SaveLoad> SlTableHeader(const SaveLoadTable &slt)
 				 * the savegame version and add conversion code. */
 				SavegameFileType correct_type = GetSavegameFileType(*sld_it->second);
 				if (correct_type.storage != type.storage) {
-					Debug(sl, 1, "Field type for '{}' was expected to be 0x{:02x} but 0x{:02x} was found", key, correct_type.storage, type.storage);
+					Debug(Facility::Sl, Severity::Error, "Field type for '{}' was expected to be 0x{:02x} but 0x{:02x} was found", key, correct_type.storage, type.storage);
 					SlErrorCorrupt("Field type is different than expected");
 				}
 				saveloads.emplace_back(*sld_it->second);
@@ -2119,7 +2116,7 @@ std::vector<SaveLoad> SlCompatTableHeader(const SaveLoadTable &slt, const SaveLo
 			/* In old savegames there can be data we no longer care for. We
 			 * skip this by simply reading the amount of bytes indicated and
 			 * send those to /dev/null. */
-			saveloads.emplace_back("", SaveLoadType::Null, VarFileType::U8 | VarMemType::Null, slc.null_length, slc.version_from, slc.version_to, nullptr, 0, nullptr);
+			saveloads.emplace_back("", SaveLoadType::Null, VarType{VarFileType::U8, VarMemType::Null}, slc.null_length, slc.version_from, slc.version_to, nullptr, 0, nullptr);
 		} else {
 			auto sld_it = key_lookup.find(slc.name);
 			/* If this branch triggers, it means that an entry in the
@@ -2128,7 +2125,7 @@ std::vector<SaveLoad> SlCompatTableHeader(const SaveLoadTable &slt, const SaveLo
 			if (sld_it == key_lookup.end()) {
 				/* This isn't an assert, as that leaves no information what
 				 * field was to blame. This way at least we have breadcrumbs. */
-				Debug(sl, 0, "internal error: saveload compatibility field '{}' not found", slc.name);
+				Debug(Facility::Sl, Severity::Critical, "internal error: saveload compatibility field '{}' not found", slc.name);
 				SlErrorCorrupt("Internal error with savegame compatibility");
 			}
 			for (auto &sld : sld_it->second) {
@@ -2317,7 +2314,7 @@ static void SlSaveChunk(const ChunkHandler &ch)
 	if (ch.type == ChunkType::ReadOnly) return;
 
 	for (uint8_t b : ch.id) SlWriteByte(b);
-	Debug(sl, 2, "Saving chunk {}", ch.GetName());
+	Debug(Facility::Sl, Severity::Warning, "Saving chunk {}", ch.GetName());
 
 	_sl.chunk_type = ch.type;
 	_sl.expect_table_header = (_sl.chunk_type == ChunkType::Table || _sl.chunk_type == ChunkType::SparseTable);
@@ -2374,7 +2371,7 @@ static const ChunkHandler *SlFindChunkHandler(ChunkId id)
 static void SlLoadChunks()
 {
 	for (ChunkId id = SlReadChunkId(); !id.Empty(); id = SlReadChunkId()) {
-		Debug(sl, 2, "Loading chunk {}", id.AsString());
+		Debug(Facility::Sl, Severity::Warning, "Loading chunk {}", id.AsString());
 
 		const ChunkHandler *ch = SlFindChunkHandler(id);
 		if (ch == nullptr) SlErrorCorrupt("Unknown chunk type");
@@ -2386,7 +2383,7 @@ static void SlLoadChunks()
 static void SlLoadCheckChunks()
 {
 	for (ChunkId id = SlReadChunkId(); !id.Empty(); id = SlReadChunkId()) {
-		Debug(sl, 2, "Loading chunk {}", id.AsString());
+		Debug(Facility::Sl, Severity::Warning, "Loading chunk {}", id.AsString());
 
 		const ChunkHandler *ch = SlFindChunkHandler(id);
 		if (ch == nullptr) SlErrorCorrupt("Unknown chunk type");
@@ -2400,7 +2397,7 @@ static void SlFixPointers()
 	_sl.action = SaveLoadAction::Ptrs;
 
 	for (const ChunkHandler &ch : ChunkHandlers()) {
-		Debug(sl, 3, "Fixing pointers for {}", ch.GetName());
+		Debug(Facility::Sl, Severity::Notice, "Fixing pointers for {}", ch.GetName());
 		ch.FixPointers();
 	}
 
@@ -2441,7 +2438,7 @@ struct FileReader : LoadFilter {
 	{
 		clearerr(*this->file);
 		if (fseek(*this->file, this->begin, SEEK_SET)) {
-			Debug(sl, 1, "Could not reset the file reading");
+			Debug(Facility::Sl, Severity::Error, "Could not reset the file reading");
 		}
 	}
 };
@@ -3086,7 +3083,7 @@ static SaveLoadResult SaveFileToDisk(bool threaded)
 		/* We don't want to shout when saving is just
 		 * cancelled due to a client disconnecting. */
 		if (_sl.error_str != STR_NETWORK_ERROR_LOSTCONNECTION) {
-			Debug(sl, 0, "{} {}", GetSaveLoadErrorType().GetDecodedString(), GetSaveLoadErrorMessage().GetDecodedString());
+			Debug(Facility::Sl, Severity::Critical, "{} {}", GetSaveLoadErrorType().GetDecodedString(), GetSaveLoadErrorMessage().GetDecodedString());
 			asfp = SaveFileError;
 		}
 
@@ -3133,7 +3130,7 @@ static SaveLoadResult DoSave(std::shared_ptr<SaveFilter> writer, bool threaded)
 	SaveFileStart();
 
 	if (!threaded || !StartNewThread(&_save_thread, "ottd:savegame", &SaveFileToDisk, true)) {
-		if (threaded) Debug(sl, 1, "Cannot create savegame thread, reverting to single-threaded mode...");
+		if (threaded) Debug(Facility::Sl, Severity::Error, "Cannot create savegame thread, reverting to single-threaded mode...");
 
 		SaveLoadResult result = SaveFileToDisk(false);
 		SaveFileDone();
@@ -3186,7 +3183,7 @@ static const SaveLoadFormat *DetermineSaveLoadFormat(SaveLoadFormatTag tag, uint
 
 		SlxSetSavegameIsExtended(is_extended);
 
-		Debug(sl, 1, "Loading savegame version {}{}", _sl_version, SlxIsExtendedSavegame() ? " (extended)" : "");
+		Debug(Facility::Sl, Severity::Error, "Loading savegame version {}{}", _sl_version, SlxIsExtendedSavegame() ? " (extended)" : "");
 
 		/* Is the version higher than the current? */
 		if (_sl_version > SAVEGAME_VERSION) SlError(STR_GAME_SAVELOAD_ERROR_TOO_NEW_SAVEGAME);
@@ -3194,7 +3191,7 @@ static const SaveLoadFormat *DetermineSaveLoadFormat(SaveLoadFormatTag tag, uint
 		return fmt;
 	}
 
-	Debug(sl, 0, "Unknown savegame type, trying to load it as the buggy format");
+	Debug(Facility::Sl, Severity::Critical, "Unknown savegame type, trying to load it as the buggy format");
 	_sl.lf->Reset();
 	_sl_version = SaveLoadVersion::MinVersion;
 	_sl_minor_version = 0;
@@ -3407,7 +3404,7 @@ SaveLoadResult SaveOrLoad(std::string_view filename, SaveLoadOperation fop, Deta
 		}
 
 		if (fop == SaveLoadOperation::Save) { // SAVE game
-			Debug(desync, 1, "save: {:08x}; {:02x}; {}", TimerGameEconomy::date, TimerGameEconomy::date_fract, filename);
+			Debug(Facility::Desync, Severity::Error, "save: {:08x}; {:02x}; {}", TimerGameEconomy::date, TimerGameEconomy::date_fract, filename);
 			if (!_settings_client.gui.threaded_saves) threaded = false;
 
 			return DoSave(std::make_shared<FileWriter>(std::move(*fh)), threaded);
@@ -3415,13 +3412,13 @@ SaveLoadResult SaveOrLoad(std::string_view filename, SaveLoadOperation fop, Deta
 
 		/* LOAD game */
 		assert(fop == SaveLoadOperation::Load || fop == SaveLoadOperation::Check);
-		Debug(desync, 1, "load: {}", filename);
+		Debug(Facility::Desync, Severity::Error, "load: {}", filename);
 		return DoLoad(std::make_shared<FileReader>(std::move(*fh)), fop == SaveLoadOperation::Check);
 	} catch (...) {
 		/* This code may be executed both for old and new save games. */
 		ClearSaveLoadState();
 
-		if (fop != SaveLoadOperation::Check) Debug(sl, 0, "{} {}", GetSaveLoadErrorType().GetDecodedString(), GetSaveLoadErrorMessage().GetDecodedString());
+		if (fop != SaveLoadOperation::Check) Debug(Facility::Sl, Severity::Critical, "{} {}", GetSaveLoadErrorType().GetDecodedString(), GetSaveLoadErrorMessage().GetDecodedString());
 
 		/* A saver/loader exception!! reinitialize all variables to prevent crash! */
 		return (fop == SaveLoadOperation::Load) ? SaveLoadResult::ReInit : SaveLoadResult::Error;
@@ -3442,7 +3439,7 @@ void DoAutoOrNetsave(FiosNumberedSaveName &counter)
 		filename = counter.Filename();
 	}
 
-	Debug(sl, 2, "Autosaving to '{}'", filename);
+	Debug(Facility::Sl, Severity::Warning, "Autosaving to '{}'", filename);
 	if (SaveOrLoad(filename, SaveLoadOperation::Save, DetailedFileType::GameFile, Subdirectory::Autosave) != SaveLoadResult::Ok) {
 		ShowErrorMessage(GetEncodedString(STR_ERROR_AUTOSAVE_FAILED), {}, WarningLevel::Error);
 	}

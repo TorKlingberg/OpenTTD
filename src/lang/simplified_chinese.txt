@@ -538,6 +538,7 @@ STR_NEWS_MENU_DELETE_ALL_MESSAGES                               :删除全部消
 # About menu
 STR_ABOUT_MENU_LAND_BLOCK_INFO                                  :查询地块信息
 STR_ABOUT_MENU_HELP                                             :帮助和指南
+STR_ABOUT_MENU_ENTER_SCREENSAVER_MODE                           :切换屏保模式
 STR_ABOUT_MENU_TOGGLE_CONSOLE                                   :切换到控制台模式
 STR_ABOUT_MENU_AI_DEBUG                                         :AI / 游戏脚本调试
 STR_ABOUT_MENU_SCREENSHOT                                       :屏幕截图
@@ -3101,6 +3102,7 @@ STR_TREES_MODE_FOREST_LG_TOOLTIP                                :{BLACK}在地�
 # Land generation window (SE)
 STR_TERRAFORM_TOOLBAR_LAND_GENERATION_CAPTION                   :{WHITE}生成土地
 STR_TERRAFORM_TOOLTIP_PLACE_ROCKY_AREAS_ON_LANDSCAPE            :在地图上设置岩石。{}按住 <Ctrl> 键单击以移除岩石
+STR_TERRAFORM_TOOLTIP_PLACE_ROUGH_AREAS_ON_LANDSCAPE            :在地图上设置粗糙地带。{}按住 <Ctrl> 键单击以移除粗糙地带
 STR_TERRAFORM_TOOLTIP_DEFINE_DESERT_AREA                        :{BLACK}划出沙漠区域{}按住 <Ctrl> 键操作以移除沙漠区域
 STR_TERRAFORM_TOOLTIP_INCREASE_SIZE_OF_LAND_AREA                :{BLACK}增加要升高/降低的土地面积
 STR_TERRAFORM_TOOLTIP_DECREASE_SIZE_OF_LAND_AREA                :{BLACK}减少要升高/降低的土地面积
@@ -3175,11 +3177,7 @@ STR_FUND_INDUSTRY_REMOVE_ALL_INDUSTRIES_QUERY                   :{YELLOW}确定�
 # Industry cargoes window
 STR_INDUSTRY_CARGOES_INDUSTRY_CAPTION                           :{WHITE}产业链 - {STRING}
 STR_INDUSTRY_CARGOES_CARGO_CAPTION                              :{WHITE}货物的产业链 - {STRING}
-STR_INDUSTRY_CARGOES_PRODUCERS                                  :{WHITE}供应商
-STR_INDUSTRY_CARGOES_CUSTOMERS                                  :{WHITE}采购商
 STR_INDUSTRY_CARGOES_HOUSES                                     :{WHITE}房屋
-STR_INDUSTRY_CARGOES_INDUSTRY_TOOLTIP                           :{BLACK}点击查看上下游产业链
-STR_INDUSTRY_CARGOES_CARGO_TOOLTIP                              :{BLACK}{STRING}{}点该货物可显示其上下游工业
 STR_INDUSTRY_DISPLAY_CHAIN                                      :{BLACK}产业链
 STR_INDUSTRY_DISPLAY_CHAIN_TOOLTIP                              :{BLACK}显示货物的上下游工业
 STR_INDUSTRY_CARGOES_NOTIFY_SMALLMAP                            :{BLACK}在缩略地图显示
@@ -3286,6 +3284,8 @@ STR_LAI_WATER_DESCRIPTION_LOCK                                  :船闸
 STR_LAI_WATER_DESCRIPTION_RIVER                                 :河
 STR_LAI_WATER_DESCRIPTION_COAST_OR_RIVERBANK                    :海岸线或河岸
 STR_LAI_WATER_DESCRIPTION_SHIP_DEPOT                            :船坞
+STR_LAI_WATER_DESCRIPTION_WATER_ROCKS                           :岩石
+STR_LAI_WATER_DESCRIPTION_COAST_ROCKS                           :海岸或河岸处有岩石
 
 # Industries come directly from their industry names
 
@@ -3399,6 +3399,9 @@ STR_SAVELOAD_LOAD_BUTTON                                        :{BLACK}载入
 STR_SAVELOAD_LOAD_TOOLTIP                                       :{BLACK}载入所选
 STR_SAVELOAD_LOAD_HEIGHTMAP_TOOLTIP                             :{BLACK}载入选定的高度图
 STR_SAVELOAD_LOAD_TOWN_DATA_TOOLTIP                             :{BLACK}载入选定的城镇数据
+STR_SAVELOAD_NEW_DIRECTORY_BUTTON                               :新建文件夹
+STR_SAVELOAD_NEW_DIRECTORY_TOOLTIP                              :在当前位置新建文件夹
+STR_SAVELOAD_NEW_DIRECTORY_QUERY_CAPTION                        :输入新文件夹名称
 STR_SAVELOAD_DETAIL_CAPTION                                     :{BLACK}游戏详情
 STR_SAVELOAD_DETAIL_NOT_AVAILABLE                               :{BLACK}无可用信息
 STR_SAVELOAD_DETAIL_COMPANY_INDEX                               :{SILVER}{COMMA}：{WHITE}{STRING}
@@ -4617,9 +4620,7 @@ STR_VEHICLE_INFO_PROFIT_THIS_PERIOD_LAST_PERIOD_MIN_PERFORMANCE :{BLACK}本期�
 STR_VEHICLE_INFO_RELIABILITY_BREAKDOWNS                         :{BLACK}可靠度：{LTBLUE}{COMMA}%（最大：{COMMA}%）{BLACK}上次维护后的故障次数：{LTBLUE}{COMMA}
 
 STR_VEHICLE_INFO_BUILT_VALUE                                    :{LTBLUE}{ENGINE}　{BLACK}购置于：{LTBLUE}{NUM}{BLACK}　价值：{LTBLUE}{CURRENCY_LONG}
-STR_VEHICLE_INFO_NO_CAPACITY                                    :{BLACK}容量：{LTBLUE}无{STRING}
 STR_VEHICLE_INFO_CAPACITY                                       :{BLACK}容量：{LTBLUE}{CARGO_LONG}{STRING}
-STR_VEHICLE_INFO_CAPACITY_MULT                                  :{BLACK}容量：{LTBLUE}{CARGO_LONG}{STRING}（×{NUM}）
 STR_VEHICLE_INFO_CAPACITY_CAPACITY                              :{BLACK}容量：{LTBLUE}{CARGO_LONG}，{CARGO_LONG}{STRING}
 
 STR_VEHICLE_INFO_FEEDER_CARGO_VALUE                             :{BLACK}转运账面收入：{LTBLUE}{CURRENCY_LONG}
@@ -4652,22 +4653,23 @@ STR_QUERY_RENAME_AIRCRAFT_CAPTION                               :{WHITE}命名�
 STR_VEHICLE_DETAILS_TRAIN_ENGINE_BUILT_AND_VALUE                :{LTBLUE}{ENGINE}{BLACK}　购置于：{LTBLUE}{NUM}{BLACK}　价值：{LTBLUE}{CURRENCY_LONG}
 STR_VEHICLE_DETAILS_TRAIN_WAGON_VALUE                           :{LTBLUE}{ENGINE}{BLACK}　价值：{LTBLUE}{CURRENCY_LONG}
 
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}列车总容量：
+STR_VEHICLE_DETAILS_TRAIN_LENGTH                                :{BLACK}列车长度：{LTBLUE}{DECIMAL}格
+
+STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_TEXT                   :{BLACK}列车货物：
 STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY                        :{LTBLUE}{CARGO_LONG}（最大容量：{CARGO_SHORT}）
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CAPACITY_MULT                   :{LTBLUE}{CARGO_LONG}（最大容量：{CARGO_SHORT}，重量系数：×{NUM}）
+
+STR_VEHICLE_DETAILS_TRAIN_CARGO_EMPTY                           :{LTBLUE}空载（{CARGO_LONG}）{STRING}
+STR_VEHICLE_DETAILS_TRAIN_CARGO_FROM                            :{LTBLUE}{CARGO_LONG}（{CARGO_SHORT}）来自{STATION}{STRING}
 
 STR_VEHICLE_DETAILS_CARGO_EMPTY                                 :{LTBLUE}空
 STR_VEHICLE_DETAILS_CARGO_FROM                                  :{LTBLUE}{CARGO_LONG}（来自 {STATION}）
-STR_VEHICLE_DETAILS_CARGO_FROM_MULT                             :{LTBLUE}{CARGO_LONG}来自 {STATION}（×{NUM}）
 
 STR_VEHICLE_DETAIL_TAB_CARGO                                    :{BLACK}货物
 STR_VEHICLE_DETAILS_TRAIN_CARGO_TOOLTIP                         :{BLACK}显示运载货物的详情
 STR_VEHICLE_DETAIL_TAB_INFORMATION                              :{BLACK}信息
 STR_VEHICLE_DETAILS_TRAIN_INFORMATION_TOOLTIP                   :{BLACK}显示列车的性能参数
-STR_VEHICLE_DETAIL_TAB_CAPACITIES                               :{BLACK}容量
-STR_VEHICLE_DETAILS_TRAIN_CAPACITIES_TOOLTIP                    :{BLACK}显示机车与车厢的容量
-STR_VEHICLE_DETAIL_TAB_TOTAL_CARGO                              :{BLACK}全部货物
-STR_VEHICLE_DETAILS_TRAIN_TOTAL_CARGO_TOOLTIP                   :{BLACK}显示列车的总容量，依货物分类
+STR_VEHICLE_DETAIL_TAB_TOTALS                                   :{BLACK}总计
+STR_VEHICLE_DETAILS_TRAIN_TOTALS_TOOLTIP                        :{BLACK}显示列车货物、运力、长度
 
 STR_VEHICLE_DETAILS_TRAIN_ARTICULATED_RV_CAPACITY               :{BLACK}容量：{LTBLUE}{STRING}
 
@@ -5066,6 +5068,11 @@ STR_ERROR_AUTOSAVE_FAILED                                       :自动保存失
 STR_ERROR_UNABLE_TO_READ_DRIVE                                  :{BLACK}无法读取硬盘
 STR_ERROR_GAME_SAVE_FAILED                                      :保存游戏失败……
 STR_ERROR_UNABLE_TO_DELETE_FILE                                 :无法删除文件
+STR_ERROR_CANNOT_CREATE_DIRECTORY                               :创建文件夹失败
+STR_ERROR_DIRECTORY_NAME_IN_USE                                 :该文件或文件夹名称已经存在
+STR_ERROR_DIRECTORY_ILLEGAL_NAME                                :文件夹名不能包含特殊字符
+STR_ERROR_DIRECTORY_LEADING_DOT                                 :文件夹名不能以“.”开头
+STR_ERROR_DIRECTORY_PERMISSION_DENIED                           :您没有权限在此新建文件夹
 STR_ERROR_GAME_LOAD_FAILED                                      :读取游戏失败……
 STR_GAME_SAVELOAD_ERROR_BROKEN_INTERNAL_ERROR                   :内部错误：{STRING}
 STR_GAME_SAVELOAD_ERROR_BROKEN_SAVEGAME                         :无法识别的存档 - {STRING}

@@ -8,16 +8,17 @@
 /** @file network_gui.cpp Implementation of the Network related GUIs. */
 
 #include "../stdafx.h"
+#include "../string_func.h"
 #include "../strings_func.h"
 #include "../fios.h"
-#include "network_client.h"
 #include "network_gui.h"
 #include "network_gamelist.h"
 #include "network.h"
 #include "network_base.h"
 #include "network_content.h"
-#include "network_server.h"
 #include "network_coordinator.h"
+#include "network_internal.h"
+#include "network_func.h"
 #include "network_survey.h"
 #include "../gui.h"
 #include "network_udp.h"
@@ -33,12 +34,12 @@
 #include "../genworld.h"
 #include "../map_type.h"
 #include "../zoom_func.h"
-#include "../sprite.h"
 #include "../settings_internal.h"
 #include "../company_cmd.h"
 #include "../timer/timer.h"
 #include "../timer/timer_window.h"
 #include "../timer/timer_game_calendar.h"
+#include "../textbuf_gui.h"
 #include "../textfile_gui.h"
 #include "../stringfilter_type.h"
 #include "../core/string_consumer.hpp"
@@ -1745,7 +1746,7 @@ private:
 			if (_network_own_client_id != ci->client_id && client_playas != COMPANY_SPECTATOR && !ci->CanJoinCompany(client_playas)) line.AddButton<ClientButton>(SPR_JOIN, STR_NETWORK_CLIENT_LIST_COMPANY_AUTHORIZE_TOOLTIP, Colours::Green, ci->client_id, &NetworkClientListWindow::OnClickClientAuthorize);
 		}
 
-		/* Disable the chat button when there are players in this company. */
+		/* Disable the chat button when there are no players in this company. */
 		chat_button.disabled = !has_players;
 	}
 
@@ -1773,7 +1774,7 @@ private:
 		for (const Company *c : Company::Iterate()) {
 			if (c->index == client_playas) continue;
 
-			this->RebuildListCompany(c->index, client_playas, _network_server || c->allow_any || (own_ci != nullptr && c->allow_list.Contains(own_ci->public_key)));
+			this->RebuildListCompany(c->index, client_playas, own_ci != nullptr && own_ci->CanJoinCompany(c->index));
 		}
 
 		/* Spectators */

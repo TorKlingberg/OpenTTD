@@ -8,11 +8,12 @@
 /** @file gfxinit.cpp Initializing of the (GRF) graphics. */
 
 #include "stdafx.h"
-#include "fios.h"
 #include "newgrf.h"
+#include "newgrf_config.h"
 #include "3rdparty/md5/md5.h"
 #include "fontcache.h"
 #include "gfx_func.h"
+#include "spritecache.h"
 #include "transparency.h"
 #include "blitter/factory.hpp"
 #include "video/video_driver.hpp"
@@ -51,7 +52,7 @@ static uint LoadGrfFile(const std::string &filename, SpriteID load_index, bool n
 
 	SpriteFile &file = OpenCachedSpriteFile(filename, Subdirectory::Baseset, needs_palette_remap);
 
-	Debug(sprite, 2, "Reading grf-file '{}'", filename);
+	Debug(Facility::Sprite, Severity::Warning, "Reading grf-file '{}'", filename);
 
 	uint8_t container_ver = file.GetContainerVersion();
 	if (container_ver == 0) UserError("Base grf '{}' is corrupt", filename);
@@ -69,7 +70,7 @@ static uint LoadGrfFile(const std::string &filename, SpriteID load_index, bool n
 			UserError("Too many sprites. Recompile with higher MAX_SPRITES value or remove some custom GRF files.");
 		}
 	}
-	Debug(sprite, 2, "Currently {} sprites are loaded", load_index);
+	Debug(Facility::Sprite, Severity::Warning, "Currently {} sprites are loaded", load_index);
 
 	return load_index - load_index_org;
 }
@@ -86,7 +87,7 @@ static void LoadGrfFileIndexed(const std::string &filename, std::span<const std:
 
 	SpriteFile &file = OpenCachedSpriteFile(filename, Subdirectory::Baseset, needs_palette_remap);
 
-	Debug(sprite, 2, "Reading indexed grf-file '{}'", filename);
+	Debug(Facility::Sprite, Severity::Warning, "Reading indexed grf-file '{}'", filename);
 
 	uint8_t container_ver = file.GetContainerVersion();
 	if (container_ver == 0) UserError("Base grf '{}' is corrupt", filename);
@@ -117,7 +118,7 @@ void CheckExternalFiles()
 
 	const GraphicsSet *used_set = BaseGraphics::GetUsedSet();
 
-	Debug(grf, 1, "Using the {} base graphics set", used_set->name);
+	Debug(Facility::Grf, Severity::Error, "Using the {} base graphics set", used_set->name);
 
 	std::string error_msg;
 	auto output_iterator = std::back_inserter(error_msg);
@@ -216,9 +217,9 @@ static void LoadSpriteTables()
 	LoadNewGRF(SPR_NEWGRFS_BASE, 2);
 
 	uint total_extra_graphics = SPR_MIRRORED_BASE - SPR_OPENTTD_BASE;
-	Debug(sprite, 4, "Checking sprites from fallback grf");
+	Debug(Facility::Sprite, Severity::Info, "Checking sprites from fallback grf");
 	_missing_extra_graphics = GetSpriteCountForFile(default_filename, SPR_OPENTTD_BASE, SPR_MIRRORED_BASE);
-	Debug(sprite, 1, "{} extra sprites, {} from baseset, {} from fallback", total_extra_graphics, total_extra_graphics - _missing_extra_graphics, _missing_extra_graphics);
+	Debug(Facility::Sprite, Severity::Error, "{} extra sprites, {} from baseset, {} from fallback", total_extra_graphics, total_extra_graphics - _missing_extra_graphics, _missing_extra_graphics);
 
 	/* The original baseset extra graphics intentionally make use of the fallback graphics.
 	 * Let's say everything which provides less than 500 sprites misses the rest intentionally. */
@@ -237,10 +238,10 @@ static void RealChangeBlitter(std::string_view repl_blitter)
 	std::string_view cur_blitter = BlitterFactory::GetCurrentBlitter()->GetName();
 	if (cur_blitter == repl_blitter) return;
 
-	Debug(driver, 1, "Switching blitter from '{}' to '{}'... ", cur_blitter, repl_blitter);
+	Debug(Facility::Driver, Severity::Error, "Switching blitter from '{}' to '{}'... ", cur_blitter, repl_blitter);
 	Blitter *new_blitter = BlitterFactory::SelectBlitter(repl_blitter);
 	if (new_blitter == nullptr) NOT_REACHED();
-	Debug(driver, 1, "Successfully switched to {}.", repl_blitter);
+	Debug(Facility::Driver, Severity::Error, "Successfully switched to {}.", repl_blitter);
 
 	if (!VideoDriver::GetInstance()->AfterBlitterChange()) {
 		/* Failed to switch blitter, let's hope we can return to the old one. */
@@ -338,7 +339,7 @@ void CheckBlitter()
 /** Initialise and load all the sprites. */
 void GfxLoadSprites()
 {
-	Debug(sprite, 2, "Loading sprite set {}", _settings_game.game_creation.landscape);
+	Debug(Facility::Sprite, Severity::Warning, "Loading sprite set {}", _settings_game.game_creation.landscape);
 
 	SwitchNewGRFBlitter();
 	VideoDriver::GetInstance()->ClearSystemSprites();

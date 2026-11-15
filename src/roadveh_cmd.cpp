@@ -8,11 +8,13 @@
 /** @file roadveh_cmd.cpp Handling of road vehicles. */
 
 #include "stdafx.h"
+#include "bridge.h"
 #include "roadveh.h"
 #include "command_func.h"
 #include "error_func.h"
 #include "news_func.h"
 #include "station_base.h"
+#include "station_func.h"
 #include "company_func.h"
 #include "articulated_vehicles.h"
 #include "newgrf_sound.h"
@@ -403,6 +405,7 @@ void RoadVehicle::MarkDirty()
 		v->colourmap = PAL_NONE;
 		v->UpdateViewport(true, false);
 	}
+	RoadVehUpdateCache(this, true);
 	this->CargoChanged();
 }
 
@@ -610,7 +613,7 @@ TileIndex RoadVehicle::GetOrderStationLocation(StationID station)
 
 static void StartRoadVehSound(const RoadVehicle *v)
 {
-	if (!PlayVehicleSound(v, VSE_START)) {
+	if (!PlayVehicleSound(v, VehicleSoundEvent::Start)) {
 		SoundID s = RoadVehInfo(v->engine_type)->sfx;
 		if (s == SND_19_DEPARTURE_OLD_RV_1 && (v->tick_counter & 3) == 0) {
 			s = SND_1A_DEPARTURE_OLD_RV_2;
@@ -795,9 +798,13 @@ static bool CheckRoadBlockedForOvertaking(OvertakeData *od)
 	if (!HasTileAnyRoadType(od->tile, od->v->compatible_roadtypes)) return true;
 	TrackStatus ts = GetTileTrackStatus(od->tile, TransportType::Road, GetRoadTramType(od->v->roadtype));
 	TrackBits trackbits = TrackdirBitsToTrackBits(ts.trackdirs);
+	Tile next_tile = od->tile + TileOffsByDiagDir(DirToDiagDir(od->v->direction));
 
-	/* Track does not continue along overtaking direction || track has junction || levelcrossing is barred */
-	if (!ts.trackdirs.Test(od->trackdir) || trackbits.Any({Track::Upper, Track::Lower, Track::Left, Track::Right}) || ts.signals.Any()) return true;
+	/* Track does not continue along overtaking direction. */
+	if (!ts.trackdirs.Test(od->trackdir)) return true;
+
+	/* Don't overtake across junction or barred level crossing, unless next tile is one-way. */
+	if ((trackbits.Any({Track::Upper, Track::Lower, Track::Left, Track::Right}) || ts.signals.Any()) && !IsOneWayRoadTile(next_tile)) return true;
 
 	/* Are there more vehicles on the tile except the two vehicles involved in overtaking */
 	return HasVehicleOnTile(od->tile, [&](const Vehicle *v) {

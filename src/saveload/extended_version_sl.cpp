@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 
 #include "extended_version_sl.h"
+#include "saveload_error.hpp"
 #include "../debug.h"
 
 #include "table/strings.h"
@@ -116,9 +117,9 @@ static uint16_t _slx_sl_version;
 static uint8_t _slx_sl_flags;
 
 static const SaveLoad _slx_feature_desc[] = {
-	SLEG_SSTR("name", _slx_sl_name, VarTypes::STR),
-	 SLEG_VAR("version", _slx_sl_version, VarTypes::U16),
-	 SLEG_VAR("flags", _slx_sl_flags, VarTypes::U8),
+	SaveLoad::String("name", SLE_GLOBAL_ADDRESS(_slx_sl_name)),
+	SaveLoad::Variable<VarFileType::U16>("version", SLE_GLOBAL_ADDRESS(_slx_sl_version)),
+	SaveLoad::Variable<VarFileType::U8>("flags", SLE_GLOBAL_ADDRESS(_slx_sl_flags)),
 };
 
 struct XVERChunkHandler : ChunkHandler {
@@ -161,7 +162,7 @@ struct XVERChunkHandler : ChunkHandler {
 
 			if (info == nullptr) {
 				if (flags.Test(SlxFeatureFlag::IgnorableUnknown)) {
-					Debug(sl, 1, "XVER chunk: unknown feature '{}' version {}, ignoring", _slx_sl_name, _slx_sl_version);
+					Debug(Facility::Sl, Severity::Error, "XVER chunk: unknown feature '{}' version {}, ignoring", _slx_sl_name, _slx_sl_version);
 					continue;
 				}
 				SlError(STR_GAME_SAVELOAD_ERROR_TOO_NEW_SAVEGAME, fmt::format("Savegame uses unknown feature '{}'", _slx_sl_name));
@@ -169,13 +170,13 @@ struct XVERChunkHandler : ChunkHandler {
 
 			if (_slx_sl_version > info->max_version) {
 				if (flags.Test(SlxFeatureFlag::IgnorableVersion)) {
-					Debug(sl, 1, "XVER chunk: feature '{}' version {} is too new (max {}), ignoring", _slx_sl_name, _slx_sl_version, info->max_version);
+					Debug(Facility::Sl, Severity::Error, "XVER chunk: feature '{}' version {} is too new (max {}), ignoring", _slx_sl_name, _slx_sl_version, info->max_version);
 					continue;
 				}
 				SlError(STR_GAME_SAVELOAD_ERROR_TOO_NEW_SAVEGAME, fmt::format("Savegame feature '{}' has version {}, this build supports up to {}", _slx_sl_name, _slx_sl_version, info->max_version));
 			}
 
-			Debug(sl, 1, "XVER chunk: feature '{}' version {}", _slx_sl_name, _slx_sl_version);
+			Debug(Facility::Sl, Severity::Error, "XVER chunk: feature '{}' version {}", _slx_sl_name, _slx_sl_version);
 			_slx_feature_versions[to_underlying(info->feature)] = _slx_sl_version;
 		}
 	}

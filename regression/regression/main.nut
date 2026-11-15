@@ -239,6 +239,9 @@ function Regression::Airport()
 	print("  GetAirportType():     " + AIAirport.GetAirportType(32119));
 	print("  GetCosts():           " + accounting.GetCosts());
 
+	print("  Hangar");
+	print("    GetName():          " + AIDepot.GetName(AIAirport.GetHangarOfAirport(32116)));
+
 	accounting.ResetCosts();
 	print("  RemoveAirport():      " + AIAirport.RemoveAirport(32118));
 	print("  IsHangarTile():       " + AIAirport.IsHangarTile(32119));
@@ -1197,6 +1200,21 @@ function Regression::Marine()
 	}
 	print("");
 
+	print("  Depot");
+	local list = AIDepotList(AITile.TRANSPORT_WATER);
+	print("    DepotList");
+	print("      Count():                     " + list.Count());
+	list.Valuate(AITile.GetDistanceManhattanToTile, 0);
+	print("      Depot distance from (0,0) ListDump:");
+	for (local i = list.Begin(); !list.IsEnd(); i = list.Next()) {
+		print("        " + i + " => " + list.GetValue(i));
+	}
+	print("    GetName():          " + AIDepot.GetName(28479));
+	print("    SetName():          " + AIDepot.SetName(28479, "Regression"));
+	print("    GetName():          " + AIDepot.GetName(28479));
+	print("    GetName():          " + AIDepot.GetName(28480));
+	print("    GetName():          " + AIDepot.GetName(28481));
+
 	accounting.ResetCosts();
 	print("  RemoveWaterDepot():   " + AIMarine.RemoveWaterDepot(28479));
 	print("  RemoveDock():         " + AIMarine.RemoveDock(29253));
@@ -1222,6 +1240,7 @@ function Regression::Order()
 	print("");
 	print("--Order--");
 	print("  GetOrderCount():       " + AIOrder.GetOrderCount(12));
+	print("  GetOrderCount():       " + AIOrder.GetOrderCount(9999));
 	print("  GetOrderDestination(): " + AIOrder.GetOrderDestination(12, 1));
 	print("  AreOrderFlagsValid():  " + AIOrder.AreOrderFlagsValid(33416, AIOrder.OF_TRANSFER));
 	print("  AreOrderFlagsValid():  " + AIOrder.AreOrderFlagsValid(33416, AIOrder.OF_TRANSFER | AIOrder.OF_UNLOAD));
@@ -1415,6 +1434,10 @@ function Regression::Rail()
 	for (local i = list.Begin(); !list.IsEnd(); i = list.Next()) {
 		print("        " + i + " => " + list.GetValue(i));
 	}
+	print("    GetName():                     " + AIDepot.GetName(33411));
+	print("    SetName():                     " + AIDepot.SetName(33411, "Regression"));
+	print("    GetName():                     " + AIDepot.GetName(33411));
+	print("    GetName():                     " + AIDepot.GetName(33410));
 	print("    RemoveDepot():                 " + AITile.DemolishTile(33411));
 	print("    BuildRailDepot():              " + AIRail.BuildRailDepot(23596, 23597));
 
@@ -1519,6 +1542,10 @@ function Regression::Road()
 	for (local i = list.Begin(); !list.IsEnd(); i = list.Next()) {
 		print("        " + i + " => " + list.GetValue(i));
 	}
+	print("    GetName():                     " + AIDepot.GetName(33411));
+	print("    SetName():                     " + AIDepot.SetName(33411, "Regression"));
+	print("    GetName():                     " + AIDepot.GetName(33411));
+	print("    GetName():                     " + AIDepot.GetName(33410));
 	print("    RemoveRoadDepot():             " + AIRoad.RemoveRoadDepot(33411));
 	print("    RemoveRoadDepot():             " + AIRoad.RemoveRoadDepot(33411));
 
@@ -2110,11 +2137,14 @@ function Regression::Vehicle()
 	print("  GetWagonAge():        " + AIVehicle.GetWagonAge(17, 2));
 	print("  GetWagonEngineType(): " + AIVehicle.GetWagonEngineType(17 3));
 	print("  GetWagonAge():        " + AIVehicle.GetWagonAge(17, 3));
+	print("  GetVehicleType():     " + AIVehicle.GetVehicleType(14));
+	print("  GetLength():          " + AIVehicle.GetLength(14));
 
 	print("  --Refit--");
 	print("    GetBuildWithRefitCapacity(): " + AIVehicle.GetBuildWithRefitCapacity(28479, 211, 255));
 	print("    GetBuildWithRefitCapacity(): " + AIVehicle.GetBuildWithRefitCapacity(28479, 211, 0));
 	print("    GetBuildWithRefitCapacity(): " + AIVehicle.GetBuildWithRefitCapacity(28479, 211, 9));
+	print("    GetBuildWithRefitCapacity(): " + AIVehicle.GetBuildWithRefitCapacity(28481, 211, 0));
 	print("    BuildVehicleWithRefit():     " + AIVehicle.BuildVehicleWithRefit(28479, 211, 9));
 	print("    GetCapacity():               " + AIVehicle.GetCapacity(20, 9));
 	print("    GetCapacity():               " + AIVehicle.GetCapacity(20, 5));

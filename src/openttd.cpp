@@ -20,22 +20,18 @@
 #include "error_func.h"
 #include "gui.h"
 
-#include "base_media_base.h"
 #include "base_media_graphics.h"
 #include "base_media_music.h"
 #include "base_media_sounds.h"
 #include "saveload/saveload.h"
+#include "saveload/saveload_func.h"
 #include "company_cmd.h"
 #include "company_func.h"
-#include "company_gui.h"
 #include "command_func.h"
 #include "news_func.h"
 #include "fios.h"
-#include "aircraft.h"
-#include "roadveh.h"
-#include "train.h"
-#include "ship.h"
 #include "console_func.h"
+#include "spritecache.h"
 #include "screenshot.h"
 #include "network/network.h"
 #include "network/network_func.h"
@@ -48,25 +44,21 @@
 #include "vehicle_func.h"
 #include "gamelog.h"
 #include "animated_tile_func.h"
-#include "roadstop_base.h"
+#include "engine_base.h"
 #include "elrail_func.h"
+#include "landscape.h"
 #include "rev.h"
 #include "highscore.h"
-#include "station_base.h"
 #include "crashlog.h"
 #include "engine_func.h"
 #include "core/random_func.hpp"
 #include "rail_gui.h"
-#include "road_gui.h"
 #include "core/backup_type.hpp"
 #include "hotkeys.h"
 #include "newgrf.h"
 #include "misc/getoptdata.h"
 #include "game/game.hpp"
 #include "game/game_config.hpp"
-#include "town.h"
-#include "subsidy_func.h"
-#include "gfx_layout.h"
 #include "viewport_func.h"
 #include "viewport_sprite_sorter.h"
 #include "framerate_type.h"
@@ -81,6 +73,7 @@
 #include "timer/timer_game_tick.h"
 #include "social_integration.h"
 #include "core/string_consumer.hpp"
+#include "window_func.h"
 
 #include "linkgraph/linkgraphschedule.h"
 
@@ -129,7 +122,7 @@ void UserErrorI(const std::string &str)
 	EM_ASM(if (window["openttd_abort"]) openttd_abort());
 #endif
 
-	_exit(1);
+	std::_Exit(1);
 }
 
 /* Doxygen in error_func.h */
@@ -307,9 +300,6 @@ static void ShutdownGame()
 
 	LinkGraphSchedule::Clear();
 	PoolBase::Clean(PT_ALL);
-
-	/* No NewGRFs were loaded when it was still bootstrapping. */
-	if (_game_mode != GameMode::Bootstrap) ResetNewGRFData();
 
 	FontCache::UninitializeFontCaches();
 }
@@ -666,7 +656,7 @@ int openttd_main(std::span<std::string_view> arguments)
 	DeterminePaths(arguments[0], only_local_path);
 	TarScanner::DoScan(TarScanner::Mode::Baseset);
 
-	if (dedicated) Debug(net, 3, "Starting dedicated server, version {}", _openttd_revision);
+	if (dedicated) Debug(Facility::Net, Severity::Notice, "Starting dedicated server, version {}", _openttd_revision);
 	if (_dedicated_forks && !dedicated) _dedicated_forks = false;
 
 #if defined(UNIX)
@@ -730,7 +720,7 @@ int openttd_main(std::span<std::string_view> arguments)
 	/* Initialize game palette */
 	GfxInitPalettes();
 
-	Debug(misc, 1, "Loading blitter...");
+	Debug(Facility::Misc, Severity::Error, "Loading blitter...");
 	if (blitter.empty() && !_ini_blitter.empty()) blitter = _ini_blitter;
 	_blitter_autodetected = blitter.empty();
 	/* Activate the initial blitter.
@@ -953,7 +943,7 @@ bool SafeLoad(const std::string &filename, SaveLoadOperation fop, DetailedFileTy
 		 * server is a better reaction than starting the server with a newly
 		 * generated map as it is quite likely to be started from a script.
 		 */
-		Debug(net, 0, "Loading requested map failed; closing server.");
+		Debug(Facility::Net, Severity::Critical, "Loading requested map failed; closing server.");
 		_exit_game = true;
 		return false;
 	}
@@ -972,7 +962,7 @@ bool SafeLoad(const std::string &filename, SaveLoadOperation fop, DetailedFileTy
 		 * nothing else to do than start a new game, as it might have failed
 		 * trying to reload the originally loaded savegame/scenario.
 		 */
-		Debug(net, 0, "Loading game failed, so a new (random) game will be started");
+		Debug(Facility::Net, Severity::Critical, "Loading game failed, so a new (random) game will be started");
 		MakeNewGame(false, true);
 		return false;
 	}
@@ -1241,7 +1231,7 @@ void StateGameLoop()
 		CallWindowGameTickEvent();
 		NewsLoop();
 	} else {
-		if (_debug_desync_level > 2 && TimerGameEconomy::date_fract == 0 && (TimerGameEconomy::date.base() & 0x1F) == 0) {
+		if (IsVisibleSeverity(Facility::Desync, Severity::Error) && TimerGameEconomy::date_fract == 0 && (TimerGameEconomy::date.base() & 0x1F) == 0) {
 			/* Save the desync savegame if needed. */
 			std::string name = fmt::format("dmp_cmds_{:08x}_{:08x}.sav", _settings_game.game_creation.generation_seed, TimerGameEconomy::date);
 			SaveOrLoad(name, SaveLoadOperation::Save, DetailedFileType::GameFile, Subdirectory::Autosave, false);

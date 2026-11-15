@@ -1122,7 +1122,7 @@ public:
 				}
 			}
 
-			Debug(misc, 3, "[Airport] Drag-building runway atomically: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
+			Debug(Facility::Misc, Severity::Notice, "[Airport] Drag-building runway atomically: {} tiles, first={}", ordered_tiles.size(), ordered_tiles.front().base());
 
 			if (is_main_runway) {
 				/* Place large runway end pieces at both ends */

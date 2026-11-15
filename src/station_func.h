@@ -16,15 +16,15 @@
 #include "vehicle_type.h"
 #include "economy_func.h"
 #include "rail.h"
-#include "road.h"
 #include "linkgraph/linkgraph_type.h"
-#include "industry_type.h"
 
 void ModifyStationRatingAround(TileIndex tile, Owner owner, int amount, uint radius);
 
 void ShowStationViewWindow(StationID station);
 void UpdateAllStationVirtCoords();
 void ClearAllStationCachedNames();
+
+CommandCost CheckStationSpread(TileArea area, const TileArea &new_area);
 
 /**
  * Optional per-tile filter narrowing a rectangular catchment scan to the tiles a

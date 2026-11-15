@@ -11,7 +11,6 @@
 #include "debug.h"
 #include "water_map.h"
 #include "error_func.h"
-#include "string_func.h"
 #include "pathfinder/water_regions.h"
 
 #include "safeguards.h"
@@ -45,7 +44,7 @@
 		FatalError("Invalid map size");
 	}
 
-	Debug(map, 1, "Allocating map of size {}x{}", size_x, size_y);
+	Debug(Facility::Map, Severity::Error, "Allocating map of size {}x{}", size_x, size_y);
 
 	Map::log_x = FindFirstBit(size_x);
 	Map::log_y = FindFirstBit(size_y);

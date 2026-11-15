@@ -30,7 +30,6 @@
 #include "signs_cmd.h"
 #include "timer/timer.h"
 #include "timer/timer_window.h"
-#include "dropdown_common_type.h"
 #include "dropdown_func.h"
 
 #include "widgets/sign_widget.h"
@@ -63,7 +62,7 @@ struct SignList {
 	{
 		if (!this->signs.NeedRebuild()) return;
 
-		Debug(misc, 3, "Building sign list");
+		Debug(Facility::Misc, Severity::Notice, "Building sign list");
 
 		this->signs.clear();
 		this->signs.reserve(Sign::GetNumItems());

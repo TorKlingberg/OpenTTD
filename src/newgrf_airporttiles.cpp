@@ -12,7 +12,6 @@
 #include "newgrf_airporttiles.h"
 #include "newgrf_badge.h"
 #include "newgrf_spritegroup.h"
-#include "newgrf_sound.h"
 #include "station_base.h"
 #include "water.h"
 #include "landscape.h"
@@ -20,7 +19,6 @@
 #include "town.h"
 #include "newgrf_animation_base.h"
 
-#include "table/strings.h"
 #include "table/airporttiles.h"
 
 #include "safeguards.h"
@@ -71,7 +69,7 @@ void AirportTileOverrideManager::SetEntitySpec(AirportTileSpec &&airpts)
 	StationGfx airpt_id = this->AddEntityID(airpts.grf_prop.local_id, airpts.grf_prop.grfid, airpts.grf_prop.subst_id);
 
 	if (airpt_id == this->invalid_id) {
-		GrfMsg(1, "AirportTile.SetEntitySpec: Too many airport tiles allocated. Ignoring.");
+		GrfMsg(Severity::Error, "AirportTile.SetEntitySpec: Too many airport tiles allocated. Ignoring.");
 		return;
 	}
 
@@ -196,7 +194,7 @@ static uint32_t GetAirportTileIDAtOffset(TileIndex tile, const Station *st, GrfI
 		case 0x7A: return GetBadgeVariableResult(*this->ro.grffile, this->ats->badges, parameter);
 	}
 
-	Debug(grf, 1, "Unhandled airport tile variable 0x{:X}", variable);
+	this->ro.UnhandledVariable(variable);
 
 	available = false;
 	return UINT_MAX;
@@ -321,7 +319,7 @@ bool TriggerAirportTileAnimation(Station *st, TileIndex tile, AirportAnimationTr
 
 bool TriggerAirportAnimation(Station *st, AirportAnimationTrigger trigger, CargoType cargo_type)
 {
-	if (st->airport.tile == INVALID_TILE) return false;
+	if (st->airport.IsEmpty()) return false;
 
 	bool ret = true;
 	uint32_t random = Random();

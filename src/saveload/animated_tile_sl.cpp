@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 
 #include "saveload.h"
+#include "saveload_error.hpp"
 #include "compat/animated_tile_sl_compat.h"
 
 #include "../tile_type.h"
@@ -19,7 +20,7 @@
 extern std::vector<TileIndex> _animated_tiles;
 
 static const SaveLoad _animated_tile_desc[] = {
-	 SLEG_VECTOR("tiles", _animated_tiles, VarTypes::U32),
+	SaveLoad::Vector<VarFileType::U32>("tiles", SLE_GLOBAL_ADDRESS(_animated_tiles)),
 };
 
 struct ANITChunkHandler : ChunkHandler {
@@ -39,7 +40,7 @@ struct ANITChunkHandler : ChunkHandler {
 		if (IsSavegameVersionBefore(SaveLoadVersion::NewGRFMoreAnimation)) {
 			/* In pre version 6, we has 16bit per tile, now we have 32bit per tile, convert it ;) */
 			TileIndex anim_list[256];
-			SlCopy(anim_list, 256, IsSavegameVersionBefore(SaveLoadVersion::MultipleRoadStops) ? (VarFileType::U16 | VarMemType::U32) : VarTypes::U32);
+			SlCopy(anim_list, 256, IsSavegameVersionBefore(SaveLoadVersion::MultipleRoadStops) ? VarType{VarFileType::U16, VarMemType::U32} : VarTypes::U32);
 
 			for (int i = 0; i < 256; i++) {
 				if (anim_list[i] == 0) break;

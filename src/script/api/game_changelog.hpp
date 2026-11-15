@@ -20,7 +20,9 @@
  * This version is not yet released. The following changes are not set in stone yet.
  *
  * API additions:
- * \li GSRail.RemoveRailDepot
+ * \li GSRail::RemoveRailDepot
+ * \li GSDepot
+ * \li GSError::ERR_CAT_DEPOT
  * \li GSAirport::ModularPiece
  * \li GSAirport::ModularRunwayFlags
  * \li GSAirport::ModularSafety

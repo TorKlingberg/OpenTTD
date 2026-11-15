@@ -26,6 +26,7 @@
 #include "../landscape.h"
 #include "../station_base.h"
 #include "../station_cmd.h"
+#include "../station_func.h"
 #include "../misc/endian_buffer.hpp"
 #include "../network/core/config.h"
 #include "../station_map.h"
@@ -193,12 +194,12 @@ TEST_CASE("ModularAirportLayoutAccountingMatchesStockCalibration")
 
 		std::vector<ModularAirportPieceID> pieces;
 		const TileIndex base = TileXY(1, 1);
-		for (AirportTileTableIterator iter(as->layouts[0].tiles, base); iter != INVALID_TILE; ++iter) {
-			const TileIndex tile = iter;
+		for (AirportTileTableIterator iter(as->layouts[0].tiles, base, false); *iter != INVALID_TILE; ++iter) {
+			const TileIndex tile = *iter;
 			const int dx = TileX(tile) - TileX(base);
 			const int dy = TileY(tile) - TileY(base);
 			pieces.push_back(ApplyStockTileOverride(entry.airport_type, dx, dy,
-					MapStockGfxToModularPiece(iter.GetStationGfx())));
+					MapStockGfxToModularPiece(iter.GetAirportGfx())));
 		}
 
 		CHECK(GetModularAirportMaintenancePointsFromPieces(pieces) == entry.maintenance * 8);
@@ -312,11 +313,11 @@ TEST_CASE("ModularAirportStockConversionMatchesManualMetadata")
 		std::vector<ModularAirportTileData> converted = ConvertStockAirportLayoutToModular(airport_type, 0, base);
 		std::vector<ModularAirportTileData> manual;
 
-		for (AirportTileTableIterator iter(as->layouts[0].tiles, base); iter != INVALID_TILE; ++iter) {
-			const TileIndex tile = iter;
+		for (AirportTileTableIterator iter(as->layouts[0].tiles, base, false); *iter != INVALID_TILE; ++iter) {
+			const TileIndex tile = *iter;
 			const int dx = TileX(tile) - TileX(base);
 			const int dy = TileY(tile) - TileY(base);
-			const StationGfx stock_gfx = iter.GetStationGfx();
+			const StationGfx stock_gfx = iter.GetAirportGfx();
 			ModularAirportTileData data;
 			data.tile = tile;
 			data.piece_type = ApplyStockTileOverride(airport_type, dx, dy, MapStockGfxToModularPiece(stock_gfx));

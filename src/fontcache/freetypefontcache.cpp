@@ -14,9 +14,10 @@
 #include "../debug.h"
 #include "../fontcache.h"
 #include "../blitter/factory.hpp"
-#include "../zoom_func.h"
 #include "../fileio_func.h"
 #include "../error_func.h"
+#include "../spritecache.h"
+#include "../zoom_func.h"
 #include "../../os/unix/font_unix.h"
 #include "truetypefontcache.h"
 
@@ -107,7 +108,7 @@ void FreeTypeFontCache::SetFontSize(int pixels)
 		this->height       = this->ascender - this->descender;
 	} else {
 		/* Both FT_Set_Pixel_Sizes and FT_Select_Size failed. */
-		Debug(fontcache, 0, "Font size selection failed. Using FontCache defaults.");
+		Debug(Facility::Fontcache, Severity::Critical, "Font size selection failed. Using FontCache defaults.");
 	}
 }
 
@@ -230,7 +231,7 @@ public:
 				return nullptr;
 			}
 
-			Debug(fontcache, 2, "Initialized");
+			Debug(Facility::Fontcache, Severity::Warning, "Initialized");
 		}
 
 		FT_Face face = nullptr;
@@ -275,7 +276,7 @@ public:
 private:
 	static std::unique_ptr<FontCache> LoadFont(FontSize fs, FT_Face face, std::string_view font_name, uint size)
 	{
-		Debug(fontcache, 2, "Requested '{}', using '{} {}'", font_name, face->family_name, face->style_name);
+		Debug(Facility::Fontcache, Severity::Warning, "Requested '{}', using '{} {}'", font_name, face->family_name, face->style_name);
 
 		/* Attempt to select the unicode character map */
 		FT_Error error = FT_Select_Charmap(face, ft_encoding_unicode);

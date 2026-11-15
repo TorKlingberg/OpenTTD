@@ -11,7 +11,7 @@
 #define PATHFINDER_FUNC_H
 
 #include "../tile_cmd.h"
-#include "../waypoint_base.h"
+#include "../base_station_base.h"
 
 /**
  * Calculates the tile of given station that is closest to a given tile
@@ -28,7 +28,7 @@ inline TileIndex CalcClosestStationTile(StationID station, TileIndex tile, Stati
 	TileArea ta = st->GetTileArea(station_type);
 
 	/* If the rail station is (temporarily) not present, use the station sign to drive near the station */
-	if (ta.tile == INVALID_TILE) return st->xy;
+	if (ta.IsEmpty()) return st->xy;
 
 	uint minx = TileX(ta.tile);  // topmost corner of station
 	uint miny = TileY(ta.tile);

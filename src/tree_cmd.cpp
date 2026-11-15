@@ -8,8 +8,10 @@
 /** @file tree_cmd.cpp Handling of tree tiles. */
 
 #include "stdafx.h"
+#include "bridge_map.h"
 #include "clear_map.h"
 #include "landscape.h"
+#include "tilearea_type.h"
 #include "tree_map.h"
 #include "viewport_func.h"
 #include "command_func.h"
@@ -60,7 +62,8 @@ static bool CanPlantTreesOnTile(TileIndex tile, bool allow_desert)
 {
 	switch (GetTileType(tile)) {
 		case TileType::Water:
-			return !IsBridgeAbove(tile) && IsCoast(tile) && !IsSlopeWithOneCornerRaised(GetTileSlope(tile));
+			/* Consistency with normal rocky tiles, coast with rocks is not eligible for trees. */
+			return !IsBridgeAbove(tile) && GetWaterTileType(tile) == WaterTileType::Coast && !IsSlopeWithOneCornerRaised(GetTileSlope(tile));
 
 		case TileType::Clear:
 			return !IsBridgeAbove(tile) && !IsClearGround(tile, ClearGround::Fields) && !IsClearGround(tile, ClearGround::Rocks) &&
@@ -523,10 +526,9 @@ CommandCost CmdPlantTree(DoCommandFlags flags, TileIndex tile, TileIndex start_t
 	Company *c = (_game_mode != GameMode::Editor) ? Company::GetIfValid(_current_company) : nullptr;
 	int limit = (c == nullptr ? INT32_MAX : GB(c->tree_limit, 16, 16));
 
-	std::unique_ptr<TileIterator> iter = TileIterator::Create(tile, start_tile, diagonal);
-	for (; *iter != INVALID_TILE; ++(*iter)) {
-		TileIndex current_tile = *iter;
-		switch (GetTileType(current_tile)) {
+	for (TileIndex current_tile : CreateOrthoDiagonalArea(tile, start_tile, diagonal)) {
+		TileType tile_type = GetTileType(current_tile);
+		switch (tile_type) {
 			case TileType::Trees:
 				/* no more space for trees? */
 				if (GetTreeCount(current_tile) == 4) {
@@ -581,19 +583,26 @@ CommandCost CmdPlantTree(DoCommandFlags flags, TileIndex tile, TileIndex start_t
 					break;
 				}
 
-				if (IsTileType(current_tile, TileType::Clear)) {
+				bool tile_needs_to_be_cleared = false;
+				if (tile_type == TileType::Clear) {
 					/* Remove fields or rocks. Note that the ground will get barrened */
 					switch (GetClearGround(current_tile)) {
 						case ClearGround::Fields:
-						case ClearGround::Rocks: {
-							CommandCost ret = Command<Commands::LandscapeClear>::Do(flags, current_tile);
-							if (ret.Failed()) return ret;
-							cost.AddCost(ret.GetCost());
+						case ClearGround::Rocks:
+							tile_needs_to_be_cleared = true;
 							break;
-						}
 
-						default: break;
+						default:
+							break;
 					}
+				} else if (tile_type == TileType::Water) {
+					tile_needs_to_be_cleared = GetWaterTileType(current_tile) != WaterTileType::Coast;
+				}
+
+				if (tile_needs_to_be_cleared) {
+					CommandCost ret = Command<Commands::LandscapeClear>::Do(flags, current_tile);
+					if (ret.Failed()) return ret;
+					cost.AddCost(ret.GetCost());
 				}
 
 				if (_game_mode != GameMode::Editor && Company::IsValidID(_current_company)) {
@@ -731,7 +740,12 @@ static CommandCost ClearTile_Trees(TileIndex tile, DoCommandFlags flags)
 	uint num = GetTreeCount(tile);
 	if (IsInsideMM(GetTreeType(tile), TREE_RAINFOREST, TREE_CACTUS)) num *= 4;
 
-	if (flags.Test(DoCommandFlag::Execute)) DoClearSquare(tile);
+	if (flags.Test(DoCommandFlag::Execute)) {
+		DoClearSquare(tile);
+
+		/* We might want to clear to rocks instead of dirt/grass. */
+		if (flags.Test(DoCommandFlag::ClearToRocks)) MakeClear(tile, ClearGround::Rocks, 3);
+	}
 
 	return CommandCost(ExpensesType::Construction, num * _price[Price::ClearTrees]);
 }

@@ -536,7 +536,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	if (crossing.found && update_cache) {
 		const bool is_new_pair = InsertCrossingCacheKey(crossing_key);
 		if (is_new_pair) {
-			Debug(misc, 2, "[ModAp] pathfind-crossing-required: from={} to={} cost={} strict_failed",
+			Debug(Facility::Misc, Severity::Warning, "[ModAp] pathfind-crossing-required: from={} to={} cost={} strict_failed",
 				start.base(), goal.base(), crossing.cost);
 		}
 	}

@@ -761,7 +761,7 @@ static void Disaster_Zeppeliner_Init()
 	int x = TileX(RandomTile()) * TILE_SIZE + TILE_SIZE / 2;
 
 	for (const Station *st : Station::Iterate()) {
-		if (st->airport.tile != INVALID_TILE && (st->airport.type == AT_SMALL || st->airport.type == AT_LARGE || st->airport.type == AT_MODULAR)) {
+		if (!st->airport.IsEmpty() && (st->airport.type == AT_SMALL || st->airport.type == AT_LARGE || st->airport.type == AT_MODULAR)) {
 			x = (TileX(st->airport.tile) + 2) * TILE_SIZE;
 			break;
 		}

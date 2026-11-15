@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 
 #include "saveload.h"
+#include "saveload_error.hpp"
 #include "compat/map_sl_compat.h"
 
 #include "../map_func.h"
@@ -22,8 +23,8 @@ static uint32_t _map_dim_x;
 static uint32_t _map_dim_y;
 
 static const SaveLoad _map_desc[] = {
-	SLEG_CONDVAR("dim_x", _map_dim_x, VarTypes::U32, SaveLoadVersion::MultipleRoadStops, SaveLoadVersion::MaxVersion),
-	SLEG_CONDVAR("dim_y", _map_dim_y, VarTypes::U32, SaveLoadVersion::MultipleRoadStops, SaveLoadVersion::MaxVersion),
+	SaveLoad::Variable<VarFileType::U32>("dim_x", SLE_GLOBAL_ADDRESS(_map_dim_x), SaveLoadVersion::MultipleRoadStops),
+	SaveLoad::Variable<VarFileType::U32>("dim_y", SLE_GLOBAL_ADDRESS(_map_dim_y), SaveLoadVersion::MultipleRoadStops),
 };
 
 struct MAPSChunkHandler : ChunkHandler {
@@ -158,7 +159,7 @@ struct MAP2ChunkHandler : ChunkHandler {
 		for (TileIndex i{}; i != size;) {
 			SlCopy(buf.data(), MAP_SL_BUF_SIZE,
 				/* In those versions the m2 was 8 bits */
-				IsSavegameVersionBefore(SaveLoadVersion::BigMap) ? VarFileType::U8 | VarMemType::U16 : VarTypes::U16
+				IsSavegameVersionBefore(SaveLoadVersion::BigMap) ? VarType{VarFileType::U8, VarMemType::U16} : VarTypes::U16
 			);
 			for (auto b : buf) Tile(i++).m2() = b;
 		}

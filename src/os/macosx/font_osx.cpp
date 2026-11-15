@@ -14,6 +14,7 @@
 #include "../../blitter/factory.hpp"
 #include "../../error_func.h"
 #include "../../fileio_func.h"
+#include "../../spritecache.h"
 #include "../../string_func.h"
 #include "../../strings_func.h"
 #include "../../zoom_func.h"
@@ -91,7 +92,7 @@ void CoreTextFontCache::SetFontSize(int pixels)
 	CFStringGetCString(font_name.get(), name, lengthof(name), kCFStringEncodingUTF8);
 	this->font_name = name;
 
-	Debug(fontcache, 2, "Loaded font '{}' with size {}", this->font_name, pixels);
+	Debug(Facility::Fontcache, Severity::Warning, "Loaded font '{}' with size {}", this->font_name, pixels);
 }
 
 GlyphID CoreTextFontCache::MapCharToGlyph(char32_t key, bool allow_fallback)
@@ -239,15 +240,15 @@ public:
 		/* Determine fallback font using CoreText. This uses the language isocode
 		 * to find a suitable font. CoreText is available from 10.5 onwards. */
 		std::string lang;
-		if (language_isocode == "zh_TW") {
+		if (language_isocode == "zh-TW") {
 			/* Traditional Chinese */
 			lang = "zh-Hant";
-		} else if (language_isocode == "zh_CN") {
+		} else if (language_isocode == "zh-CN") {
 			/* Simplified Chinese */
 			lang = "zh-Hans";
 		} else {
-			/* Just copy the first part of the isocode. */
-			lang = language_isocode.substr(0, language_isocode.find('_'));
+			/* Just copy the isocode. */
+			lang = language_isocode;
 		}
 
 		/* Create a font descriptor matching the wanted language and latin (english) glyphs.
@@ -298,10 +299,10 @@ public:
 				if (name.starts_with(".") || name.starts_with("LastResort")) continue;
 
 				/* Save result. */
-				result = FontCache::TryFallback(callback->missing_fontsizes, callback->missing_glyphs, std::string{name});
+				result = FontCache::TryFallback(callback->missing_fontsizes, callback->required_glyphs, std::string{name});
 				if (result) {
 					FontCache::AddFallback(callback->missing_fontsizes, name);
-					Debug(fontcache, 2, "CT-Font for {}: {}", language_isocode, name);
+					Debug(Facility::Fontcache, Severity::Warning, "CT-Font for {}: {}", language_isocode, name);
 					break;
 				}
 			}
@@ -310,7 +311,7 @@ public:
 		if (!result) {
 			/* For some OS versions, the font 'Arial Unicode MS' does not report all languages it
 			 * supports. If we didn't find any other font, just try it, maybe we get lucky. */
-			result = FontCache::TryFallback(callback->missing_fontsizes, callback->missing_glyphs, "Arial Unicode MS");
+			result = FontCache::TryFallback(callback->missing_fontsizes, callback->required_glyphs, "Arial Unicode MS");
 			if (result) {
 				FontCache::AddFallback(callback->missing_fontsizes, "Arial Unicode MS");
 			}

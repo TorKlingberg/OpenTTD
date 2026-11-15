@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 
 #include "saveload.h"
+#include "saveload_error.hpp"
 #include "newgrf_sl.h"
 
 #include "../airport_ground_pathfinder.h"
@@ -17,7 +18,7 @@
 #include "../safeguards.h"
 
 static const SaveLoad _modular_airport_crossing_path_cache_desc[] = {
-	SLEG_VECTOR("keys", _modular_airport_crossing_required_path_cache, VarTypes::U64),
+	SaveLoad::Vector<VarFileType::U64>("keys", SLE_GLOBAL_ADDRESS(_modular_airport_crossing_required_path_cache)),
 };
 
 struct APIDChunkHandler : NewGRFMappingChunkHandler {

@@ -11,6 +11,7 @@
 #include "../debug.h"
 #include "newgrf_bytereader.h"
 #include "newgrf_internal.h"
+#include "../newgrf_text.h"
 #include "../language.h"
 
 #include "table/strings.h"
@@ -62,13 +63,13 @@ static void GRFLoadError(ByteReader &buf)
 	/* Skip the error until the activation stage unless bit 7 of the severity
 	 * is set. */
 	if (!HasBit(severity, 7) && _cur_gps.stage == GrfLoadingStage::Init) {
-		GrfMsg(7, "GRFLoadError: Skipping non-fatal GRFLoadError in stage {}", _cur_gps.stage);
+		GrfMsg(Severity::Trace1, "GRFLoadError: Skipping non-fatal GRFLoadError in stage {}", _cur_gps.stage);
 		return;
 	}
 	ClrBit(severity, 7);
 
 	if (severity >= lengthof(sevstr)) {
-		GrfMsg(7, "GRFLoadError: Invalid severity id {}. Setting to 2 (non-fatal error).", severity);
+		GrfMsg(Severity::Trace1, "GRFLoadError: Invalid severity id {}. Setting to 2 (non-fatal error).", severity);
 		severity = 2;
 	} else if (severity == 3) {
 		/* This is a fatal error, so make sure the GRF is deactivated and no
@@ -77,12 +78,12 @@ static void GRFLoadError(ByteReader &buf)
 	}
 
 	if (message_id >= lengthof(msgstr) && message_id != 0xFF) {
-		GrfMsg(7, "GRFLoadError: Invalid message id.");
+		GrfMsg(Severity::Trace1, "GRFLoadError: Invalid message id.");
 		return;
 	}
 
 	if (buf.Remaining() <= 1) {
-		GrfMsg(7, "GRFLoadError: No message data supplied.");
+		GrfMsg(Severity::Trace1, "GRFLoadError: No message data supplied.");
 		return;
 	}
 
@@ -101,7 +102,7 @@ static void GRFLoadError(ByteReader &buf)
 
 			error.custom_message = TranslateTTDPatchCodes(_cur_gps.grffile->grfid, _current_language->newgrflangid, true, message, SCC_RAW_STRING_POINTER);
 		} else {
-			GrfMsg(7, "GRFLoadError: No custom message supplied.");
+			GrfMsg(Severity::Trace1, "GRFLoadError: No custom message supplied.");
 			error.custom_message.clear();
 		}
 	} else {
@@ -113,7 +114,7 @@ static void GRFLoadError(ByteReader &buf)
 
 		error.data = TranslateTTDPatchCodes(_cur_gps.grffile->grfid, _current_language->newgrflangid, true, data);
 	} else {
-		GrfMsg(7, "GRFLoadError: No message data supplied.");
+		GrfMsg(Severity::Trace1, "GRFLoadError: No message data supplied.");
 		error.data.clear();
 	}
 

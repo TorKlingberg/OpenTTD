@@ -10,7 +10,6 @@
 #ifndef NEWGRF_PROFILING_H
 #define NEWGRF_PROFILING_H
 
-#include "timer/timer_game_calendar.h"
 #include "newgrf.h"
 #include "newgrf_callbacks.h"
 #include "newgrf_spritegroup.h"
@@ -21,7 +20,6 @@
  */
 struct NewGRFProfiler {
 	NewGRFProfiler(const GRFFile *grffile);
-	~NewGRFProfiler();
 
 	void BeginResolve(const ResolverObject &resolver);
 	void EndResolve(const ResolverResult &result);

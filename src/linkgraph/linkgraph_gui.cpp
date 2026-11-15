@@ -13,13 +13,13 @@
 #include "../company_base.h"
 #include "../company_gui.h"
 #include "../timer/timer_game_tick.h"
-#include "../timer/timer_game_calendar.h"
 #include "../viewport_func.h"
 #include "../zoom_func.h"
 #include "../smallmap_gui.h"
 #include "../core/geometry_func.hpp"
 #include "../widgets/link_graph_legend_widget.h"
 #include "../strings_func.h"
+#include "linkgraph_base.h"
 #include "linkgraph_gui.h"
 
 #include "table/strings.h"
@@ -78,7 +78,7 @@ void LinkGraphOverlay::RebuildCache()
 	this->GetWidgetDpi(&dpi);
 
 	for (const Station *sta : Station::Iterate()) {
-		if (sta->rect.IsEmpty()) continue;
+		if (sta->spread.IsEmpty()) continue;
 
 		Point pta = this->GetStationMiddle(sta);
 
@@ -104,7 +104,7 @@ void LinkGraphOverlay::RebuildCache()
 
 				/* Show links between stations of selected companies or "neutral" ones like oilrigs. */
 				if (stb->owner != OWNER_NONE && sta->owner != OWNER_NONE && !this->company_mask.Test(stb->owner)) continue;
-				if (stb->rect.IsEmpty()) continue;
+				if (stb->spread.IsEmpty()) continue;
 
 				if (!this->IsLinkVisible(pta, this->GetStationMiddle(stb), &dpi)) continue;
 

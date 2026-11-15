@@ -37,6 +37,7 @@
 #include "strings_func.h"
 #include "window_func.h"
 #include "company_func.h"
+#include "company_base.h"
 #include "rev.h"
 #include "error.h"
 #include "gamelog.h"
@@ -49,7 +50,6 @@
 #include "newgrf_badge_config.h"
 #include "base_media_base.h"
 #include "base_media_graphics.h"
-#include "fios.h"
 #include "fileio_func.h"
 #include "settings_cmd.h"
 
@@ -797,27 +797,15 @@ void IntSettingDesc::ResetToDefault(void *object) const
 std::string StringSettingDesc::FormatValue(const void *object) const
 {
 	const std::string &str = this->Read(object);
-	switch (this->save.conv.mem) {
-		case VarMemType::Str: return str;
-
-		case VarMemType::StrQ:
-			if (str.empty()) {
-				return str;
-			}
-			return fmt::format("\"{}\"", str);
-
-		default: NOT_REACHED();
-	}
+	if (str.empty()) return str;
+	return fmt::format("\"{}\"", str);
 }
 
-bool StringSettingDesc::IsSameValue(const IniItem *item, void *object) const
+bool StringSettingDesc::IsSameValue(const IniItem *, void *) const
 {
-	/* The ini parsing removes the quotes, which are needed to retain the spaces in STRQs,
+	/* The ini parsing removes the quotes. To retain spaces, the string needs to be quoted,
 	 * so those values are always different in the parsed ini item than they should be. */
-	if (this->save.conv.mem == VarMemType::StrQ) return false;
-
-	const std::string &str = this->Read(object);
-	return item->value->compare(str) == 0;
+	return false;
 }
 
 bool StringSettingDesc::IsDefaultValue(void *object) const
@@ -1017,7 +1005,7 @@ static void AILoadConfig(const IniFile &ini, std::string_view grpname)
 		config->Change(item.name);
 		if (!config->HasScript()) {
 			if (item.name != "none") {
-				Debug(script, 0, "The AI by the name '{}' was no longer found, and removed from the list.", item.name);
+				Debug(Facility::Script, Severity::Critical, "The AI by the name '{}' was no longer found, and removed from the list.", item.name);
 				continue;
 			}
 		}
@@ -1044,7 +1032,7 @@ static void GameLoadConfig(const IniFile &ini, std::string_view grpname)
 	config->Change(item.name);
 	if (!config->HasScript()) {
 		if (item.name != "none") {
-			Debug(script, 0, "The GameScript by the name '{}' was no longer found, and removed from the list.", item.name);
+			Debug(Facility::Script, Severity::Critical, "The GameScript by the name '{}' was no longer found, and removed from the list.", item.name);
 			return;
 		}
 	}
@@ -1954,10 +1942,7 @@ void SyncCompanySettings()
 bool SetSettingValue(const StringSettingDesc *sd, std::string_view value, bool force_newgame)
 {
 	assert(sd->flags.Test(SettingFlag::NoNetworkSync));
-
-	if (sd->save.conv.mem == VarMemType::StrQ && value == "(null)") {
-		value = {};
-	}
+	if (value == "(null)") value = {};
 
 	const void *object = (_game_mode == GameMode::Menu || force_newgame) ? &_settings_newgame : &_settings_game;
 	sd->AsStringSetting()->ChangeValue(object, std::string{value});
@@ -2082,16 +2067,11 @@ void IConsoleListSettings(std::string_view prefilter)
 	IConsolePrint(CC_HELP, "Use 'setting' command to change a value.");
 }
 
-ScriptConfigSettings::ScriptConfigSettings()
-{
-	/* Instantiate here, because unique_ptr needs a complete type. */
-}
+/** Needs to be manually defined due to incomplete definition of types in the header. */
+ScriptConfigSettings::ScriptConfigSettings() = default;
 
 /** Needs to be manually defined due to incomplete definition of types in the header. */
-ScriptConfigSettings::~ScriptConfigSettings()
-{
-	/* Instantiate here, because unique_ptr needs a complete type. */
-}
+ScriptConfigSettings::~ScriptConfigSettings() = default;
 
 ScriptConfigSettings::ScriptConfigSettings(const ScriptConfigSettings &other)
 {

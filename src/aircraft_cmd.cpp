@@ -13,7 +13,6 @@
 #include "news_func.h"
 #include "newgrf_engine.h"
 #include "newgrf_sound.h"
-#include "error_func.h"
 #include "strings_func.h"
 #include "command_func.h"
 #include "window_func.h"
@@ -29,6 +28,7 @@
 #include "effectvehicle_func.h"
 #include "station_base.h"
 #include "station_map.h"
+#include "station_func.h"
 #include "engine_base.h"
 #include "core/random_func.hpp"
 #include "core/backup_type.hpp"
@@ -95,11 +95,11 @@ static const IntervalTimer<TimerGameEconomy> _economy_airport_movement_yearly({T
 {
 	const auto current_year = TimerGameEconomy::year.base();
 	const auto finished_year = current_year > 0 ? current_year - 1 : 0;
-	Debug(misc, 1, "[AirportStats] Year {} totals: landings={} takeoffs={}", finished_year, _airport_landings_this_year, _airport_takeoffs_this_year);
+	Debug(Facility::Misc, Severity::Error, "[AirportStats] Year {} totals: landings={} takeoffs={}", finished_year, _airport_landings_this_year, _airport_takeoffs_this_year);
 
 	for (const auto &[station_id, tally] : _airport_movements_by_station) {
 		const Station *st = Station::GetIfValid(station_id);
-		Debug(misc, 1, "[AirportStats] Year {} station {} \"{}\": landings={} takeoffs={}",
+		Debug(Facility::Misc, Severity::Error, "[AirportStats] Year {} station {} \"{}\": landings={} takeoffs={}",
 				finished_year, station_id.base(),
 				st != nullptr ? GetString(STR_STATION_NAME, st->index, st->facilities) : "<gone>",
 				tally.first, tally.second);
@@ -155,11 +155,11 @@ static void CrashAirplane(Aircraft *v);
 
 static void LogModularHangarDiagnostics(const Station *st, const Aircraft *v, std::string_view reason)
 {
-	if (_debug_misc_level < 2) return;
+	if (!IsVisibleSeverity(Facility::Misc, Severity::Warning)) return;
 	if (st == nullptr || v == nullptr || st->airport.modular_tile_data == nullptr) return;
 	if (!ShouldLogModularRateLimited(v->index, 46, 128)) return;
 
-	Debug(misc, 2, "[ModAp] V{} hangar-diagnostics reason={} tile={} goal={} tgt={}",
+	Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} hangar-diagnostics reason={} tile={} goal={} tgt={}",
 		v->index,
 		reason,
 		IsValidTile(v->tile) ? v->tile.base() : 0,
@@ -176,13 +176,13 @@ static void LogModularHangarDiagnostics(const Station *st, const Aircraft *v, st
 		const bool reserved = IsAirportTile(t) && HasAirportTileReservation(t);
 		const VehicleID reserver = reserved ? GetModularAirportTileReservationOwner(data.tile) : VehicleID::Invalid();
 		const bool occupied = IsModularTileOccupiedByOtherAircraft(st, data.tile, v->index);
-		Debug(misc, 2, "[ModAp] V{}  hangar={} path_found={} cost={} reserved={} reserver={} occupied={} piece={}",
+		Debug(Facility::Misc, Severity::Warning, "[ModAp] V{}  hangar={} path_found={} cost={} reserved={} reserver={} occupied={} piece={}",
 			v->index, data.tile.base(), path.found, path.cost, reserved,
 			reserved ? reserver.base() : 0, occupied, data.piece_type);
 	}
 
 	if (hangar_count == 0) {
-		Debug(misc, 2, "[ModAp] V{}  no hangar pieces on airport {}", v->index, st->index);
+		Debug(Facility::Misc, Severity::Warning, "[ModAp] V{}  no hangar pieces on airport {}", v->index, st->index);
 	}
 }
 
@@ -263,8 +263,8 @@ static StationID FindNearestHangar(const Aircraft *v)
 
 		/* Check if our last and next destinations can be reached from the depot airport. */
 		if (max_range != 0) {
-			uint last_dist = (last_dest != nullptr && last_dest->airport.tile != INVALID_TILE) ? DistanceSquare(st->airport.tile, last_dest->airport.tile) : 0;
-			uint next_dist = (next_dest != nullptr && next_dest->airport.tile != INVALID_TILE) ? DistanceSquare(st->airport.tile, next_dest->airport.tile) : 0;
+			uint last_dist = (last_dest != nullptr && !last_dest->airport.IsEmpty()) ? DistanceSquare(st->airport.tile, last_dest->airport.tile) : 0;
+			uint next_dist = (next_dest != nullptr && !next_dest->airport.IsEmpty()) ? DistanceSquare(st->airport.tile, next_dest->airport.tile) : 0;
 			if (last_dist > max_range || next_dist > max_range) continue;
 		}
 
@@ -701,7 +701,7 @@ void HandleAircraftEnterHangar(Aircraft *v)
 
 void PlayAircraftSound(const Vehicle *v)
 {
-	if (!PlayVehicleSound(v, VSE_START)) {
+	if (!PlayVehicleSound(v, VehicleSoundEvent::Start)) {
 		SndPlayVehicleFx(AircraftVehInfo(v->engine_type)->sfx, v);
 	}
 }
@@ -949,7 +949,7 @@ static uint8_t AircraftGetEntryPoint(const Aircraft *v, const AirportFTAClass *a
 	const Station *st = Station::GetIfValid(v->targetairport);
 	if (st != nullptr) {
 		/* Make sure we don't go to INVALID_TILE if the airport has been removed. */
-		tile = (st->airport.tile != INVALID_TILE) ? st->airport.tile : st->xy;
+		tile = !st->airport.IsEmpty() ? st->airport.tile : st->xy;
 	}
 
 	int delta_x = v->x_pos - TileX(tile) * TILE_SIZE;
@@ -986,7 +986,7 @@ static bool AircraftController(Aircraft *v)
 	Direction rotation = Direction::N;
 	uint size_x = 1, size_y = 1;
 	if (st != nullptr) {
-		if (st->airport.tile != INVALID_TILE) {
+		if (!st->airport.IsEmpty()) {
 			tile = st->airport.tile;
 			rotation = st->airport.rotation;
 			size_x = st->airport.w;
@@ -999,7 +999,7 @@ static bool AircraftController(Aircraft *v)
 	const AirportFTAClass *afc = tile == INVALID_TILE ? GetAirport(AT_DUMMY) : st->airport.GetFTA();
 
 	/* prevent going to INVALID_TILE if airport is deleted. */
-	if (st == nullptr || st->airport.tile == INVALID_TILE) {
+	if (st == nullptr || st->airport.IsEmpty()) {
 		/* Jump into our "holding pattern" state machine if possible */
 		if (v->pos >= afc->nofelements) {
 			v->pos = v->previous_pos = AircraftGetEntryPoint(v, afc, Direction::N);
@@ -1028,7 +1028,7 @@ static bool AircraftController(Aircraft *v)
 		if (u->cur_speed > 32) {
 			v->cur_speed = 0;
 			if (--u->cur_speed == 32) {
-				if (!PlayVehicleSound(v, VSE_START)) {
+				if (!PlayVehicleSound(v, VehicleSoundEvent::Start)) {
 					SoundID sfx = AircraftVehInfo(v->engine_type)->sfx;
 					/* For compatibility with old NewGRF we ignore the sfx property, unless a NewGRF-defined sound is used.
 					 * The baseset has only one helicopter sound, so this only limits using plane or cow sounds. */
@@ -1258,7 +1258,7 @@ static bool AircraftController(Aircraft *v)
 				continue;
 			}
 
-			if (st->airport.tile == INVALID_TILE) {
+			if (st->airport.IsEmpty()) {
 				/* Airport has been removed, abort the landing procedure */
 				v->state = FLYING;
 				UpdateAircraftCache(v);
@@ -1442,6 +1442,7 @@ void Aircraft::MarkDirty()
 	if (this->subtype == AIR_HELICOPTER) {
 		GetRotorImage(this, EngineImageType::OnMap, &this->Next()->Next()->sprite_cache.sprite_seq);
 	}
+	UpdateAircraftCache(this);
 }
 
 
@@ -1485,7 +1486,7 @@ static void CrashAirplane(Aircraft *v)
 	 * airport. The crash roll consumes the synced Random(), so any change that shifts
 	 * timing reshuffles which aircraft die -- comparing two runs without this line means
 	 * attributing crash luck to whatever was being tested. */
-	Debug(misc, 1, "[AircraftLost] t={} V{} crash st={} subtype={}", TimerGameTick::counter,
+	Debug(Facility::Misc, Severity::Error, "[AircraftLost] t={} V{} crash st={} subtype={}", TimerGameTick::counter,
 			v->index.base(), v->targetairport.base(), static_cast<int>(v->subtype));
 
 	CreateEffectVehicleRel(v, 4, 4, 8, EV_EXPLOSION_LARGE);
@@ -1654,7 +1655,7 @@ static void AircraftLandAirplane(Aircraft *v)
 
 	TriggerAirportTileAnimation(st, vt, AirportAnimationTrigger::AirplaneTouchdown);
 
-	if (!PlayVehicleSound(v, VSE_TOUCHDOWN)) {
+	if (!PlayVehicleSound(v, VehicleSoundEvent::Touchdown)) {
 		SndPlayVehicleFx(SND_17_SKID_PLANE, v);
 	}
 }
@@ -1743,7 +1744,7 @@ static void HandleModularHangar(Aircraft *v, const Station *st)
 	 * Never query station data via v->tile in that case; re-target from targetairport only. */
 	if (!IsValidTile(v->tile) || !st->TileBelongsToAirport(v->tile)) {
 		if (ShouldLogModularRateLimited(v->index, 23, 64)) {
-			Debug(misc, 1, "[ModAp] Vehicle {} in HANGAR on stale tile {} (airport {}), clearing modular ground intent",
+			Debug(Facility::Misc, Severity::Error, "[ModAp] Vehicle {} in HANGAR on stale tile {} (airport {}), clearing modular ground intent",
 				v->index, IsValidTile(v->tile) ? v->tile.base() : 0, st->index);
 		}
 		ClearTaxiPathState(v);
@@ -1788,7 +1789,7 @@ static void HandleModularHangar(Aircraft *v, const Station *st)
 		if (st->airport.modular_heli_takeoff_tile != INVALID_TILE) {
 			v->ground_path_goal = st->airport.modular_heli_takeoff_tile;
 			v->modular_ground_target = MGT_HELI_TAKEOFF_TILE;
-			Debug(misc, 3, "[ModAp] Vehicle {} takeoff target heli_tile={}", v->index, st->airport.modular_heli_takeoff_tile.base());
+			Debug(Facility::Misc, Severity::Notice, "[ModAp] Vehicle {} takeoff target heli_tile={}", v->index, st->airport.modular_heli_takeoff_tile.base());
 			return;
 		}
 	}
@@ -1798,7 +1799,7 @@ static void HandleModularHangar(Aircraft *v, const Station *st)
 		v->modular_takeoff_tile = runway;
 		v->ground_path_goal = runway;
 		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
-		Debug(misc, 3, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
+		Debug(Facility::Misc, Severity::Notice, "[ModAp] Vehicle {} takeoff target runway={}", v->index, runway.base());
 		return;
 	}
 
@@ -1926,7 +1927,7 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 			 * exists anymore, don't wait forever at a stand, continue with takeoff flow. */
 			go_to_hangar = false;
 			if (ShouldLogModularRateLimited(v->index, 24, 128)) {
-				Debug(misc, 2, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
+				Debug(Facility::Misc, Severity::Warning, "[ModAp] Vehicle {} depot target unavailable at airport {}, falling back to takeoff", v->index, st->index);
 			}
 		}
 	}
@@ -1953,7 +1954,7 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 			goal = runway;
 		} else {
 			if (ShouldLogModularRateLimited(v->index, 39, 128)) {
-				Debug(misc, 2, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
+				Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} takeoff: FindRunway=INVALID vtile={}", v->index, v->tile.base());
 			}
 		}
 		target = MGT_RUNWAY_TAKEOFF;
@@ -1963,7 +1964,7 @@ static void HandleModularTerminal(Aircraft *v, const Station *st)
 		v->ground_path_goal = goal;
 		v->modular_ground_target = target;
 		v->taxi_wait_counter = 0;
-		Debug(misc, 3, "[ModAp] Vehicle {} found takeoff target goal={} runway={}", v->index, goal.base(),
+		Debug(Facility::Misc, Severity::Notice, "[ModAp] Vehicle {} found takeoff target goal={} runway={}", v->index, goal.base(),
 			IsValidTile(v->modular_takeoff_tile) ? v->modular_takeoff_tile.base() : 0);
 		return;
 	}
@@ -2155,7 +2156,7 @@ static bool TryCommitModularLanding(Aircraft *v, Station *st, TileIndex runway_t
 	if (!TryReserveLandingChain(v, st, runway_tile, landing_goal)) {
 		/* Never commit landing without a reserved post-touchdown chain. */
 		if (ShouldLogModularRateLimited(v->index, 42, 128)) {
-			Debug(misc, 2, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
+			Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} landing-chain reject: runway={} goal={} rollout={} tile={} dir={}",
 				v->index, runway_tile.base(),
 				landing_goal == INVALID_TILE ? 0 : landing_goal.base(),
 				rollout == INVALID_TILE ? 0 : rollout.base(),
@@ -2172,7 +2173,7 @@ static bool TryCommitModularLanding(Aircraft *v, Station *st, TileIndex runway_t
 	v->state = landingtype; // LANDING / HELILANDING
 	if (v->state == HELILANDING) v->flags.Set(VehicleAirFlag::HelicopterDirectDescent);
 	if (ShouldLogModularRateLimited(v->index, 21, 64)) {
-		Debug(misc, 3, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
+		Debug(Facility::Misc, Severity::Notice, "[ModAp] Vehicle {} starting landing on tile {}, state={}", v->index, runway_tile.base(), v->state);
 	}
 	/* Don't set v->pos for modular airports - not used */
 	return true;
@@ -2186,7 +2187,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 	bool closed = st->airport.blocks.Test(AirportBlock::AirportClosed);
 	bool is_modular = st->airport.blocks.Test(AirportBlock::Modular);
 	if (is_modular && closed && ShouldLogModularRateLimited(v->index, 19, 256)) {
-		Debug(misc, 3, "[ModAp] airport {} flagged closed; denying landing for V{}", st->index, v->index);
+		Debug(Facility::Misc, Severity::Notice, "[ModAp] airport {} flagged closed; denying landing for V{}", st->index, v->index);
 	}
 
 	/* Runway busy, not allowed to use this airstation or closed, circle. */
@@ -2289,7 +2290,7 @@ static void AircraftEventHandler_Flying(Aircraft *v, const AirportFTAClass *apc)
 			current = current->next.get();
 		}
 	} else if (is_modular && ShouldLogModularRateLimited(v->index, 22, 256)) {
-		Debug(misc, 2, "[ModAp] Vehicle {} failed access checks (can't land), staying in FLYING", v->index);
+		Debug(Facility::Misc, Severity::Warning, "[ModAp] Vehicle {} failed access checks (can't land), staying in FLYING", v->index);
 	}
 	v->state = FLYING;
 	/* Don't update v->pos for modular airports */
@@ -2524,7 +2525,7 @@ static void AirportGoToNextPosition(Aircraft *v)
 				on_valid_hangar = (tile_data != nullptr && IsModularHangarPiece(tile_data->piece_type));
 			}
 			if (!on_valid_hangar) {
-				Debug(misc, 1, "[ModAp] V{} invalid HANGAR state on tile {}, recovering to TERM1",
+				Debug(Facility::Misc, Severity::Error, "[ModAp] V{} invalid HANGAR state on tile {}, recovering to TERM1",
 					v->index, IsValidTile(v->tile) ? v->tile.base() : 0);
 				ClearTaxiPathState(v);
 				ClearModularRunwayReservation(v);
@@ -2546,7 +2547,7 @@ static void AirportGoToNextPosition(Aircraft *v)
 			 * a ground state with flight-speed leftovers. Keep it on-ground and
 			 * clamp to taxi, instead of bouncing back to FLYING and starving runways. */
 			if (v->cur_speed > SPEED_LIMIT_TAXI * _settings_game.vehicle.plane_speed) {
-				Debug(misc, 0, "[ModAp] V{} invalid ground state {} at speed {} on tile {}, clamping to taxi recovery",
+				Debug(Facility::Misc, Severity::Critical, "[ModAp] V{} invalid ground state {} at speed {} on tile {}, clamping to taxi recovery",
 					v->index, v->state, v->cur_speed, IsValidTile(v->tile) ? v->tile.base() : 0);
 
 				if (IsValidTile(v->tile) && active_st->TileBelongsToAirport(v->tile)) {
@@ -2573,7 +2574,7 @@ static void AirportGoToNextPosition(Aircraft *v)
 		}
 
 		/* For any other unexpected states on modular airports, log and keep circling */
-		Debug(misc, 1, "[ModAp] Vehicle {} in unexpected state {} on modular airport {}", v->index, v->state, active_st->index);
+		Debug(Facility::Misc, Severity::Error, "[ModAp] Vehicle {} in unexpected state {} on modular airport {}", v->index, v->state, active_st->index);
 		ClearTaxiPathState(v);
 		ClearModularRunwayReservation(v);
 		v->state = FLYING;
@@ -2593,7 +2594,7 @@ static bool AirportMove(Aircraft *v, const AirportFTAClass *apc)
 {
 	/* error handling */
 	if (v->pos >= apc->nofelements) {
-		Debug(misc, 0, "[Ap] position {} is not valid for current airport. Max position is {}", v->pos, apc->nofelements - 1);
+		Debug(Facility::Misc, Severity::Critical, "[Ap] position {} is not valid for current airport. Max position is {}", v->pos, apc->nofelements - 1);
 		assert(v->pos < apc->nofelements);
 	}
 
@@ -2632,7 +2633,7 @@ static bool AirportMove(Aircraft *v, const AirportFTAClass *apc)
 		current = current->next.get();
 	} while (current != nullptr);
 
-	Debug(misc, 0, "[Ap] cannot move further on Airport! (pos {} state {}) for vehicle {}", v->pos, v->state, v->index);
+	Debug(Facility::Misc, Severity::Critical, "[Ap] cannot move further on Airport! (pos {} state {}) for vehicle {}", v->pos, v->state, v->index);
 	NOT_REACHED();
 }
 
@@ -2917,7 +2918,7 @@ static bool AircraftEventHandler(Aircraft *v, int loop)
 		Station *cur_st = Station::GetIfValid(v->targetairport);
 		Station *next_st = v->current_order.IsType(OT_GOTO_STATION) || v->current_order.IsType(OT_GOTO_DEPOT) ? Station::GetIfValid(v->current_order.GetDestination().ToStationID()) : nullptr;
 
-		if (cur_st != nullptr && cur_st->airport.tile != INVALID_TILE && next_st != nullptr && next_st->airport.tile != INVALID_TILE) {
+		if (cur_st != nullptr && !cur_st->airport.IsEmpty() && next_st != nullptr && !next_st->airport.IsEmpty()) {
 			uint dist = DistanceSquare(cur_st->airport.tile, next_st->airport.tile);
 			AircraftHandleDestTooFar(v, dist > v->acache.cached_max_range_sqr);
 		}
@@ -2932,7 +2933,7 @@ static bool AircraftEventHandler(Aircraft *v, int loop)
 
 	const int64_t total_us = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - t_begin).count();
 	if (total_us > 10000 && ShouldLogModularRateLimited(v->index, 30, 256)) {
-		Debug(misc, 1, "[Perf] Slow AircraftEventHandler V{} loop={} state={} total_us={} move_us={} tile={} goal={} tgt={}",
+		Debug(Facility::Misc, Severity::Error, "[Perf] Slow AircraftEventHandler V{} loop={} state={} total_us={} move_us={} tile={} goal={} tgt={}",
 			v->index, loop, v->state, total_us, move_us,
 			IsValidTile(v->tile) ? v->tile.base() : 0,
 			IsValidTile(v->ground_path_goal) ? v->ground_path_goal.base() : 0,
@@ -2961,7 +2962,7 @@ bool Aircraft::Tick()
 			/* stop if the aircraft was deleted */
 			if (!AircraftEventHandler(this, i)) return false;
 		} catch (const std::exception &e) {
-			Debug(misc, 0,
+			Debug(Facility::Misc, Severity::Critical,
 				"[ModAp] Exception in Aircraft::Tick V{} loop={} state={} tile={} goal={} tgt={} what='{}'; forcing recovery",
 				this->index, i, this->state,
 				IsValidTile(this->tile) ? this->tile.base() : 0,
@@ -2978,7 +2979,7 @@ bool Aircraft::Tick()
 			this->state = FLYING;
 			return true;
 		} catch (...) {
-			Debug(misc, 0,
+			Debug(Facility::Misc, Severity::Critical,
 				"[ModAp] Unknown exception in Aircraft::Tick V{} loop={} state={} tile={} goal={} tgt={}; forcing recovery",
 				this->index, i, this->state,
 				IsValidTile(this->tile) ? this->tile.base() : 0,
@@ -3014,7 +3015,7 @@ Station *GetTargetAirportIfValid(const Aircraft *v)
 	Station *st = Station::GetIfValid(v->targetairport);
 	if (st == nullptr) return nullptr;
 
-	return st->airport.tile == INVALID_TILE ? nullptr : st;
+	return st->airport.IsEmpty() ? nullptr : st;
 }
 
 /**
@@ -3025,7 +3026,7 @@ void UpdateAirplanesOnNewStation(const Station *st)
 {
 	/* only 1 station is updated per function call, so it is enough to get entry_point once */
 	const AirportFTAClass *ap = st->airport.GetFTA();
-	Direction rotation = st->airport.tile == INVALID_TILE ? Direction::N : st->airport.rotation;
+	Direction rotation = st->airport.IsEmpty() ? Direction::N : st->airport.rotation;
 
 	for (Aircraft *v : Aircraft::Iterate()) {
 		if (!v->IsNormalAircraft() || v->targetairport != st->index) continue;

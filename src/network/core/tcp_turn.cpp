@@ -8,7 +8,6 @@
 /** @file tcp_turn.cpp Basic functions to receive and send TURN packets. */
 
 #include "../../stdafx.h"
-#include "../../timer/timer_game_calendar.h"
 #include "../../debug.h"
 #include "tcp_turn.h"
 
@@ -30,7 +29,7 @@ bool NetworkTurnSocketHandler::HandlePacket(Packet &p)
 		case PacketTurnType::ServerConnected: return this->ReceiveServerConnected(p);
 
 		default:
-			Debug(net, 0, "[tcp/turn] Received invalid packet type {}", type);
+			Debug(Facility::Net, Severity::Critical, "[tcp/turn] Received invalid packet type {}", type);
 			return false;
 	}
 }
@@ -59,7 +58,7 @@ bool NetworkTurnSocketHandler::ReceivePackets()
  */
 bool NetworkTurnSocketHandler::ReceiveInvalidPacket(PacketTurnType type)
 {
-	Debug(net, 0, "[tcp/turn] Received illegal packet type {}", type);
+	Debug(Facility::Net, Severity::Critical, "[tcp/turn] Received illegal packet type {}", type);
 	return false;
 }
 

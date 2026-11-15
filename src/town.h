@@ -16,7 +16,7 @@
 #include "town_map.h"
 #include "subsidy_type.h"
 #include "newgrf_storage.h"
-#include "cargotype.h"
+#include "cargo_type.h"
 
 template <typename T>
 struct BuildingCounts {
@@ -320,6 +320,7 @@ void SetTownRatingTestMode(bool mode);
 TownActions GetMaskOfTownActions(CompanyID cid, const Town *t);
 uint GetDefaultTownsForMapSize();
 bool GenerateTowns(TownLayout layout, std::optional<uint> number = std::nullopt);
+Town *TryGenerateNamedTownAroundTile(TileIndex target_tile, TownSize size, bool city, TownLayout layout, std::string_view name);
 const CargoSpec *FindFirstCargoWithTownAcceptanceEffect(TownAcceptanceEffect effect);
 CargoArray GetAcceptedCargoOfHouse(const HouseSpec *hs);
 

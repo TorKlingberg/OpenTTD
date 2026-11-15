@@ -11,7 +11,6 @@
 #define LEAGUE_BASE_H
 
 #include "company_type.h"
-#include "goal_type.h"
 #include "league_type.h"
 #include "core/pool_type.hpp"
 #include "strings_type.h"
@@ -40,11 +39,6 @@ struct LeagueTableElement : LeagueTableElementPool::PoolItem<&_league_table_elem
 	LeagueTableElement(LeagueTableElementID index) : LeagueTableElementPool::PoolItem<&_league_table_element_pool>(index) { }
 	LeagueTableElement(LeagueTableElementID index, LeagueTableID table, int64_t rating, CompanyID company, const EncodedString &text, const EncodedString &score, const Link &link) :
 		LeagueTableElementPool::PoolItem<&_league_table_element_pool>(index), table(table), rating(rating), company(company), text(text), score(score), link(link) {}
-
-	/**
-	 * (Empty) destructor has to be defined else operator delete might be called with nullptr parameter
-	 */
-	~LeagueTableElement() { }
 };
 
 
@@ -56,11 +50,6 @@ struct LeagueTable : LeagueTablePool::PoolItem<&_league_table_pool> {
 
 	LeagueTable(LeagueTableID index, const EncodedString &title = {}, const EncodedString &header = {}, const EncodedString &footer = {}) :
 		LeagueTablePool::PoolItem<&_league_table_pool>(index), title(title), header(header), footer(footer) { }
-
-	/**
-	 * (Empty) destructor has to be defined else operator delete might be called with nullptr parameter
-	 */
-	~LeagueTable() { }
 };
 
 #endif /* LEAGUE_BASE_H */

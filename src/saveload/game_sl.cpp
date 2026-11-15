@@ -11,9 +11,9 @@
 #include "../debug.h"
 
 #include "saveload.h"
+#include "saveload_error.hpp"
 #include "compat/game_sl_compat.h"
 
-#include "../string_func.h"
 #include "../game/game.hpp"
 #include "../game/game_config.hpp"
 #include "../network/network.h"
@@ -27,9 +27,9 @@ static int         _game_saveload_version;
 static std::string _game_saveload_settings;
 
 static const SaveLoad _game_script_desc[] = {
-	   SLEG_SSTR("name",      _game_saveload_name,         VarTypes::STR),
-	   SLEG_SSTR("settings",  _game_saveload_settings,     VarTypes::STR),
-	    SLEG_VAR("version",   _game_saveload_version,   VarFileType::U32 | VarMemType::I32),
+	SaveLoad::String("name", SLE_GLOBAL_ADDRESS(_game_saveload_name)),
+	SaveLoad::String("settings", SLE_GLOBAL_ADDRESS(_game_saveload_settings)),
+	SaveLoad::Variable<VarFileType::U32>("version", SLE_GLOBAL_ADDRESS(_game_saveload_version)),
 };
 
 static void SaveReal_GSDT(int)
@@ -81,15 +81,15 @@ struct GSDTChunkHandler : ChunkHandler {
 				config->Change(_game_saveload_name, -1, false);
 				if (!config->HasScript()) {
 					if (_game_saveload_name != "%_dummy") {
-						Debug(script, 0, "The savegame has an GameScript by the name '{}', version {} which is no longer available.", _game_saveload_name, _game_saveload_version);
-						Debug(script, 0, "This game will continue to run without GameScript.");
+						Debug(Facility::Script, Severity::Critical, "The savegame has an GameScript by the name '{}', version {} which is no longer available.", _game_saveload_name, _game_saveload_version);
+						Debug(Facility::Script, Severity::Critical, "This game will continue to run without GameScript.");
 					} else {
-						Debug(script, 0, "The savegame had no GameScript available at the time of saving.");
-						Debug(script, 0, "This game will continue to run without GameScript.");
+						Debug(Facility::Script, Severity::Critical, "The savegame had no GameScript available at the time of saving.");
+						Debug(Facility::Script, Severity::Critical, "This game will continue to run without GameScript.");
 					}
 				} else {
-					Debug(script, 0, "The savegame has an GameScript by the name '{}', version {} which is no longer available.", _game_saveload_name, _game_saveload_version);
-					Debug(script, 0, "The latest version of that GameScript has been loaded instead, but it'll not get the savegame data as it's incompatible.");
+					Debug(Facility::Script, Severity::Critical, "The savegame has an GameScript by the name '{}', version {} which is no longer available.", _game_saveload_name, _game_saveload_version);
+					Debug(Facility::Script, Severity::Critical, "The latest version of that GameScript has been loaded instead, but it'll not get the savegame data as it's incompatible.");
 				}
 				/* Make sure the GameScript doesn't get the saveload data, as it was not the
 				 *  writer of the saveload data in the first place */
@@ -121,7 +121,7 @@ static uint32_t _game_saveload_strings;
 class SlGameLanguageString : public DefaultSaveLoadHandler<SlGameLanguageString, LanguageStrings> {
 public:
 	static inline const SaveLoad description[] = {
-		SLEG_SSTR("string", _game_saveload_string, VarTypes::STR | StringValidationSetting::AllowControlCode | StringValidationSetting::ReplaceTabCrNlWithSpace),
+		SaveLoad::String("string", SLE_GLOBAL_ADDRESS(_game_saveload_string), {StringValidationSetting::AllowControlCode, StringValidationSetting::ReplaceTabCrNlWithSpace}),
 	};
 	static inline const SaveLoadCompatTable compat_description = _game_language_string_sl_compat;
 
@@ -147,9 +147,9 @@ public:
 };
 
 static const SaveLoad _game_language_desc[] = {
-	SLE_SSTR(LanguageStrings, language, VarTypes::STR),
-	SLEG_CONDVAR("count", _game_saveload_strings, VarTypes::U32, SaveLoadVersion::MinVersion, SaveLoadVersion::SaveloadListLength),
-	SLEG_STRUCTLIST("strings", SlGameLanguageString),
+	SaveLoad::String("language", SLE_OBJECT_ADDRESS(LanguageStrings, language)),
+	SaveLoad::Variable<VarFileType::U32>("count", SLE_GLOBAL_ADDRESS(_game_saveload_strings), SaveLoadVersion::MinVersion, SaveLoadVersion::SaveloadListLength),
+	SaveLoad::StructList<SlGameLanguageString>("strings"),
 };
 
 struct GSTRChunkHandler : ChunkHandler {

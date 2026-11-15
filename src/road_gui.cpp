@@ -31,19 +31,18 @@
 #include "zoom_func.h"
 #include "dropdown_type.h"
 #include "dropdown_func.h"
-#include "engine_base.h"
 #include "station_base.h"
+#include "station_func.h"
 #include "waypoint_base.h"
 #include "strings_func.h"
 #include "core/geometry_func.hpp"
 #include "station_cmd.h"
+#include "tunnelbridge_cmd.h"
 #include "waypoint_cmd.h"
 #include "road_cmd.h"
-#include "tunnelbridge_cmd.h"
 #include "newgrf_badge_gui.h"
 #include "newgrf_roadstop.h"
 #include "picker_gui.h"
-#include "timer/timer.h"
 #include "timer/timer_game_calendar.h"
 
 #include "widgets/road_widget.h"
@@ -769,8 +768,8 @@ struct BuildRoadToolbarWindow : Window {
 				/* For autoroad we need to update the
 				 * direction of the road */
 				if (_thd.size.x > _thd.size.y || (_thd.size.x == _thd.size.y &&
-						( (_tile_fract_coords.x < _tile_fract_coords.y && (_tile_fract_coords.x + _tile_fract_coords.y) < 16) ||
-						(_tile_fract_coords.x > _tile_fract_coords.y && (_tile_fract_coords.x + _tile_fract_coords.y) > 16) ))) {
+						((_tile_fract_coords.x < _tile_fract_coords.y && (_tile_fract_coords.x + _tile_fract_coords.y) <= 15) ||
+						(_tile_fract_coords.x > _tile_fract_coords.y && (_tile_fract_coords.x + _tile_fract_coords.y) >= 15)))) {
 					/* Set dir = X */
 					_place_road_dir = Axis::X;
 					_place_road_end_half = pt.x & 8;

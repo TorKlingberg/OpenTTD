@@ -11,9 +11,6 @@
 #include "string_consumer.hpp"
 
 #include "utf8.hpp"
-#include "string_builder.hpp"
-
-#include "../string_func.h"
 
 #if defined(STRGEN) || defined(SETTINGSGEN)
 #include "../error_func.h"
@@ -35,7 +32,7 @@
 #if defined(STRGEN) || defined(SETTINGSGEN)
 	FatalErrorI(std::move(msg));
 #else
-	DebugPrint("misc", 0, std::move(msg));
+	DebugPrint(Facility::Misc, Severity::Critical, std::move(msg));
 #endif
 }
 

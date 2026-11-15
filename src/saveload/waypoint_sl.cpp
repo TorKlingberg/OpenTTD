@@ -13,8 +13,8 @@
 #include "../newgrf_station.h"
 #include "../vehicle_base.h"
 #include "../town.h"
-#include "../newgrf.h"
 #include "../timer/timer_game_calendar.h"
+#include "saveload_error.hpp"
 #include "saveload_internal.h"
 
 #include "table/strings.h"
@@ -101,12 +101,12 @@ void MoveWaypointsToBaseStations()
 		/* Sometimes waypoint (sign) locations became disconnected from their actual location in
 		 * the map array. If this is the case, try to locate the actual location in the map array */
 		if (!IsTileType(t, TileType::Railway) || GetRailTileType(t) != RailTileType{2} /* RAIL_TILE_WAYPOINT */ || Tile(t).m2() != wp.index) {
-			Debug(sl, 0, "Found waypoint tile {} with invalid position", t);
+			Debug(Facility::Sl, Severity::Critical, "Found waypoint tile {} with invalid position", t);
 			t = INVALID_TILE;
 			for (auto tile : Map::Iterate()) {
 				if (IsTileType(tile, TileType::Railway) && GetRailTileType(tile) == RailTileType{2} /* RAIL_TILE_WAYPOINT */ && tile.m2() == wp.index) {
 					t = TileIndex(tile);
-					Debug(sl, 0, "Found actual waypoint position at {}", TileIndex(tile));
+					Debug(Facility::Sl, Severity::Critical, "Found actual waypoint position at {}", TileIndex(tile));
 					break;
 				}
 			}
@@ -140,7 +140,7 @@ void MoveWaypointsToBaseStations()
 			if (specindex.has_value()) AssignSpecToStation(wp.spec, new_wp, *specindex);
 			SetCustomStationSpecIndex(tile, specindex.value_or(0));
 		}
-		new_wp->rect.BeforeAddTile(tile, StationRect::ADD_FORCE);
+		new_wp->spread.Add(tile);
 
 		wp.new_index = new_wp->index;
 	}
@@ -168,21 +168,21 @@ void ResetOldWaypoints()
 }
 
 static const SaveLoad _old_waypoint_desc[] = {
-	SLE_CONDVAR(OldWaypoint, xy, VarFileType::U16 | VarMemType::U32, SaveLoadVersion::MinVersion, SaveLoadVersion::MultipleRoadStops),
-	SLE_CONDVAR(OldWaypoint, xy, VarTypes::U32, SaveLoadVersion::MultipleRoadStops, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, town_index, VarTypes::U16, SaveLoadVersion::LinkWaypointToTown, SaveLoadVersion::WaypointMoreLikeStation),
-	SLE_CONDREF(OldWaypoint, town, SLRefType::Town, SaveLoadVersion::WaypointMoreLikeStation, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, town_cn, VarFileType::U8 | VarMemType::U16, SaveLoadVersion::LinkWaypointToTown, SaveLoadVersion::MoreWaypointsPerTown),
-	SLE_CONDVAR(OldWaypoint, town_cn, VarTypes::U16, SaveLoadVersion::MoreWaypointsPerTown, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, string_id, VarTypes::STRINGID, SaveLoadVersion::MinVersion, SaveLoadVersion::ReplaceCustomNameArray),
-	SLE_CONDSSTR(OldWaypoint, name, VarTypes::STR, SaveLoadVersion::ReplaceCustomNameArray, SaveLoadVersion::MaxVersion),
-	    SLE_VAR(OldWaypoint, delete_ctr, VarTypes::U8),
+	SaveLoad::Variable<VarFileType::U16>("xy", SLE_OBJECT_ADDRESS(OldWaypoint, xy), SaveLoadVersion::MinVersion, SaveLoadVersion::MultipleRoadStops),
+	SaveLoad::Variable<VarFileType::U32>("xy", SLE_OBJECT_ADDRESS(OldWaypoint, xy), SaveLoadVersion::MultipleRoadStops),
+	SaveLoad::Variable<VarFileType::U16>("town_index", SLE_OBJECT_ADDRESS(OldWaypoint, town_index), SaveLoadVersion::LinkWaypointToTown, SaveLoadVersion::WaypointMoreLikeStation),
+	SaveLoad::Reference<SLRefType::Town>("town", SLE_OBJECT_ADDRESS(OldWaypoint, town), SaveLoadVersion::WaypointMoreLikeStation),
+	SaveLoad::Variable<VarFileType::U8>("town_cn", SLE_OBJECT_ADDRESS(OldWaypoint, town_cn), SaveLoadVersion::LinkWaypointToTown, SaveLoadVersion::MoreWaypointsPerTown),
+	SaveLoad::Variable<VarFileType::U16>("town_cn", SLE_OBJECT_ADDRESS(OldWaypoint, town_cn), SaveLoadVersion::MoreWaypointsPerTown),
+	SaveLoad::Variable<VarFileType::StringID>("string_id", SLE_OBJECT_ADDRESS(OldWaypoint, string_id), SaveLoadVersion::MinVersion, SaveLoadVersion::ReplaceCustomNameArray),
+	SaveLoad::String("name", SLE_OBJECT_ADDRESS(OldWaypoint, name), {}, SaveLoadVersion::ReplaceCustomNameArray),
+	SaveLoad::Variable<VarFileType::U8>("delete_ctr", SLE_OBJECT_ADDRESS(OldWaypoint, delete_ctr)),
 
-	SLE_CONDVAR(OldWaypoint, build_date, VarFileType::U16 | VarMemType::I32, SaveLoadVersion::BiggerStationVariables, SaveLoadVersion::BigDates),
-	SLE_CONDVAR(OldWaypoint, build_date, VarTypes::I32, SaveLoadVersion::BigDates, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, localidx, VarTypes::U8, SaveLoadVersion::BiggerStationVariables, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, grfid, VarTypes::LABEL_REVERSE, SaveLoadVersion::StoreWaypointIdInMap, SaveLoadVersion::MaxVersion),
-	SLE_CONDVAR(OldWaypoint, owner, VarTypes::U8, SaveLoadVersion::NewGRFPalette, SaveLoadVersion::MaxVersion),
+	SaveLoad::Variable<VarFileType::U16>("build_date", SLE_OBJECT_ADDRESS(OldWaypoint, build_date), SaveLoadVersion::BiggerStationVariables, SaveLoadVersion::BigDates),
+	SaveLoad::Variable<VarFileType::I32>("build_date", SLE_OBJECT_ADDRESS(OldWaypoint, build_date), SaveLoadVersion::BigDates),
+	SaveLoad::Variable<VarFileType::U8>("localidx", SLE_OBJECT_ADDRESS(OldWaypoint, localidx), SaveLoadVersion::BiggerStationVariables),
+	SaveLoad::Variable<VarFileType::Label>("grfid", SLE_OBJECT_ADDRESS(OldWaypoint, grfid), SaveLoadVersion::StoreWaypointIdInMap),
+	SaveLoad::Variable<VarFileType::U8>("owner", SLE_OBJECT_ADDRESS(OldWaypoint, owner), SaveLoadVersion::NewGRFPalette),
 };
 
 struct CHKPChunkHandler : ChunkHandler {

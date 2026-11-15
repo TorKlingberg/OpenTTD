@@ -21,7 +21,6 @@
 #include "../console_func.h"
 #include "../core/pool_func.hpp"
 #include "../map_func.h"
-#include "../rev.h"
 #include "../game/game.hpp"
 #include "../script/api/script_event_types.hpp"
 
@@ -77,7 +76,7 @@ ServerNetworkAdminSocketHandler::ServerNetworkAdminSocketHandler(AdminID index, 
  */
 ServerNetworkAdminSocketHandler::~ServerNetworkAdminSocketHandler()
 {
-	Debug(net, 3, "[admin] '{}' ({}) has disconnected", this->admin_name, this->admin_version);
+	Debug(Facility::Net, Severity::Notice, "[admin] '{}' ({}) has disconnected", this->admin_name, this->admin_version);
 	if (_redirect_console_to_admin == this->index) _redirect_console_to_admin = AdminID::Invalid();
 
 	if (this->update_frequency[AdminUpdateType::Console].Test(AdminUpdateFrequency::Automatic)) {
@@ -100,7 +99,7 @@ ServerNetworkAdminSocketHandler::~ServerNetworkAdminSocketHandler()
 {
 	for (ServerNetworkAdminSocketHandler *as : ServerNetworkAdminSocketHandler::Iterate()) {
 		if (as->status <= AdminStatus::Authenticate && std::chrono::steady_clock::now() > as->connect_time + ADMIN_AUTHORISATION_TIMEOUT) {
-			Debug(net, 2, "[admin] Admin did not send its authorisation within {} seconds", std::chrono::duration_cast<std::chrono::seconds>(ADMIN_AUTHORISATION_TIMEOUT).count());
+			Debug(Facility::Net, Severity::Warning, "[admin] Admin did not send its authorisation within {} seconds", std::chrono::duration_cast<std::chrono::seconds>(ADMIN_AUTHORISATION_TIMEOUT).count());
 			as->CloseConnection(true);
 			continue;
 		}
@@ -142,7 +141,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendError(NetworkErrorCode er
 
 	std::string error_message = GetString(GetNetworkErrorMsg(error));
 
-	Debug(net, 1, "[admin] The admin '{}' ({}) made an error and has been disconnected: '{}'", this->admin_name, this->admin_version, error_message);
+	Debug(Facility::Net, Severity::Error, "[admin] The admin '{}' ({}) made an error and has been disconnected: '{}'", this->admin_name, this->admin_version, error_message);
 
 	return this->CloseConnection(true);
 }
@@ -520,7 +519,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminRemoteConsoleComm
 
 	std::string command = p.Recv_string(NETWORK_RCONCOMMAND_LENGTH);
 
-	Debug(net, 3, "[admin] Rcon command from '{}' ({}): {}", this->admin_name, this->admin_version, command);
+	Debug(Facility::Net, Severity::Notice, "[admin] Rcon command from '{}' ({}): {}", this->admin_name, this->admin_version, command);
 
 	_redirect_console_to_admin = this->index;
 	IConsoleCmdExec(command);
@@ -534,7 +533,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminGameScript(Packet
 
 	std::string json = p.Recv_string(NETWORK_GAMESCRIPT_JSON_LENGTH);
 
-	Debug(net, 6, "[admin] GameScript JSON from '{}' ({}): {}", this->admin_name, this->admin_version, json);
+	Debug(Facility::Net, Severity::Debug2, "[admin] GameScript JSON from '{}' ({}): {}", this->admin_name, this->admin_version, json);
 
 	Game::NewEvent(new ScriptEventAdminPort(json));
 	return NetworkRecvStatus::Okay;
@@ -546,7 +545,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminPing(Packet &p)
 
 	uint32_t d1 = p.Recv_uint32();
 
-	Debug(net, 6, "[admin] Ping from '{}' ({}): {}", this->admin_name, this->admin_version, d1);
+	Debug(Facility::Net, Severity::Debug2, "[admin] Ping from '{}' ({}): {}", this->admin_name, this->admin_version, d1);
 
 	return this->SendPong(d1);
 }
@@ -686,7 +685,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminJoin(Packet &p)
 		return this->SendError(NetworkErrorCode::IllegalPacket);
 	}
 
-	Debug(net, 3, "[admin] '{}' ({}) has connected", this->admin_name, this->admin_version);
+	Debug(Facility::Net, Severity::Notice, "[admin] '{}' ({}) has connected", this->admin_name, this->admin_version);
 
 	return this->SendProtocol();
 }
@@ -706,7 +705,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminUpdateFrequency(P
 
 	if (type >= AdminUpdateType::End || !_admin_update_type_frequencies[type].All(freq)) {
 		/* The server does not know of this UpdateType. */
-		Debug(net, 1, "[admin] Not supported update frequency {} ({}) from '{}' ({})", type, freq, this->admin_name, this->admin_version);
+		Debug(Facility::Net, Severity::Error, "[admin] Not supported update frequency {} ({}) from '{}' ({})", type, freq, this->admin_name, this->admin_version);
 		return this->SendError(NetworkErrorCode::IllegalPacket);
 	}
 
@@ -777,7 +776,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminPoll(Packet &p)
 
 		default:
 			/* An unsupported "poll" update type. */
-			Debug(net, 1, "[admin] Not supported poll {} ({}) from '{}' ({}).", type, d1, this->admin_name, this->admin_version);
+			Debug(Facility::Net, Severity::Error, "[admin] Not supported poll {} ({}) from '{}' ({}).", type, d1, this->admin_name, this->admin_version);
 			return this->SendError(NetworkErrorCode::IllegalPacket);
 	}
 
@@ -803,7 +802,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminChat(Packet &p)
 			break;
 
 		default:
-			Debug(net, 1, "[admin] Invalid chat action {} from admin '{}' ({}).", action, this->admin_name, this->admin_version);
+			Debug(Facility::Net, Severity::Error, "[admin] Invalid chat action {} from admin '{}' ({}).", action, this->admin_name, this->admin_version);
 			return this->SendError(NetworkErrorCode::IllegalPacket);
 	}
 
@@ -820,7 +819,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminExternalChat(Pack
 	std::string msg = p.Recv_string(NETWORK_CHAT_LENGTH);
 
 	if (!IsValidConsoleColour(colour)) {
-		Debug(net, 1, "[admin] Not supported chat colour {} ({}, {}, {}) from '{}' ({}).", colour.ToNetwork(), source, user, msg, this->admin_name, this->admin_version);
+		Debug(Facility::Net, Severity::Error, "[admin] Not supported chat colour {} ({}, {}, {}) from '{}' ({}).", colour.ToNetwork(), source, user, msg, this->admin_name, this->admin_version);
 		return this->SendError(NetworkErrorCode::IllegalPacket);
 	}
 
@@ -853,7 +852,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminJoinSecure(Packet
 	if (!handler->CanBeUsed()) return this->SendError(NetworkErrorCode::NoAuthenticationMethodAvailable);
 
 	this->authentication_handler = std::move(handler);
-	Debug(net, 3, "[admin] '{}' ({}) has connected", this->admin_name, this->admin_version);
+	Debug(Facility::Net, Severity::Notice, "[admin] '{}' ({}) has connected", this->admin_name, this->admin_version);
 
 	return this->SendAuthRequest();
 }
@@ -866,7 +865,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendAuthRequest()
 {
 	this->status = AdminStatus::Authenticate;
 
-	Debug(net, 6, "[admin] '{}' ({}) authenticating using {}", this->admin_name, this->admin_version, this->authentication_handler->GetName());
+	Debug(Facility::Net, Severity::Debug2, "[admin] '{}' ({}) authenticating using {}", this->admin_name, this->admin_version, this->authentication_handler->GetName());
 
 	auto p = std::make_unique<Packet>(this, PacketAdminType::ServerAuthenticationRequest);
 	this->authentication_handler->SendRequest(*p);
@@ -897,7 +896,7 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminAuthenticationRes
 
 	switch (this->authentication_handler->ReceiveResponse(p)) {
 		case NetworkAuthenticationServerHandler::ResponseResult::Authenticated:
-			Debug(net, 3, "[admin] '{}' ({}) authenticated", this->admin_name, this->admin_version);
+			Debug(Facility::Net, Severity::Notice, "[admin] '{}' ({}) authenticated", this->admin_name, this->admin_version);
 
 			this->SendEnableEncryption();
 
@@ -907,12 +906,12 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::ReceiveAdminAuthenticationRes
 			return this->SendProtocol();
 
 		case NetworkAuthenticationServerHandler::ResponseResult::RetryNextMethod:
-			Debug(net, 6, "[admin] '{}' ({}) authentication failed, trying next method", this->admin_name, this->admin_version);
+			Debug(Facility::Net, Severity::Debug2, "[admin] '{}' ({}) authentication failed, trying next method", this->admin_name, this->admin_version);
 			return this->SendAuthRequest();
 
 		case NetworkAuthenticationServerHandler::ResponseResult::NotAuthenticated:
 		default:
-			Debug(net, 3, "[admin] '{}' ({}) authentication failed", this->admin_name, this->admin_version);
+			Debug(Facility::Net, Severity::Notice, "[admin] '{}' ({}) authentication failed", this->admin_name, this->admin_version);
 			return this->SendError(NetworkErrorCode::WrongPassword);
 	}
 }
@@ -985,7 +984,7 @@ void NetworkAdminClientError(ClientID client_id, NetworkErrorCode error_code)
 void NetworkAdminCompanyNew(const Company *company)
 {
 	if (company == nullptr) {
-		Debug(net, 1, "[admin] Empty company given for update");
+		Debug(Facility::Net, Severity::Error, "[admin] Empty company given for update");
 		return;
 	}
 
