@@ -29,7 +29,6 @@
 #include "modular_airport_cmd.h"
 #include "table/airporttile_ids.h"
 #include <algorithm>
-#include <iterator>
 #include <map>
 #include <set>
 #include <vector>
@@ -67,24 +66,18 @@ AirportGroundPath FindRoute(const Station *st, TileIndex from, TileIndex to, boo
 	return FindAirportGroundPath(st, from, to, nullptr, crossing, false, GroundPathRestriction::FixedWing);
 }
 
-/** A route to a takeoff end, and whether it was allowed to cross another runway. */
-struct TakeoffRoute {
-	AirportGroundPath path;
-	bool crossing;
-};
-
 /**
  * The routes an aircraft on @p from may take to a takeoff end, in the order the game
  * asks: every end without crossing a runway, and only when none can be reached that
  * way, every end with.
  */
-std::vector<TakeoffRoute> FindTakeoffRoutes(const Station *st, TileIndex from, const TileList &takeoff_ends)
+std::vector<AirportGroundPath> FindTakeoffRoutes(const Station *st, TileIndex from, const TileList &takeoff_ends)
 {
-	std::vector<TakeoffRoute> routes;
+	std::vector<AirportGroundPath> routes;
 	for (bool crossing : {false, true}) {
 		for (TileIndex end : takeoff_ends) {
 			AirportGroundPath path = FindRoute(st, from, end, crossing);
-			if (path.found) routes.push_back({std::move(path), crossing});
+			if (path.found) routes.push_back(std::move(path));
 		}
 		if (!routes.empty()) break;
 	}
@@ -113,74 +106,16 @@ bool ReachesAvoiding(const Station *st, TileIndex from, TileIndex to, const Tile
 	return false;
 }
 
-/** Index of the first safe stop on @p path after its start: where the aircraft rests first. */
-size_t FirstSafeStop(const Station *st, const AirportGroundPath &path)
-{
-	for (size_t i = 1; i < path.tiles.size(); i++) {
-		if (IsModularSafeStopTile(st, path.tiles[i], path.tiles.back())) return i;
-	}
-	return path.tiles.size() - 1;
-}
-
-/** Runway tiles on @p path from its first safe stop on. */
-std::ptrdiff_t RunwayTilesPastStop(const Station *st, const AirportGroundPath &path)
-{
-	return std::count_if(path.tiles.begin() + FirstSafeStop(st, path), path.tiles.end(), [st](TileIndex tile) {
-		const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
-		return data != nullptr && IsModularRunwayPiece(data->piece_type);
-	});
-}
-
-/**
- * Whether a departure taking @p shortest can get round the shared queue tiles when an
- * arrival holds one, by the retry the game makes (FindReservableRoute): ban the held
- * tile and look again. That retry happens only when the route from where the aircraft
- * rests is refused, so the shared tile must be the first safe stop of @p shortest: an
- * aircraft already resting on an earlier queue tile does not look for another route.
- * The game takes a detour only when it is at most MAX_ROUTE_DETOUR_TILES longer and
- * leaves no more runway beyond its first safe stop, and the ban only lasts to that stop,
- * so a route that rejoins a shared tile further on is no way round. All the shared
- * tiles are banned together, as arrivals may be waiting on every one of them, and other
- * stands are banned too: they may be parked on.
- * @param st The station.
- * @param from Where the departure starts.
- * @param queue The shared tile on @p shortest being judged.
- * @param shared All shared queue tiles, sorted.
- * @param stands All stands of the airport, sorted.
- * @param shortest The route the departure takes when nothing is in its way.
- * @param crossing Whether @p shortest was allowed to cross another runway.
- */
-bool HasWayRound(const Station *st, TileIndex from, TileIndex queue, const TileList &shared, const TileList &stands, const AirportGroundPath &shortest, bool crossing)
-{
-	if (shortest.tiles[FirstSafeStop(st, shortest)] != queue) return false;
-
-	const TileIndex to = shortest.tiles.back();
-	TileList avoid = shared;
-	for (TileIndex stand : stands) {
-		if (stand != from && stand != to) avoid.push_back(stand);
-	}
-	const AirportGroundPath path = FindAirportGroundPath(st, from, to, nullptr, crossing, false, GroundPathRestriction::FixedWing, avoid);
-	if (!path.found || path.tiles.size() > shortest.tiles.size() + MAX_ROUTE_DETOUR_TILES) return false;
-	if (RunwayTilesPastStop(st, path) > RunwayTilesPastStop(st, shortest)) return false;
-
-	return std::ranges::none_of(path.tiles, [&](TileIndex tile) {
-		return Contains(shared, tile) || (tile != from && tile != to && Contains(stands, tile));
-	});
-}
-
-/** The queue tiles of the taxi graph: who follows whom, and who uses them for what. */
+/** The queue tiles of the taxi graph: who follows whom. */
 struct QueueUse {
 	std::map<uint32_t, std::set<uint32_t>> next; ///< Queue tile -> queue tiles some route reaches next.
-	TileList arrivals;   ///< Queue tiles on a route from a runway to parking.
-	TileList departures; ///< Queue tiles on a route from parking to a runway.
 
 	/** Record the queue tiles of one route, in the order it passes them. */
-	void AddRoute(const Station *st, const AirportGroundPath &path, TileList *users)
+	void AddRoute(const Station *st, const AirportGroundPath &path)
 	{
 		TileIndex prev = INVALID_TILE;
 		for (TileIndex tile : path.tiles) {
 			if (!IsOneWayTaxiTile(st, tile)) continue;
-			if (users != nullptr) users->push_back(tile);
 			this->next[tile.base()];
 			if (prev != INVALID_TILE) this->next[prev.base()].insert(tile.base());
 			prev = tile;
@@ -242,35 +177,22 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	parking.insert(parking.end(), hangars.begin(), hangars.end());
 
 	QueueUse queues;
-	/** A route from parking to a takeoff end. */
-	struct Departure {
-		TileIndex from;
-		TakeoffRoute route;
-	};
-	std::vector<Departure> departures;
 	for (TileIndex tile : parking) {
 		bool reached = false;
 		for (TileIndex end : landing_ends) {
 			const AirportGroundPath path = FindRoute(st, end, tile);
 			if (!path.found) continue;
 			reached = true;
-			queues.AddRoute(st, path, &queues.arrivals);
+			queues.AddRoute(st, path);
 		}
 
 		bool leaves = false;
 		bool leaves_clear = false;
-		/* Only a departure from a stand frees a stand. A hangar holds any number of
-		 * aircraft, so nothing ever waits for one to leave it. One that has left and
-		 * rests on a queue tile on its way could hold up a stand's departure there,
-		 * but that departure goes on from the tile the same way, so it is counted
-		 * in its own right. */
 		const bool from_stand = Contains(stands, tile);
-		for (TakeoffRoute &route : FindTakeoffRoutes(st, tile, takeoff_ends)) {
-			const AirportGroundPath &path = route.path;
+		for (const AirportGroundPath &path : FindTakeoffRoutes(st, tile, takeoff_ends)) {
 			leaves = true;
-			queues.AddRoute(st, path, from_stand ? &queues.departures : nullptr);
+			queues.AddRoute(st, path);
 			leaves_clear = leaves_clear || ReachesAvoiding(st, tile, path.tiles.back(), stands);
-			if (from_stand) departures.push_back({tile, std::move(route)});
 		}
 
 		if (!reached) issues.push_back({ModularLayoutProblem::Unreachable, tile});
@@ -285,8 +207,7 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	}
 
 	/* Aircraft also taxi between stands and hangars, and those routes can close a loop
-	 * the runway routes leave open. One bound from a hangar for a stand waits for that
-	 * stand just as an arrival from a runway does, so it queues like one. */
+	 * the runway routes leave open. */
 	for (TileIndex stand : stands) {
 		/* The hangar an aircraft on the stand is sent to, as FindFreeModularHangar picks
 		 * it: the cheapest route, the first such hangar on a tie. */
@@ -295,14 +216,14 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 		for (TileIndex hangar : hangars) {
 			const AirportGroundPath to_hangar = FindRoute(st, stand, hangar);
 			if (to_hangar.found) {
-				queues.AddRoute(st, to_hangar, nullptr);
+				queues.AddRoute(st, to_hangar);
 				if (nearest == INVALID_TILE || to_hangar.cost < nearest_cost) {
 					nearest = hangar;
 					nearest_cost = to_hangar.cost;
 				}
 			}
 			const AirportGroundPath from_hangar = FindRoute(st, hangar, stand);
-			if (from_hangar.found) queues.AddRoute(st, from_hangar, &queues.arrivals);
+			if (from_hangar.found) queues.AddRoute(st, from_hangar);
 		}
 		if (nearest != INVALID_TILE && !ReachesAvoiding(st, stand, nearest, stands)) {
 			issues.push_back({ModularLayoutProblem::BehindStand, stand});
@@ -310,22 +231,6 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	}
 
 	for (TileIndex tile : queues.TilesOnCycles()) issues.push_back({ModularLayoutProblem::QueueLoop, tile});
-
-	SortUnique(queues.arrivals);
-	SortUnique(queues.departures);
-	TileList shared;
-	std::ranges::set_intersection(queues.arrivals, queues.departures, std::back_inserter(shared), TileLess);
-	for (TileIndex tile : shared) {
-		/* Arrivals waiting here for a stand jam the airport only when what would free the
-		 * stand, a departure, has to come through here too. A departure with a way round
-		 * takes it when the tile is held. */
-		const bool forced = std::ranges::any_of(departures, [&](const Departure &dep) {
-			const AirportGroundPath &path = dep.route.path;
-			if (std::ranges::find(path.tiles, tile) == path.tiles.end()) return false;
-			return !HasWayRound(st, dep.from, tile, shared, stands, path, dep.route.crossing);
-		});
-		if (forced) issues.push_back({ModularLayoutProblem::SharedQueue, tile});
-	}
 
 	std::sort(issues.begin(), issues.end(), [](const ModularLayoutIssue &a, const ModularLayoutIssue &b) {
 		if (a.tile != b.tile) return a.tile.base() < b.tile.base();

@@ -59,7 +59,6 @@ enum class ModularLayoutProblem : uint8_t {
 	NoWayOut,     ///< This stand or hangar has no taxi route to a takeoff runway end.
 	BehindStand,  ///< Leaving this stand, for a runway or a hangar, means taxiing across another stand.
 	QueueLoop,    ///< One-way queue tiles that aircraft pass in a circle, or in both orders.
-	SharedQueue,  ///< A one-way queue tile used both by arrivals and by departures.
 	End,
 };
 

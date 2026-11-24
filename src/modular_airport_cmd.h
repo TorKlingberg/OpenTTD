@@ -33,6 +33,12 @@ inline constexpr uint8_t MGT_RUNWAY_TAKEOFF = 4;
 inline constexpr uint8_t MGT_ROLLOUT = 5;
 inline constexpr uint8_t MGT_HELI_TAKEOFF_TILE = 6;
 
+/** Whether a ground target represents an aircraft departing the airport (freeing its stand). */
+inline constexpr bool IsModularDepartureTarget(uint8_t target)
+{
+	return target == MGT_RUNWAY_TAKEOFF || target == MGT_HELI_TAKEOFF_TILE;
+}
+
 inline constexpr int MIN_RUNWAY_LENGTH_TILES = 4; ///< Runways shorter than this are not usable for landing or takeoff
 inline constexpr int LARGE_RUNWAY_LENGTH_TILES = 6; ///< Runway length a fast jet needs; shorter ones are not large-safe
 
@@ -579,7 +585,8 @@ inline constexpr uint8_t MODULAR_MAX_ROUTE_ATTEMPTS = 4;
  * else the shared tiles it holds while covering it, so the budget stays small: take a
  * genuinely parallel route, never a scenic one.
  *
- * The layout check uses it too: a detour longer than this is one the game will not take.
+ * The layout check does not use this cap anymore, since shared departure queues no longer
+ * require a departure detour to avoid deadlock.
  *
  * Detours change length in even steps, so this is a budget of three steps rather than six.
  * One step is not enough. Excluding a busy transit runway takes the whole contiguous strip
@@ -637,7 +644,8 @@ TileIndex FindModularRolloutHoldingTile(const Station *st, const Aircraft *v, Ti
 TileIndex FindModularRunwayTileForTakeoff(const Station *st, const Aircraft *v);
 bool IsModularHangarPiece(ModularAirportPieceID piece_type);
 bool IsModularHangarTile(const Station *st, TileIndex tile);
-bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal = INVALID_TILE);
+bool IsModularDepartureQueueTile(const Station *st, TileIndex tile);
+bool IsModularSafeStopTile(const Station *st, TileIndex tile, TileIndex goal = INVALID_TILE, bool is_departure = false);
 TileIndex FindFreeModularTerminal(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE, bool allow_helicopter = false);
 bool ModularAirportHasHelipad(const Station *st);
 TileIndex FindFreeModularHelipad(const Station *st, const Aircraft *v, TileIndex from_tile = INVALID_TILE);

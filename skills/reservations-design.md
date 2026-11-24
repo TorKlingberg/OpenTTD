@@ -27,15 +27,17 @@ horizon from the current path index regardless of which segment triggered the ca
 | Stand | Only for the aircraft parking on it (its goal) | Parking; per-stand exclusivity, others route around |
 | Hangar | Yes | Multi-capacity parking; never hard-blocks |
 | Helipad | Only for the aircraft parking on it (its goal) | Parking for helicopters |
-| `OneWay` taxiway tile | Yes | Designed as a queue; per-tile semantics support waiting |
+| `OneWay` taxiway tile | Yes (departure-queue tiles: departures only) | Designed as a queue; tiles used by stand departures are safe stops only for departures |
 | Runway tile | **No** (in transit) | Shared crossing/operation space; an aircraft may not wait there |
 | `FreeMove` grass / apron | **No** | Pure transit; stopping blocks anyone else needing to cross |
 
 A stand or helipad holds one aircraft, so it is a safe stop only for the aircraft whose goal
-it is (`IsModularSafeStopTile(st, tile, goal)`; with no valid goal, every stand and helipad
-counts, as the function's comment says). Any other aircraft passing over it reserves
+it is (`IsModularSafeStopTile(st, tile, goal, is_departure)`; with no valid goal, every stand
+and helipad counts, as the function's comment says). Any other aircraft passing over it reserves
 straight across to the next safe stop beyond, and never waits on it. That is why a hangar
-whose only way out crosses a stand cannot jam on that stand (section 9).
+whose only way out crosses a stand cannot jam on that stand (section 9). Similarly, a one-way
+taxiway tile on a departure route from a stand (`IsModularDepartureQueueTile`) is a safe stop
+only when `is_departure` is true (`MGT_RUNWAY_TAKEOFF` or `MGT_HELI_TAKEOFF_TILE`).
 
 A runway tile is special: it *is* the destination during takeoff (`MGT_RUNWAY_TAKEOFF` → state `TAKEOFF`), where the aircraft transitions out of ground movement entirely. So a runway-end takeoff goal is acceptable as a path terminus, but **never** as a mid-path resting place.
 
@@ -59,10 +61,6 @@ The plan partitions that horizon into two kinds of claim:
   acquired while the horizon still ends at an upstream one-way queue; it joins
   the plan when the horizon actually reaches that runway.
 
-- **Parking goal:** the stand or helipad the aircraft is going to park on, when the
-  horizon ends on a queue tile with a runway still ahead. See "Queues ahead of a
-  runway" below.
-
 Landing supplies its touchdown runway explicitly. Ground movement identifies a
 takeoff operation from `MGT_RUNWAY_TAKEOFF` and `modular_takeoff_tile`; after
 touchdown, the aircraft's tracked whole-runway claim identifies the landing
@@ -80,48 +78,47 @@ an aircraft never enters runway or apron transit without already owning a path t
 a place where it may wait, but it also never reacquires a runway or other tile that
 has fallen behind its current path index.
 
-#### Queues ahead of a runway
+#### Departure queues and queues ahead of a runway
 
-A queue tile whose way on lies over a runway is a takeoff queue, or shares its tiles
-with one. The safe-stop rule says an aircraft may wait there without pinning a
-shared resource, and that is not true of an aircraft that is not departing: the
-queue itself is what the departures behind it need, and they are standing on the
-stands it wants. Measured on `mass7-inair` and `helis2` before these rules, a
-stand-bound arrival sat at the head of a departure lane for about half of every
-year, once for 49,000 ticks with a departure behind it throughout. The airport
-recovered only because it has a second lane. Three rules keep such an aircraft out:
+The safe-stop rule says an aircraft may wait on a one-way tile without pinning a shared
+resource. That holds for a departure waiting for a runway (which drains on its own), and
+for an arrival waiting on an arrival-only queue or a hold-short tile between parallel
+runways that departures never use. It does **not** hold for a non-departing aircraft
+waiting on a tile that departures from stands need: the departures behind it are sitting
+on the very stands it is waiting for, causing a long stall or deadlock. Measured on
+`mass7-inair` and `helis2` before this was addressed, a stand-bound arrival sat at the
+head of a departure lane for about half of every year, once for 49,000 ticks with a
+departure behind it throughout; the airport recovered only because it had a second lane.
 
-1. **No diversion into one.** `FindReservableRoute` judges an alternative only as far
-   as its first safe stop, so an alternative may not leave more runway beyond that
-   stop than the direct route does. A runway crossed inside the hop is fine: the
-   aircraft does not rest before it. This is the rule that does the work on the
-   fixtures (non-departures waiting in a takeoff queue: about 2,400 logged waits per
-   run before, none after).
-2. **Not without a stand.** When a hop does end on such a tile -- the direct route
-   may lead there -- the forward plan claims the goal stand or helipad along with
-   it, and `BuildReservationKeepSet` keeps that claim until the aircraft parks. All
-   it waits for from then on is a gap on the runway. An aircraft holding a stand
-   normally keeps aiming at it, as `FindFreeModularTerminal` hands back a stand the
-   asker already owns. The claim is made on entering a hop: setting off from a safe
-   stop or from the stand or hangar a route starts on, or landing (or the route taken
-   on from the rollout point). It is not demanded of an aircraft between safe stops,
-   such as one whose route is rebuilt there after a layout edit or a new goal: that
-   one moves on to the next safe stop and claims the stand when it sets off from
-   there, as refusing its next step would stop it where it may not wait. A stand it
-   had already claimed is kept across the rebuild. (A rebuild on a stand the aircraft
-   is only passing over counts as starting from it.) It is the one place an aircraft
-   holds something while it waits that is not the tile it stands on: a layout where
-   another aircraft can only leave *through* that stand can jam on it. Hangars are
-   multi-capacity and are never claimed.
-3. **No stand-less landing against one.** A landing admitted against a queue tile
-   alone (section 5) is refused when the route on from that tile crosses a runway.
+Two rules keep non-departures from resting in departure queues while preserving hold-short
+tiles between parallel runways:
 
-Claiming the stand with *every* hop, wherever it ends, was tried first and costs
-throughput: -9% on `mass7-inair` and -4% on `helis2` over six seeds. Aircraft waiting
-near the stands for the next one to empty are what keeps the stands busy, so the
-claim is limited to where waiting does harm. Rule 1 was likewise first written as
-"an alternative may not add a runway crossing at all", which costs 1% on `T5j2`:
-crossing a runway inside one hop is an ordinary, useful diversion.
+1. **Departure-queue tiles are safe stops only for departures.** `Airport` lazily caches
+   `modular_departure_queue_tiles` behind `MarkLayoutDirty()`: every `one_way_taxi` tile
+   lying on any equal-cost shortest route from a stand to a reachable takeoff runway end
+   (strict first, falling back to runway crossing per stand when needed, including
+   large-safe runways for fast jets). The computation reads static tile metadata only and
+   never touches `_modular_airport_crossing_required_path_cache`, so it is deterministic
+   across multiplayer clients without save/load state. `IsModularSafeStopTile` returns
+   `false` for these tiles when `!is_departure`, so non-departures reserve straight
+   through them to a non-departure safe stop or their goal (or wait upstream in the air,
+   in a hangar, or on an arrival-only queue), and goal-less landings automatically cannot
+   use them as buffers. Because this is a pure tile property, `FindAirportGroundPath`'s
+   `track_horizon` (`avoid_tiles` scoping), `BuildForwardReservationPlan`,
+   `BuildReservationKeepSet`, `FindModularRolloutHoldingTile`, and
+   `HandleModularGroundArrival` all share the exact same safe-stop definition. Waiting
+   aircraft still hold only the tile they stand on (no advance stand claiming).
+2. **No diversion into a queue ahead of a runway.** `FindReservableRoute` judges an
+   alternative only as far as its first safe stop, so an alternative may not leave more
+   runway beyond that stop than the direct route does. A runway crossed inside the hop is
+   fine: the aircraft does not rest before it. This covers longer secondary/backup
+   takeoff lanes that are not on any stand's shortest departure route.
+
+Earlier rejected variants: claiming the stand with *every* hop costs -9% on `mass7-inair`
+and -4% on `helis2`; claiming the stand only on hops ending short of a runway broke the
+"hold only what you stand on" invariant and created its own deadlock when an aircraft
+queued behind claimed a stand the one in front had to cross;
+refusing any alternative that adds a runway crossing at all costs 1% on `T5j2`.
 
 #### Termination invariant
 
@@ -166,7 +163,7 @@ If any operation or taxi claim is unavailable, nothing in the landing transactio
 is acquired. This prevents an aircraft from landing with a reserved touchdown
 runway but no reserved route through an adjacent runway or apron to safety.
 
-The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway, and the chain is stored only as far as that buffer: the route to it may be a diversion round a held exit, and it stays held through the approach and rollout like any other chain. Such a landing is refused when the route on from the buffer crosses a runway: the buffer would be a takeoff queue (section 3, "Queues ahead of a runway").
+The computed path is stored in `landing_chain_path` and reused after touchdown when possible. If no ground goal exists, landing is only allowed when there is a safe `OneWay` buffer after the runway, and the chain is stored only as far as that buffer: the route to it may be a diversion round a held exit, and it stays held through the approach and rollout like any other chain. Because landings plan with `is_departure = false`, departure-queue tiles are not safe stops and cannot be chosen as landing buffers (section 3, "Departure queues and queues ahead of a runway"); arrival-only buffers and parallel-runway hold-short tiles that departures do not use remain valid buffers.
 
 At the rollout end (`HandleModularGroundArrival`, `MGT_ROLLOUT`), a chain that does not lead to the stand chosen there is never simply dropped. In order:
 
@@ -179,16 +176,13 @@ Taking a route that could not be claimed, while still holding the buffer, deadlo
 
 - Taxi path is rebuilt when invalid or out of sync with current tile/goal.
 - A rebuild only chooses the route (`FindReservableRoute`, from wherever the aircraft
-  stands); beyond the tile it stands on (and a kept goal stand, below), it reserves
-  nothing. The route is reserved by `TryReserveTaxiSegment` from index 0 of the new route,
-  straight after the rebuild in the same `AirportMoveModular` call. So "index 0" does not mean the
+  stands); beyond the tile it stands on, it reserves nothing. The route is reserved by
+  `TryReserveTaxiSegment` from index 0 of the new route, straight after the rebuild in the
+  same `AirportMoveModular` call. So "index 0" does not mean the
   start of a trip: after a rebuild it can be an apron or runway-crossing tile in the middle
   of one. Anything that behaves differently at the start of a route has to be told so
-  explicitly, as the stand claim is (`BuildForwardReservationPlan`'s `route_start`; "Queues
-  ahead of a runway", section 3).
-- The rebuild first releases the old route's reservations (`ClearTaxiPathState`). A goal
-  stand already claimed is taken back once the new route is installed; with no new route
-  it is let go, so that a retarget can pick another goal.
+  explicitly.
+- The rebuild first releases the old route's reservations (`ClearTaxiPathState`).
 - After waiting >64 ticks, `TryRetargetModularGroundGoal` can reroute to a different terminal/helipad/hangar/rollout, and re-picks the takeoff end for `MGT_RUNWAY_TAKEOFF`. Reservations stay until retarget actually succeeds and replaces them; the stale whole-runway claim is released on the next tick because `ShouldRetainRunwayReservation` compares it against the new `modular_takeoff_tile`.
 
 ## 7. Hangars
@@ -309,7 +303,7 @@ stops lie on the routes aircraft take. Modular airports are **not** deadlock-fre
 for every layout a player can build, and no reservation rule can make them so: two
 aircraft that each need the other's stand have no legal move.
 
-What can be said is narrower. A layout is *sound* when all four of these hold, and
+What can be said is narrower. A layout is *sound* when all three of these hold, and
 `CheckModularAirportLayout` (`src/modular_airport_layout_check.cpp`) tests each one:
 
 | Finding | What is wrong | Why it jams |
@@ -317,7 +311,6 @@ What can be said is narrower. A layout is *sound* when all four of these hold, a
 | `Unreachable`, `NoWayOut` | A stand or hangar has no taxi route from any landing end, or to any takeoff end. | Not a deadlock, just dead: nothing parks there, or what does never leaves. |
 | `BehindStand` | The only way from a stand to a takeoff runway, or to a hangar, crosses another stand. | Stands get parked on. The aircraft on the near stand wanting the hangar and the one on the far stand wanting the runway each need the other's tile. |
 | `QueueLoop` | Queue (one-way) tiles follow each other round in a circle on the routes aircraft take. | A queue tile is a safe stop, so the loop can fill: one aircraft per tile, each waiting for the tile ahead. |
-| `SharedQueue` | One queue tile is on a route from a runway to parking or from a hangar to a stand, and on a route from a stand to a runway, and some departure from a stand that uses it has no way round it. | Arrivals wait there for a stand that the departures queued behind them are standing on. The stand claim (section 3) covers the case where the tile is ahead of a runway; this is the general shape. |
 
 Only trips that start on a stand can be held up behind a stand, because only an
 aircraft waiting on a stand is in the way of one. A stand is not a safe stop for an
@@ -329,36 +322,15 @@ on the stands leave without needing anything from them. The trip from a stand to
 hangar is checked for the hangar the game sends the aircraft to
 (`FindFreeModularHangar`: the cheapest route).
 
-One gap is known. An arrival that rests on a queue tile before the stand it crosses
-waits there, and if the aircraft on that stand must pass the same queue tile on its way
-to a hangar, neither moves. Trips to a hangar are not departures to `SharedQueue`, so
-nothing reports it; it needs a one-way tile that a trip to the hangar enters in its own
+Shared one-way queues between arrivals and stand departures do not deadlock at runtime,
+because non-departures never stop on departure-queue tiles (section 3). One gap remains:
+an arrival resting on an arrival-only queue tile waits there, and if the aircraft on the
+stand it wants must pass that same tile on its way to a hangar (not a takeoff runway),
+neither moves. Trips to a hangar are not departure routes, so nothing prevents or
+reports it; it needs a one-way tile that a trip to the hangar enters in its own
 direction.
 
-Departures from a hangar do not count. A hangar takes any number of aircraft, so an
-aircraft leaving one frees nothing anyone waits for, and while it waits in the hangar it
-is in nobody's way. Once out, it may rest on a queue tile that a stand's departure
-needs, but that departure goes on from the tile by the same shortest route, so it
-passes any shared tile further on itself and is counted in its own right. Aircraft
-going from a hangar to a stand rest on queue tiles waiting for the stand like runway
-arrivals, so they count as arrivals. So do arrivals for a hangar: whatever an aircraft
-is bound for, while it rests on the tile it holds it.
-
-A *way round* is the route the game itself would divert to when an arrival holds the
-tile (`FindReservableRoute`, section 3), judged strictly: every shared tile banned at
-once (arrivals may be waiting on all of them) and avoided for the whole route, no other
-stand crossed, no more runway beyond the first safe stop than the direct route, and at
-most `MAX_ROUTE_DETOUR_TILES` longer. The game only retries when choosing the route
-from where the aircraft rests, so it counts only when the shared tile is the departure's
-first safe stop; an aircraft already resting on an earlier queue tile goes on through.
-A departure with a way round never waits behind an arrival there, so the ring cannot
-close through that tile. A departure parked on it waiting for
-the takeoff queue ahead still holds the arrivals up, but that queue drains on its own:
-a delay, not a deadlock.
-
-The first three are certainties about the layout. `SharedQueue` is a risk that grows
-with traffic. It is reported because it is where the starvation that the stand claim
-fixed came from.
+All three findings are certainties about the layout.
 
 What the check does **not** prove: it follows the routes the pathfinder returns on
 an empty airport, starting an arrival at the landing end rather than where it

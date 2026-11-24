@@ -92,9 +92,28 @@ struct TaxiPath {
  *                    paths assume. The goal is *not* exempt -- banning it is how a caller
  *                    says "this goal instance is unusable, try another". A non-empty set
  *                    suppresses the crossing cache entirely (see the .cpp).
+ * @param is_departure Whether the route is for a departing aircraft (used to scope
+ *                     @p avoid_tiles to the same safe-stop horizon as BuildForwardReservationPlan).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, bool update_cache = true, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {}, bool is_departure = false);
+
+/**
+ * Collect every one-way taxiway tile that lies on any equal-cost shortest ground path
+ * from @p start to @p goal, using the exact connectivity and step costs of
+ * FindAirportGroundPath without consulting occupancy or the crossing-required cache.
+ *
+ * Pure function of the static airport layout, independent of tile storage order and A*
+ * tie-breaking. Appends matching tiles to @p out (may contain duplicates).
+ * @param st The station.
+ * @param start Starting tile.
+ * @param goal Goal tile.
+ * @param allow_runway_crossing Whether non-goal runways may be crossed perpendicularly.
+ * @param restriction Aircraft-type restriction.
+ * @param[out] out Vector to append one-way tiles lying on optimal paths.
+ * @return True if @p goal is reachable from @p start.
+ */
+bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out);
 
 /**
  * Whether a stored route can still be driven on the layout as it is now: every tile from
@@ -139,9 +158,10 @@ bool IsOneWayTaxiTile(const Station *st, TileIndex tile);
  * @param v The aircraft (optional, for stand avoidance).
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @param avoid_tiles Tiles the route may not pass through; see FindAirportGroundPath.
+ * @param is_departure Whether the route is for a departing aircraft; see FindAirportGroundPath.
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {});
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v = nullptr, bool allow_runway_goal_crossing = false, GroundPathRestriction restriction = GroundPathRestriction::FromAircraft, std::span<const TileIndex> avoid_tiles = {}, bool is_departure = false);
 
 /**
  * Walk a path and group consecutive same-type tiles into segments.

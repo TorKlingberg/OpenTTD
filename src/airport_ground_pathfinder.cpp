@@ -20,6 +20,7 @@
 #include "table/airporttile_ids.h"
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 
 #include "safeguards.h"
@@ -347,6 +348,33 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<uint64_t,
 	return path;
 }
 
+/** Step cost for entering @p neighbor on a ground path toward @p goal. */
+static int GetGroundStepCost(const ModularAirportTileData *nb_data, TileIndex neighbor, TileIndex goal, bool allow_runway_crossing)
+{
+	int move_cost = 1;
+	if (nb_data != nullptr) {
+		switch (nb_data->piece_type) {
+			case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
+			case APT_GRASS_FENCE_NE_FLAG: case APT_GRASS_FENCE_NE_FLAG_2:
+				move_cost = 4;
+				break;
+			default: break;
+		}
+
+		/* Stands are valid transit nodes, but prefer not routing through
+		 * unrelated stands when alternatives exist. */
+		if (neighbor != goal && IsParkingOnlyTile(nb_data->piece_type)) {
+			move_cost += PASS_THROUGH_STAND_PENALTY;
+		}
+
+		/* In crossing fallback mode, strongly prefer non-runway alternatives. */
+		if (allow_runway_crossing && neighbor != goal && IsModularRunwayPiece(nb_data->piece_type)) {
+			move_cost += 8;
+		}
+	}
+	return move_cost;
+}
+
 /**
  * Find a ground path from start to goal within an airport using A* algorithm.
  * @param st The station containing the airport.
@@ -356,9 +384,11 @@ static std::vector<TileIndex> ReconstructPath(const std::unordered_map<uint64_t,
  * @param allow_runway_goal_crossing Allow crossing-fallback paths when the goal is a runway.
  * @param update_cache Whether the crossing-required cache may be written.
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
+ * @param avoid_tiles Tiles to avoid within the reservation horizon.
+ * @param is_departure Whether the route is for a departing aircraft (scopes safe stops for @p avoid_tiles).
  * @return The path result.
  */
-AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles)
+AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, bool update_cache, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles, bool is_departure)
 {
 	if (restriction == GroundPathRestriction::FromAircraft) restriction = GetGroundPathRestriction(v);
 
@@ -475,28 +505,8 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 				if (track_horizon && !current.passed_safe_stop && is_avoided(neighbor)) continue;
 				if (track_horizon && current_path_contains(current_state, neighbor)) continue;
 				const bool neighbor_passed = track_horizon &&
-						(current.passed_safe_stop || IsModularSafeStopTile(st, neighbor, goal));
-				int move_cost = 1;
-				if (nb_data != nullptr) {
-					switch (nb_data->piece_type) {
-						case APT_GRASS_1: case APT_GRASS_2: case APT_GRASS_FENCE_SW:
-						case APT_GRASS_FENCE_NE_FLAG: case APT_GRASS_FENCE_NE_FLAG_2:
-							move_cost = 4;
-							break;
-						default: break;
-					}
-
-					/* Stands are valid transit nodes, but prefer not routing through
-					 * unrelated stands when alternatives exist. */
-					if (neighbor != goal && IsParkingOnlyTile(nb_data->piece_type)) {
-						move_cost += PASS_THROUGH_STAND_PENALTY;
-					}
-
-					/* In crossing fallback mode, strongly prefer non-runway alternatives. */
-					if (allow_runway_crossing && neighbor != goal && IsModularRunwayPiece(nb_data->piece_type)) {
-						move_cost += 8;
-					}
-				}
+						(current.passed_safe_stop || IsModularSafeStopTile(st, neighbor, goal, is_departure));
+				const int move_cost = GetGroundStepCost(nb_data, neighbor, goal, allow_runway_crossing);
 
 				int tentative_g = current.g_cost + move_cost;
 				const uint64_t neighbor_state = state_key(neighbor, neighbor_passed);
@@ -551,6 +561,79 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 		}
 	}
 	return crossing;
+}
+
+bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out)
+{
+	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) return false;
+	if (!st->TileBelongsToAirport(start) || !st->TileBelongsToAirport(goal)) return false;
+	if (!st->airport.blocks.Test(AirportBlock::Modular)) return false;
+
+	if (start == goal) {
+		if (IsOneWayTaxiTile(st, start)) out.push_back(start);
+		return true;
+	}
+
+	std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> open_set;
+	std::unordered_map<uint32_t, int> g_costs;
+	std::unordered_map<uint32_t, std::vector<TileIndex>> preds;
+	uint32_t sequence = 0;
+
+	const int h_start = DistanceManhattan(start, goal);
+	open_set.emplace(start, 0, h_start, sequence++, false);
+	g_costs[start.base()] = 0;
+
+	/* DistanceManhattan is consistent with minimum step cost 1, so every node is first
+	 * popped at its optimal g-cost and any node on an optimal path has f_cost <= goal_cost.
+	 * Keep expanding until f_cost exceeds goal_cost so every equal-cost predecessor is
+	 * recorded, regardless of tie-breaking order. */
+	int goal_cost = INT_MAX;
+	while (!open_set.empty()) {
+		const PathNode current = open_set.top();
+		open_set.pop();
+
+		if (current.f_cost > goal_cost) break;
+
+		auto best = g_costs.find(current.tile.base());
+		if (best == g_costs.end() || current.g_cost != best->second) continue;
+
+		if (current.tile == goal) {
+			if (current.g_cost < goal_cost) goal_cost = current.g_cost;
+			continue;
+		}
+
+		for (const auto &[neighbor, nb_data] : GetReachableNeighbors(st, current.tile, nullptr, restriction, goal, allow_runway_crossing)) {
+			const int tentative_g = current.g_cost + GetGroundStepCost(nb_data, neighbor, goal, allow_runway_crossing);
+			if (tentative_g > goal_cost) continue;
+
+			const uint32_t nb_key = neighbor.base();
+			auto it = g_costs.find(nb_key);
+			if (it == g_costs.end() || tentative_g < it->second) {
+				g_costs[nb_key] = tentative_g;
+				preds[nb_key] = {current.tile};
+				const int f = tentative_g + DistanceManhattan(neighbor, goal);
+				if (f <= goal_cost) open_set.emplace(neighbor, tentative_g, f, sequence++, false);
+			} else if (tentative_g == it->second) {
+				preds[nb_key].push_back(current.tile);
+			}
+		}
+	}
+
+	if (goal_cost == INT_MAX) return false;
+
+	std::vector<TileIndex> stack{goal};
+	std::unordered_set<uint32_t> visited{goal.base()};
+	while (!stack.empty()) {
+		const TileIndex tile = stack.back();
+		stack.pop_back();
+		if (IsOneWayTaxiTile(st, tile)) out.push_back(tile);
+		auto it = preds.find(tile.base());
+		if (it == preds.end()) continue;
+		for (TileIndex prev : it->second) {
+			if (visited.insert(prev.base()).second) stack.push_back(prev);
+		}
+	}
+	return true;
 }
 
 /**
@@ -660,11 +743,11 @@ std::vector<TaxiSegment> ClassifyTaxiSegments(const Station *st, const std::vect
  * @param restriction Aircraft-type restriction; pass one explicitly when @p v is nullptr.
  * @return A TaxiPath with tiles and segments filled in.
  */
-TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles)
+TaxiPath BuildTaxiPath(const Station *st, TileIndex start, TileIndex goal, const Aircraft *v, bool allow_runway_goal_crossing, GroundPathRestriction restriction, std::span<const TileIndex> avoid_tiles, bool is_departure)
 {
 	TaxiPath result;
 
-	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing, true, restriction, avoid_tiles);
+	AirportGroundPath path = FindAirportGroundPath(st, start, goal, v, allow_runway_goal_crossing, true, restriction, avoid_tiles, is_departure);
 	if (!path.found) return result;
 
 	result.tiles = std::move(path.tiles);

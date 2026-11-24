@@ -2057,7 +2057,6 @@ struct StationViewWindow : public Window {
 			};
 			if (any(ModularLayoutProblem::BehindStand)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND));
 			if (any(ModularLayoutProblem::QueueLoop)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_QUEUE_LOOP));
-			if (any(ModularLayoutProblem::SharedQueue)) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_SHARED_QUEUE));
 			gap();
 		}
 

@@ -2815,8 +2815,14 @@ TEST_CASE("ModularAirportLandingChain")
 		AddModularTile(st, far_stand, APT_STAND, 0);
 	};
 
-	SECTION("A queue tile short of a runway claims the stand beyond it") {
+	SECTION("A hold-short queue tile between parallel runways remains a safe stop and landing buffer") {
+		/* Departures from far_stand enter the inner runway at (2,2) directly and never
+		 * use queue_tile (2,1), so queue_tile is a hold-short tile rather than a takeoff
+		 * queue. Arrivals may stop there without claiming the inner runway crossing or
+		 * stand, and stand-less landings may buffer there. */
 		build_queue_before_runway();
+		st->airport.MarkLayoutDirty();
+		CHECK_FALSE(IsModularDepartureQueueTile(st, queue_tile));
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
@@ -2825,186 +2831,95 @@ TEST_CASE("ModularAirportLandingChain")
 
 		REQUIRE(TryReserveLandingChain(v, st, base, far_stand));
 		CHECK(IsModularAirportTileReservedBy(queue_tile, v->index));
-		/* The horizon ends at the queue tile: the crossing is not claimed, the stand is. */
 		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(2, 2)));
-		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
+		CHECK_FALSE(HasModularAirportTileReservation(far_stand));
 
-		/* Nobody else is offered it. */
-		Aircraft *other = CreateAircraft(VehicleID(11));
-		other->engine_type = prop_engine;
-		other->targetairport = st->index;
-		CHECK(FindFreeModularTerminal(st, other, base + TileDiffXY(2, 0)) == INVALID_TILE);
+		ClearModularRunwayReservation(v);
+		ClearTaxiPathReservation(v, INVALID_TILE, true, false);
+		v->landing_chain_path.reset();
 
-		/* Waiting on the queue tile, it still owns the stand: its next hop ends there.
-		 * (The next section checks the stand is kept where no plan names it.) */
-		v->taxi_path = std::move(v->landing_chain_path);
-		v->ground_path_goal = far_stand;
-		v->modular_ground_target = MGT_TERMINAL;
-		const auto at = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), queue_tile);
-		REQUIRE(at != v->taxi_path->tiles.end());
-		v->tile = queue_tile;
-		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), at));
-		std::vector<TileIndex> keep_set;
-		BuildReservationKeepSet(v, st, keep_set);
-		ReconcileAircraftReservations(v, st, keep_set, "test");
-		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
-
-		/* And still does out on the runway crossing, one step from the stand. */
-		v->tile = base + TileDiffXY(2, 2);
-		v->taxi_path_index++;
-		REQUIRE(v->taxi_path->tiles[v->taxi_path_index] == v->tile);
-		BuildReservationKeepSet(v, st, keep_set);
-		ReconcileAircraftReservations(v, st, keep_set, "test");
-		CHECK(IsModularAirportTileReservedBy(far_stand, v->index));
+		REQUIRE(TryReserveLandingChain(v, st, base, INVALID_TILE));
+		CHECK(IsModularAirportTileReservedBy(queue_tile, v->index));
+		CHECK_FALSE(HasModularAirportTileReservation(base + TileDiffXY(2, 2)));
 	}
 
-	SECTION("A stand claimed ahead is kept past the runway that required it") {
-		/* A second queue tile between the runway and the stand:
-		 *   (2,1) queue, (2,2) runway crossing, (2,3) queue, (2,4) stand.
-		 * From the first queue tile the next hop ends at the second one, with no runway
-		 * beyond it, so the forward plan no longer names the stand. Only the keep rule
-		 * holds on to it. */
-		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
-		const auto one_way_south = [&](TileIndex tile) {
-			ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
-			data->one_way_taxi = true;
-			data->user_taxi_dir_mask = 0x04;
-		};
-		one_way_south(queue_tile);
-		AddLargeRunway(st, base + TileDiffXY(0, 2), 3, 0, RUF_DEFAULT);
-		const TileIndex second_queue = base + TileDiffXY(2, 3);
-		const TileIndex stand = base + TileDiffXY(2, 4);
-		one_way_south(second_queue);
-		AddModularTile(st, stand, APT_STAND, 0);
+	SECTION("A departure-queue tile is not a safe stop for non-departures") {
+		/* Layout with a shared takeoff queue ahead of a 4-tile takeoff runway:
+		 *   Row 0: RWY(0..3,0)                  (landing runway, rolls out to (3,0))
+		 *   Row 1:             Q(3,1,S) S(4,1)  (stand at (4,1) departs via Q(3,1) -> (3,2))
+		 *   Row 2: RWY(0..3,2)                  (4-tile takeoff runway)
+		 *   Row 3:             S_far(3,3)       (arrival stand across the takeoff runway)
+		 * Departures from (4,1) pass through Q(3,1) to reach takeoff end (3,2), so Q is
+		 * a departure queue tile. Non-departures must reserve straight through Q to S_far
+		 * and cannot use Q as a stand-less landing buffer; departures still stop on Q. */
+		AddLargeRunway(st, base, 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		const TileIndex near_stand = base + TileDiffXY(4, 1);
+		const TileIndex dep_queue = base + TileDiffXY(3, 1);
+		const TileIndex crossing = base + TileDiffXY(3, 2);
+		const TileIndex goal_stand = base + TileDiffXY(3, 3);
+		AddModularTile(st, near_stand, APT_STAND, 0);
+		ModularAirportTileData *ow = AddModularTileWithData(st, dep_queue, APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x04; // South into (3,2)
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, goal_stand, APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+
+		REQUIRE(IsModularDepartureQueueTile(st, dep_queue));
+		CHECK(IsModularSafeStopTile(st, dep_queue, crossing, true));
+		CHECK_FALSE(IsModularSafeStopTile(st, dep_queue, goal_stand, false));
 
 		SetupAircraftPool();
 		Aircraft *v = CreateAircraft(VehicleID(10));
 		v->engine_type = prop_engine;
 		v->targetairport = st->index;
 
-		REQUIRE(TryReserveLandingChain(v, st, base, stand));
-		REQUIRE(IsModularAirportTileReservedBy(stand, v->index));
-
-		v->taxi_path = std::move(v->landing_chain_path);
-		v->ground_path_goal = stand;
-		v->modular_ground_target = MGT_TERMINAL;
-		v->modular_runway_reservation.clear();
-		const auto at = std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), queue_tile);
-		REQUIRE(at != v->taxi_path->tiles.end());
-		v->tile = queue_tile;
-		v->taxi_path_index = static_cast<uint16_t>(std::distance(v->taxi_path->tiles.begin(), at));
-
-		std::vector<TileIndex> keep_set;
-		BuildReservationKeepSet(v, st, keep_set);
-		ReconcileAircraftReservations(v, st, keep_set, "test");
-		CHECK(IsModularAirportTileReservedBy(stand, v->index));
-
-		/* It is kept as the goal, not unconditionally: aim elsewhere and it is let go. */
-		v->ground_path_goal = second_queue;
-		BuildReservationKeepSet(v, st, keep_set);
-		ReconcileAircraftReservations(v, st, keep_set, "test");
-		CHECK_FALSE(HasModularAirportTileReservation(stand));
-	}
-
-	SECTION("A route rebuilt between safe stops claims the stand only from the next one") {
-		/* Two queue tiles in a row, with a runway between the second one and the stand:
-		 *   (2,1) apron, (2,2) queue, (2,3) queue, row 4 runway, (2,5) stand.
-		 * The route starts with the aircraft on the apron tile, a tile it may not wait on,
-		 * as a route rebuilt there does, while somebody else holds the stand. It moves on
-		 * to the first queue tile without the stand. Setting off from there, its hop ends on the second queue tile
-		 * with the runway still ahead, so that hop needs the stand. */
-		AddLargeRunway(st, base, 3, 0, RUF_DEFAULT);
-		const TileIndex apron = base + TileDiffXY(2, 1);
-		const TileIndex first_queue = base + TileDiffXY(2, 2);
-		const TileIndex second_queue = base + TileDiffXY(2, 3);
-		const TileIndex stand = base + TileDiffXY(2, 5);
-		AddModularTile(st, apron, APT_APRON, 0);
-		for (TileIndex tile : {first_queue, second_queue}) {
-			ModularAirportTileData *data = AddModularTileWithData(st, tile, APT_APRON, 0);
-			data->one_way_taxi = true;
-			data->user_taxi_dir_mask = 0x04;
-		}
-		AddLargeRunway(st, base + TileDiffXY(0, 4), 3, 0, RUF_DEFAULT);
-		AddModularTile(st, stand, APT_STAND, 0);
-
-		SetupAircraftPool();
-		Aircraft *v = CreateAircraft(VehicleID(10));
-		v->engine_type = prop_engine;
-		v->targetairport = st->index;
-		Aircraft *holder = CreateAircraft(VehicleID(11));
-		holder->targetairport = st->index;
-		SetModularAirportTileReservationOwner(stand, holder->index);
-		holder->taxi_reserved_tiles.push_back(stand);
-		holder->ground_path_goal = stand;
-		holder->modular_ground_target = MGT_TERMINAL;
-
-		v->tile = apron;
-		v->ground_path_goal = stand;
-		v->modular_ground_target = MGT_TERMINAL;
-		v->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, apron, stand));
-		REQUIRE(v->taxi_path->valid);
-		REQUIRE(v->taxi_path->tiles.size() == 5);
-		REQUIRE(v->taxi_path->tiles[1] == first_queue);
-		REQUIRE(v->taxi_path->tiles[2] == second_queue);
-		v->taxi_path_index = 0;
-		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 0);
-
-		CHECK(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
-		CHECK(IsModularAirportTileReservedBy(first_queue, v->index));
-		CHECK(IsModularAirportTileReservedBy(stand, holder->index));
-
-		v->tile = first_queue;
-		v->taxi_path_index = 1;
-		v->taxi_current_segment = FindTaxiSegmentIndex(v->taxi_path.get(), 1);
-		CHECK_FALSE(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
-		CHECK_FALSE(IsModularAirportTileReservedBy(second_queue, v->index));
-
-		/* Once the stand is free it goes with the hop. */
-		ClearModularAirportTileReservation(stand);
-		holder->taxi_reserved_tiles.clear();
-		CHECK(TryReserveTaxiSegment(v, st, v->taxi_current_segment));
-		CHECK(IsModularAirportTileReservedBy(second_queue, v->index));
-		CHECK(IsModularAirportTileReservedBy(stand, v->index));
-
-		/* A route rebuilt for real, on the apron tile, keeps the stand already claimed:
-		 * the rebuild releases the old route, stand included, and the new route's plan
-		 * does not claim it from there. The route no longer matches where the aircraft
-		 * is, so the next movement step rebuilds it. The tile ahead is held by somebody
-		 * else, so the step ends there, after the rebuild and the reservation clean-up. */
-		v->tile = apron;
-		v->x_pos = TileX(apron) * TILE_SIZE + TILE_SIZE / 2;
-		v->y_pos = TileY(apron) * TILE_SIZE + TILE_SIZE / 2;
-		v->z_pos = GetTileMaxPixelZ(apron);
-		v->direction = Direction::SE;
-		REQUIRE(v->taxi_path->tiles[v->taxi_path_index] != v->tile);
-		CreateBlockerOnTile(st, VehicleID(12), first_queue);
-		CHECK_FALSE(AirportMoveModular(v, st));
-		REQUIRE(v->taxi_path != nullptr);
-		CHECK(v->taxi_path->tiles.front() == apron);
-		CHECK(IsModularAirportTileReservedBy(stand, v->index));
-	}
-
-	SECTION("A queue tile short of a runway is no place to wait for a stand") {
-		build_queue_before_runway();
-
-		SetupAircraftPool();
-		Aircraft *v = CreateAircraft(VehicleID(10));
-		v->engine_type = prop_engine;
-		v->targetairport = st->index;
-		Aircraft *holder = CreateAircraft(VehicleID(11));
-		holder->targetairport = st->index;
-		SetModularAirportTileReservationOwner(far_stand, holder->index);
-		holder->taxi_reserved_tiles.push_back(far_stand);
-		holder->ground_path_goal = far_stand;
-		holder->modular_ground_target = MGT_TERMINAL;
-
-		/* The route as far as the queue tile is free, which used to be enough. */
-		CHECK_FALSE(TryReserveLandingChain(v, st, base, far_stand));
-		/* Nor may it land with no stand in mind and wait there for one. */
+		/* Stand-less landing cannot buffer on a departure queue tile. */
 		CHECK_FALSE(TryReserveLandingChain(v, st, base, INVALID_TILE));
 		CHECK(v->modular_runway_reservation.empty());
-		CHECK_FALSE(HasModularAirportTileReservation(queue_tile));
-		CHECK(IsModularAirportTileReservedBy(far_stand, holder->index));
+		CHECK_FALSE(HasModularAirportTileReservation(dep_queue));
+
+		/* Landing with a busy stand beyond the departure queue is refused rather than
+		 * letting the arrival park in the departure lane. */
+		Aircraft *holder = CreateAircraft(VehicleID(11));
+		holder->targetairport = st->index;
+		SetModularAirportTileReservationOwner(goal_stand, holder->index);
+		holder->taxi_reserved_tiles.push_back(goal_stand);
+		holder->ground_path_goal = goal_stand;
+		holder->modular_ground_target = MGT_TERMINAL;
+		CHECK_FALSE(TryReserveLandingChain(v, st, base, goal_stand));
+		CHECK(v->modular_runway_reservation.empty());
+		CHECK_FALSE(HasModularAirportTileReservation(dep_queue));
+
+		/* With goal_stand free, the landing reserves straight through dep_queue and the
+		 * runway crossing all the way to goal_stand in one atomic hop. */
+		ClearModularAirportTileReservation(goal_stand);
+		holder->taxi_reserved_tiles.clear();
+		REQUIRE(TryReserveLandingChain(v, st, base, goal_stand));
+		CHECK(IsModularAirportTileReservedBy(dep_queue, v->index));
+		CHECK(IsModularAirportTileReservedBy(crossing, v->index));
+		CHECK(IsModularAirportTileReservedBy(goal_stand, v->index));
+
+		/* Clear arrival and verify a departure from near_stand still stops on dep_queue
+		 * without claiming the takeoff runway ahead of it. */
+		ClearModularRunwayReservation(v);
+		ClearTaxiPathReservation(v, INVALID_TILE, true, false);
+		v->landing_chain_path.reset();
+
+		Aircraft *dep = CreateAircraft(VehicleID(12));
+		dep->engine_type = prop_engine;
+		dep->targetairport = st->index;
+		dep->tile = near_stand;
+		dep->modular_takeoff_tile = crossing;
+		dep->ground_path_goal = crossing;
+		dep->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		dep->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, near_stand, crossing, dep, false, GroundPathRestriction::FixedWing, {}, true));
+		REQUIRE(dep->taxi_path->valid);
+		dep->taxi_path_index = 0;
+		dep->taxi_current_segment = FindTaxiSegmentIndex(dep->taxi_path.get(), 0);
+		REQUIRE(TryReserveTaxiSegment(dep, st, dep->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(dep_queue, dep->index));
+		CHECK_FALSE(HasModularAirportTileReservation(crossing));
 	}
 }
 
@@ -3546,8 +3461,7 @@ TEST_CASE("ModularAirportAlternateRoutes")
 		CHECK(IsModularSafeStopTile(st, stand, stand));
 		CHECK_FALSE(IsModularSafeStopTile(st, stand, exit_a));
 
-		/* One-way queue tiles are unconditional: they are shared queue positions, not
-		 * anybody's destination. */
+		/* Non-departure one-way queue tiles are safe stops regardless of goal. */
 		CHECK(IsModularSafeStopTile(st, exit_a, stand));
 
 		/* No goal supplied means "anywhere will do"; route planning always has a goal
@@ -6850,106 +6764,24 @@ TEST_CASE("ModularAirportLayoutCheck")
 		}).empty());
 	}
 
-	SECTION("A queue tile arrivals and departures both pass") {
+	SECTION("A shared one-way queue is not flagged because non-departures do not wait on it") {
 		/* In at the left, along the bottom, out at the right. The second one-way tile
 		 * of the bottom row is on the way to the far stand and on the way out of the
-		 * near one. Nothing goes round, so there is no loop. */
-		CHECK(check({
+		 * near one. Because non-departures treat departure-queue tiles as transit rather
+		 * than safe stops, arrivals never wait on (3,2) for a stand, so the layout cannot
+		 * deadlock. */
+		Station *st = BuildAirportFromPicture(base, {
 			"RRRRRR",
 			"v    ^",
 			".>.>..",
 			"  S S",
-		}) == Issues{
-			{ModularLayoutProblem::SharedQueue, at(3, 2)},
 		});
-	}
-
-	SECTION("A queue tile arrivals share only with a hangar's departures") {
-		/* The near stand of the airport above is a hangar now. Its departures still pass
-		 * the tile the far stand's arrivals queue on, but a hangar takes any number of
-		 * aircraft, so the arrivals never wait for one to leave it. (The one-way tiles
-		 * do form a loop: the stand's aircraft can only get to the hangar round by the
-		 * runway.) */
-		const Issues issues = check({
-			"RRRRRR",
-			"v    ^",
-			".>.>..",
-			"  N S",
-		});
-		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
-			return i.problem == ModularLayoutProblem::SharedQueue;
-		}));
-	}
-
-	SECTION("A hangar's departures waiting before a shared queue tile") {
-		/* The hangar is at the far left now. Its departures rest on the first one-way
-		 * tile before they need the second, where the arrivals for the stand queue. The
-		 * arrivals there wait only for the stand, whose aircraft leave without passing
-		 * either tile. (The stand's aircraft get to the hangar round by the runway
-		 * again.) */
-		const Issues issues = check({
-			"RRRRRR",
-			"v    ^",
-			".>.>..",
-			"N   S",
-		});
-		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
-			return i.problem == ModularLayoutProblem::SharedQueue;
-		}));
-	}
-
-	SECTION("A queue tile shared with aircraft from a hangar") {
-		/* Arrivals from the runway come down the right-hand one-way tile, so none passes
-		 * the left-hand one. The hangar's aircraft bound for the stand on the right do,
-		 * and the bottom stand's departures have to pass it on their way out. */
-		CHECK(check({
-			"RRRRRR",
-			"v    ^",
-			"......",
-			"  ^v S",
-			" S..W",
-		}) == Issues{
-			{ModularLayoutProblem::SharedQueue, at(2, 3)},
-		});
-	}
-
-	SECTION("A shared queue tile departures can get round") {
-		/* The same airport with a way out below the stands. The near stand's departures
-		 * still pass the shared tile when it is free, but when an arrival holds it they
-		 * are rerouted along the bottom, two tiles further, so the arrivals never wait
-		 * on a departure that has to come through. */
-		CHECK(check({
-			"RRRRRR",
-			"v    ^",
-			".>.>..",
-			"  S.S.",
-			"   ...",
-		}).empty());
-
-		/* A departure that rests on a queue tile first does not look for another route
-		 * from there, so the way round has to start before the shared tile's queue. Here
-		 * the near stand's departures stop on the tile left of it first. That one is
-		 * shared too, but leaving the stand it can be got round. */
-		CHECK(check({
-			"RRRRRR",
-			"v    ^",
-			".>>>..",
-			"  S.S.",
-			"   ...",
-		}) == Issues{
-			{ModularLayoutProblem::SharedQueue, at(3, 2)},
-		});
-
-		/* Without the bottom row the only other way out is across the far stand, which
-		 * may be parked on: that is no way round. */
-		CHECK(check({
-			"RRRRRR",
-			"v    ^",
-			".>.>..",
-			"  S.S.",
-		}) == Issues{
-			{ModularLayoutProblem::SharedQueue, at(3, 2)},
-		});
+		REQUIRE(st != nullptr);
+		CHECK(CheckModularAirportLayout(st).empty());
+		CHECK(IsModularDepartureQueueTile(st, at(3, 2)));
+		CHECK(IsModularDepartureQueueTile(st, at(5, 1)));
+		CHECK_FALSE(IsModularDepartureQueueTile(st, at(0, 1)));
+		CHECK_FALSE(IsModularDepartureQueueTile(st, at(1, 2)));
 	}
 
 	SECTION("A one-way ring with an exit is not a loop") {
@@ -6987,6 +6819,23 @@ TEST_CASE("ModularAirportLayoutCheck")
 		});
 	}
 
+	SECTION("A stand beyond a takeoff queue reached through another stand") {
+		/* The hangar is across the runway from the stands, so its aircraft queue on the
+		 * one-way tiles below the runway, and the far stand at the top left is only
+		 * reached through the near one. An aircraft waiting in the queue holds only the
+		 * queue tile, so the near stand is held only by an aircraft parked on it, which
+		 * leaves by its own way. Nothing is wrong. */
+		CHECK(check({
+			"vS",
+			".S......",
+			"RRRRRRRRRR",
+			"     ^ v",
+			"     ^ v",
+			"     ...",
+			"     N",
+		}).empty());
+	}
+
 	SECTION("A hangar counts as somewhere to park") {
 		CHECK(check({
 			"RRRRRR",
@@ -7022,5 +6871,295 @@ TEST_CASE("ModularAirportLayoutCheck")
 		CHECK(GetModularAirportLayoutIssues(st).empty());
 		st->airport.MarkLayoutDirty();
 		CHECK_FALSE(GetModularAirportLayoutIssues(st).empty());
+	}
+}
+
+TEST_CASE("ModularAirportDepartureQueueSafeStops")
+{
+	Map::Allocate(64, 64);
+	const TileIndex base = TileXY(10, 10);
+	const auto at = [&](uint x, uint y) { return base + TileDiffXY(x, y); };
+
+	_engine_pool.CleanPool();
+	const EngineID prop_engine = CreateAircraftEngine(EngineID(0), 0);
+	const EngineID heli_engine = CreateAircraftEngine(EngineID(1), AIR_HELI);
+
+	SECTION("Shared queue without a runway ahead: arrivals reserve straight through, departures still stop") {
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S S",
+		});
+		REQUIRE(st != nullptr);
+
+		const TileIndex arrival_q = at(1, 2);
+		const TileIndex shared_q = at(3, 2);
+		const TileIndex near_stand = at(2, 3);
+		const TileIndex far_stand = at(4, 3);
+		const TileIndex takeoff_end = at(5, 0);
+
+		REQUIRE(IsModularDepartureQueueTile(st, shared_q));
+		REQUIRE_FALSE(IsModularDepartureQueueTile(st, arrival_q));
+
+		SetupAircraftPool();
+		Aircraft *arr = CreateAircraft(VehicleID(10));
+		arr->engine_type = prop_engine;
+		arr->targetairport = st->index;
+		arr->tile = arrival_q;
+		arr->ground_path_goal = far_stand;
+		arr->modular_ground_target = MGT_TERMINAL;
+		arr->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, arrival_q, far_stand));
+		REQUIRE(arr->taxi_path->valid);
+		arr->taxi_path_index = 0;
+		arr->taxi_current_segment = FindTaxiSegmentIndex(arr->taxi_path.get(), 0);
+
+		/* While far_stand is occupied, arrival waits on arrival_q and does NOT claim shared_q. */
+		Aircraft *parked = CreateAircraft(VehicleID(11));
+		parked->targetairport = st->index;
+		SetModularAirportTileReservationOwner(far_stand, parked->index);
+		parked->taxi_reserved_tiles.push_back(far_stand);
+		CHECK_FALSE(TryReserveTaxiSegment(arr, st, arr->taxi_current_segment));
+		CHECK_FALSE(HasModularAirportTileReservation(shared_q));
+
+		/* Meanwhile a departure from near_stand CAN stop on shared_q. */
+		Aircraft *dep = CreateAircraft(VehicleID(12));
+		dep->engine_type = prop_engine;
+		dep->targetairport = st->index;
+		dep->tile = near_stand;
+		dep->modular_takeoff_tile = takeoff_end;
+		dep->ground_path_goal = takeoff_end;
+		dep->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		dep->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, near_stand, takeoff_end, dep, false, GroundPathRestriction::FixedWing, {}, true));
+		REQUIRE(dep->taxi_path->valid);
+		dep->taxi_path_index = 0;
+		dep->taxi_current_segment = FindTaxiSegmentIndex(dep->taxi_path.get(), 0);
+		REQUIRE(TryReserveTaxiSegment(dep, st, dep->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(shared_q, dep->index));
+		CHECK_FALSE(HasModularAirportTileReservation(at(5, 1)));
+
+		/* Once shared_q and far_stand are free, arrival reserves straight through shared_q to far_stand. */
+		ClearTaxiPathReservation(dep, INVALID_TILE, true, false);
+		ClearModularAirportTileReservation(far_stand);
+		parked->taxi_reserved_tiles.clear();
+		REQUIRE(TryReserveTaxiSegment(arr, st, arr->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(shared_q, arr->index));
+		CHECK(IsModularAirportTileReservedBy(far_stand, arr->index));
+	}
+
+	SECTION("Equal-cost parallel takeoff lanes are both marked regardless of tie-breaking") {
+		/* Stand at (3,3) has two equal-cost 5-step paths to takeoff end (5,0), each using
+		 * a distinct one-way tile:
+		 *   Route 1: (3,3) -> (3,2)[^] -> (3,1) -> (4,1) -> (5,1) -> (5,0)
+		 *   Route 2: (3,3) -> (4,3) -> (5,3) -> (5,2)[^] -> (5,1) -> (5,0) */
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"   ...",
+			"   ^ ^",
+			"   S..",
+		});
+		REQUIRE(st != nullptr);
+		CHECK(IsModularDepartureQueueTile(st, at(3, 2)));
+		CHECK(IsModularDepartureQueueTile(st, at(5, 2)));
+	}
+
+	SECTION("Mixed small and large runways mark crossing queue tiles needed by fast jets") {
+		/* Row 0: 6-tile large takeoff runway (0..5, 0), takeoff end at (5,0).
+		 * Row 1: one-way ^ at (5,1) feeding (5,0).
+		 * Row 2: 4-tile small takeoff runway (2..5, 2), takeoff end at (5,2) (strictly reachable).
+		 * Row 3: stand S at (5,3).
+		 * From S(5,3), small runway end (5,2) is reachable strictly (crossing=false),
+		 * while large runway end (5,0) requires crossing row 2 at (5,2) and passing (5,1).
+		 * Because the airport has a large-safe takeoff runway, fast jets must cross to (5,0),
+		 * so (5,1) must be marked as a departure queue tile. */
+		Station *st = SetupModularAirport(base, 8, 5);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 6, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		ModularAirportTileData *ow = AddModularTileWithData(st, at(5, 1), APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x01; // North
+		AddLargeRunway(st, at(2, 2), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, at(5, 3), APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+
+		CHECK(IsModularDepartureQueueTile(st, at(5, 1)));
+	}
+
+	SECTION("Cache invalidates when layout changes") {
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S S",
+		});
+		REQUIRE(st != nullptr);
+		REQUIRE(IsModularDepartureQueueTile(st, at(3, 2)));
+
+		/* Disabling takeoff on the runway clears departure queue tiles once marked dirty. */
+		for (uint x = 0; x < 6; x++) {
+			ModularAirportTileData *rw = st->airport.GetModularTileData(at(x, 0));
+			REQUIRE(rw != nullptr);
+			rw->runway_flags = RUF_LANDING | RUF_DIR_LOW;
+		}
+		CHECK(IsModularDepartureQueueTile(st, at(3, 2))); // Still cached before MarkLayoutDirty
+		st->airport.MarkLayoutDirty();
+		CHECK_FALSE(IsModularDepartureQueueTile(st, at(3, 2)));
+	}
+
+	SECTION("Pathfinder avoid_tiles horizon agrees with departure-queue safe stops") {
+		/* Shared-queue layout:
+		 *   RRRRRR
+		 *   v    ^
+		 *   .>.>..
+		 *     S S
+		 * Query from (2,2) to far stand (4,3) banning (4,2) (which lies past shared queue (3,2)):
+		 * - With is_departure=false: (3,2) is NOT a safe stop, so avoid{(4,2)} stays active
+		 *   past (3,2) and no path is found.
+		 * - With is_departure=true: (3,2) IS a safe stop, so avoid{(4,2)} lifts at (3,2)
+		 *   and the path through (3,2) -> (4,2) -> (4,3) is found. */
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  S S",
+		});
+		REQUIRE(st != nullptr);
+		REQUIRE(IsModularDepartureQueueTile(st, at(3, 2)));
+
+		const std::array<TileIndex, 1> avoid{at(4, 2)};
+		const AirportGroundPath arr_path = FindAirportGroundPath(st, at(2, 2), at(4, 3), nullptr,
+				false, false, GroundPathRestriction::FixedWing, avoid, false);
+		CHECK_FALSE(arr_path.found);
+
+		const AirportGroundPath dep_path = FindAirportGroundPath(st, at(2, 2), at(4, 3), nullptr,
+				false, false, GroundPathRestriction::FixedWing, avoid, true);
+		CHECK(dep_path.found);
+	}
+
+	SECTION("Helicopter leaving hangar for helipad does not wait in fixed-wing takeoff queue") {
+		/* Fixed-wing stand (2,2) departs via one-way queue (3,2) -> (3,1)[rw] -> takeoff end (0,1).
+		 * Hangar at (3,3) sends a helicopter via (3,2) across the runway to helipad (3,0).
+		 * Because MGT_HELIPAD is not a departure, the helicopter must not stop on (3,2). */
+		Station *st = SetupModularAirport(base, 6, 5);
+		REQUIRE(st != nullptr);
+		const TileIndex helipad = at(3, 0);
+		const TileIndex rwy_cross = at(3, 1);
+		const TileIndex dep_queue = at(3, 2);
+		const TileIndex stand = at(2, 2);
+		const TileIndex hangar = at(3, 3);
+		AddModularTile(st, helipad, APT_HELIPAD_1, 0);
+		AddLargeRunway(st, at(0, 1), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, stand, APT_STAND, 0);
+		ModularAirportTileData *ow = AddModularTileWithData(st, dep_queue, APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x01; // North into (3,1)
+		AddModularTile(st, hangar, APT_DEPOT_NW, 0);
+		st->airport.MarkLayoutDirty();
+
+		REQUIRE(IsModularDepartureQueueTile(st, dep_queue));
+
+		SetupAircraftPool();
+		Aircraft *heli = CreateAircraft(VehicleID(20));
+		heli->subtype = AIR_HELICOPTER;
+		heli->engine_type = heli_engine;
+		heli->targetairport = st->index;
+		heli->tile = hangar;
+		heli->ground_path_goal = helipad;
+		heli->modular_ground_target = MGT_HELIPAD;
+		heli->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, hangar, helipad, heli, false, GroundPathRestriction::None));
+		REQUIRE(heli->taxi_path->valid);
+		heli->taxi_path_index = 0;
+		heli->taxi_current_segment = FindTaxiSegmentIndex(heli->taxi_path.get(), 0);
+
+		/* While helipad is occupied, helicopter stays in hangar and does NOT claim dep_queue. */
+		Aircraft *pad_holder = CreateAircraft(VehicleID(21));
+		pad_holder->subtype = AIR_HELICOPTER;
+		pad_holder->targetairport = st->index;
+		SetModularAirportTileReservationOwner(helipad, pad_holder->index);
+		pad_holder->taxi_reserved_tiles.push_back(helipad);
+		CHECK_FALSE(TryReserveTaxiSegment(heli, st, heli->taxi_current_segment));
+		CHECK_FALSE(HasModularAirportTileReservation(dep_queue));
+
+		/* Once helipad is free, helicopter reserves straight across dep_queue and runway to helipad. */
+		ClearModularAirportTileReservation(helipad);
+		pad_holder->taxi_reserved_tiles.clear();
+		REQUIRE(TryReserveTaxiSegment(heli, st, heli->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(dep_queue, heli->index));
+		CHECK(IsModularAirportTileReservedBy(rwy_cross, heli->index));
+		CHECK(IsModularAirportTileReservedBy(helipad, heli->index));
+	}
+
+	SECTION("Crossing-only stand marks departure queue tiles across a landing runway") {
+		/* Row 0: 4-tile takeoff runway (0..3, 0), takeoff end at (3,0).
+		 * Row 1: one-way ^ at (3,1) feeding (3,0).
+		 * Row 2: 4-tile landing-only runway (0..3, 2).
+		 * Row 3: stand S at (3,3).
+		 * S has NO strict (non-crossing) route to any takeoff end, so the !any_strict
+		 * crossing fallback must run and mark (3,1). */
+		Station *st = SetupModularAirport(base, 6, 5);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		ModularAirportTileData *ow = AddModularTileWithData(st, at(3, 1), APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x01; // North
+		AddLargeRunway(st, at(0, 2), 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		AddModularTile(st, at(3, 3), APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+
+		CHECK(IsModularDepartureQueueTile(st, at(3, 1)));
+	}
+
+	SECTION("Hangar-only departure queue is not marked as a stand departure queue") {
+		/* Near parking spot is a hangar (N), far parking spot is a stand (S).
+		 * Only hangar departures pass (3,2); stand departures go straight up (5,1).
+		 * Hangars hold unlimited aircraft, so (3,2) must NOT be marked as a departure
+		 * queue tile while (5,1) IS marked. */
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"v    ^",
+			".>.>..",
+			"  N S",
+		});
+		REQUIRE(st != nullptr);
+		CHECK_FALSE(IsModularDepartureQueueTile(st, at(3, 2)));
+		CHECK(IsModularDepartureQueueTile(st, at(5, 1)));
+	}
+
+	SECTION("Rollout holding tile skips departure-queue tiles") {
+		/* Layout:
+		 *   Row 0: RWY(0..3,0)              (landing runway, rollout at (3,0))
+		 *   Row 1:         Q(3,1,S) S(4,1)  (Q is departure queue for S(4,1) -> (3,2))
+		 *   Row 2: RWY(0..3,2)              (4-tile takeoff runway)
+		 *   Row 3:         S_far(3,3)       (goal stand)
+		 * FindModularRolloutHoldingTile must not pick Q(3,1) as a holding tile -- even
+		 * if the aircraft currently owns a reservation on Q(3,1). */
+		Station *st = SetupModularAirport(base, 6, 5);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		const TileIndex rollout = at(3, 0);
+		const TileIndex dep_queue = at(3, 1);
+		const TileIndex near_stand = at(4, 1);
+		const TileIndex far_stand = at(3, 3);
+		ModularAirportTileData *ow = AddModularTileWithData(st, dep_queue, APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x04; // South into (3,2)
+		AddModularTile(st, near_stand, APT_STAND, 0);
+		AddLargeRunway(st, at(0, 2), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, far_stand, APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+		REQUIRE(IsModularDepartureQueueTile(st, dep_queue));
+
+		SetupAircraftPool();
+		Aircraft *v = CreateAircraft(VehicleID(30));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		v->tile = rollout;
+		/* Pre-reserve dep_queue and occupy both stands so neither best_route nor
+		 * reserved_queue_tile() may return dep_queue. */
+		SetTaxiReservation(v, dep_queue);
+		CreateBlockerOnTile(st, VehicleID(31), near_stand);
+		CreateBlockerOnTile(st, VehicleID(32), far_stand);
+
+		CHECK(FindModularRolloutHoldingTile(st, v, rollout) == INVALID_TILE);
 	}
 }
