@@ -93,21 +93,24 @@ departure behind it throughout; the airport recovered only because it had a seco
 Two rules keep non-departures from resting in departure queues while preserving hold-short
 tiles between parallel runways:
 
-1. **Departure-queue tiles are safe stops only for departures.** `Airport` lazily caches
+1. **Stand-exit queue tiles are safe stops only for departures.** `Airport` lazily caches
    `modular_departure_queue_tiles` behind `MarkLayoutDirty()`: every `one_way_taxi` tile
    lying on any equal-cost shortest route from a stand to a reachable takeoff runway end
    (strict first, falling back to runway crossing per stand when needed, including
-   large-safe runways for fast jets). The computation reads static tile metadata only and
+   large-safe runways for fast jets), **or** from a stand to its cheapest reachable
+   hangar(s) (strict first per hangar, falling back to crossing when strict fails,
+   matching `FindFreeModularHangar`). The computation reads static tile metadata only and
    never touches `_modular_airport_crossing_required_path_cache`, so it is deterministic
    across multiplayer clients without save/load state. `IsModularSafeStopTile` returns
-   `false` for these tiles when `!is_departure`, so non-departures reserve straight
-   through them to a non-departure safe stop or their goal (or wait upstream in the air,
-   in a hangar, or on an arrival-only queue), and goal-less landings automatically cannot
-   use them as buffers. Because this is a pure tile property, `FindAirportGroundPath`'s
-   `track_horizon` (`avoid_tiles` scoping), `BuildForwardReservationPlan`,
-   `BuildReservationKeepSet`, `FindModularRolloutHoldingTile`, and
-   `HandleModularGroundArrival` all share the exact same safe-stop definition. Waiting
-   aircraft still hold only the tile they stand on (no advance stand claiming).
+   `false` for these tiles when `!is_departure`, so non-departures (including arrivals
+   and hangar-bound aircraft) reserve straight through them to a non-departure safe stop
+   or their goal—or wait upstream in the air, in a hangar, on a stand, or on an
+   arrival-only queue—and goal-less landings automatically cannot use them as buffers.
+   Because this is a pure tile property, `FindAirportGroundPath`'s `track_horizon`
+   (`avoid_tiles` scoping), `BuildForwardReservationPlan`, `BuildReservationKeepSet`,
+   `FindModularRolloutHoldingTile`, and `HandleModularGroundArrival` all share the exact
+   same safe-stop definition. Waiting aircraft still hold only the tile they stand on
+   (no advance stand claiming).
 2. **No diversion into a queue ahead of a runway.** `FindReservableRoute` judges an
    alternative only as far as its first safe stop, so an alternative may not leave more
    runway beyond that stop than the direct route does. A runway crossed inside the hop is
@@ -322,13 +325,9 @@ on the stands leave without needing anything from them. The trip from a stand to
 hangar is checked for the hangar the game sends the aircraft to
 (`FindFreeModularHangar`: the cheapest route).
 
-Shared one-way queues between arrivals and stand departures do not deadlock at runtime,
-because non-departures never stop on departure-queue tiles (section 3). One gap remains:
-an arrival resting on an arrival-only queue tile waits there, and if the aircraft on the
-stand it wants must pass that same tile on its way to a hangar (not a takeoff runway),
-neither moves. Trips to a hangar are not departure routes, so nothing prevents or
-reports it; it needs a one-way tile that a trip to the hangar enters in its own
-direction.
+Shared one-way queues between arrivals and stand exits—whether a stand's aircraft is
+heading for a takeoff runway or for its nearest hangar—do not deadlock at runtime,
+because non-departures never stop on stand-exit queue tiles (section 3).
 
 All three findings are certainties about the layout.
 

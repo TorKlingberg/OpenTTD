@@ -111,9 +111,10 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
  * @param allow_runway_crossing Whether non-goal runways may be crossed perpendicularly.
  * @param restriction Aircraft-type restriction.
  * @param[out] out Vector to append one-way tiles lying on optimal paths.
+ * @param[out] out_cost Optional output for the shortest path cost when reachable.
  * @return True if @p goal is reachable from @p start.
  */
-bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out);
+bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out, int *out_cost = nullptr);
 
 /**
  * Whether a stored route can still be driven on the layout as it is now: every tile from

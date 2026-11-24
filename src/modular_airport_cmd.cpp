@@ -739,8 +739,9 @@ static bool IsExclusiveParkingPiece(ModularAirportPieceID piece_type)
 }
 
 /**
- * Collect every one-way taxiway tile that lies on an equal-cost shortest departure route
- * from any stand to a takeoff runway end.
+ * Collect every one-way taxiway tile that lies on an equal-cost shortest stand-exit route:
+ * from any stand to a reachable takeoff runway end, or from any stand to its cheapest
+ * reachable hangar(s) (matching FindFreeModularHangar).
  *
  * Pure function of the static airport layout: ignores occupancy and never reads or writes
  * the crossing-required path cache, so every multiplayer client derives the identical set
@@ -753,43 +754,76 @@ static std::vector<TileIndex> ComputeModularDepartureQueueTiles(const Station *s
 
 	std::vector<TileIndex> stands;
 	std::vector<TileIndex> takeoff_ends;
+	std::vector<TileIndex> hangars;
 	for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
 		if (data.piece_type == APT_STAND || data.piece_type == APT_STAND_1) {
 			stands.push_back(data.tile);
+		} else if (IsModularHangarPiece(data.piece_type)) {
+			hangars.push_back(data.tile);
 		} else if (IsModularRunwayEndPiece(data.piece_type) && IsModularTakeoffEnd(st, data.tile)) {
 			takeoff_ends.push_back(data.tile);
 		}
 	}
-	/* Only stand-to-runway departures are traced: hangars hold unlimited aircraft so nothing
-	 * waits for them to empty, and modular_heli_takeoff_tile is omitted because on a
-	 * fixed-wing airport it is an apron tile whose routes from stands could falsely mark
-	 * arrival-only queues. */
-	if (stands.empty() || takeoff_ends.empty()) return result;
+	/* Only exits from stands are traced (takeoff ends and nearest hangars): hangars hold
+	 * unlimited aircraft so nothing waits for a hangar to empty, and modular_heli_takeoff_tile
+	 * is omitted because on a fixed-wing airport it is an apron tile whose routes from stands
+	 * could falsely mark arrival-only queues. */
+	if (stands.empty() || (takeoff_ends.empty() && hangars.empty())) return result;
 
-	const bool has_large_takeoff = ModularAirportHasSafeRunwayFor(st, false);
-	for (TileIndex stand : stands) {
-		bool any_strict = false;
-		bool any_large_strict = false;
-		for (TileIndex end : takeoff_ends) {
-			if (CollectShortestPathOneWayTiles(st, stand, end, false, GroundPathRestriction::FixedWing, result)) {
-				any_strict = true;
-				if (has_large_takeoff && IsRunwaySafeForLarge(st, end)) any_large_strict = true;
-			}
-		}
-
-		/* Match FindModularRunwayTileForTakeoff: fall back to runway crossing for stands
-		 * that cannot reach any takeoff end strictly, and also for large-safe takeoff ends
-		 * when a fast jet on this stand must cross a runway to reach one. */
-		if (!any_strict) {
+	if (!takeoff_ends.empty()) {
+		const bool has_large_takeoff = ModularAirportHasSafeRunwayFor(st, false);
+		for (TileIndex stand : stands) {
+			bool any_strict = false;
+			bool any_large_strict = false;
 			for (TileIndex end : takeoff_ends) {
-				CollectShortestPathOneWayTiles(st, stand, end, true, GroundPathRestriction::FixedWing, result);
-			}
-		} else if (has_large_takeoff && !any_large_strict) {
-			for (TileIndex end : takeoff_ends) {
-				if (IsRunwaySafeForLarge(st, end)) {
-					CollectShortestPathOneWayTiles(st, stand, end, true, GroundPathRestriction::FixedWing, result);
+				if (CollectShortestPathOneWayTiles(st, stand, end, false, GroundPathRestriction::FixedWing, result)) {
+					any_strict = true;
+					if (has_large_takeoff && IsRunwaySafeForLarge(st, end)) any_large_strict = true;
 				}
 			}
+
+			/* Match FindModularRunwayTileForTakeoff: fall back to runway crossing for stands
+			 * that cannot reach any takeoff end strictly, and also for large-safe takeoff ends
+			 * when a fast jet on this stand must cross a runway to reach one. */
+			if (!any_strict) {
+				for (TileIndex end : takeoff_ends) {
+					CollectShortestPathOneWayTiles(st, stand, end, true, GroundPathRestriction::FixedWing, result);
+				}
+			} else if (has_large_takeoff && !any_large_strict) {
+				for (TileIndex end : takeoff_ends) {
+					if (IsRunwaySafeForLarge(st, end)) {
+						CollectShortestPathOneWayTiles(st, stand, end, true, GroundPathRestriction::FixedWing, result);
+					}
+				}
+			}
+		}
+	}
+
+	if (!hangars.empty()) {
+		/* Match FindFreeModularHangar: each stand tries strict first per hangar and falls
+		 * back to runway crossing when strict fails, then takes the cheapest hangar. Merge
+		 * all hangars tied for minimum cost so the set is independent of tile storage order. */
+		for (TileIndex stand : stands) {
+			int best_cost = INT_MAX;
+			std::vector<TileIndex> best_tiles;
+			for (TileIndex hangar : hangars) {
+				std::vector<TileIndex> candidate_tiles;
+				int cost = INT_MAX;
+				bool found = CollectShortestPathOneWayTiles(st, stand, hangar, false,
+						GroundPathRestriction::FixedWing, candidate_tiles, &cost);
+				if (!found) {
+					found = CollectShortestPathOneWayTiles(st, stand, hangar, true,
+							GroundPathRestriction::FixedWing, candidate_tiles, &cost);
+				}
+				if (!found) continue;
+				if (cost < best_cost) {
+					best_cost = cost;
+					best_tiles = std::move(candidate_tiles);
+				} else if (cost == best_cost) {
+					best_tiles.insert(best_tiles.end(), candidate_tiles.begin(), candidate_tiles.end());
+				}
+			}
+			result.insert(result.end(), best_tiles.begin(), best_tiles.end());
 		}
 	}
 
@@ -798,8 +832,8 @@ static std::vector<TileIndex> ComputeModularDepartureQueueTiles(const Station *s
 }
 
 /**
- * Whether @p tile is a one-way taxiway tile used by departures from stands.
- * Lazily cached on Airport behind MarkLayoutDirty().
+ * Whether @p tile is a one-way taxiway tile used by stand exits (to takeoff ends or
+ * nearest hangars). Lazily cached on Airport behind MarkLayoutDirty().
  */
 bool IsModularDepartureQueueTile(const Station *st, TileIndex tile)
 {
@@ -821,13 +855,14 @@ bool IsModularDepartureQueueTile(const Station *st, TileIndex tile)
  * - Parking -- stands and helipads -- counts only for the aircraft actually going to it
  *   (@p goal). Passing over another stand is allowed, stopping on it is not. Hangars are
  *   multi-capacity and stay unconditional.
- * - One-way tiles that lie on departure routes from stands (IsModularDepartureQueueTile)
- *   count only for departing aircraft (@p is_departure). A non-departing aircraft waiting
- *   for a stand on a tile departures need blocks the very aircraft that would free a stand;
- *   treating it as transit makes non-departures reserve straight through it to a safe stop
- *   beyond, or wait upstream (in the air, hangar, or an arrival-only queue). One-way tiles
- *   departures never use -- such as arrival buffers and hold-short tiles between parallel
- *   runways -- remain safe stops for everyone.
+ * - One-way tiles that lie on stand-exit routes (to takeoff ends or nearest hangars,
+ *   IsModularDepartureQueueTile) count only for departing aircraft (@p is_departure).
+ *   A non-departing aircraft waiting for a stand on a tile stand exits need blocks the
+ *   very aircraft that would free a stand; treating it as transit makes non-departures
+ *   reserve straight through it to a safe stop beyond, or wait upstream (in the air,
+ *   hangar, stand, or an arrival-only queue). One-way tiles stand exits never use --
+ *   such as arrival buffers and hold-short tiles between parallel runways -- remain safe
+ *   stops for everyone.
  *
  * @param goal         The aircraft's destination. INVALID_TILE accepts any parking tile and
  *                     exists only for callers that have no goal to offer; route planning

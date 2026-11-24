@@ -7162,4 +7162,128 @@ TEST_CASE("ModularAirportDepartureQueueSafeStops")
 
 		CHECK(FindModularRolloutHoldingTile(st, v, rollout) == INVALID_TILE);
 	}
+
+	SECTION("Stand-to-hangar one-way tile is protected from waiting arrivals") {
+		/* Layout:
+		 *   Row 0: RRRRRR          (takeoff end (5,0), landing rollout (0,0))
+		 *   Row 1: v    ^          ((0,1) arrival-only, (5,1) takeoff queue)
+		 *   Row 2: .>.>S.          ((1,2)[>] shared by arrivals & S->N; (3,2)[>] blocks S from going West)
+		 *   Row 3: . N  .          (hangar N at (2,3) with door North into (2,2))
+		 *   Row 4: ......          (apron loop from S(4,2) around to (0,2) -> (1,2)[>] -> (2,2) -> N(2,3))
+		 * S(4,2) departs via (5,1)[^] -> (5,0) without touching (1,2)[>], while S -> N must
+		 * pass (1,2)[>]. Arrivals must therefore not stop on (1,2)[>]. */
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"v    ^",
+			".>.>S.",
+			". N  .",
+			"......",
+		});
+		REQUIRE(st != nullptr);
+
+		const TileIndex arrival_q = at(0, 1);
+		const TileIndex hangar_exit_q = at(1, 2);
+		const TileIndex arrival_only_q = at(3, 2);
+		const TileIndex stand = at(4, 2);
+		const TileIndex hangar = at(2, 3);
+		const TileIndex takeoff_q = at(5, 1);
+
+		/* (1,2) is NOT on any takeoff route, ONLY on S -> N, and must be marked! */
+		CHECK(IsModularDepartureQueueTile(st, hangar_exit_q));
+		CHECK(IsModularDepartureQueueTile(st, takeoff_q));
+		CHECK_FALSE(IsModularDepartureQueueTile(st, arrival_q));
+		CHECK_FALSE(IsModularDepartureQueueTile(st, arrival_only_q));
+
+		/* An arrival waiting on arrival_q(0,1) heading for stand(4,2) must NOT stop on
+		 * hangar_exit_q(1,2); its horizon carries across (1,2) to arrival_only_q(3,2)
+		 * (leaving (1,2) clear for S -> N when (3,2) is blocked or once it advances). */
+		SetupAircraftPool();
+		Aircraft *arr = CreateAircraft(VehicleID(40));
+		arr->engine_type = prop_engine;
+		arr->targetairport = st->index;
+		arr->tile = arrival_q;
+		arr->ground_path_goal = stand;
+		arr->modular_ground_target = MGT_TERMINAL;
+		arr->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, arrival_q, stand));
+		REQUIRE(arr->taxi_path->valid);
+		arr->taxi_path_index = 0;
+		arr->taxi_current_segment = FindTaxiSegmentIndex(arr->taxi_path.get(), 0);
+
+		/* Block arrival_only_q(3,2): arrival must wait on arrival_q(0,1) rather than
+		 * stepping onto hangar_exit_q(1,2) and blocking stand -> hangar traffic. */
+		CreateBlockerOnTile(st, VehicleID(41), arrival_only_q);
+		CHECK_FALSE(TryReserveTaxiSegment(arr, st, arr->taxi_current_segment));
+		CHECK_FALSE(HasModularAirportTileReservation(hangar_exit_q));
+
+		/* Meanwhile, the aircraft on stand(4,2) heading to hangar(2,3) reserves straight
+		 * through hangar_exit_q(1,2) all the way into the hangar without deadlocking. */
+		Aircraft *to_hangar = CreateAircraft(VehicleID(42));
+		to_hangar->engine_type = prop_engine;
+		to_hangar->targetairport = st->index;
+		to_hangar->tile = stand;
+		to_hangar->ground_path_goal = hangar;
+		to_hangar->modular_ground_target = MGT_HANGAR;
+		to_hangar->taxi_path = std::make_unique<TaxiPath>(BuildTaxiPath(st, stand, hangar));
+		REQUIRE(to_hangar->taxi_path->valid);
+		to_hangar->taxi_path_index = 0;
+		to_hangar->taxi_current_segment = FindTaxiSegmentIndex(to_hangar->taxi_path.get(), 0);
+		REQUIRE(TryReserveTaxiSegment(to_hangar, st, to_hangar->taxi_current_segment));
+		CHECK(IsModularAirportTileReservedBy(hangar_exit_q, to_hangar->index));
+		/* MGT_HANGAR is not a departure, so the horizon carries past hangar_exit_q through
+		 * (2,2) all the way to the hangar rather than stopping on (1,2). */
+		CHECK(IsModularAirportTileReservedBy(at(2, 2), to_hangar->index));
+		CHECK(std::find(to_hangar->taxi_reserved_tiles.begin(), to_hangar->taxi_reserved_tiles.end(), hangar) !=
+				to_hangar->taxi_reserved_tiles.end());
+	}
+
+	SECTION("Stand-to-hangar marks only cheapest hangar(s), merging equal-cost ties") {
+		/* Stand S at (3,2) departs straight North via (3,1) to runway (3,0)->(5,0) without
+		 * using (2,2)[<] or (4,2)[>].
+		 *   West hangar route: (3,2) -> (2,2)[<] -> (1,2) -> (1,3)[N]           (cost 3)
+		 *   East hangar route: (3,2) -> (4,2)[>] -> (5,2) -> (6,2) -> (6,3)[N]  (cost 4)
+		 * Only the nearer West hangar's queue tile (2,2) is marked. */
+		Station *st = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"   .  ",
+			" .<S>..",
+			" N    N",
+		});
+		REQUIRE(st != nullptr);
+		CHECK(IsModularDepartureQueueTile(st, at(2, 2)));
+		CHECK_FALSE(IsModularDepartureQueueTile(st, at(4, 2)));
+
+		/* Symmetric equal-cost hangars (cost 3 each): BOTH (2,2) and (4,2) are marked. */
+		Station *st_tied = BuildAirportFromPicture(base, {
+			"RRRRRR",
+			"   .  ",
+			" .<S>. ",
+			" N   N ",
+		});
+		REQUIRE(st_tied != nullptr);
+		CHECK(IsModularDepartureQueueTile(st_tied, at(2, 2)));
+		CHECK(IsModularDepartureQueueTile(st_tied, at(4, 2)));
+	}
+
+	SECTION("Stand-to-hangar crossing fallback marks queue tiles across a runway") {
+		/* Layout:
+		 *   Row 0: 4-tile landing-only runway (0..3, 0) -- no takeoff runway at all
+		 *   Row 1: S at (3,1)
+		 *   Row 2: 4-tile landing-only runway (0..3, 2) -- must be crossed to reach hangar
+		 *   Row 3: one-way v at (3,3) pointing South into hangar N(3,4)
+		 *   Row 4: hangar N at (3,4) (door North into (3,3))
+		 * Even with no takeoff runway, stand S(3,1) -> hangar N(3,4) falls back to runway
+		 * crossing and marks (3,3). */
+		Station *st = SetupModularAirport(base, 6, 6);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		AddModularTile(st, at(3, 1), APT_STAND, 0);
+		AddLargeRunway(st, at(0, 2), 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		ModularAirportTileData *ow = AddModularTileWithData(st, at(3, 3), APT_APRON, 0);
+		ow->one_way_taxi = true;
+		ow->user_taxi_dir_mask = 0x04; // South into hangar
+		AddModularTile(st, at(3, 4), APT_DEPOT_NW, 0);
+		st->airport.MarkLayoutDirty();
+
+		CHECK(IsModularDepartureQueueTile(st, at(3, 3)));
+	}
 }

@@ -563,7 +563,7 @@ AirportGroundPath FindAirportGroundPath(const Station *st, TileIndex start, Tile
 	return crossing;
 }
 
-bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out)
+bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileIndex goal, bool allow_runway_crossing, GroundPathRestriction restriction, std::vector<TileIndex> &out, int *out_cost)
 {
 	if (st == nullptr || !IsValidTile(start) || !IsValidTile(goal)) return false;
 	if (!st->TileBelongsToAirport(start) || !st->TileBelongsToAirport(goal)) return false;
@@ -571,6 +571,7 @@ bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileInde
 
 	if (start == goal) {
 		if (IsOneWayTaxiTile(st, start)) out.push_back(start);
+		if (out_cost != nullptr) *out_cost = 0;
 		return true;
 	}
 
@@ -620,6 +621,7 @@ bool CollectShortestPathOneWayTiles(const Station *st, TileIndex start, TileInde
 	}
 
 	if (goal_cost == INT_MAX) return false;
+	if (out_cost != nullptr) *out_cost = goal_cost;
 
 	std::vector<TileIndex> stack{goal};
 	std::unordered_set<uint32_t> visited{goal.base()};
