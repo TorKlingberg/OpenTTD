@@ -6798,25 +6798,98 @@ TEST_CASE("ModularAirportLayoutCheck")
 		}));
 	}
 
-	SECTION("A one-way ring that traffic goes all the way round") {
-		/* The same ring with a hangar on its far corner. A stand-to-hangar trip from
-		 * the left stand now carries on past the exit, which closes the circle: four
-		 * aircraft, one per side, each waiting for the side ahead. */
-		Issues loop;
-		for (const ModularLayoutIssue &i : check({
+	SECTION("A mixed ring whose closing edge is crossed by non-departures is not a loop") {
+		/* The same ring with a hangar on its far corner. Stand-to-hangar trips from the
+		 * left stand cross (5,2)[^] and (6,1)[>], so both are stand-exit queue tiles where
+		 * non-departures never stop. No aircraft can wait on (5,2) or (6,1) needing the
+		 * rest of the ring, so the ring cannot fill and must not be flagged as QueueLoop. */
+		const Issues issues = check({
 			"RRRRRR",
 			"     .>.W",
 			"     ^ v",
 			"    S.<.S",
-		})) {
+		});
+		CHECK(std::none_of(issues.begin(), issues.end(), [](const ModularLayoutIssue &i) {
+			return i.problem == ModularLayoutProblem::QueueLoop;
+		}));
+	}
+
+	SECTION("A one-way departure ring that traffic goes all the way round") {
+		/* Two takeoff runways on opposite corners of a 4-tile clockwise one-way ring:
+		 *   Row 0: RRRR           (0..3, 0: RUF_DIR_LOW, takeoff end (3,0) above (3,1))
+		 *   Row 1:    .>..S       (S_top at (7,1) reaches (3,0) via v -> < -> ^)
+		 *   Row 2:    ^  v
+		 *   Row 3:   S..<.        (S_bot at (2,3) reaches (6,4) via ^ -> > -> v)
+		 *   Row 4:       RRRR     (6..9, 4: RUF_DIR_HIGH, takeoff end (6,4) below (6,3))
+		 * Offsetting the runways ensures each touches the ring only at its own corner.
+		 * Every one-way tile of the ring is a safe stop for departures, so four departing
+		 * aircraft can fill the ring and deadlock. */
+		Station *st = SetupModularAirport(base, 11, 6);
+		REQUIRE(st != nullptr);
+		const auto one_way = [&](uint x, uint y, uint8_t dir) {
+			ModularAirportTileData *d = AddModularTileWithData(st, at(x, y), APT_APRON, 0);
+			d->one_way_taxi = true;
+			d->user_taxi_dir_mask = dir;
+		};
+		AddLargeRunway(st, at(0, 0), 4, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+		AddLargeRunway(st, at(6, 4), 4, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_HIGH);
+		/* Top edge: (3,1) apron, (4,1)[>], (5,1) apron, (6,1) apron, (7,1) stand. */
+		AddModularTile(st, at(3, 1), APT_APRON, 0);
+		one_way(4, 1, 0x02);
+		AddModularTile(st, at(5, 1), APT_APRON, 0);
+		AddModularTile(st, at(6, 1), APT_APRON, 0);
+		AddModularTile(st, at(7, 1), APT_STAND, 0);
+		/* Sides: (3,2)[^], (6,2)[v]. */
+		one_way(3, 2, 0x01);
+		one_way(6, 2, 0x04);
+		/* Bottom edge: (2,3) stand, (3,3) apron, (4,3) apron, (5,3)[<], (6,3) apron. */
+		AddModularTile(st, at(2, 3), APT_STAND, 0);
+		AddModularTile(st, at(3, 3), APT_APRON, 0);
+		AddModularTile(st, at(4, 3), APT_APRON, 0);
+		one_way(5, 3, 0x08);
+		AddModularTile(st, at(6, 3), APT_APRON, 0);
+		st->airport.MarkLayoutDirty();
+
+		Issues loop;
+		for (const ModularLayoutIssue &i : CheckModularAirportLayout(st)) {
 			if (i.problem == ModularLayoutProblem::QueueLoop) loop.push_back(i);
 		}
 		CHECK(loop == Issues{
-			{ModularLayoutProblem::QueueLoop, at(6, 1)},
-			{ModularLayoutProblem::QueueLoop, at(5, 2)},
-			{ModularLayoutProblem::QueueLoop, at(7, 2)},
-			{ModularLayoutProblem::QueueLoop, at(6, 3)},
+			{ModularLayoutProblem::QueueLoop, at(4, 1)},
+			{ModularLayoutProblem::QueueLoop, at(3, 2)},
+			{ModularLayoutProblem::QueueLoop, at(6, 2)},
+			{ModularLayoutProblem::QueueLoop, at(5, 3)},
 		});
+	}
+
+	SECTION("A stand behind another stand with a crossing-reachable clear takeoff end is sound") {
+		/* Layout:
+		 *   Row 0: RRRR         (0..3, 0: RUF_TAKEOFF | RUF_DIR_LOW -> takeoff end (3,0))
+		 *   Row 1:  ...         ((1,1), (2,1), (3,1) apron)
+		 *   Row 2: RRRR         (0..3, 2: RUF_LANDING | RUF_DIR_HIGH -> landing-only)
+		 *   Row 3:  SS.         (S_back(1,3), S_front(2,3), apron(3,3))
+		 *   Row 4:    .         (apron(3,4))
+		 *   Row 5: RRRR         (0..3, 5: RUF_TAKEOFF | RUF_DIR_LOW -> takeoff end (3,5))
+		 * S_back(1,3) reaches strict end (3,5) only through S_front(2,3), but reaches
+		 * crossing end (3,0) cleanly via (1,2)[rwy] -> (1,1)..(3,1) -> (3,0). Because
+		 * FindModularRunwayTileForTakeoff falls back to pass 1 when S_front is occupied,
+		 * S_back is not BehindStand. */
+		Station *st = SetupModularAirport(base, 6, 7);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, at(1, 1), APT_APRON, 0);
+		AddModularTile(st, at(2, 1), APT_APRON, 0);
+		AddModularTile(st, at(3, 1), APT_APRON, 0);
+		AddLargeRunway(st, at(0, 2), 4, 0, RUF_LANDING | RUF_DIR_HIGH);
+		AddModularTile(st, at(1, 3), APT_STAND, 0);
+		AddModularTile(st, at(2, 3), APT_STAND, 0);
+		AddModularTile(st, at(3, 3), APT_APRON, 0);
+		AddModularTile(st, at(3, 4), APT_APRON, 0);
+		AddLargeRunway(st, at(0, 5), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		st->airport.MarkLayoutDirty();
+
+		const Issues issues = CheckModularAirportLayout(st);
+		CHECK(issues.empty());
 	}
 
 	SECTION("A stand beyond a takeoff queue reached through another stand") {

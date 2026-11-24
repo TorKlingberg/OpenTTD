@@ -830,6 +830,7 @@ bool AfterLoadGame()
 		if (!st->facilities.Test(StationFacility::Airport)) continue;
 		if (!st->airport.blocks.Test(AirportBlock::Modular) || st->airport.modular_tile_data == nullptr) continue;
 		for (const ModularAirportTileData &data : *st->airport.modular_tile_data) {
+			if (!IsValidTile(data.tile)) continue;
 			Tile t(data.tile);
 			if (!IsTileType(t, TileType::Station) || !IsAirport(t) || GetStationIndex(t) != st->index) continue;
 			/* No build path stores such a piece; leave a corrupt entry alone rather than assert. */

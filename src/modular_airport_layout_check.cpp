@@ -17,9 +17,9 @@
  *
  * Routes are the ones the ground pathfinder returns on an empty airport, which is what
  * aircraft follow when nothing is in their way; alternatives taken round a blocked tile
- * are not considered. The pathfinder reads its crossing-required cache, as it does for
- * real traffic, but nothing here writes to it or to any other game state: the result
- * feeds the station window's airport stats only.
+ * are not considered. The check reads the airport's deterministic layout caches (warming
+ * the crossing-required and departure-queue caches if stale) and writes no other game
+ * state: the result feeds the station window's airport stats only.
  */
 
 #include "stdafx.h"
@@ -110,15 +110,24 @@ bool ReachesAvoiding(const Station *st, TileIndex from, TileIndex to, const Tile
 struct QueueUse {
 	std::map<uint32_t, std::set<uint32_t>> next; ///< Queue tile -> queue tiles some route reaches next.
 
-	/** Record the queue tiles of one route, in the order it passes them. */
-	void AddRoute(const Station *st, const AirportGroundPath &path)
+	/**
+	 * Record the wait-for edges between queue tiles along one route.
+	 *
+	 * An aircraft waiting on a safe-stop queue tile @c prev must reserve every later
+	 * one-way tile it crosses to reach its next safe stop, so @c prev gains an edge to
+	 * every one-way tile visited. However, @c prev only advances onto tiles where this
+	 * route's aircraft may actually stop (@p is_departure or a non-departure queue tile):
+	 * a non-departure crossing a stand-exit queue tile never waits there and therefore
+	 * cannot create an outgoing wait-for edge from it.
+	 */
+	void AddRoute(const Station *st, const AirportGroundPath &path, bool is_departure)
 	{
 		TileIndex prev = INVALID_TILE;
 		for (TileIndex tile : path.tiles) {
 			if (!IsOneWayTaxiTile(st, tile)) continue;
 			this->next[tile.base()];
 			if (prev != INVALID_TILE) this->next[prev.base()].insert(tile.base());
-			prev = tile;
+			if (is_departure || !IsModularDepartureQueueTile(st, tile)) prev = tile;
 		}
 	}
 
@@ -183,17 +192,21 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 			const AirportGroundPath path = FindRoute(st, end, tile);
 			if (!path.found) continue;
 			reached = true;
-			queues.AddRoute(st, path);
+			queues.AddRoute(st, path, false);
 		}
 
 		bool leaves = false;
-		bool leaves_clear = false;
 		const bool from_stand = Contains(stands, tile);
 		for (const AirportGroundPath &path : FindTakeoffRoutes(st, tile, takeoff_ends)) {
 			leaves = true;
-			queues.AddRoute(st, path);
-			leaves_clear = leaves_clear || ReachesAvoiding(st, tile, path.tiles.back(), stands);
+			queues.AddRoute(st, path, true);
 		}
+		/* Check stand-free exit against every takeoff end (including crossing-only ends):
+		 * when a strict route is blocked by an occupied stand, FindModularRunwayTileForTakeoff
+		 * falls through to pass 1 and uses a crossing-reachable takeoff end instead. */
+		const bool leaves_clear = from_stand && leaves && std::ranges::any_of(takeoff_ends, [&](TileIndex end) {
+			return ReachesAvoiding(st, tile, end, stands);
+		});
 
 		if (!reached) issues.push_back({ModularLayoutProblem::Unreachable, tile});
 		if (!leaves) issues.push_back({ModularLayoutProblem::NoWayOut, tile});
@@ -216,14 +229,14 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 		for (TileIndex hangar : hangars) {
 			const AirportGroundPath to_hangar = FindRoute(st, stand, hangar);
 			if (to_hangar.found) {
-				queues.AddRoute(st, to_hangar);
+				queues.AddRoute(st, to_hangar, false);
 				if (nearest == INVALID_TILE || to_hangar.cost < nearest_cost) {
 					nearest = hangar;
 					nearest_cost = to_hangar.cost;
 				}
 			}
 			const AirportGroundPath from_hangar = FindRoute(st, hangar, stand);
-			if (from_hangar.found) queues.AddRoute(st, from_hangar);
+			if (from_hangar.found) queues.AddRoute(st, from_hangar, false);
 		}
 		if (nearest != INVALID_TILE && !ReachesAvoiding(st, stand, nearest, stands)) {
 			issues.push_back({ModularLayoutProblem::BehindStand, stand});

@@ -138,6 +138,7 @@ Everything else is a `mutable` lazily-computed cache with its own dirty bit:
 - `modular_noise_cache`
 - `modular_accepts_planes`, `modular_accepts_helicopters`
 - `modular_layout_issues` — what `CheckModularAirportLayout` found; read only by the station window's airport stats, never by game logic
+- `modular_departure_queue_tiles` -- sorted one-way tiles on shortest stand-exit routes (to takeoff ends and nearest hangars), safe stops only for departures
 
 **`Airport::MarkLayoutDirty()` invalidates all of them, and every layout mutation is expected to go through it.** Any code that mutates `ModularAirportTileData` directly instead of going through the commands — tests especially — must call it, or a cached answer silently stays stale. Retyping a tile is a layout change: mark dirty *after* the retype, or a read in the window before normalization caches the wrong answer.
 

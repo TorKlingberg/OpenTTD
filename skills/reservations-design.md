@@ -104,8 +104,8 @@ tiles between parallel runways:
    across multiplayer clients without save/load state. `IsModularSafeStopTile` returns
    `false` for these tiles when `!is_departure`, so non-departures (including arrivals
    and hangar-bound aircraft) reserve straight through them to a non-departure safe stop
-   or their goal—or wait upstream in the air, in a hangar, on a stand, or on an
-   arrival-only queue—and goal-less landings automatically cannot use them as buffers.
+   or their goal -- or wait upstream in the air, in a hangar, on a stand, or on an
+   arrival-only queue -- and goal-less landings automatically cannot use them as buffers.
    Because this is a pure tile property, `FindAirportGroundPath`'s `track_horizon`
    (`avoid_tiles` scoping), `BuildForwardReservationPlan`, `BuildReservationKeepSet`,
    `FindModularRolloutHoldingTile`, and `HandleModularGroundArrival` all share the exact
@@ -325,8 +325,8 @@ on the stands leave without needing anything from them. The trip from a stand to
 hangar is checked for the hangar the game sends the aircraft to
 (`FindFreeModularHangar`: the cheapest route).
 
-Shared one-way queues between arrivals and stand exits—whether a stand's aircraft is
-heading for a takeoff runway or for its nearest hangar—do not deadlock at runtime,
+Shared one-way queues between arrivals and stand exits -- whether a stand's aircraft is
+heading for a takeoff runway or for its nearest hangar -- do not deadlock at runtime,
 because non-departures never stop on stand-exit queue tiles (section 3).
 
 All three findings are certainties about the layout.

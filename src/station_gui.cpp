@@ -2030,27 +2030,35 @@ struct StationViewWindow : public Window {
 		/* Problems that stop aircraft come before the ones that only limit which can use the airport. */
 		const std::vector<ModularLayoutIssue> &issues = GetModularAirportLayoutIssues(st);
 		if (!issues.empty()) {
-			/* One line per kind of problem and kind of tile, without counts. A stand or hangar
-			 * cut off from both runways gets one line instead of two. */
-			auto has = [&issues, st](ModularLayoutProblem problem, bool hangar) {
-				return std::ranges::any_of(issues, [&](const ModularLayoutIssue &issue) {
-					if (issue.problem != problem) return false;
-					const ModularAirportTileData *data = st->airport.GetModularTileData(issue.tile);
-					return data != nullptr && IsModularHangarPiece(data->piece_type) == hangar;
-				});
-			};
+			/* One line per kind of problem and kind of tile, without counts. Issues are
+			 * sorted by (tile, problem), so scan one tile at a time and collapse
+			 * Unreachable + NoWayOut only when the same stand or hangar has both, so
+			 * separate problems on two different stands do not hide one another. */
 			line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_PROBLEMS));
 			for (bool hangar : {false, true}) {
 				const StringID what = hangar ? STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR : STR_STATION_MODULAR_AIRPORT_LAYOUT_STAND;
-				const bool unreachable = has(ModularLayoutProblem::Unreachable, hangar);
-				const bool no_way_out = has(ModularLayoutProblem::NoWayOut, hangar);
-				if (unreachable && no_way_out) {
-					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY, what));
-				} else if (unreachable) {
-					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_UNREACHABLE, what));
-				} else if (no_way_out) {
-					line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT, what));
+				bool has_both = false;
+				bool has_unreachable_only = false;
+				bool has_no_way_out_only = false;
+				for (size_t i = 0; i < issues.size(); ) {
+					const TileIndex tile = issues[i].tile;
+					bool tile_unreachable = false;
+					bool tile_no_way_out = false;
+					while (i < issues.size() && issues[i].tile == tile) {
+						if (issues[i].problem == ModularLayoutProblem::Unreachable) tile_unreachable = true;
+						if (issues[i].problem == ModularLayoutProblem::NoWayOut) tile_no_way_out = true;
+						++i;
+					}
+					if (!tile_unreachable && !tile_no_way_out) continue;
+					const ModularAirportTileData *data = st->airport.GetModularTileData(tile);
+					if (data == nullptr || IsModularHangarPiece(data->piece_type) != hangar) continue;
+					if (tile_unreachable && tile_no_way_out) has_both = true;
+					else if (tile_unreachable) has_unreachable_only = true;
+					else has_no_way_out_only = true;
 				}
+				if (has_both) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY, what));
+				if (has_unreachable_only) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_UNREACHABLE, what));
+				if (has_no_way_out_only) line(GetString(STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT, what));
 			}
 			auto any = [&issues](ModularLayoutProblem problem) {
 				return std::ranges::any_of(issues, [problem](const ModularLayoutIssue &issue) { return issue.problem == problem; });

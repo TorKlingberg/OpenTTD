@@ -4028,7 +4028,7 @@ STR_STATION_AIRPORT_STATS_THROUGHPUT_MINUTE                     :{BLACK}Aircraft
 STR_STATION_MODULAR_AIRPORT_LAYOUT_PROBLEMS                     :{RED}Layout problems
 STR_STATION_MODULAR_AIRPORT_LAYOUT_STAND                        :Stand
 STR_STATION_MODULAR_AIRPORT_LAYOUT_HANGAR                       :Hangar
-STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY                    :{BLACK}- {STRING} cannot be reached from a runway
+STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_RUNWAY                    :{BLACK}- {STRING} has no route to or from a runway
 STR_STATION_MODULAR_AIRPORT_LAYOUT_UNREACHABLE                  :{BLACK}- {STRING} cannot be reached from a landing runway
 STR_STATION_MODULAR_AIRPORT_LAYOUT_NO_WAY_OUT                   :{BLACK}- {STRING} cannot reach a takeoff runway
 STR_STATION_MODULAR_AIRPORT_LAYOUT_BEHIND_STAND                 :{BLACK}- Stand can only be left through another stand
