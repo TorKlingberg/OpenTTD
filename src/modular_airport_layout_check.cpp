@@ -17,9 +17,11 @@
  *
  * Routes are the ones the ground pathfinder returns on an empty airport, which is what
  * aircraft follow when nothing is in their way; alternatives taken round a blocked tile
- * are not considered. The check reads the airport's deterministic layout caches (warming
- * the crossing-required and departure-queue caches if stale) and writes no other game
- * state: the result feeds the station window's airport stats only.
+ * are not considered. The pathfinder reads its crossing-required cache but is never let
+ * write it. The only caches the check may fill are pure functions of the layout (the
+ * departure-queue tile set and the large-safe runway flags), so filling them here or in
+ * the game loop gives the same answer. Nothing else is written: the result feeds the
+ * station window's airport stats only.
  */
 
 #include "stdafx.h"
@@ -29,6 +31,7 @@
 #include "modular_airport_cmd.h"
 #include "table/airporttile_ids.h"
 #include <algorithm>
+#include <iterator>
 #include <map>
 #include <set>
 #include <vector>
@@ -185,6 +188,8 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 	TileList parking = stands;
 	parking.insert(parking.end(), hangars.begin(), hangars.end());
 
+	const bool has_large_takeoff = ModularAirportHasSafeRunwayFor(st, false);
+
 	QueueUse queues;
 	for (TileIndex tile : parking) {
 		bool reached = false;
@@ -204,9 +209,23 @@ std::vector<ModularLayoutIssue> CheckModularAirportLayout(const Station *st)
 		/* Check stand-free exit against every takeoff end (including crossing-only ends):
 		 * when a strict route is blocked by an occupied stand, FindModularRunwayTileForTakeoff
 		 * falls through to pass 1 and uses a crossing-reachable takeoff end instead. */
-		const bool leaves_clear = from_stand && leaves && std::ranges::any_of(takeoff_ends, [&](TileIndex end) {
+		bool leaves_clear = from_stand && leaves && std::ranges::any_of(takeoff_ends, [&](TileIndex end) {
 			return ReachesAvoiding(st, tile, end, stands);
 		});
+		/* A fast jet skips every short runway while a large-safe one serves takeoffs, so a
+		 * clear way to a short runway is no way out for it. Judged only where the stand
+		 * reaches a large-safe end at all: one it cannot reach is not a stand in the way. */
+		if (leaves_clear && has_large_takeoff) {
+			TileList large_ends;
+			std::ranges::copy_if(takeoff_ends, std::back_inserter(large_ends), [&](TileIndex end) { return IsRunwaySafeForLarge(st, end); });
+			const TileList no_closed;
+			const bool jet_reaches = std::ranges::any_of(large_ends, [&](TileIndex end) {
+				return ReachesAvoiding(st, tile, end, no_closed);
+			});
+			leaves_clear = !jet_reaches || std::ranges::any_of(large_ends, [&](TileIndex end) {
+				return ReachesAvoiding(st, tile, end, stands);
+			});
+		}
 
 		if (!reached) issues.push_back({ModularLayoutProblem::Unreachable, tile});
 		if (!leaves) issues.push_back({ModularLayoutProblem::NoWayOut, tile});

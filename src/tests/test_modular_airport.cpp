@@ -6990,6 +6990,48 @@ TEST_CASE("ModularAirportLayoutCheck")
 		CHECK(issues.empty());
 	}
 
+	SECTION("A clear way out to a short runway is no way out for a jet") {
+		/* Layout:
+		 *   Row 0: RRRRRR       (0..5, 0: large-safe, landing and takeoff end (5,0))
+		 *   Row 1:      .       (apron (5,1))
+		 *   Row 2:    SS.       (S_back (3,2), S_front (4,2), apron (5,2))
+		 *   Row 3:    .         (apron (3,3))
+		 *   Row 4: RRRR         (0..3, 4: short, takeoff end (3,4))
+		 * S_back reaches the short runway clear of stands, but the large-safe one only
+		 * through S_front. A jet on S_back skips the short runway, so it is behind S_front. */
+		Station *st = SetupModularAirport(base, 7, 6);
+		REQUIRE(st != nullptr);
+		AddLargeRunway(st, at(0, 0), 6, 0, RUF_LANDING | RUF_TAKEOFF | RUF_DIR_LOW);
+		AddModularTile(st, at(5, 1), APT_APRON, 0);
+		AddModularTile(st, at(3, 2), APT_STAND, 0);
+		AddModularTile(st, at(4, 2), APT_STAND, 0);
+		AddModularTile(st, at(5, 2), APT_APRON, 0);
+		AddModularTile(st, at(3, 3), APT_APRON, 0);
+		AddLargeRunway(st, at(0, 4), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		st->airport.MarkLayoutDirty();
+		REQUIRE(IsRunwaySafeForLarge(st, at(5, 0)));
+		REQUIRE_FALSE(IsRunwaySafeForLarge(st, at(3, 4)));
+
+		Issues behind;
+		for (const ModularLayoutIssue &i : CheckModularAirportLayout(st)) {
+			if (i.problem == ModularLayoutProblem::BehindStand) behind.push_back(i);
+		}
+		CHECK(behind == Issues{{ModularLayoutProblem::BehindStand, at(3, 2)}});
+
+		/* With takeoffs off the large-safe runway, jets use the short one and S_back is clear.
+		 * (S_front is now the one behind a stand: its only way to the short runway is
+		 * through S_back.) */
+		for (ModularAirportTileData &d : *st->airport.modular_tile_data) {
+			if (TileY(d.tile) == TileY(at(0, 0)) && IsModularRunwayPiece(d.piece_type)) d.runway_flags = RUF_LANDING | RUF_DIR_LOW;
+		}
+		st->airport.MarkLayoutDirty();
+		behind.clear();
+		for (const ModularLayoutIssue &i : CheckModularAirportLayout(st)) {
+			if (i.problem == ModularLayoutProblem::BehindStand) behind.push_back(i);
+		}
+		CHECK(behind == Issues{{ModularLayoutProblem::BehindStand, at(4, 2)}});
+	}
+
 	SECTION("A stand beyond a takeoff queue reached through another stand") {
 		/* The hangar is across the runway from the stands, so its aircraft queue on the
 		 * one-way tiles below the runway, and the far stand at the top left is only

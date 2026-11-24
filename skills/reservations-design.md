@@ -325,6 +325,14 @@ on the stands leave without needing anything from them. The trip from a stand to
 hangar is checked for the hangar the game sends the aircraft to
 (`FindFreeModularHangar`: the cheapest route).
 
+A way out to a takeoff runway counts if it reaches any takeoff end, including one only
+reachable across another runway: when an occupied stand blocks every strict route,
+`FindModularRunwayTileForTakeoff` falls back to crossing. Where a large-safe runway
+serves takeoffs, a fast jet skips the short ones, so a stand that reaches a large-safe
+end at all must also reach one without crossing a stand. The check does not know what
+traffic the airport gets, so it assumes a jet may park on any stand; a stand only small
+aircraft ever use can be flagged although nothing there would jam.
+
 Shared one-way queues between arrivals and stand exits -- whether a stand's aircraft is
 heading for a takeoff runway or for its nearest hangar -- do not deadlock at runtime,
 because non-departures never stop on stand-exit queue tiles (section 3).
