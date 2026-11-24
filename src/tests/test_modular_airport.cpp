@@ -3387,6 +3387,104 @@ TEST_CASE("ModularAirportAlternateRoutes")
 		CHECK_FALSE(HasModularAirportTileReservation(exit_b));
 	}
 
+	SECTION("A departing aircraft can divert into a parallel takeoff queue for its own runway") {
+		/* Takeoff runway at (0..3, 0) (RUF_DIR_LOW -> takeoff end (3,0)).
+		 * Direct route from stand S(3,2): (3,2) -> (3,1)[blocked] -> (3,0) (length 3).
+		 * Parallel takeoff queue via (2,1)[^]: (3,2) -> (2,2) -> (2,1)[^] -> (2,0) -> (3,0)
+		 * (length 5, detour +2). Both (2,0) and (3,0) belong to the departure's own takeoff
+		 * runway, so stopping at (2,1)[^] must not be rejected as detour-refused. */
+		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 1) return;
+		AddLargeRunway(st, base + TileDiffXY(0, 0), 4, 0, RUF_TAKEOFF | RUF_DIR_LOW);
+		const TileIndex takeoff_end = base + TileDiffXY(3, 0);
+		const TileIndex blocked = base + TileDiffXY(3, 1);
+		const TileIndex parallel_q = base + TileDiffXY(2, 1);
+		const TileIndex parallel_apron = base + TileDiffXY(2, 2);
+		const TileIndex dep_stand = base + TileDiffXY(3, 2);
+		AddModularTile(st, blocked, APT_APRON, 0);
+		one_way(parallel_q, 0x01); // North into (2,0)
+		AddModularTile(st, parallel_apron, APT_APRON, 0);
+		AddModularTile(st, dep_stand, APT_STAND, 0);
+		st->airport.MarkLayoutDirty();
+
+		SetupAircraftPool();
+		CreateBlockerOnTile(st, VehicleID(11), blocked);
+
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		Aircraft *shadow = Aircraft::CreateAtIndex(VehicleID(12));
+		shadow->subtype = AIR_SHADOW;
+		shadow->vehstatus.Set(VehState::Shadow);
+		shadow->engine_type = prop_engine;
+		v->SetNext(shadow);
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+		v->tile = dep_stand;
+		v->x_pos = TileX(dep_stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->y_pos = TileY(dep_stand) * TILE_SIZE + TILE_SIZE / 2;
+		v->direction = Direction::NE;
+		v->ground_path_goal = takeoff_end;
+		v->modular_takeoff_tile = takeoff_end;
+		v->modular_ground_target = MGT_RUNWAY_TAKEOFF;
+		SetTaxiReservation(v, dep_stand);
+
+		CHECK_FALSE(AirportMoveModular(v, st));
+		REQUIRE(v->taxi_path != nullptr);
+		CHECK(std::find(v->taxi_path->tiles.begin(), v->taxi_path->tiles.end(), parallel_q) != v->taxi_path->tiles.end());
+		CHECK(IsModularAirportTileReservedBy(parallel_apron, v->index));
+		CHECK(IsModularAirportTileReservedBy(parallel_q, v->index));
+		CHECK(v->modular_runway_reservation.empty());
+		CHECK(IsModularAirportTileReservedBy(blocked, VehicleID(11)));
+	}
+
+	SECTION("Detour refused into a runway-crossing queue bans that queue and finds a clean route") {
+		/* Twin landing runways with stand S across the second runway:
+		 *   Row 0: RWY1(0..2, 0)  .(3,0)    .(4,0)   (rollout at (2,0))
+		 *   Row 1:                X(2,1)    v(3,1)   .(4,1)
+		 *   Row 2: RWY2(0..4, 2)                     (landing-only, so v(3,1) is an arrival safe stop)
+		 *   Row 3:                S(2,3)    .(3,3)   .(4,3)
+		 * Attempt 0 (direct, len 4): (2,0) -> (2,1)[blocked] -> (2,2)[RWY2] -> S(2,3)
+		 *   (safe_stop = S, 0 runway tiles past safe_stop).
+		 * Attempt 1 (detour +2, len 6): (2,0) -> (3,0) -> v(3,1) -> (3,2)[RWY2] -> (3,3) -> S(2,3)
+		 *   (safe_stop = v(3,1), 1 runway tile past safe_stop -> detour-refused, bans v(3,1)).
+		 * Attempt 2 (detour +4, len 8): (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2)[RWY2] -> (4,3) -> (3,3) -> S(2,3)
+		 *   (safe_stop = S, 0 runway tiles past safe_stop -> succeeds). */
+		if constexpr (MODULAR_MAX_ROUTE_ATTEMPTS <= 2) return;
+		const TileIndex rwy1_start = base + TileDiffXY(0, 0);
+		const TileIndex rwy1_rollout = base + TileDiffXY(2, 0);
+		const TileIndex blocked = base + TileDiffXY(2, 1);
+		const TileIndex bad_queue = base + TileDiffXY(3, 1);
+		const TileIndex clean_apron = base + TileDiffXY(4, 1);
+		const TileIndex cross_stand = base + TileDiffXY(2, 3);
+		AddLargeRunway(st, rwy1_start, 3, 0, RUF_LANDING | RUF_DIR_HIGH);
+		AddModularTile(st, base + TileDiffXY(3, 0), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 0), APT_APRON, 0);
+		AddModularTile(st, blocked, APT_APRON, 0);
+		one_way(bad_queue, 0x04); // South into RWY2
+		AddModularTile(st, clean_apron, APT_APRON, 0);
+		AddLargeRunway(st, base + TileDiffXY(0, 2), 5, 0, RUF_LANDING | RUF_DIR_HIGH);
+		AddModularTile(st, cross_stand, APT_STAND, 0);
+		AddModularTile(st, base + TileDiffXY(3, 3), APT_APRON, 0);
+		AddModularTile(st, base + TileDiffXY(4, 3), APT_APRON, 0);
+		st->airport.MarkLayoutDirty();
+
+		/* Verify attempt 1 really visits bad_queue before clean_apron. */
+		const std::array<TileIndex, 1> avoid_direct{blocked};
+		const TaxiPath attempt1 = BuildTaxiPath(st, rwy1_rollout, cross_stand, nullptr, false,
+				GroundPathRestriction::FixedWing, avoid_direct);
+		REQUIRE(attempt1.valid);
+		REQUIRE(std::find(attempt1.tiles.begin(), attempt1.tiles.end(), bad_queue) != attempt1.tiles.end());
+
+		SetupAircraftPool();
+		CreateBlockerOnTile(st, VehicleID(11), blocked);
+		Aircraft *v = CreateAircraft(VehicleID(10));
+		v->engine_type = prop_engine;
+		v->targetairport = st->index;
+
+		REQUIRE(TryReserveLandingChain(v, st, rwy1_start, cross_stand));
+		CHECK_FALSE(HasModularAirportTileReservation(bad_queue));
+		CHECK(IsModularAirportTileReservedBy(clean_apron, v->index));
+		CHECK(IsModularAirportTileReservedBy(cross_stand, v->index));
+	}
+
 	SECTION("Sole exit blocked is still refused") {
 		/* The B corridor omitted: with no alternative the landing must be denied rather
 		 * than admitted onto a route the aircraft cannot hold. */

@@ -1046,12 +1046,28 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		return out;
 	}
 
+	/* For a departure, its own takeoff runway is where it is headed rather than an
+	 * obstacle to cross. Compute the contiguous runway strip once here because
+	 * plan.operation_runway_tiles is empty whenever the horizon stops at an upstream
+	 * queue tile before reaching the runway. */
+	std::vector<TileIndex> own_takeoff_runway;
+	if (is_departure && IsValidTile(operation_runway)) {
+		if (GetContiguousModularRunwayTiles(st, operation_runway, own_takeoff_runway)) {
+			SortAndUniqueTiles(own_takeoff_runway);
+		} else {
+			own_takeoff_runway.clear();
+		}
+	}
+
 	/* Runway tiles a route drives over after its first safe stop, i.e. the ones the
-	 * aircraft would have to wait for while standing in a queue. */
+	 * aircraft would have to wait for while standing in a queue. A departure's own
+	 * takeoff runway is excluded so a parallel takeoff queue joining the runway
+	 * earlier is not mistaken for a runway crossing. */
 	const auto runway_tiles_past_stop = [&](const TaxiPath &path, TileIndex safe_stop) {
 		const auto stop = std::find(path.tiles.begin(), path.tiles.end(), safe_stop);
-		return std::count_if(stop, path.tiles.end(),
-				[&](TileIndex t) { return IsPathTileRunwayPiece(st, t); });
+		return std::count_if(stop, path.tiles.end(), [&](TileIndex t) {
+			return IsPathTileRunwayPiece(st, t) && !ContainsSortedTile(own_takeoff_runway, t);
+		});
 	};
 
 	std::vector<TileIndex> avoid;
@@ -1087,21 +1103,6 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 		if (attempt == 0) {
 			shortest_length = this_length;
 			shortest_runway_tiles = runway_tiles_past_stop(out.path, plan.safe_stop);
-		} else if (runway_tiles_past_stop(out.path, plan.safe_stop) > shortest_runway_tiles) {
-			/* An alternative is judged only as far as its first safe stop, so it must not
-			 * leave more runway beyond that stop than the direct route does, whatever the
-			 * aircraft is doing. A queue with
-			 * a runway ahead of it is a takeoff queue: an aircraft bound for a stand that
-			 * was diverted into one ended up at the head of the departures, waiting for a
-			 * gap on the runway and a clear run to its stand at once, with the departures
-			 * behind it. A runway crossed within the hop is no such trap, as the aircraft
-			 * does not rest before it. Longer alternatives only add more of the same, so
-			 * stop looking. */
-			if (ShouldLogModularRateLimited(v->index, 48, 128)) {
-				Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} detour-refused: attempt={} origin={} goal={} leaves a runway beyond its queue tile",
-						v->index, static_cast<int>(attempt), origin.base(), goal.base());
-			}
-			break;
 		} else if (this_length > shortest_length + MAX_ROUTE_DETOUR_TILES) {
 			/* Every further ban only makes the route longer, so stop rather than keep looking.
 			 *
@@ -1117,6 +1118,26 @@ static ReservableRoute FindReservableRoute(const Aircraft *v, const Station *st,
 						this_length, shortest_length, MAX_ROUTE_DETOUR_TILES);
 			}
 			break;
+		} else if (runway_tiles_past_stop(out.path, plan.safe_stop) > shortest_runway_tiles) {
+			/* An alternative is judged only as far as its first safe stop, so it must not
+			 * leave more transit runway beyond that stop than the direct route does. A queue
+			 * with a foreign runway ahead of it is a takeoff queue: an aircraft bound for a
+			 * stand that was diverted into one ended up at the head of the departures,
+			 * waiting for a gap on the runway and a clear run to its stand at once, with the
+			 * departures behind it. A runway crossed within the hop is no such trap, as the
+			 * aircraft does not rest before it. Ban this queue tile and keep looking -- a
+			 * clean exit may sit just a tile further along within the detour budget. */
+			if (ShouldLogModularRateLimited(v->index, 48, 128)) {
+				Debug(Facility::Misc, Severity::Warning, "[ModAp] V{} detour-refused: attempt={} origin={} goal={} leaves a runway beyond its queue tile",
+						v->index, static_cast<int>(attempt), origin.base(), goal.base());
+			}
+			if (attempt + 1 >= max_attempts || !IsValidTile(plan.safe_stop) ||
+					plan.safe_stop == origin || plan.safe_stop == goal) {
+				break;
+			}
+			if (std::find(avoid.begin(), avoid.end(), plan.safe_stop) != avoid.end()) break;
+			avoid.push_back(plan.safe_stop);
+			continue;
 		}
 
 		TaxiReserveResult deny;
